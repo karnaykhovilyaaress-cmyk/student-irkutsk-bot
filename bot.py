@@ -1,12 +1,14 @@
+import time
 import asyncio
 import os
 import aiohttp
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+
 
 # --- НАСТРОЙКИ ---
 TOKEN = "8953672814:AAGUOY7EI5CSY_M9ecKLzYchVyL1ZCfyX1Y"
@@ -37,11 +39,11 @@ GROUPS = {
 
 # --- ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ РАСПИСАНИЯ ---
 async def fetch_schedule(group_id: str, date: datetime):
-    """Получает расписание для группы на указанную дату с сайта ИРНИТУ."""
     url = "https://www.istu.edu/Sys/Module/ScheduleClassList/v2/calendar.ajax.php"
     params = {
         "group_id": group_id,
-        "date": date.strftime("%Y-%m-%d")
+        "date": date.strftime("%Y-%m-%d"),
+        "_": int(time.time() * 1000)  # Добавляем временную метку
     }
     
     try:
@@ -176,7 +178,7 @@ async def show_today(callback: CallbackQuery):
     
     await callback.message.edit_text("Загружаю расписание...")
     
-    today = datetime.now()
+    today = datetime.now(timezone.utc) + timedelta(hours=8)
     data = await fetch_schedule(group_id, today)
     text = format_schedule(data, today, group_name)
     
@@ -201,7 +203,7 @@ async def show_week(callback: CallbackQuery):
     await callback.message.edit_text("Загружаю расписание на неделю...")
     
     # Получаем расписание на каждый день недели, начиная с сегодня
-    today = datetime.now()
+    today = datetime.now(timezone.utc) + timedelta(hours=8)
     week_text = f"📅 Расписание для группы {group_name} на неделю:\n\n"
     
     for i in range(7):
