@@ -13,10 +13,15 @@ from aiogram.types import (
 )
 
 # ============================================================
+# НАСТРОЙКИ
+# ============================================================
 TOKEN = "8953672814:AAG4cxGgLJRVv-EXzDip6cT7u6NO7vez18E"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# ============================================================
+# ГРУППЫ (ИАМиТ, 1 курс)
+# ============================================================
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1",  "id": "478012"},
@@ -37,14 +42,14 @@ GROUPS = {
     ]
 }
 
-WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-
 
 # ============================================================
-# СКАЧИВАНИЕ HTML И ПАРСИНГ
+# ЗАГРУЗКА И ПАРСИНГ
 # ============================================================
-async def fetch_page(group_id: str) -> str:
+async def fetch_page(group_id: str, target_date: datetime = None) -> str:
     url = f"https://www.istu.edu/raspisanie/grup/{group_id}"
+    if target_date:
+        url += f"?date={target_date.strftime('%Y-%m-%d')}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
         "Accept-Language": "ru-RU,ru;q=0.9",
@@ -52,15 +57,13 @@ async def fetch_page(group_id: str) -> str:
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:
             html = await response.text()
-            logging.info(f"[DEBUG] GET {url} → {response.status}, len={len(html)}")
+            logging.info(f"[DEBUG] GET {url} -> {response.status}, len={len(html)}")
             return html
 
 
 def parse_schedule(html: str):
-    """Возвращает (week_parity, days) где days = [{date, name, lessons:[...]}]."""
     soup = BeautifulSoup(html, "html.parser")
 
-    # Чётность недели
     week_parity = "all"
     for item in soup.find_all("div", class_="info-block-item"):
         label = item.find("div", class_="info-block-item-label")
@@ -71,10 +74,8 @@ def parse_schedule(html: str):
 
     days = []
     for day_div in soup.find_all("div", class_="sch-list-day"):
-        # Дата
         date_str = ""
-        params = day_div.get("data-params", "")
-        m = re.search(r"'date'\s*:\s*'([^']+)'", params)
+        m = re.search(r"'date'\s*:\s*'([^']+)'", day_div.get("data-params", ""))
         if m:
             date_str = m.group(1)
 
@@ -82,12 +83,10 @@ def parse_schedule(html: str):
         day_name = header.get_text(strip=True) if header else date_str
 
         lessons = []
-        # Ищем все sch-list-item (время + пары)
         for item in day_div.find_all("div", class_="sch-list-item"):
             time_div = item.find("div", class_="sch-list-item-time-inner")
             time_str = time_div.get_text(strip=True) if time_div else ""
 
-            # Внутри item — блоки по чётности
             for week_block in item.find_all("div", class_="sch-list-item-week"):
                 classes = week_block.get("class", [])
                 week_type = "all"
@@ -96,7 +95,6 @@ def parse_schedule(html: str):
                 elif "week-odd" in classes:
                     week_type = "odd"
 
-                # Пропускаем несовпадающую чётность
                 if week_type != "all" and week_parity != "all" and week_type != week_parity:
                     continue
 
@@ -141,31 +139,33 @@ def parse_schedule(html: str):
 # ФОРМАТИРОВАНИЕ
 # ============================================================
 def format_day(day: dict) -> str:
-    lines = [f"📅 {day['name']}", ""]
+    lines = [day["name"], ""]
     if not day["lessons"]:
         lines.append("Занятий нет.")
         lines.append("")
         return "\n".join(lines)
 
-    # Группируем по времени
     by_time = {}
     for les in day["lessons"]:
         by_time.setdefault(les["time"], []).append(les)
 
     for time_str in by_time:
-        lines.append(f"🕐 {time_str}")
         for les in by_time[time_str]:
             subj = les["subject"]
             if les["type"]:
                 subj += f" ({les['type']})"
-            lines.append(f"   • {subj}")
+            lines.append(f"{time_str} {subj}")
+
+            extras = []
             if les["teacher"]:
-                lines.append(f"     👤 {les['teacher']}")
+                extras.append(les["teacher"])
             if les["auditorium"]:
-                lines.append(f"     🚪 {les['auditorium']}")
+                extras.append(les["auditorium"])
             if les["subgroup"]:
-                lines.append(f"     👥 Подгруппа: {les['subgroup']}")
-        lines.append("")
+                extras.append(f"подгр. {les['subgroup']}")
+            if extras:
+                lines.append(", ".join(extras))
+            lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -188,8 +188,8 @@ def _group_name_by_id(group_id: str) -> str:
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📅 Расписание")],
-            [KeyboardButton(text="📝 Дедлайны"), KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="Расписание")],
+            [KeyboardButton(text="Дедлайны"), KeyboardButton(text="Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -205,15 +205,16 @@ def get_institutes_keyboard():
 def get_groups_keyboard(institute_name: str):
     groups = GROUPS.get(institute_name, [])
     kb = [[InlineKeyboardButton(text=g["name"], callback_data=f"group_{g['id']}")] for g in groups]
-    kb.append([InlineKeyboardButton(text="⬅️ Назад к институтам", callback_data="back_to_institutes")])
+    kb.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def get_schedule_actions_keyboard(group_id: str):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📅 Расписание на сегодня", callback_data=f"today_{group_id}")],
-        [InlineKeyboardButton(text="📅 Расписание на неделю", callback_data=f"week_{group_id}")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")],
+        [InlineKeyboardButton(text="Сегодня", callback_data=f"today_{group_id}")],
+        [InlineKeyboardButton(text="Текущая неделя", callback_data=f"week_0_{group_id}")],
+        [InlineKeyboardButton(text="Следующая неделя", callback_data=f"week_1_{group_id}")],
+        [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")],
     ])
 
 
@@ -223,22 +224,22 @@ def get_schedule_actions_keyboard(group_id: str):
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        f"Привет, {message.from_user.full_name}! Я бот для студентов ИРНИТУ.\n\n"
-        "Выбери действие на клавиатуре ниже:",
+        f"Привет, {message.from_user.full_name}!\n\n"
+        "Я бот для студентов ИРНИТУ. Выбери действие на клавиатуре ниже.",
         reply_markup=get_main_keyboard(),
     )
 
 
-@dp.message(F.text == "📅 Расписание")
+@dp.message(F.text == "Расписание")
 async def show_institutes(message: Message):
-    await message.answer("Выбери свой институт:", reply_markup=get_institutes_keyboard())
+    await message.answer("Выбери институт:", reply_markup=get_institutes_keyboard())
 
 
 @dp.callback_query(F.data.startswith("institute_"))
 async def process_institute(callback: CallbackQuery):
     institute_name = callback.data.split("_", 1)[1]
     await callback.message.edit_text(
-        f"Институт: {institute_name}\n\nВыбери свою группу:",
+        f"Институт: {institute_name}\n\nВыбери группу:",
         reply_markup=get_groups_keyboard(institute_name),
     )
     await callback.answer()
@@ -257,7 +258,7 @@ async def process_group(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "back_to_institutes")
 async def back_to_institutes(callback: CallbackQuery):
-    await callback.message.edit_text("Выбери свой институт:", reply_markup=get_institutes_keyboard())
+    await callback.message.edit_text("Выбери институт:", reply_markup=get_institutes_keyboard())
     await callback.answer()
 
 
@@ -266,7 +267,7 @@ async def show_today(callback: CallbackQuery):
     group_id = callback.data.split("_", 1)[1]
     group_name = _group_name_by_id(group_id)
 
-    await callback.message.edit_text("Загружаю расписание...")
+    await callback.message.edit_text("Загружаю...")
 
     try:
         html = await fetch_page(group_id)
@@ -274,41 +275,26 @@ async def show_today(callback: CallbackQuery):
     except Exception as e:
         logging.exception("Ошибка парсинга")
         await callback.message.edit_text(
-            f"Не удалось загрузить расписание: {e}",
+            f"Ошибка: {e}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
+                [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
             ]),
         )
         await callback.answer()
         return
 
-    today = _now_irkutsk()
-    today_str = today.strftime("%d.%m.%Y")
-
-    # Ищем сегодняшний день
-    day = None
-    for d in days:
-        if d["date"] == today_str:
-            day = d
-            break
+    today_str = _now_irkutsk().strftime("%d.%m.%Y")
+    day = next((d for d in days if d["date"] == today_str), None)
 
     if day is None:
-        # Если сегодня нет в расписании — покажем первый день недели
-        if days:
-            text = f"📅 На {today_str} занятий нет.\n\nРасписание на текущую неделю:\n\n"
-            text += "\n".join(format_day(d) for d in days)
-        else:
-            text = f"📅 На {today_str} занятий нет."
+        text = f"Сегодня ({today_str}) занятий нет."
     else:
-        text = format_day(day)
-
-    if len(text) > 4000:
-        text = text[:4000] + "\n\n… (обрезано)"
+        text = format_day(day).strip()
 
     await callback.message.edit_text(
-        text,
+        text or "Занятий нет.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
+            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
         ]),
     )
     await callback.answer()
@@ -316,59 +302,68 @@ async def show_today(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("week_"))
 async def show_week(callback: CallbackQuery):
-    group_id = callback.data.split("_", 1)[1]
+    # формат: week_{0|1}_{group_id}
+    parts = callback.data.split("_", 2)
+    offset = int(parts[1])
+    group_id = parts[2]
     group_name = _group_name_by_id(group_id)
 
-    await callback.message.edit_text("Загружаю расписание на неделю...")
+    await callback.message.edit_text("Загружаю...")
+
+    today = _now_irkutsk()
+    target = today + timedelta(days=7 * offset)
 
     try:
-        html = await fetch_page(group_id)
+        html = await fetch_page(group_id, target_date=target)
         _, days = parse_schedule(html)
     except Exception as e:
         logging.exception("Ошибка парсинга")
         await callback.message.edit_text(
-            f"Не удалось загрузить расписание: {e}",
+            f"Ошибка: {e}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
+                [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
             ]),
         )
         await callback.answer()
         return
 
     if not days:
-        text = f"📅 Расписание для группы {group_name} не найдено."
+        text = f"Расписание для группы {group_name} не найдено."
     else:
-        text = f"📅 Расписание на неделю\nГруппа: {group_name}\n\n"
+        title = "Текущая неделя" if offset == 0 else "Следующая неделя"
+        text = f"{title}\nГруппа: {group_name}\n\n"
         text += "\n".join(format_day(d) for d in days)
 
     if len(text) > 4000:
-        text = text[:4000] + "\n\n… (обрезано)"
+        text = text[:4000] + "\n… (обрезано)"
 
     await callback.message.edit_text(
-        text,
+        text.strip(),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
+            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
         ]),
     )
     await callback.answer()
 
 
-@dp.message(F.text == "📝 Дедлайны")
+@dp.message(F.text == "Дедлайны")
 async def deadlines(message: Message):
-    await message.answer("Раздел с дедлайнами в разработке.", reply_markup=get_main_keyboard())
+    await message.answer("Раздел в разработке.", reply_markup=get_main_keyboard())
 
 
-@dp.message(F.text == "ℹ️ Помощь")
+@dp.message(F.text == "Помощь")
 async def help_cmd(message: Message):
     await message.answer(
         "Я умею:\n"
-        "• Показывать расписание по группам ИАМиТ\n"
-        "• Скоро: напоминать о дедлайнах\n\n"
+        "- Показывать расписание по группам ИАМиТ\n"
+        "- Скоро: напоминать о дедлайнах\n\n"
         "Просто нажимай кнопки.",
         reply_markup=get_main_keyboard(),
     )
 
 
+# ============================================================
+# ЗАПУСК
 # ============================================================
 async def main():
     logging.basicConfig(
