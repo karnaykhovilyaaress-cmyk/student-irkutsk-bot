@@ -1,5 +1,7 @@
 import asyncio
 import json
+import sys
+import logging
 import aiohttp
 from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, F
@@ -41,190 +43,179 @@ GROUPS = {
 }
 
 # ============================================================
-# ПОЛУЧЕНИЕ РАСПИСАНИЯ С САЙТА ИРНИТУ (POST + JSON)
+# ПОЛУЧЕНИЕ РАСПИСАНИЯ С САЙТА ИРНИТУ
+# Отправляем JSON напрямую: {"month":.., "year":.., "group_id":".."}
 # ============================================================
-async def fetch_schedule(group_id: str, date: datetime):
-    """Отправляет POST-запрос к AJAX-скрипту ИРНИТУ и возвращает JSON."""
+async def fetch_schedule(group_id: str, year: int, month: int):
     url = "https://www.istu.edu/Sys/Module/ScheduleClassList/v2/calendar.ajax.php"
-
-    params = {
-        "group_id": group_id,
-        "year": date.year,
-        "month": date.month,   # 1..12 (как в JS)
-        "day": date.day,
+    payload = {"month": month, "year": year, "group_id": group_id}
+    headers = {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     }
-
-    # Сайт передаёт параметры как JSON-строку в поле 'params'
-    data = {"params": json.dumps(params)}
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=data) as response:
+            async with session.post(url, json=payload, headers=headers) as response:
                 raw = await response.text()
-                # Отладочный вывод в логи BotHost
-                print(f"[DEBUG] group={group_id} date={date.date()} status={response.status}")
-                print(f"[DEBUG] response: {raw[:800]}")
+                logging.info(f"[DEBUG] status={response.status} url={url}")
+                logging.info(f"[DEBUG] payload={json.dumps(payload)}")
+                logging.info(f"[DEBUG] response={raw[:2000]}")
                 if response.status == 200:
                     try:
                         return json.loads(raw)
                     except json.JSONDecodeError:
-                        print("[DEBUG] Не удалось распарсить JSON")
+                        logging.error("[DEBUG] Ответ не JSON")
                         return None
                 return None
     except Exception as e:
-        print(f"[DEBUG] Ошибка запроса: {e}")
+        logging.error(f"[DEBUG] Ошибка запроса: {e}")
         return None
 
 
 # ============================================================
-# ФОРМАТИРОВАНИЕ ОТВЕТА СЕРВЕРА В ТЕКСТ
+# ВЫТАСКИВАНИЕ ПОЛЕЙ ИЗ ОБЪЕКТА ПАРЫ
 # ============================================================
-WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+def _val(obj, *keys, default=""):
+    """Возвращает первое найденное значение по ключам."""
+    if not isinstance(obj, dict):
+        return default
+    for k in keys:
+        if k in obj and obj[k]:
+            return obj[k]
+    return default
+
 
 def _extract_lesson(lesson: dict) -> dict:
-    """Достаёт поля пары из объекта любого возможного формата."""
-    # Название предмета
-    subject = (
-        lesson.get("name") or lesson.get("subject") or
-        lesson.get("discipline") or lesson.get("title") or "—"
-    )
+    # Номер пары
+    number = _val(lesson, "number", "num", "pair", "pair_number")
 
     # Время
-    time_start = lesson.get("time_start") or lesson.get("timeStart") or lesson.get("start") or ""
-    time_end = lesson.get("time_end") or lesson.get("timeEnd") or lesson.get("end") or ""
-    if not time_start and lesson.get("time"):
-        time_start = lesson["time"]
-    time_str = f"{time_start}–{time_end}" if time_start and time_end else (time_start or "—")
+    t_start = _val(lesson, "time_start", "timeStart", "start", "begin")
+    t_end = _val(lesson, "time_end", "timeEnd", "end", "finish")
+    if not t_start and lesson.get("time"):
+        t_start = lesson["time"]
+    time_str = f"{t_start}–{t_end}" if t_start and t_end else (t_start or "")
 
-    # Номер пары
-    number = lesson.get("number") or lesson.get("num") or lesson.get("pair") or ""
+    # Предмет
+    subject = _val(lesson, "name", "subject", "discipline", "title", "lesson_name")
 
-    # Тип занятия
-    ltype = lesson.get("type") or lesson.get("lesson_type") or lesson.get("kind") or ""
+    # Тип
+    ltype = _val(lesson, "type", "lesson_type", "kind", "form")
 
     # Преподаватели
-    teachers = lesson.get("teachers") or lesson.get("teacher") or []
+    teachers = _val(lesson, "teachers", "teacher", "prepod", "prepods", default=[])
     if isinstance(teachers, str):
         teachers = [{"name": teachers}]
     if isinstance(teachers, dict):
         teachers = [teachers]
-    teachers_str = ", ".join([t.get("name", "") if isinstance(t, dict) else str(t) for t in teachers if t])
+    t_str = ", ".join([t.get("name", "") if isinstance(t, dict) else str(t) for t in teachers if t])
 
     # Аудитории
-    rooms = lesson.get("auditories") or lesson.get("auditoriums") or lesson.get("rooms") or lesson.get("room") or []
+    rooms = _val(lesson, "auditories", "auditoriums", "rooms", "room", "audience", default=[])
     if isinstance(rooms, str):
         rooms = [{"name": rooms}]
     if isinstance(rooms, dict):
         rooms = [rooms]
-    rooms_str = ", ".join([r.get("name", "") if isinstance(r, dict) else str(r) for r in rooms if r])
+    r_str = ", ".join([r.get("name", "") if isinstance(r, dict) else str(r) for r in rooms if r])
 
     # Подгруппа
-    subgroup = lesson.get("subgroup") or lesson.get("sub_group") or lesson.get("podgruppa") or ""
+    subgroup = _val(lesson, "subgroup", "sub_group", "podgruppa")
 
     return {
-        "number": number,
-        "time": time_str,
-        "subject": subject,
-        "type": ltype,
-        "teachers": teachers_str,
-        "rooms": rooms_str,
-        "subgroup": subgroup,
+        "number": number, "time": time_str, "subject": subject,
+        "type": ltype, "teachers": t_str, "rooms": r_str, "subgroup": subgroup,
     }
 
 
-def _iterate_days(data: dict):
-    """Возвращает список (date_str, day_obj) из ответа сервера."""
+# ============================================================
+# ПОИСК ДНЯ И ПАР В ОТВЕТЕ СЕРВЕРА
+# ============================================================
+def _find_day(data, target_date: datetime):
+    """Ищет в ответе сервера день, соответствующий target_date."""
     if not data:
+        return None
+
+    target_iso = target_date.strftime("%Y-%m-%d")
+    target_dmy = target_date.strftime("%d.%m.%Y")
+
+    # Собираем все списки дней, где бы они ни лежали
+    candidates = []
+    if isinstance(data, list):
+        candidates = data
+    elif isinstance(data, dict):
+        for key in ("dates", "days", "items", "schedule", "list", "data"):
+            v = data.get(key)
+            if isinstance(v, list):
+                candidates = v
+                break
+            if isinstance(v, dict):
+                candidates = list(v.values())
+                break
+
+    for d in candidates:
+        if not isinstance(d, dict):
+            continue
+        date_str = str(_val(d, "date", "day", "date_str", "dt"))
+        if target_iso in date_str or target_dmy in date_str:
+            return d
+
+    return None
+
+
+def _get_lessons(day_obj):
+    if not isinstance(day_obj, dict):
         return []
-
-    dates = data.get("dates")
-    if dates is None:
-        return []
-
-    # Формат 1: dates — список объектов
-    if isinstance(dates, list):
-        result = []
-        for d in dates:
-            date_str = d.get("date") or d.get("day") or ""
-            result.append((date_str, d))
-        return result
-
-    # Формат 2: dates — словарь { "2026-09-22": {...}, ... }
-    if isinstance(dates, dict):
-        return list(dates.items())
-
+    for key in ("items", "lessons", "classes", "pairs", "schedule", "list", "rows"):
+        v = day_obj.get(key)
+        if isinstance(v, list):
+            return v
     return []
 
 
-def _get_lessons_from_day(day: dict):
-    """Возвращает список пар из объекта дня."""
-    if not isinstance(day, dict):
-        return []
-    for key in ("items", "lessons", "classes", "pairs", "schedule", "list"):
-        if key in day and isinstance(day[key], list):
-            return day[key]
-    return []
+WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
 
-def format_day(data: dict, date: datetime, group_name: str) -> str:
-    """Формирует текст расписания на один день."""
-    days = _iterate_days(data)
-
+def format_day(data, date: datetime, group_name: str) -> str:
     header = f"📅 {WEEKDAYS[date.weekday()]}, {date.strftime('%d.%m.%Y')}"
 
-    # Ищем нужный день
-    target = date.strftime("%Y-%m-%d")
-    day_obj = None
-    for date_str, d in days:
-        if date_str and date_str.startswith(target):
-            day_obj = d
-            break
-    if day_obj is None and days:
-        day_obj = days[0][1]
-
+    day_obj = _find_day(data, date)
     if day_obj is None:
         return f"{header}\n\nЗанятий нет.\n"
 
-    lessons = _get_lessons_from_day(day_obj)
+    lessons = _get_lessons(day_obj)
     if not lessons:
         return f"{header}\n\nЗанятий нет.\n"
 
     lines = [header, ""]
     for lesson in lessons:
+        if not isinstance(lesson, dict):
+            continue
         info = _extract_lesson(lesson)
-        # Заголовок пары
-        head_parts = []
+
+        head = []
         if info["number"]:
-            head_parts.append(f"{info['number']} пара")
+            head.append(f"{info['number']} пара")
         if info["time"]:
-            head_parts.append(info["time"])
-        head = " | ".join(head_parts) if head_parts else "Пара"
-        lines.append(head)
-        # Предмет
-        subject_line = info["subject"]
+            head.append(info["time"])
+        if head:
+            lines.append(" | ".join(head))
+
+        subj = info["subject"] or "—"
         if info["type"]:
-            subject_line += f" ({info['type']})"
-        lines.append(subject_line)
-        # Преподаватель
+            subj += f" ({info['type']})"
+        lines.append(subj)
+
         if info["teachers"]:
             lines.append(f"👤 {info['teachers']}")
-        # Аудитория
         if info["rooms"]:
             lines.append(f"🚪 {info['rooms']}")
-        # Подгруппа
         if info["subgroup"]:
             lines.append(f"👥 Подгруппа: {info['subgroup']}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
-
-
-def format_week(group_id: str, group_name: str, start: datetime, days_data: list) -> str:
-    """Формирует текст расписания на неделю."""
-    text = f"📅 Расписание на неделю\nГруппа: {group_name}\n\n"
-    for date, data in days_data:
-        text += format_day(data, date, group_name) + "\n"
-    return text
 
 
 # ============================================================
@@ -249,10 +240,7 @@ def get_institutes_keyboard():
 
 def get_groups_keyboard(institute_name: str):
     groups = GROUPS.get(institute_name, [])
-    kb = [
-        [InlineKeyboardButton(text=g["name"], callback_data=f"group_{g['id']}")]
-        for g in groups
-    ]
+    kb = [[InlineKeyboardButton(text=g["name"], callback_data=f"group_{g['id']}")] for g in groups]
     kb.append([InlineKeyboardButton(text="⬅️ Назад к институтам", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -261,7 +249,7 @@ def get_schedule_actions_keyboard(group_id: str):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📅 Расписание на сегодня", callback_data=f"today_{group_id}")],
         [InlineKeyboardButton(text="📅 Расписание на неделю", callback_data=f"week_{group_id}")],
-        [InlineKeyboardButton(text="⬅️ Назад к группам", callback_data="back_to_institutes")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")],
     ])
 
 
@@ -274,7 +262,6 @@ def _group_name_by_id(group_id: str) -> str:
 
 
 def _now_irkutsk() -> datetime:
-    """Текущее время в Иркутске (UTC+8)."""
     return datetime.now(timezone.utc) + timedelta(hours=8)
 
 
@@ -330,8 +317,11 @@ async def show_today(callback: CallbackQuery):
     await callback.message.edit_text("Загружаю расписание...")
 
     today = _now_irkutsk()
-    data = await fetch_schedule(group_id, today)
+    data = await fetch_schedule(group_id, today.year, today.month)
     text = format_day(data, today, group_name)
+
+    if len(text) > 4000:
+        text = text[:4000] + "\n\n… (обрезано)"
 
     await callback.message.edit_text(
         text,
@@ -350,21 +340,26 @@ async def show_week(callback: CallbackQuery):
     await callback.message.edit_text("Загружаю расписание на неделю...")
 
     today = _now_irkutsk()
-    # С понедельника текущей недели
     monday = today - timedelta(days=today.weekday())
 
-    days_data = []
+    # Запрашиваем расписание на текущий месяц (и, если неделя переходит, на следующий)
+    months_needed = {(monday.year, monday.month)}
+    sunday = monday + timedelta(days=6)
+    months_needed.add((sunday.year, sunday.month))
+
+    cache = {}
+    for (y, m) in months_needed:
+        cache[(y, m)] = await fetch_schedule(group_id, y, m)
+        await asyncio.sleep(0.3)
+
+    text = f"📅 Расписание на неделю\nГруппа: {group_name}\n\n"
     for i in range(7):
         d = monday + timedelta(days=i)
-        data = await fetch_schedule(group_id, d)
-        days_data.append((d, data))
-        await asyncio.sleep(0.3)  # небольшая пауза, чтобы не долбить сервер
+        data = cache.get((d.year, d.month))
+        text += format_day(data, d, group_name) + "\n"
 
-    text = format_week(group_id, group_name, monday, days_data)
-
-    # Telegram ограничивает сообщение 4096 символами — режем при необходимости
     if len(text) > 4000:
-        text = text[:4000] + "\n\n… (сообщение обрезано)"
+        text = text[:4000] + "\n\n… (обрезано)"
 
     await callback.message.edit_text(
         text,
@@ -395,6 +390,12 @@ async def help_cmd(message: Message):
 # ЗАПУСК
 # ============================================================
 async def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
     await dp.start_polling(bot)
 
 
