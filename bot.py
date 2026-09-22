@@ -42,16 +42,47 @@ GROUPS = {
     ]
 }
 
+# ============================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================
+def _now_irkutsk() -> datetime:
+    """Текущее время в Иркутске (UTC+8)."""
+    return datetime.now(timezone.utc) + timedelta(hours=8)
+
+
+def _group_name_by_id(group_id: str) -> str:
+    for groups in GROUPS.values():
+        for g in groups:
+            if g["id"] == group_id:
+                return g["name"]
+    return "Неизвестная группа"
+
+
+def _monday_of_week(d: datetime) -> datetime:
+    """Понедельник недели, в которую попадает дата d."""
+    return d - timedelta(days=d.weekday())
+
 
 # ============================================================
 # ЗАГРУЗКА И ПАРСИНГ
 # ============================================================
 async def fetch_page(group_id: str, target_date: datetime = None) -> str:
-    url = f"https://www.istu.edu/raspisanie/grup/{group_id}"
+    """
+    Скачивает HTML-страницу расписания группы.
+    Если target_date задан — добавляет ?date=YYYY-MM-DD,
+    чтобы сайт показал неделю, содержащую эту дату.
+    """
+    base = f"https://www.istu.edu/raspisanie/grup/{group_id}"
+    url = base
     if target_date:
-        url += f"?date={target_date.strftime('%Y-%m-%d')}"
+        url = f"{base}?date={target_date.strftime('%Y-%m-%d')}"
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0 Safari/537.36"
+        ),
         "Accept-Language": "ru-RU,ru;q=0.9",
     }
     async with aiohttp.ClientSession() as session:
@@ -61,9 +92,31 @@ async def fetch_page(group_id: str, target_date: datetime = None) -> str:
             return html
 
 
+def parse_week_range(soup: BeautifulSoup):
+    """Возвращает (start, end) — даты начала и конца показанной недели."""
+    start = end = None
+    for item in soup.find_all("div", class_="info-block-item"):
+        label = item.find("div", class_="info-block-item-label")
+        value = item.find("div", class_="info-block-item-value")
+        if not label or not value:
+            continue
+        ltxt = label.get_text(strip=True)
+        vtxt = value.get_text(strip=True)
+        if "Начало действия" in ltxt:
+            start = vtxt
+        elif "Окончание действия" in ltxt:
+            end = vtxt
+    return start, end
+
+
 def parse_schedule(html: str):
+    """
+    Возвращает (week_parity, days).
+    days = [{"date": "21.09.2026", "name": "Понедельник, 21 сентября", "lessons": [...]}]
+    """
     soup = BeautifulSoup(html, "html.parser")
 
+    # Чётность недели
     week_parity = "all"
     for item in soup.find_all("div", class_="info-block-item"):
         label = item.find("div", class_="info-block-item-label")
@@ -95,6 +148,7 @@ def parse_schedule(html: str):
                 elif "week-odd" in classes:
                     week_type = "odd"
 
+                # Пропускаем блоки, не совпадающие с чётностью показанной недели
                 if week_type != "all" and week_parity != "all" and week_type != week_parity:
                     continue
 
@@ -145,16 +199,21 @@ def format_day(day: dict) -> str:
         lines.append("")
         return "\n".join(lines)
 
+    # Группируем пары по времени
     by_time = {}
     for les in day["lessons"]:
         by_time.setdefault(les["time"], []).append(les)
 
-    for time_str in by_time:
+    for time_str in sorted(by_time.keys(), key=_time_sort_key):
         for les in by_time[time_str]:
             subj = les["subject"]
             if les["type"]:
                 subj += f" ({les['type']})"
             lines.append(f"{time_str} {subj}")
+
+            # Пометка о переносе (если есть слово «перенос»)
+            if "перенос" in subj.lower() or "перенес" in subj.lower():
+                lines[-1] = f"{time_str} [ПЕРЕНОС] {subj}"
 
             extras = []
             if les["teacher"]:
@@ -170,16 +229,12 @@ def format_day(day: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _now_irkutsk() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(hours=8)
-
-
-def _group_name_by_id(group_id: str) -> str:
-    for groups in GROUPS.values():
-        for g in groups:
-            if g["id"] == group_id:
-                return g["name"]
-    return "Неизвестная группа"
+def _time_sort_key(t: str) -> tuple:
+    """Ключ для сортировки пар по времени (8:15, 10:00, ...)."""
+    m = re.match(r"(\d+):(\d+)", t)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    return (99, 99)
 
 
 # ============================================================
@@ -265,12 +320,12 @@ async def back_to_institutes(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("today_"))
 async def show_today(callback: CallbackQuery):
     group_id = callback.data.split("_", 1)[1]
-    group_name = _group_name_by_id(group_id)
-
     await callback.message.edit_text("Загружаю...")
 
     try:
         html = await fetch_page(group_id)
+        soup = BeautifulSoup(html, "html.parser")
+        start, end = parse_week_range(soup)
         _, days = parse_schedule(html)
     except Exception as e:
         logging.exception("Ошибка парсинга")
@@ -286,13 +341,17 @@ async def show_today(callback: CallbackQuery):
     today_str = _now_irkutsk().strftime("%d.%m.%Y")
     day = next((d for d in days if d["date"] == today_str), None)
 
+    header = f"Сегодня {today_str}"
+    if start and end:
+        header += f" (неделя {start} - {end})"
+
     if day is None:
-        text = f"Сегодня ({today_str}) занятий нет."
+        text = f"{header}\n\nЗанятий нет."
     else:
-        text = format_day(day).strip()
+        text = f"{header}\n\n" + format_day(day).strip()
 
     await callback.message.edit_text(
-        text or "Занятий нет.",
+        text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
         ]),
@@ -304,17 +363,19 @@ async def show_today(callback: CallbackQuery):
 async def show_week(callback: CallbackQuery):
     # формат: week_{0|1}_{group_id}
     parts = callback.data.split("_", 2)
-    offset = int(parts[1])
+    offset = int(parts[1])  # 0 = текущая, 1 = следующая
     group_id = parts[2]
     group_name = _group_name_by_id(group_id)
 
     await callback.message.edit_text("Загружаю...")
 
     today = _now_irkutsk()
-    target = today + timedelta(days=7 * offset)
+    target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
 
     try:
-        html = await fetch_page(group_id, target_date=target)
+        html = await fetch_page(group_id, target_date=target_monday)
+        soup = BeautifulSoup(html, "html.parser")
+        start, end = parse_week_range(soup)
         _, days = parse_schedule(html)
     except Exception as e:
         logging.exception("Ошибка парсинга")
@@ -327,12 +388,21 @@ async def show_week(callback: CallbackQuery):
         await callback.answer()
         return
 
+    # Проверяем, ту ли неделю вернул сайт
+    requested_str = target_monday.strftime("%d.%m.%Y")
+    returned_ok = (start == requested_str) if start else False
+
+    title = "Текущая неделя" if offset == 0 else "Следующая неделя"
+    header = f"{title}\nГруппа: {group_name}"
+    if start and end:
+        header += f"\n{start} - {end}"
+    if not returned_ok and start:
+        header += f"\n(сайт отдал неделю с {start}, ожидалось с {requested_str})"
+
     if not days:
-        text = f"Расписание для группы {group_name} не найдено."
+        text = header + "\n\nРасписание не найдено."
     else:
-        title = "Текущая неделя" if offset == 0 else "Следующая неделя"
-        text = f"{title}\nГруппа: {group_name}\n\n"
-        text += "\n".join(format_day(d) for d in days)
+        text = header + "\n\n" + "\n".join(format_day(d) for d in days)
 
     if len(text) > 4000:
         text = text[:4000] + "\n… (обрезано)"
