@@ -1,9 +1,10 @@
 import asyncio
-import json
+import re
 import sys
 import logging
-import aiohttp
 from datetime import datetime, timedelta, timezone
+import aiohttp
+from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import (
@@ -12,16 +13,10 @@ from aiogram.types import (
 )
 
 # ============================================================
-# НАСТРОЙКИ
-# ============================================================
 TOKEN = "8953672814:AAG4cxGgLJRVv-EXzDip6cT7u6NO7vez18E"
-
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# ============================================================
-# ДАННЫЕ О ГРУППАХ (ИАМиТ, 1 курс)
-# ============================================================
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1",  "id": "478012"},
@@ -42,180 +37,149 @@ GROUPS = {
     ]
 }
 
-# ============================================================
-# ПОЛУЧЕНИЕ РАСПИСАНИЯ С САЙТА ИРНИТУ
-# Отправляем JSON напрямую: {"month":.., "year":.., "group_id":".."}
-# ============================================================
-async def fetch_schedule(group_id: str, year: int, month: int):
-    url = "https://www.istu.edu/Sys/Module/ScheduleClassList/v2/calendar.ajax.php"
-    payload = {"month": month, "year": year, "group_id": group_id}
-    headers = {
-        "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers) as response:
-                raw = await response.text()
-                logging.info(f"[DEBUG] status={response.status} url={url}")
-                logging.info(f"[DEBUG] payload={json.dumps(payload)}")
-                logging.info(f"[DEBUG] response={raw[:2000]}")
-                if response.status == 200:
-                    try:
-                        return json.loads(raw)
-                    except json.JSONDecodeError:
-                        logging.error("[DEBUG] Ответ не JSON")
-                        return None
-                return None
-    except Exception as e:
-        logging.error(f"[DEBUG] Ошибка запроса: {e}")
-        return None
-
-
-# ============================================================
-# ВЫТАСКИВАНИЕ ПОЛЕЙ ИЗ ОБЪЕКТА ПАРЫ
-# ============================================================
-def _val(obj, *keys, default=""):
-    """Возвращает первое найденное значение по ключам."""
-    if not isinstance(obj, dict):
-        return default
-    for k in keys:
-        if k in obj and obj[k]:
-            return obj[k]
-    return default
-
-
-def _extract_lesson(lesson: dict) -> dict:
-    # Номер пары
-    number = _val(lesson, "number", "num", "pair", "pair_number")
-
-    # Время
-    t_start = _val(lesson, "time_start", "timeStart", "start", "begin")
-    t_end = _val(lesson, "time_end", "timeEnd", "end", "finish")
-    if not t_start and lesson.get("time"):
-        t_start = lesson["time"]
-    time_str = f"{t_start}–{t_end}" if t_start and t_end else (t_start or "")
-
-    # Предмет
-    subject = _val(lesson, "name", "subject", "discipline", "title", "lesson_name")
-
-    # Тип
-    ltype = _val(lesson, "type", "lesson_type", "kind", "form")
-
-    # Преподаватели
-    teachers = _val(lesson, "teachers", "teacher", "prepod", "prepods", default=[])
-    if isinstance(teachers, str):
-        teachers = [{"name": teachers}]
-    if isinstance(teachers, dict):
-        teachers = [teachers]
-    t_str = ", ".join([t.get("name", "") if isinstance(t, dict) else str(t) for t in teachers if t])
-
-    # Аудитории
-    rooms = _val(lesson, "auditories", "auditoriums", "rooms", "room", "audience", default=[])
-    if isinstance(rooms, str):
-        rooms = [{"name": rooms}]
-    if isinstance(rooms, dict):
-        rooms = [rooms]
-    r_str = ", ".join([r.get("name", "") if isinstance(r, dict) else str(r) for r in rooms if r])
-
-    # Подгруппа
-    subgroup = _val(lesson, "subgroup", "sub_group", "podgruppa")
-
-    return {
-        "number": number, "time": time_str, "subject": subject,
-        "type": ltype, "teachers": t_str, "rooms": r_str, "subgroup": subgroup,
-    }
-
-
-# ============================================================
-# ПОИСК ДНЯ И ПАР В ОТВЕТЕ СЕРВЕРА
-# ============================================================
-def _find_day(data, target_date: datetime):
-    """Ищет в ответе сервера день, соответствующий target_date."""
-    if not data:
-        return None
-
-    target_iso = target_date.strftime("%Y-%m-%d")
-    target_dmy = target_date.strftime("%d.%m.%Y")
-
-    # Собираем все списки дней, где бы они ни лежали
-    candidates = []
-    if isinstance(data, list):
-        candidates = data
-    elif isinstance(data, dict):
-        for key in ("dates", "days", "items", "schedule", "list", "data"):
-            v = data.get(key)
-            if isinstance(v, list):
-                candidates = v
-                break
-            if isinstance(v, dict):
-                candidates = list(v.values())
-                break
-
-    for d in candidates:
-        if not isinstance(d, dict):
-            continue
-        date_str = str(_val(d, "date", "day", "date_str", "dt"))
-        if target_iso in date_str or target_dmy in date_str:
-            return d
-
-    return None
-
-
-def _get_lessons(day_obj):
-    if not isinstance(day_obj, dict):
-        return []
-    for key in ("items", "lessons", "classes", "pairs", "schedule", "list", "rows"):
-        v = day_obj.get(key)
-        if isinstance(v, list):
-            return v
-    return []
-
-
 WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
 
-def format_day(data, date: datetime, group_name: str) -> str:
-    header = f"📅 {WEEKDAYS[date.weekday()]}, {date.strftime('%d.%m.%Y')}"
+# ============================================================
+# СКАЧИВАНИЕ HTML И ПАРСИНГ
+# ============================================================
+async def fetch_page(group_id: str) -> str:
+    url = f"https://www.istu.edu/raspisanie/grup/{group_id}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "ru-RU,ru;q=0.9",
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            html = await response.text()
+            logging.info(f"[DEBUG] GET {url} → {response.status}, len={len(html)}")
+            return html
 
-    day_obj = _find_day(data, date)
-    if day_obj is None:
-        return f"{header}\n\nЗанятий нет.\n"
 
-    lessons = _get_lessons(day_obj)
-    if not lessons:
-        return f"{header}\n\nЗанятий нет.\n"
+def parse_schedule(html: str):
+    """Возвращает (week_parity, days) где days = [{date, name, lessons:[...]}]."""
+    soup = BeautifulSoup(html, "html.parser")
 
-    lines = [header, ""]
-    for lesson in lessons:
-        if not isinstance(lesson, dict):
-            continue
-        info = _extract_lesson(lesson)
+    # Чётность недели
+    week_parity = "all"
+    for item in soup.find_all("div", class_="info-block-item"):
+        label = item.find("div", class_="info-block-item-label")
+        value = item.find("div", class_="info-block-item-value")
+        if label and value and "Показана неделя" in label.get_text():
+            txt = value.get_text(strip=True).lower()
+            week_parity = "odd" if "нечет" in txt else "even"
 
-        head = []
-        if info["number"]:
-            head.append(f"{info['number']} пара")
-        if info["time"]:
-            head.append(info["time"])
-        if head:
-            lines.append(" | ".join(head))
+    days = []
+    for day_div in soup.find_all("div", class_="sch-list-day"):
+        # Дата
+        date_str = ""
+        params = day_div.get("data-params", "")
+        m = re.search(r"'date'\s*:\s*'([^']+)'", params)
+        if m:
+            date_str = m.group(1)
 
-        subj = info["subject"] or "—"
-        if info["type"]:
-            subj += f" ({info['type']})"
-        lines.append(subj)
+        header = day_div.find("h2", class_="sch-list-day-header")
+        day_name = header.get_text(strip=True) if header else date_str
 
-        if info["teachers"]:
-            lines.append(f"👤 {info['teachers']}")
-        if info["rooms"]:
-            lines.append(f"🚪 {info['rooms']}")
-        if info["subgroup"]:
-            lines.append(f"👥 Подгруппа: {info['subgroup']}")
+        lessons = []
+        # Ищем все sch-list-item (время + пары)
+        for item in day_div.find_all("div", class_="sch-list-item"):
+            time_div = item.find("div", class_="sch-list-item-time-inner")
+            time_str = time_div.get_text(strip=True) if time_div else ""
+
+            # Внутри item — блоки по чётности
+            for week_block in item.find_all("div", class_="sch-list-item-week"):
+                classes = week_block.get("class", [])
+                week_type = "all"
+                if "week-even" in classes:
+                    week_type = "even"
+                elif "week-odd" in classes:
+                    week_type = "odd"
+
+                # Пропускаем несовпадающую чётность
+                if week_type != "all" and week_parity != "all" and week_type != week_parity:
+                    continue
+
+                for cls in week_block.find_all("div", class_="schcls-item"):
+                    if "schcls-empty" in cls.get("class", []):
+                        continue
+
+                    name_div = cls.find("div", class_="schcls-item-name")
+                    subject = name_div.get_text(strip=True) if name_div else ""
+
+                    type_div = cls.find("div", class_="schcls-item-distype")
+                    lesson_type = type_div.get_text(strip=True) if type_div else ""
+
+                    prepod_div = cls.find("div", class_="schcls-item-prepod")
+                    teacher = prepod_div.get_text(strip=True) if prepod_div else ""
+
+                    group_div = cls.find("div", class_="schcls-item-group")
+                    group_text = group_div.get_text(strip=True) if group_div else ""
+                    subgroup = ""
+                    sm = re.search(r"подгруппа\s+(\d+)", group_text)
+                    if sm:
+                        subgroup = sm.group(1)
+
+                    aud_div = cls.find("div", class_="schcls-item-aud")
+                    auditorium = aud_div.get_text(strip=True) if aud_div else ""
+
+                    lessons.append({
+                        "time": time_str,
+                        "subject": subject,
+                        "type": lesson_type,
+                        "teacher": teacher,
+                        "subgroup": subgroup,
+                        "auditorium": auditorium,
+                    })
+
+        days.append({"date": date_str, "name": day_name, "lessons": lessons})
+
+    return week_parity, days
+
+
+# ============================================================
+# ФОРМАТИРОВАНИЕ
+# ============================================================
+def format_day(day: dict) -> str:
+    lines = [f"📅 {day['name']}", ""]
+    if not day["lessons"]:
+        lines.append("Занятий нет.")
+        lines.append("")
+        return "\n".join(lines)
+
+    # Группируем по времени
+    by_time = {}
+    for les in day["lessons"]:
+        by_time.setdefault(les["time"], []).append(les)
+
+    for time_str in by_time:
+        lines.append(f"🕐 {time_str}")
+        for les in by_time[time_str]:
+            subj = les["subject"]
+            if les["type"]:
+                subj += f" ({les['type']})"
+            lines.append(f"   • {subj}")
+            if les["teacher"]:
+                lines.append(f"     👤 {les['teacher']}")
+            if les["auditorium"]:
+                lines.append(f"     🚪 {les['auditorium']}")
+            if les["subgroup"]:
+                lines.append(f"     👥 Подгруппа: {les['subgroup']}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _now_irkutsk() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(hours=8)
+
+
+def _group_name_by_id(group_id: str) -> str:
+    for groups in GROUPS.values():
+        for g in groups:
+            if g["id"] == group_id:
+                return g["name"]
+    return "Неизвестная группа"
 
 
 # ============================================================
@@ -251,18 +215,6 @@ def get_schedule_actions_keyboard(group_id: str):
         [InlineKeyboardButton(text="📅 Расписание на неделю", callback_data=f"week_{group_id}")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")],
     ])
-
-
-def _group_name_by_id(group_id: str) -> str:
-    for groups in GROUPS.values():
-        for g in groups:
-            if g["id"] == group_id:
-                return g["name"]
-    return "Неизвестная группа"
-
-
-def _now_irkutsk() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(hours=8)
 
 
 # ============================================================
@@ -316,9 +268,39 @@ async def show_today(callback: CallbackQuery):
 
     await callback.message.edit_text("Загружаю расписание...")
 
+    try:
+        html = await fetch_page(group_id)
+        _, days = parse_schedule(html)
+    except Exception as e:
+        logging.exception("Ошибка парсинга")
+        await callback.message.edit_text(
+            f"Не удалось загрузить расписание: {e}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
+            ]),
+        )
+        await callback.answer()
+        return
+
     today = _now_irkutsk()
-    data = await fetch_schedule(group_id, today.year, today.month)
-    text = format_day(data, today, group_name)
+    today_str = today.strftime("%d.%m.%Y")
+
+    # Ищем сегодняшний день
+    day = None
+    for d in days:
+        if d["date"] == today_str:
+            day = d
+            break
+
+    if day is None:
+        # Если сегодня нет в расписании — покажем первый день недели
+        if days:
+            text = f"📅 На {today_str} занятий нет.\n\nРасписание на текущую неделю:\n\n"
+            text += "\n".join(format_day(d) for d in days)
+        else:
+            text = f"📅 На {today_str} занятий нет."
+    else:
+        text = format_day(day)
 
     if len(text) > 4000:
         text = text[:4000] + "\n\n… (обрезано)"
@@ -339,24 +321,25 @@ async def show_week(callback: CallbackQuery):
 
     await callback.message.edit_text("Загружаю расписание на неделю...")
 
-    today = _now_irkutsk()
-    monday = today - timedelta(days=today.weekday())
+    try:
+        html = await fetch_page(group_id)
+        _, days = parse_schedule(html)
+    except Exception as e:
+        logging.exception("Ошибка парсинга")
+        await callback.message.edit_text(
+            f"Не удалось загрузить расписание: {e}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
+            ]),
+        )
+        await callback.answer()
+        return
 
-    # Запрашиваем расписание на текущий месяц (и, если неделя переходит, на следующий)
-    months_needed = {(monday.year, monday.month)}
-    sunday = monday + timedelta(days=6)
-    months_needed.add((sunday.year, sunday.month))
-
-    cache = {}
-    for (y, m) in months_needed:
-        cache[(y, m)] = await fetch_schedule(group_id, y, m)
-        await asyncio.sleep(0.3)
-
-    text = f"📅 Расписание на неделю\nГруппа: {group_name}\n\n"
-    for i in range(7):
-        d = monday + timedelta(days=i)
-        data = cache.get((d.year, d.month))
-        text += format_day(data, d, group_name) + "\n"
+    if not days:
+        text = f"📅 Расписание для группы {group_name} не найдено."
+    else:
+        text = f"📅 Расписание на неделю\nГруппа: {group_name}\n\n"
+        text += "\n".join(format_day(d) for d in days)
 
     if len(text) > 4000:
         text = text[:4000] + "\n\n… (обрезано)"
@@ -386,8 +369,6 @@ async def help_cmd(message: Message):
     )
 
 
-# ============================================================
-# ЗАПУСК
 # ============================================================
 async def main():
     logging.basicConfig(
