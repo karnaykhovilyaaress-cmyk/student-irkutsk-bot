@@ -42,11 +42,11 @@ GROUPS = {
     ]
 }
 
+
 # ============================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================================
 def _now_irkutsk() -> datetime:
-    """Текущее время в Иркутске (UTC+8)."""
     return datetime.now(timezone.utc) + timedelta(hours=8)
 
 
@@ -59,41 +59,20 @@ def _group_name_by_id(group_id: str) -> str:
 
 
 def _monday_of_week(d: datetime) -> datetime:
-    """Понедельник недели, в которую попадает дата d."""
     return d - timedelta(days=d.weekday())
 
 
+def _time_sort_key(t: str) -> tuple:
+    m = re.match(r"(\d+):(\d+)", t)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    return (99, 99)
+
+
 # ============================================================
-# ЗАГРУЗКА И ПАРСИНГ
+# ПАРСИНГ
 # ============================================================
-async def fetch_page(group_id: str, target_date: datetime = None) -> str:
-    """
-    Скачивает HTML-страницу расписания группы.
-    Если target_date задан — добавляет ?date=YYYY-MM-DD,
-    чтобы сайт показал неделю, содержащую эту дату.
-    """
-    base = f"https://www.istu.edu/raspisanie/grup/{group_id}"
-    url = base
-    if target_date:
-        url = f"{base}?date={target_date.strftime('%Y-%m-%d')}"
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0 Safari/537.36"
-        ),
-        "Accept-Language": "ru-RU,ru;q=0.9",
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
-            html = await response.text()
-            logging.info(f"[DEBUG] GET {url} -> {response.status}, len={len(html)}")
-            return html
-
-
 def parse_week_range(soup: BeautifulSoup):
-    """Возвращает (start, end) — даты начала и конца показанной недели."""
     start = end = None
     for item in soup.find_all("div", class_="info-block-item"):
         label = item.find("div", class_="info-block-item-label")
@@ -110,13 +89,8 @@ def parse_week_range(soup: BeautifulSoup):
 
 
 def parse_schedule(html: str):
-    """
-    Возвращает (week_parity, days).
-    days = [{"date": "21.09.2026", "name": "Понедельник, 21 сентября", "lessons": [...]}]
-    """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Чётность недели
     week_parity = "all"
     for item in soup.find_all("div", class_="info-block-item"):
         label = item.find("div", class_="info-block-item-label")
@@ -148,7 +122,6 @@ def parse_schedule(html: str):
                 elif "week-odd" in classes:
                     week_type = "odd"
 
-                # Пропускаем блоки, не совпадающие с чётностью показанной недели
                 if week_type != "all" and week_parity != "all" and week_type != week_parity:
                     continue
 
@@ -190,6 +163,64 @@ def parse_schedule(html: str):
 
 
 # ============================================================
+# ЗАГРУЗКА HTML С ПОДБОРОМ НЕДЕЛИ
+# ============================================================
+async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
+    """
+    Пытается получить HTML расписания на неделю, начинающуюся с target_monday.
+    Перебирает разные форматы URL и проверяет, что сайт вернул нужную неделю.
+    """
+    base = f"https://www.istu.edu/raspisanie/grup/{group_id}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0 Safari/537.36"
+        ),
+        "Accept-Language": "ru-RU,ru;q=0.9",
+    }
+
+    target_str = target_monday.strftime("%d.%m.%Y")
+
+    # Форматы URL, которые попробуем по очереди
+    url_variants = [
+        f"{base}?date={target_monday.strftime('%Y-%m-%d')}",
+        f"{base}?date={target_str}",
+        f"{base}?date={target_monday.year}-{target_monday.month}-{target_monday.day}",
+        base,  # последний вариант — базовая страница
+    ]
+
+    async with aiohttp.ClientSession() as session:
+        # Первый заход — чтобы получить cookies
+        try:
+            async with session.get(base, headers=headers) as response:
+                await response.text()
+        except Exception as e:
+            logging.error(f"[WEEK] Warm-up failed: {e}")
+
+        best_html = None
+        for url in url_variants:
+            try:
+                async with session.get(url, headers=headers) as response:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, "html.parser")
+                    start, end = parse_week_range(soup)
+                    logging.info(f"[WEEK] {url} -> start={start}, end={end}, len={len(html)}")
+
+                    if start == target_str:
+                        logging.info(f"[WEEK] OK: нужная неделя получена через {url}")
+                        return html
+
+                    if best_html is None:
+                        best_html = html
+            except Exception as e:
+                logging.error(f"[WEEK] {url} failed: {e}")
+
+        logging.warning(f"[WEEK] Не удалось получить неделю с {target_str}, отдаю что есть")
+        return best_html or ""
+
+
+# ============================================================
 # ФОРМАТИРОВАНИЕ
 # ============================================================
 def format_day(day: dict) -> str:
@@ -199,7 +230,6 @@ def format_day(day: dict) -> str:
         lines.append("")
         return "\n".join(lines)
 
-    # Группируем пары по времени
     by_time = {}
     for les in day["lessons"]:
         by_time.setdefault(les["time"], []).append(les)
@@ -209,11 +239,11 @@ def format_day(day: dict) -> str:
             subj = les["subject"]
             if les["type"]:
                 subj += f" ({les['type']})"
-            lines.append(f"{time_str} {subj}")
 
-            # Пометка о переносе (если есть слово «перенос»)
             if "перенос" in subj.lower() or "перенес" in subj.lower():
-                lines[-1] = f"{time_str} [ПЕРЕНОС] {subj}"
+                lines.append(f"{time_str} [ПЕРЕНОС] {subj}")
+            else:
+                lines.append(f"{time_str} {subj}")
 
             extras = []
             if les["teacher"]:
@@ -227,14 +257,6 @@ def format_day(day: dict) -> str:
             lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
-
-
-def _time_sort_key(t: str) -> tuple:
-    """Ключ для сортировки пар по времени (8:15, 10:00, ...)."""
-    m = re.match(r"(\d+):(\d+)", t)
-    if m:
-        return (int(m.group(1)), int(m.group(2)))
-    return (99, 99)
 
 
 # ============================================================
@@ -322,8 +344,11 @@ async def show_today(callback: CallbackQuery):
     group_id = callback.data.split("_", 1)[1]
     await callback.message.edit_text("Загружаю...")
 
+    today = _now_irkutsk()
+    monday = _monday_of_week(today)
+
     try:
-        html = await fetch_page(group_id)
+        html = await fetch_week_html(group_id, monday)
         soup = BeautifulSoup(html, "html.parser")
         start, end = parse_week_range(soup)
         _, days = parse_schedule(html)
@@ -338,7 +363,7 @@ async def show_today(callback: CallbackQuery):
         await callback.answer()
         return
 
-    today_str = _now_irkutsk().strftime("%d.%m.%Y")
+    today_str = today.strftime("%d.%m.%Y")
     day = next((d for d in days if d["date"] == today_str), None)
 
     header = f"Сегодня {today_str}"
@@ -361,7 +386,6 @@ async def show_today(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("week_"))
 async def show_week(callback: CallbackQuery):
-    # формат: week_{0|1}_{group_id}
     parts = callback.data.split("_", 2)
     offset = int(parts[1])  # 0 = текущая, 1 = следующая
     group_id = parts[2]
@@ -373,7 +397,7 @@ async def show_week(callback: CallbackQuery):
     target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
 
     try:
-        html = await fetch_page(group_id, target_date=target_monday)
+        html = await fetch_week_html(group_id, target_monday)
         soup = BeautifulSoup(html, "html.parser")
         start, end = parse_week_range(soup)
         _, days = parse_schedule(html)
@@ -388,7 +412,6 @@ async def show_week(callback: CallbackQuery):
         await callback.answer()
         return
 
-    # Проверяем, ту ли неделю вернул сайт
     requested_str = target_monday.strftime("%d.%m.%Y")
     returned_ok = (start == requested_str) if start else False
 
@@ -442,6 +465,9 @@ async def main():
         stream=sys.stdout,
         force=True,
     )
+    # Удаляем webhook — иначе long polling не работает
+    await bot.delete_webhook(drop_pending_updates=True)
+    logging.info("Webhook удалён, запускаю polling")
     await dp.start_polling(bot)
 
 
