@@ -17,13 +17,12 @@ from aiogram.types import (
 # НАСТРОЙКИ
 # ============================================================
 TOKEN = "8953672814:AAG4cxGgLJRVv-EXzDip6cT7u6NO7vez18E"
-ADMIN_ID = 0  # ← ВСТАВЬ СВОЙ TELEGRAM ID (узнать через /myid в боте)
+ADMIN_ID = 6014557174  # ← ВСТАВЬ СВОЙ TELEGRAM ID (узнать через /myid в боте)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 DB_PATH = "users.db"
 
-# Время для уведомлений (час:минута)
 NOTIFY_PRESETS = [
     ("7:00",  7, 0),
     ("8:00",  8, 0),
@@ -116,7 +115,6 @@ def get_notify_time(user_id: int):
 
 
 def get_users_to_notify(hour: int, minute: int):
-    """Возвращает [(user_id, group_id, group_name), ...] для отправки уведомлений."""
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT user_id, group_id, group_name FROM users "
@@ -138,6 +136,13 @@ def get_stats():
     ).fetchone()[0]
     conn.close()
     return total, with_group, with_notify
+
+
+def get_all_user_ids():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("SELECT user_id FROM users").fetchall()
+    conn.close()
+    return [r[0] for r in rows]
 
 
 # ============================================================
@@ -559,7 +564,6 @@ def format_day(day: dict) -> str:
 
 
 async def send_schedule_for_date(user_id: int, group_id: str, group_name: str, target_date: datetime, title: str):
-    """Отправляет расписание на указанную дату конкретному пользователю."""
     monday = _monday_of_week(target_date)
     html = await fetch_week_html(group_id, monday)
     if not html:
@@ -682,6 +686,47 @@ async def cmd_stats(message: Message):
         f"Всего пользователей: {total}\n"
         f"С сохранённой группой: {with_group}\n"
         f"С уведомлениями: {with_notify}"
+    )
+
+
+@dp.message(Command("broadcast"))
+async def cmd_broadcast(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Команда только для администратора.")
+        return
+
+    text = message.text.replace("/broadcast", "", 1).strip()
+    if not text:
+        await message.answer(
+            "Использование:\n"
+            "/broadcast Текст сообщения\n\n"
+            "Например:\n"
+            "/broadcast Привет! Бот теперь показывает расписание на следующую неделю."
+        )
+        return
+
+    user_ids = get_all_user_ids()
+    if not user_ids:
+        await message.answer("В базе нет пользователей.")
+        return
+
+    status_msg = await message.answer(f"Отправляю {len(user_ids)} пользователям...")
+
+    sent = 0
+    failed = 0
+    for uid in user_ids:
+        try:
+            await bot.send_message(uid, text)
+            sent += 1
+        except Exception as e:
+            failed += 1
+            logging.warning(f"[BROADCAST] Не удалось отправить {uid}: {e}")
+        await asyncio.sleep(0.05)
+
+    await status_msg.edit_text(
+        f"Рассылка завершена.\n\n"
+        f"Отправлено: {sent}\n"
+        f"Не доставлено: {failed}"
     )
 
 
@@ -896,8 +941,7 @@ async def help_cmd(message: Message):
 # ФОНОВАЯ ЗАДАЧА — РАССЫЛКА УВЕДОМЛЕНИЙ
 # ============================================================
 async def notification_loop():
-    """Каждую минуту проверяет: кому сейчас надо отправить уведомление."""
-    last_sent_key = None  # чтобы не отправлять дважды в одну минуту
+    last_sent_key = None
     while True:
         try:
             now = _now_irkutsk()
@@ -906,7 +950,7 @@ async def notification_loop():
             if current_key != last_sent_key:
                 users = get_users_to_notify(now.hour, now.minute)
                 if users:
-                    logging.info(f"[NOTIFY] Минута {now.hour:02d}:{now.minute:02d}, получателей: {len(users)}")
+                    logging.info(f"[NOTIFY] {now.hour:02d}:{now.minute:02d}, получателей: {len(users)}")
                     tomorrow = now + timedelta(days=1)
                     for user_id, group_id, group_name in users:
                         try:
@@ -935,7 +979,6 @@ async def main():
     init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, запускаю polling")
-    # Запускаем фоновую рассылку
     asyncio.create_task(notification_loop())
     await dp.start_polling(bot)
 
