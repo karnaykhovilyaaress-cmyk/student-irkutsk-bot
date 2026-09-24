@@ -1,6 +1,7 @@
 import asyncio
 import re
 import sys
+import sqlite3
 import logging
 from datetime import datetime, timedelta, timezone
 import aiohttp
@@ -18,6 +19,52 @@ from aiogram.types import (
 TOKEN = "8953672814:AAG4cxGgLJRVv-EXzDip6cT7u6NO7vez18E"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+DB_PATH = "users.db"
+
+
+# ============================================================
+# БАЗА ДАННЫХ (SQLite)
+# ============================================================
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            group_id TEXT NOT NULL,
+            group_name TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_user_group(user_id: int, group_id: str, group_name: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO users (user_id, group_id, group_name) VALUES (?, ?, ?)",
+        (user_id, group_id, group_name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user_group(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT group_id, group_name FROM users WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return row  # (group_id, group_name) или None
+
+
+def delete_user_group(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
 
 # ============================================================
 # ГРУППЫ ПО ИНСТИТУТАМ
@@ -478,7 +525,7 @@ def format_day(day: dict) -> str:
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Расписание")],
+            [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
             [KeyboardButton(text="Дедлайны"), KeyboardButton(text="Помощь")],
         ],
         resize_keyboard=True,
@@ -523,13 +570,19 @@ def get_groups_keyboard(institute_name: str, page: int = 0):
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
-def get_schedule_actions_keyboard(group_id: str):
-    return InlineKeyboardMarkup(inline_keyboard=[
+def get_schedule_actions_keyboard(group_id: str, is_my_group: bool = False):
+    buttons = [
         [InlineKeyboardButton(text="Сегодня", callback_data=f"today_{group_id}")],
         [InlineKeyboardButton(text="Текущая неделя", callback_data=f"week_0_{group_id}")],
         [InlineKeyboardButton(text="Следующая неделя", callback_data=f"week_1_{group_id}")],
-        [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")],
-    ])
+    ]
+    if is_my_group:
+        buttons.append([InlineKeyboardButton(text="Забыть группу", callback_data="forget_my")])
+        buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
+    else:
+        buttons.append([InlineKeyboardButton(text="Сделать моей группой", callback_data=f"save_my_{group_id}")])
+        buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 # ============================================================
@@ -537,9 +590,15 @@ def get_schedule_actions_keyboard(group_id: str):
 # ============================================================
 @dp.message(CommandStart())
 async def start(message: Message):
+    saved = get_user_group(message.from_user.id)
+    hint = ""
+    if saved:
+        hint = f"\n\nТвоя группа: {saved[1]}"
+    else:
+        hint = "\n\nСовет: выбери группу через «Расписание» и нажми «Сделать моей группой»."
     await message.answer(
         f"Привет, {message.from_user.full_name}!\n\n"
-        "Я бот для студентов ИРНИТУ. Выбери действие на клавиатуре ниже.",
+        "Я бот для студентов ИРНИТУ. Выбери действие на клавиатуре ниже." + hint,
         reply_markup=get_main_keyboard(),
     )
 
@@ -547,6 +606,25 @@ async def start(message: Message):
 @dp.message(F.text == "Расписание")
 async def show_institutes(message: Message):
     await message.answer("Выбери институт:", reply_markup=get_institutes_keyboard())
+
+
+@dp.message(F.text == "Моя группа")
+async def show_my_group(message: Message):
+    saved = get_user_group(message.from_user.id)
+    if not saved:
+        await message.answer(
+            "У тебя пока нет сохранённой группы.\n\n"
+            "Выбери её через «Расписание» → институт → группу, "
+            "затем нажми «Сделать моей группой».",
+            reply_markup=get_main_keyboard(),
+        )
+        return
+
+    group_id, group_name = saved
+    await message.answer(
+        f"Моя группа: {group_name}\n\nЧто показать?",
+        reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True),
+    )
 
 
 @dp.callback_query(F.data.startswith("institute_"))
@@ -580,11 +658,37 @@ async def noop(callback: CallbackQuery):
 async def process_group(callback: CallbackQuery):
     group_id = callback.data.split("_", 1)[1]
     group_name = _group_name_by_id(group_id)
+    saved = get_user_group(callback.from_user.id)
+    is_my = saved is not None and saved[0] == group_id
     await callback.message.edit_text(
         f"Группа: {group_name}\n\nЧто показать?",
-        reply_markup=get_schedule_actions_keyboard(group_id),
+        reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=is_my),
     )
     await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("save_my_"))
+async def save_my_group(callback: CallbackQuery):
+    group_id = callback.data.split("_", 2)[2]
+    group_name = _group_name_by_id(group_id)
+    save_user_group(callback.from_user.id, group_id, group_name)
+    await callback.message.edit_text(
+        f"✅ Группа {group_name} сохранена как твоя.\n\n"
+        f"Теперь в главном меню есть кнопка «Моя группа» — там быстрое расписание.\n\n"
+        f"Что показать?",
+        reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True),
+    )
+    await callback.answer("Сохранено")
+
+
+@dp.callback_query(F.data == "forget_my")
+async def forget_my_group(callback: CallbackQuery):
+    delete_user_group(callback.from_user.id)
+    await callback.message.edit_text(
+        "Группа удалена из сохранённых.\n\n"
+        "Можешь выбрать новую через «Расписание» и нажать «Сделать моей группой».",
+    )
+    await callback.answer("Удалено")
 
 
 @dp.callback_query(F.data == "back_to_institutes")
@@ -632,7 +736,7 @@ async def show_today(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
+            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
         ]),
     )
     await callback.answer()
@@ -682,7 +786,7 @@ async def show_week(callback: CallbackQuery):
     await callback.message.edit_text(
         text.strip(),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
+            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
         ]),
     )
     await callback.answer()
@@ -698,6 +802,7 @@ async def help_cmd(message: Message):
     await message.answer(
         "Я умею:\n"
         "- Показывать расписание по всем институтам ИРНИТУ\n"
+        "- Запоминать твою группу (кнопка «Моя группа»)\n"
         "- Скоро: напоминать о дедлайнах\n\n"
         "Просто нажимай кнопки.",
         reply_markup=get_main_keyboard(),
@@ -714,6 +819,7 @@ async def main():
         stream=sys.stdout,
         force=True,
     )
+    init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, запускаю polling")
     await dp.start_polling(bot)
