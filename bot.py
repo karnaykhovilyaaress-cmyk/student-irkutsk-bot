@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import aiohttp
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message, ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -17,33 +17,54 @@ from aiogram.types import (
 # НАСТРОЙКИ
 # ============================================================
 TOKEN = "8953672814:AAG4cxGgLJRVv-EXzDip6cT7u6NO7vez18E"
+ADMIN_ID = 0  # ← ВСТАВЬ СВОЙ TELEGRAM ID (узнать через /myid в боте)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 DB_PATH = "users.db"
 
+# Время для уведомлений (час:минута)
+NOTIFY_PRESETS = [
+    ("7:00",  7, 0),
+    ("8:00",  8, 0),
+    ("19:00", 19, 0),
+    ("20:00", 20, 0),
+    ("21:00", 21, 0),
+    ("22:00", 22, 0),
+]
+
 
 # ============================================================
-# БАЗА ДАННЫХ (SQLite)
+# БАЗА ДАННЫХ
 # ============================================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            group_id TEXT NOT NULL,
-            group_name TEXT NOT NULL
+            group_id TEXT,
+            group_name TEXT,
+            notify_hour INTEGER DEFAULT -1,
+            notify_minute INTEGER DEFAULT 0
         )
     """)
     conn.commit()
     conn.close()
 
 
+def _ensure_user(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    conn.close()
+
+
 def save_user_group(user_id: int, group_id: str, group_name: str):
+    _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        "INSERT OR REPLACE INTO users (user_id, group_id, group_name) VALUES (?, ?, ?)",
-        (user_id, group_id, group_name),
+        "UPDATE users SET group_id=?, group_name=? WHERE user_id=?",
+        (group_id, group_name, user_id),
     )
     conn.commit()
     conn.close()
@@ -52,18 +73,71 @@ def save_user_group(user_id: int, group_id: str, group_name: str):
 def get_user_group(user_id: int):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT group_id, group_name FROM users WHERE user_id = ?",
+        "SELECT group_id, group_name FROM users WHERE user_id=?",
         (user_id,),
     ).fetchone()
     conn.close()
-    return row  # (group_id, group_name) или None
+    if row and row[0]:
+        return row
+    return None
 
 
 def delete_user_group(user_id: int):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+    conn.execute(
+        "UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1 WHERE user_id=?",
+        (user_id,),
+    )
     conn.commit()
     conn.close()
+
+
+def set_notify_time(user_id: int, hour: int, minute: int):
+    _ensure_user(user_id)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE users SET notify_hour=?, notify_minute=? WHERE user_id=?",
+        (hour, minute, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_notify_time(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT notify_hour, notify_minute FROM users WHERE user_id=?",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    if row and row[0] is not None and row[0] >= 0:
+        return row
+    return None
+
+
+def get_users_to_notify(hour: int, minute: int):
+    """Возвращает [(user_id, group_id, group_name), ...] для отправки уведомлений."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT user_id, group_id, group_name FROM users "
+        "WHERE notify_hour=? AND notify_minute=? AND group_id IS NOT NULL",
+        (hour, minute),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_stats():
+    conn = sqlite3.connect(DB_PATH)
+    total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    with_group = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE group_id IS NOT NULL"
+    ).fetchone()[0]
+    with_notify = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE notify_hour >= 0 AND group_id IS NOT NULL"
+    ).fetchone()[0]
+    conn.close()
+    return total, with_group, with_notify
 
 
 # ============================================================
@@ -296,24 +370,14 @@ GROUPS = {
     ],
 }
 
-# ============================================================
-# ВРЕМЯ ПАР (начало -> конец, 90 минут)
-# ============================================================
 LESSON_TIMES = {
-    "8:15":  "9:45",
-    "8:30":  "10:00",
-    "10:00": "11:30",
-    "10:10": "11:40",
-    "11:45": "13:15",
-    "12:00": "13:30",
-    "13:45": "15:15",
-    "14:00": "15:30",
-    "15:30": "17:00",
-    "15:45": "17:15",
-    "17:10": "18:40",
-    "17:25": "18:55",
-    "18:50": "20:20",
-    "19:05": "20:35",
+    "8:15":  "9:45",  "8:30":  "10:00",
+    "10:00": "11:30", "10:10": "11:40",
+    "11:45": "13:15", "12:00": "13:30",
+    "13:45": "15:15", "14:00": "15:30",
+    "15:30": "17:00", "15:45": "17:15",
+    "17:10": "18:40", "17:25": "18:55",
+    "18:50": "20:20", "19:05": "20:35",
 }
 
 
@@ -351,7 +415,7 @@ def _time_range(t: str) -> str:
 # ============================================================
 # ПАРСИНГ
 # ============================================================
-def parse_week_range(soup: BeautifulSoup):
+def parse_week_range(soup):
     start = end = None
     for item in soup.find_all("div", class_="info-block-item"):
         label = item.find("div", class_="info-block-item-label")
@@ -428,12 +492,8 @@ def parse_schedule(html: str):
                     auditorium = aud_div.get_text(strip=True) if aud_div else ""
 
                     lessons.append({
-                        "time": time_str,
-                        "subject": subject,
-                        "type": lesson_type,
-                        "teacher": teacher,
-                        "subgroup": subgroup,
-                        "auditorium": auditorium,
+                        "time": time_str, "subject": subject, "type": lesson_type,
+                        "teacher": teacher, "subgroup": subgroup, "auditorium": auditorium,
                     })
 
         days.append({"date": date_str, "name": day_name, "lessons": lessons})
@@ -441,22 +501,13 @@ def parse_schedule(html: str):
     return week_parity, days
 
 
-# ============================================================
-# ЗАГРУЗКА HTML
-# ============================================================
 async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
     date_str = target_monday.strftime("%d.%m.%Y")
     url = f"https://www.istu.edu/raspisanie/grup/{group_id}/{date_str}/"
-
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0 Safari/537.36"
-        ),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
         "Accept-Language": "ru-RU,ru;q=0.9",
     }
-
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
@@ -464,13 +515,10 @@ async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
                 logging.info(f"[WEEK] GET {url} -> {response.status}, len={len(html)}")
                 return html
     except Exception as e:
-        logging.error(f"[WEEK] Ошибка запроса: {e}")
+        logging.error(f"[WEEK] Ошибка: {e}")
         return ""
 
 
-# ============================================================
-# ФОРМАТИРОВАНИЕ
-# ============================================================
 def format_day(day: dict) -> str:
     lines = [day["name"], ""]
     if not day["lessons"]:
@@ -484,17 +532,11 @@ def format_day(day: dict) -> str:
 
     for time_str in sorted(by_time.keys(), key=_time_sort_key):
         lessons = by_time[time_str]
-
         for i, les in enumerate(lessons):
             subj = les["subject"] or "—"
             if les["type"]:
                 subj += f" ({les['type']})"
-
-            if "перенос" in subj.lower() or "перенес" in subj.lower():
-                prefix = "!! "
-            else:
-                prefix = ""
-
+            prefix = "!! " if ("перенос" in subj.lower() or "перенес" in subj.lower()) else ""
             if i == 0:
                 lines.append(f"{prefix}{_time_range(time_str)}")
                 lines.append(f"  {subj}")
@@ -503,7 +545,6 @@ def format_day(day: dict) -> str:
                     lines.append(f"  подгр. {les['subgroup']}: {subj}")
                 else:
                     lines.append(f"  {subj}")
-
             details = []
             if les["teacher"]:
                 details.append(les["teacher"])
@@ -513,10 +554,29 @@ def format_day(day: dict) -> str:
                 details.append(f"подгр. {les['subgroup']}")
             if details:
                 lines.append(f"  {', '.join(details)}")
-
         lines.append("")
-
     return "\n".join(lines).rstrip() + "\n"
+
+
+async def send_schedule_for_date(user_id: int, group_id: str, group_name: str, target_date: datetime, title: str):
+    """Отправляет расписание на указанную дату конкретному пользователю."""
+    monday = _monday_of_week(target_date)
+    html = await fetch_week_html(group_id, monday)
+    if not html:
+        return
+    _, days = parse_schedule(html)
+    date_str = target_date.strftime("%d.%m.%Y")
+    day = next((d for d in days if d["date"] == date_str), None)
+    if day is None:
+        text = f"{title} ({date_str})\n\nЗанятий нет."
+    else:
+        text = f"{title}\n\n" + format_day(day).strip()
+    if len(text) > 4000:
+        text = text[:4000] + "\n… (обрезано)"
+    try:
+        await bot.send_message(user_id, text)
+    except Exception as e:
+        logging.error(f"[NOTIFY] Не удалось отправить {user_id}: {e}")
 
 
 # ============================================================
@@ -526,7 +586,7 @@ def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
-            [KeyboardButton(text="Дедлайны"), KeyboardButton(text="Помощь")],
+            [KeyboardButton(text="Уведомления"), KeyboardButton(text="Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -548,7 +608,6 @@ def get_groups_keyboard(institute_name: str, page: int = 0):
     per_page = 20
     total_pages = max(1, (len(groups) + per_page - 1) // per_page)
     page = max(0, min(page, total_pages - 1))
-
     chunk = groups[page * per_page: (page + 1) * per_page]
     kb = []
     for i in range(0, len(chunk), 2):
@@ -556,7 +615,6 @@ def get_groups_keyboard(institute_name: str, page: int = 0):
         if i + 1 < len(chunk):
             row.append(InlineKeyboardButton(text=chunk[i+1]["name"], callback_data=f"group_{chunk[i+1]['id']}"))
         kb.append(row)
-
     if total_pages > 1:
         nav = []
         if page > 0:
@@ -565,7 +623,6 @@ def get_groups_keyboard(institute_name: str, page: int = 0):
         if page < total_pages - 1:
             nav.append(InlineKeyboardButton(text=">>", callback_data=f"instpage_{institute_name}_{page+1}"))
         kb.append(nav)
-
     kb.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -578,10 +635,18 @@ def get_schedule_actions_keyboard(group_id: str, is_my_group: bool = False):
     ]
     if is_my_group:
         buttons.append([InlineKeyboardButton(text="Забыть группу", callback_data="forget_my")])
-        buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
     else:
         buttons.append([InlineKeyboardButton(text="Сделать моей группой", callback_data=f"save_my_{group_id}")])
-        buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
+    buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_notify_keyboard(current: tuple = None):
+    buttons = []
+    for label, h, m in NOTIFY_PRESETS:
+        mark = " ✅" if current and current[0] == h and current[1] == m else ""
+        buttons.append([InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"notify_{h}_{m}")])
+    buttons.append([InlineKeyboardButton(text="Выключить", callback_data="notify_off")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -590,16 +655,33 @@ def get_schedule_actions_keyboard(group_id: str, is_my_group: bool = False):
 # ============================================================
 @dp.message(CommandStart())
 async def start(message: Message):
+    _ensure_user(message.from_user.id)
     saved = get_user_group(message.from_user.id)
-    hint = ""
-    if saved:
-        hint = f"\n\nТвоя группа: {saved[1]}"
-    else:
-        hint = "\n\nСовет: выбери группу через «Расписание» и нажми «Сделать моей группой»."
+    hint = f"\n\nТвоя группа: {saved[1]}" if saved else \
+           "\n\nСовет: выбери группу через «Расписание» и нажми «Сделать моей группой»."
     await message.answer(
         f"Привет, {message.from_user.full_name}!\n\n"
-        "Я бот для студентов ИРНИТУ. Выбери действие на клавиатуре ниже." + hint,
+        "Я бот для студентов ИРНИТУ." + hint,
         reply_markup=get_main_keyboard(),
+    )
+
+
+@dp.message(Command("myid"))
+async def cmd_myid(message: Message):
+    await message.answer(f"Твой Telegram ID: {message.from_user.id}")
+
+
+@dp.message(Command("stats"))
+async def cmd_stats(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Команда только для администратора.")
+        return
+    total, with_group, with_notify = get_stats()
+    await message.answer(
+        f"Статистика бота:\n\n"
+        f"Всего пользователей: {total}\n"
+        f"С сохранённой группой: {with_group}\n"
+        f"С уведомлениями: {with_notify}"
     )
 
 
@@ -613,18 +695,56 @@ async def show_my_group(message: Message):
     saved = get_user_group(message.from_user.id)
     if not saved:
         await message.answer(
-            "У тебя пока нет сохранённой группы.\n\n"
+            "У тебя нет сохранённой группы.\n\n"
             "Выбери её через «Расписание» → институт → группу, "
             "затем нажми «Сделать моей группой».",
             reply_markup=get_main_keyboard(),
         )
         return
-
     group_id, group_name = saved
     await message.answer(
         f"Моя группа: {group_name}\n\nЧто показать?",
         reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True),
     )
+
+
+@dp.message(F.text == "Уведомления")
+async def notifications_menu(message: Message):
+    saved = get_user_group(message.from_user.id)
+    if not saved:
+        await message.answer(
+            "Сначала сохрани свою группу (через «Расписание»). "
+            "Потом можно настроить уведомления.",
+            reply_markup=get_main_keyboard(),
+        )
+        return
+    current = get_notify_time(message.from_user.id)
+    if current:
+        status = f"Сейчас уведомления приходят в {current[0]:02d}:{current[1]:02d}."
+    else:
+        status = "Уведомления выключены."
+    await message.answer(
+        f"{status}\n\nВыбери время, когда присылать расписание на завтра:",
+        reply_markup=get_notify_keyboard(current),
+    )
+
+
+@dp.callback_query(F.data.startswith("notify_"))
+async def process_notify(callback: CallbackQuery):
+    if callback.data == "notify_off":
+        set_notify_time(callback.from_user.id, -1, 0)
+        await callback.message.edit_text("Уведомления выключены.")
+        await callback.answer("Выключено")
+        return
+    parts = callback.data.split("_")
+    h, m = int(parts[1]), int(parts[2])
+    set_notify_time(callback.from_user.id, h, m)
+    await callback.message.edit_text(
+        f"Уведомления включены.\n\n"
+        f"Каждый день в {h:02d}:{m:02d} (по Иркутску) бот будет присылать "
+        f"расписание на завтра.",
+    )
+    await callback.answer("Сохранено")
 
 
 @dp.callback_query(F.data.startswith("institute_"))
@@ -640,11 +760,9 @@ async def process_institute(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("instpage_"))
 async def process_page(callback: CallbackQuery):
     parts = callback.data.split("_", 2)
-    institute_name = parts[1]
-    page = int(parts[2])
     await callback.message.edit_text(
-        f"Институт: {institute_name}\n\nВыбери группу:",
-        reply_markup=get_groups_keyboard(institute_name, page),
+        f"Институт: {parts[1]}\n\nВыбери группу:",
+        reply_markup=get_groups_keyboard(parts[1], int(parts[2])),
     )
     await callback.answer()
 
@@ -673,9 +791,8 @@ async def save_my_group(callback: CallbackQuery):
     group_name = _group_name_by_id(group_id)
     save_user_group(callback.from_user.id, group_id, group_name)
     await callback.message.edit_text(
-        f"✅ Группа {group_name} сохранена как твоя.\n\n"
-        f"Теперь в главном меню есть кнопка «Моя группа» — там быстрое расписание.\n\n"
-        f"Что показать?",
+        f"Группа {group_name} сохранена как твоя.\n\n"
+        f"Теперь в меню есть «Моя группа» и можно настроить «Уведомления».",
         reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True),
     )
     await callback.answer("Сохранено")
@@ -685,8 +802,8 @@ async def save_my_group(callback: CallbackQuery):
 async def forget_my_group(callback: CallbackQuery):
     delete_user_group(callback.from_user.id)
     await callback.message.edit_text(
-        "Группа удалена из сохранённых.\n\n"
-        "Можешь выбрать новую через «Расписание» и нажать «Сделать моей группой».",
+        "Группа удалена. Уведомления тоже отключены.\n\n"
+        "Можешь выбрать новую через «Расписание».",
     )
     await callback.answer("Удалено")
 
@@ -701,38 +818,24 @@ async def back_to_institutes(callback: CallbackQuery):
 async def show_today(callback: CallbackQuery):
     group_id = callback.data.split("_", 1)[1]
     await callback.message.edit_text("Загружаю...")
-
     today = _now_irkutsk()
     monday = _monday_of_week(today)
-
     try:
         html = await fetch_week_html(group_id, monday)
         soup = BeautifulSoup(html, "html.parser")
         start, end = parse_week_range(soup)
         _, days = parse_schedule(html)
     except Exception as e:
-        logging.exception("Ошибка парсинга")
-        await callback.message.edit_text(
-            f"Ошибка: {e}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
-            ]),
-        )
+        logging.exception("Ошибка")
+        await callback.message.edit_text(f"Ошибка: {e}")
         await callback.answer()
         return
-
     today_str = today.strftime("%d.%m.%Y")
     day = next((d for d in days if d["date"] == today_str), None)
-
     header = f"Сегодня {today_str}"
     if start and end:
         header += f" (неделя {start} - {end})"
-
-    if day is None:
-        text = f"{header}\n\nЗанятий нет."
-    else:
-        text = f"{header}\n\n" + format_day(day).strip()
-
+    text = f"{header}\n\n" + (format_day(day).strip() if day else "Занятий нет.")
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -748,41 +851,26 @@ async def show_week(callback: CallbackQuery):
     offset = int(parts[1])
     group_id = parts[2]
     group_name = _group_name_by_id(group_id)
-
     await callback.message.edit_text("Загружаю...")
-
     today = _now_irkutsk()
     target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
-
     try:
         html = await fetch_week_html(group_id, target_monday)
         soup = BeautifulSoup(html, "html.parser")
         start, end = parse_week_range(soup)
         _, days = parse_schedule(html)
     except Exception as e:
-        logging.exception("Ошибка парсинга")
-        await callback.message.edit_text(
-            f"Ошибка: {e}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
-            ]),
-        )
+        logging.exception("Ошибка")
+        await callback.message.edit_text(f"Ошибка: {e}")
         await callback.answer()
         return
-
     title = "Текущая неделя" if offset == 0 else "Следующая неделя"
     header = f"{title}\nГруппа: {group_name}"
     if start and end:
         header += f"\n{start} - {end}"
-
-    if not days:
-        text = header + "\n\nРасписание не найдено."
-    else:
-        text = header + "\n\n" + "\n".join(format_day(d) for d in days)
-
+    text = header + "\n\n" + ("\n".join(format_day(d) for d in days) if days else "Расписание не найдено.")
     if len(text) > 4000:
         text = text[:4000] + "\n… (обрезано)"
-
     await callback.message.edit_text(
         text.strip(),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -792,21 +880,46 @@ async def show_week(callback: CallbackQuery):
     await callback.answer()
 
 
-@dp.message(F.text == "Дедлайны")
-async def deadlines(message: Message):
-    await message.answer("Раздел в разработке.", reply_markup=get_main_keyboard())
-
-
 @dp.message(F.text == "Помощь")
 async def help_cmd(message: Message):
     await message.answer(
         "Я умею:\n"
         "- Показывать расписание по всем институтам ИРНИТУ\n"
-        "- Запоминать твою группу (кнопка «Моя группа»)\n"
-        "- Скоро: напоминать о дедлайнах\n\n"
+        "- Запоминать твою группу («Моя группа»)\n"
+        "- Присылать расписание на завтра в выбранное время («Уведомления»)\n\n"
         "Просто нажимай кнопки.",
         reply_markup=get_main_keyboard(),
     )
+
+
+# ============================================================
+# ФОНОВАЯ ЗАДАЧА — РАССЫЛКА УВЕДОМЛЕНИЙ
+# ============================================================
+async def notification_loop():
+    """Каждую минуту проверяет: кому сейчас надо отправить уведомление."""
+    last_sent_key = None  # чтобы не отправлять дважды в одну минуту
+    while True:
+        try:
+            now = _now_irkutsk()
+            current_key = f"{now.strftime('%Y-%m-%d %H:%M')}"
+
+            if current_key != last_sent_key:
+                users = get_users_to_notify(now.hour, now.minute)
+                if users:
+                    logging.info(f"[NOTIFY] Минута {now.hour:02d}:{now.minute:02d}, получателей: {len(users)}")
+                    tomorrow = now + timedelta(days=1)
+                    for user_id, group_id, group_name in users:
+                        try:
+                            await send_schedule_for_date(
+                                user_id, group_id, group_name, tomorrow,
+                                f"Расписание на завтра ({group_name})"
+                            )
+                        except Exception as e:
+                            logging.error(f"[NOTIFY] Ошибка для {user_id}: {e}")
+                last_sent_key = current_key
+        except Exception as e:
+            logging.exception(f"[NOTIFY] Ошибка в цикле: {e}")
+        await asyncio.sleep(30)
 
 
 # ============================================================
@@ -822,6 +935,8 @@ async def main():
     init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, запускаю polling")
+    # Запускаем фоновую рассылку
+    asyncio.create_task(notification_loop())
     await dp.start_polling(bot)
 
 
