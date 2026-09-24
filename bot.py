@@ -163,14 +163,16 @@ def parse_schedule(html: str):
 
 
 # ============================================================
-# ЗАГРУЗКА HTML С ПОДБОРОМ НЕДЕЛИ
+# ЗАГРУЗКА HTML
 # ============================================================
 async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
     """
-    Пытается получить HTML расписания на неделю, начинающуюся с target_monday.
-    Перебирает разные форматы URL и проверяет, что сайт вернул нужную неделю.
+    Получает HTML расписания на неделю, начинающуюся с target_monday.
+    Использует URL-формат: /raspisanie/grup/{group_id}/{DD.MM.YYYY}/
     """
-    base = f"https://www.istu.edu/raspisanie/grup/{group_id}"
+    date_str = target_monday.strftime("%d.%m.%Y")
+    url = f"https://www.istu.edu/raspisanie/grup/{group_id}/{date_str}/"
+    
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -179,45 +181,16 @@ async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
         ),
         "Accept-Language": "ru-RU,ru;q=0.9",
     }
-
-    target_str = target_monday.strftime("%d.%m.%Y")
-
-    # Форматы URL, которые попробуем по очереди
-    url_variants = [
-        f"{base}?date={target_monday.strftime('%Y-%m-%d')}",
-        f"{base}?date={target_str}",
-        f"{base}?date={target_monday.year}-{target_monday.month}-{target_monday.day}",
-        base,  # последний вариант — базовая страница
-    ]
-
-    async with aiohttp.ClientSession() as session:
-        # Первый заход — чтобы получить cookies
-        try:
-            async with session.get(base, headers=headers) as response:
-                await response.text()
-        except Exception as e:
-            logging.error(f"[WEEK] Warm-up failed: {e}")
-
-        best_html = None
-        for url in url_variants:
-            try:
-                async with session.get(url, headers=headers) as response:
-                    html = await response.text()
-                    soup = BeautifulSoup(html, "html.parser")
-                    start, end = parse_week_range(soup)
-                    logging.info(f"[WEEK] {url} -> start={start}, end={end}, len={len(html)}")
-
-                    if start == target_str:
-                        logging.info(f"[WEEK] OK: нужная неделя получена через {url}")
-                        return html
-
-                    if best_html is None:
-                        best_html = html
-            except Exception as e:
-                logging.error(f"[WEEK] {url} failed: {e}")
-
-        logging.warning(f"[WEEK] Не удалось получить неделю с {target_str}, отдаю что есть")
-        return best_html or ""
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                html = await response.text()
+                logging.info(f"[WEEK] GET {url} -> {response.status}, len={len(html)}")
+                return html
+    except Exception as e:
+        logging.error(f"[WEEK] Ошибка запроса: {e}")
+        return ""
 
 
 # ============================================================
