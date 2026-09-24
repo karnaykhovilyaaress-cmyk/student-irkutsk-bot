@@ -42,6 +42,26 @@ GROUPS = {
     ]
 }
 
+# ============================================================
+# ВРЕМЯ ПАР (начало -> конец)
+# ============================================================
+LESSON_TIMES = {
+    "8:15":  "9:50",
+    "8:30":  "10:05",
+    "10:00": "11:35",
+    "10:10": "11:45",
+    "11:45": "13:20",
+    "12:00": "13:35",
+    "13:45": "15:20",
+    "14:00": "15:35",
+    "15:30": "17:05",
+    "15:45": "17:20",
+    "17:10": "18:45",
+    "17:25": "19:00",
+    "18:50": "20:25",
+    "19:05": "20:40",
+}
+
 
 # ============================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -67,6 +87,11 @@ def _time_sort_key(t: str) -> tuple:
     if m:
         return (int(m.group(1)), int(m.group(2)))
     return (99, 99)
+
+
+def _time_range(t: str) -> str:
+    end = LESSON_TIMES.get(t)
+    return f"{t} – {end}" if end else t
 
 
 # ============================================================
@@ -97,7 +122,6 @@ def parse_schedule(html: str):
         value = item.find("div", class_="info-block-item-value")
         if label and value and "Показана неделя" in label.get_text():
             txt = value.get_text(strip=True).lower()
-            # Сайт помечает недели наоборот — инвертируем
             week_parity = "even" if "нечет" in txt else "odd"
 
     days = []
@@ -205,26 +229,38 @@ def format_day(day: dict) -> str:
         by_time.setdefault(les["time"], []).append(les)
 
     for time_str in sorted(by_time.keys(), key=_time_sort_key):
-        for les in by_time[time_str]:
-            subj = les["subject"]
+        lessons = by_time[time_str]
+
+        for i, les in enumerate(lessons):
+            subj = les["subject"] or "—"
             if les["type"]:
                 subj += f" ({les['type']})"
 
             if "перенос" in subj.lower() or "перенес" in subj.lower():
-                lines.append(f"{time_str} [ПЕРЕНОС] {subj}")
+                prefix = "!! "
             else:
-                lines.append(f"{time_str} {subj}")
+                prefix = ""
 
-            extras = []
+            if i == 0:
+                lines.append(f"{prefix}{_time_range(time_str)}")
+                lines.append(f"  {subj}")
+            else:
+                if les["subgroup"]:
+                    lines.append(f"  подгр. {les['subgroup']}: {subj}")
+                else:
+                    lines.append(f"  {subj}")
+
+            details = []
             if les["teacher"]:
-                extras.append(les["teacher"])
+                details.append(les["teacher"])
             if les["auditorium"]:
-                extras.append(les["auditorium"])
-            if les["subgroup"]:
-                extras.append(f"подгр. {les['subgroup']}")
-            if extras:
-                lines.append(", ".join(extras))
-            lines.append("")
+                details.append(f"ауд. {les['auditorium']}")
+            if les["subgroup"] and i == 0 and len(lessons) == 1:
+                details.append(f"подгр. {les['subgroup']}")
+            if details:
+                lines.append(f"  {', '.join(details)}")
+
+        lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -357,7 +393,7 @@ async def show_today(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("week_"))
 async def show_week(callback: CallbackQuery):
     parts = callback.data.split("_", 2)
-    offset = int(parts[1])  # 0 = текущая, 1 = следующая
+    offset = int(parts[1])
     group_id = parts[2]
     group_name = _group_name_by_id(group_id)
 
