@@ -20,7 +20,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ============================================================
-# ГРУППЫ (ИАМиТ, 1 курс)
+# ГРУППЫ ПО ИНСТИТУТАМ
 # ============================================================
 GROUPS = {
     "ИАМиТ": [
@@ -39,7 +39,214 @@ GROUPS = {
         {"name": "УКб-26-1",   "id": "478551"},
         {"name": "ЦПКм-26-1",  "id": "478601"},
         {"name": "ЭЛб-26-1",   "id": "478640"},
-    ]
+    ],
+    "Аспирантура": [
+        {"name": "аАУП-26-1",   "id": "477932"},
+        {"name": "аБЗТ-26-1",   "id": "477934"},
+        {"name": "аБПП-26-1",   "id": "477936"},
+        {"name": "аБТХ-26-1",   "id": "477937"},
+        {"name": "аВДС-26-1",   "id": "477939"},
+        {"name": "аГГ-26-1",    "id": "477940"},
+        {"name": "аГГМ-26-1",   "id": "477942"},
+        {"name": "аГНГ-26-1",   "id": "477946"},
+        {"name": "аГНП-26-1",   "id": "477948"},
+        {"name": "аДВЛ-26-1",   "id": "477955"},
+        {"name": "аМВ-26-1",    "id": "477977"},
+        {"name": "аМЕТ-26-1",   "id": "477979"},
+        {"name": "аММП-26-1",   "id": "479885"},
+        {"name": "аМН-26-1",    "id": "477982"},
+        {"name": "аНСкгм-26-1", "id": "477987"},
+        {"name": "аНСдсм-26-1", "id": "477986"},
+        {"name": "аОБП-26-1",   "id": "477989"},
+        {"name": "аОХМ-26-1",   "id": "477990"},
+        {"name": "аПБ-26-1",    "id": "477991"},
+        {"name": "аРЭоэ-26-1",  "id": "478006"},
+        {"name": "аРЭс-26-1",   "id": "478007"},
+        {"name": "аСМХ-26-1",   "id": "478010"},
+        {"name": "аССП-26-1",   "id": "478013"},
+        {"name": "аСТМ-26-1",   "id": "478014"},
+        {"name": "аТАРР-26-1",  "id": "478029"},
+        {"name": "аТМД-26-1",   "id": "478031"},
+        {"name": "аТМН-26-1",   "id": "478033"},
+        {"name": "аТОС-26-1",   "id": "478035"},
+        {"name": "аТПС-26-1",   "id": "478051"},
+        {"name": "аТПСК-26-1",  "id": "478053"},
+        {"name": "аТТГР-26-1",  "id": "478055"},
+        {"name": "аТХВ-26-1",   "id": "478056"},
+        {"name": "аУПП-26-1",   "id": "478057"},
+        {"name": "аУСТ-26-1",   "id": "478061"},
+        {"name": "аФХМ-26-1",   "id": "478062"},
+        {"name": "аХТВ-26-1",   "id": "478064"},
+        {"name": "аЭКЛ-26-1",   "id": "478066"},
+        {"name": "аЭКО-26-1",   "id": "478068"},
+        {"name": "аЭКС-26-1",   "id": "478070"},
+        {"name": "аЭНК-26-1",   "id": "478072"},
+        {"name": "аЭТРд-26-1",  "id": "478073"},
+        {"name": "аЭТРоп-26-1", "id": "478075"},
+        {"name": "аЭЭН-26-1",   "id": "478077"},
+    ],
+    "БРИКС": [
+        {"name": "ВЗАм-26-1",   "id": "478105"},
+        {"name": "ИИКб-26-1",   "id": "478215"},
+        {"name": "ИИКб-26-2",   "id": "479891"},
+        {"name": "КБКб-26-1",   "id": "478251"},
+        {"name": "ЛБКб-26-1",   "id": "478279"},
+        {"name": "ЛБКб-26-2",   "id": "478280"},
+        {"name": "МДБб-26-1",   "id": "478306"},
+        {"name": "РКИб-26-1",   "id": "478455"},
+        {"name": "РКИб-26-2",   "id": "478456"},
+        {"name": "СПРКм-26-1",  "id": "479947"},
+        {"name": "УЛм-26-1",    "id": "479898"},
+        {"name": "ФНб-26-1",    "id": "478580"},
+        {"name": "ЦТм-26-1",    "id": "478605"},
+        {"name": "ЭПАб-26-1",   "id": "478654"},
+        {"name": "ЭЗТм-26-1",   "id": "478632"},
+    ],
+    "ДЛРЯ": [
+        {"name": "ИНС-26-1",   "id": "479936"},
+        {"name": "ИНС-26-2",   "id": "479937"},
+        {"name": "ИНС-26-3",   "id": "479938"},
+        {"name": "ИНС-26-4",   "id": "479939"},
+        {"name": "ИНС-26-5",   "id": "479940"},
+        {"name": "ИНС-26-6",   "id": "479941"},
+        {"name": "ИНСм-26-1",  "id": "479942"},
+        {"name": "ИНСм-26-2",  "id": "479943"},
+        {"name": "ИНСм-26-3",  "id": "479944"},
+    ],
+    "ССГ": [
+        {"name": "ГИИм-26-1",   "id": "478127"},
+        {"name": "ИТГб-26-1",   "id": "478243"},
+        {"name": "РМ-26-1",     "id": "478460"},
+        {"name": "РФ-26-1",     "id": "478476"},
+        {"name": "ЦГФм-26-1",   "id": "478599"},
+    ],
+    "ИАСиД": [
+        {"name": "АД-26-1",     "id": "477954"},
+        {"name": "АДм-26-1",    "id": "477957"},
+        {"name": "АРб-26-1",    "id": "478002"},
+        {"name": "АРб-26-2",    "id": "478003"},
+        {"name": "ВВб-26-1",    "id": "478101"},
+        {"name": "ВВм-26-1",    "id": "478102"},
+        {"name": "ГРб-26-1",    "id": "478173"},
+        {"name": "ГРм-26-1",    "id": "478175"},
+        {"name": "ГСХб-26-1",   "id": "478179"},
+        {"name": "ГСХм-26-1",   "id": "478181"},
+        {"name": "ДИб-26-1",    "id": "479888"},
+        {"name": "ДСб-26-1",    "id": "478192"},
+        {"name": "ДСб-26-2",    "id": "478193"},
+        {"name": "КНб-26-1",    "id": "478255"},
+        {"name": "НТЗм-26-1",   "id": "478411"},
+        {"name": "ОТКм-26-1",   "id": "478429"},
+        {"name": "ПГСб-26-1",   "id": "478436"},
+        {"name": "РРб-26-1",    "id": "478465"},
+        {"name": "СНГб-26-1",   "id": "478501"},
+        {"name": "ССЭм-26-1",   "id": "478503"},
+        {"name": "СУЗ-26-1",    "id": "478519"},
+        {"name": "ТГПм-26-1",   "id": "478524"},
+        {"name": "ТМПм-26-1",   "id": "478536"},
+        {"name": "УСТб-26-1",   "id": "478563"},
+        {"name": "УСТм-26-1",   "id": "478565"},
+        {"name": "УСТмз-26-1",  "id": "479899"},
+        {"name": "ЭУНб-26-1",   "id": "478714"},
+    ],
+    "ИВТ": [
+        {"name": "АМПб-26-1",   "id": "477984"},
+        {"name": "АТПб-26-1",   "id": "478040"},
+        {"name": "АТПб-26-2",   "id": "479886"},
+        {"name": "БТб-26-1",    "id": "478096"},
+        {"name": "БТб-26-2",    "id": "478097"},
+        {"name": "ИНОм-26-1",   "id": "478222"},
+        {"name": "ИРб-26-1",    "id": "478226"},
+        {"name": "ИФб-26-1",    "id": "478247"},
+        {"name": "МЦб-26-1",    "id": "478327"},
+        {"name": "МЦм-26-1",    "id": "478336"},
+        {"name": "МЦТб-26-1",   "id": "478339"},
+        {"name": "МХТб-26-1",   "id": "478324"},
+        {"name": "НХПм-26-1",   "id": "478412"},
+        {"name": "ОХФм-26-1",   "id": "478431"},
+        {"name": "ПИм-26-1",    "id": "478438"},
+        {"name": "РДб-26-1",    "id": "478447"},
+        {"name": "РТУм-26-1",   "id": "478472"},
+        {"name": "ХПм-26-1",    "id": "478582"},
+        {"name": "ХТм-26-1",    "id": "478590"},
+        {"name": "ХТОб-26-1",   "id": "478594"},
+        {"name": "ХТТб-26-1",   "id": "478598"},
+    ],
+    "ИИТиАД": [
+        {"name": "АСУб-26-1",   "id": "478021"},
+        {"name": "АСУб-26-2",   "id": "478022"},
+        {"name": "БКСм-26-1",   "id": "478092"},
+        {"name": "ИБб-26-1",    "id": "478205"},
+        {"name": "ИБб-26-2",    "id": "479889"},
+        {"name": "ИСИб-26-1",   "id": "478232"},
+        {"name": "ИСТб-26-1",   "id": "478240"},
+        {"name": "ИСТб-26-2",   "id": "478241"},
+        {"name": "ИСТб-26-3",   "id": "479892"},
+        {"name": "ИИТм-26-1",   "id": "478219"},
+        {"name": "КСм-26-1",    "id": "478261"},
+        {"name": "ЦППм-26-1",   "id": "478603"},
+        {"name": "ЭВМб-26-1",   "id": "478624"},
+        {"name": "ЭВМб-26-2",   "id": "479900"},
+    ],
+    "ИН": [
+        {"name": "БЖТм-26-1",   "id": "478088"},
+        {"name": "ГА-26-1",     "id": "478109"},
+        {"name": "ГГ-26-1",     "id": "478115"},
+        {"name": "ГМ-26-1",     "id": "478134"},
+        {"name": "ГО-26-1",     "id": "478146"},
+        {"name": "ГП-26-1",     "id": "478160"},
+        {"name": "ИГ-26-1",     "id": "478210"},
+        {"name": "ИГ-26-2",     "id": "479890"},
+        {"name": "НДДб-26-1",   "id": "478405"},
+        {"name": "НДДб-26-2",   "id": "478406"},
+        {"name": "НДДб-26-3",   "id": "479894"},
+        {"name": "НДб-26-1",    "id": "478396"},
+        {"name": "НДб-26-2",    "id": "478397"},
+        {"name": "НДм-26-1",    "id": "478408"},
+        {"name": "ООСб-26-1",   "id": "478415"},
+        {"name": "ОП-26-1",     "id": "478421"},
+        {"name": "ПБмз-26-1",   "id": "479895"},
+        {"name": "ТХб-26-1",    "id": "478545"},
+        {"name": "ЭКОм-26-1",   "id": "478634"},
+    ],
+    "ИЭУП": [
+        {"name": "ВДм-26-1",    "id": "479887"},
+        {"name": "ЖРб-26-1",    "id": "478200"},
+        {"name": "ИИм-26-1",    "id": "478217"},
+        {"name": "МБб-26-1",    "id": "478297"},
+        {"name": "МБб-26-2",    "id": "478298"},
+        {"name": "МБб-26-3",    "id": "479893"},
+        {"name": "НБ-26-1",     "id": "478349"},
+        {"name": "НБ-26-2",     "id": "478350"},
+        {"name": "СМТм-26-1",   "id": "478497"},
+        {"name": "ТД-26-1",     "id": "478532"},
+        {"name": "ТД-26-2",     "id": "478533"},
+        {"name": "УОБТб-26-1",  "id": "478555"},
+        {"name": "ФКб-26-1",    "id": "478575"},
+        {"name": "ФКб-26-2",    "id": "478576"},
+        {"name": "ЭМЭНм-26-1",  "id": "478646"},
+        {"name": "ЭМЭНмз-26-1", "id": "479901"},
+        {"name": "ЭПЭб-26-1",   "id": "478680"},
+        {"name": "ЭПЭб-26-2",   "id": "478679"},
+        {"name": "ЭТЭКб-26-1",  "id": "478706"},
+        {"name": "ЭТЭКб-26-2",  "id": "478707"},
+        {"name": "ЮРУб-26-1",   "id": "478723"},
+    ],
+    "ИЭ": [
+        {"name": "ЭАПЭб-26-1",  "id": "478614"},
+        {"name": "КТЭм-26-1",   "id": "478273"},
+        {"name": "СТЭб-26-1",   "id": "478508"},
+        {"name": "СТЭб-26-2",   "id": "479897"},
+        {"name": "УЭСм-26-1",   "id": "478569"},
+        {"name": "ЦЭм-26-1",    "id": "478609"},
+        {"name": "ЭНГм-26-1",   "id": "478650"},
+        {"name": "ЭПб-26-1",    "id": "478660"},
+        {"name": "ЭПб-26-2",    "id": "478661"},
+        {"name": "ЭСб-26-1",    "id": "478692"},
+        {"name": "ЭСм-26-1",    "id": "478699"},
+        {"name": "ЭСТм-26-1",   "id": "478701"},
+        {"name": "ЭУм-26-1",    "id": "478709"},
+    ],
 }
 
 # ============================================================
@@ -279,15 +486,40 @@ def get_main_keyboard():
 
 
 def get_institutes_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=inst, callback_data=f"institute_{inst}")]
-        for inst in GROUPS.keys()
-    ])
+    keys = list(GROUPS.keys())
+    kb = []
+    for i in range(0, len(keys), 2):
+        row = [InlineKeyboardButton(text=keys[i], callback_data=f"institute_{keys[i]}")]
+        if i + 1 < len(keys):
+            row.append(InlineKeyboardButton(text=keys[i+1], callback_data=f"institute_{keys[i+1]}"))
+        kb.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
-def get_groups_keyboard(institute_name: str):
+def get_groups_keyboard(institute_name: str, page: int = 0):
     groups = GROUPS.get(institute_name, [])
-    kb = [[InlineKeyboardButton(text=g["name"], callback_data=f"group_{g['id']}")] for g in groups]
+    per_page = 20
+    total_pages = max(1, (len(groups) + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+
+    chunk = groups[page * per_page: (page + 1) * per_page]
+    kb = []
+    for i in range(0, len(chunk), 2):
+        row = [InlineKeyboardButton(text=chunk[i]["name"], callback_data=f"group_{chunk[i]['id']}")]
+        if i + 1 < len(chunk):
+            row.append(InlineKeyboardButton(text=chunk[i+1]["name"], callback_data=f"group_{chunk[i+1]['id']}"))
+        kb.append(row)
+
+    # Навигация по страницам
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="<<", callback_data=f"instpage_{institute_name}_{page-1}"))
+        nav.append(InlineKeyboardButton(text=f"{page+1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(text=">>", callback_data=f"instpage_{institute_name}_{page+1}"))
+        kb.append(nav)
+
     kb.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -297,7 +529,7 @@ def get_schedule_actions_keyboard(group_id: str):
         [InlineKeyboardButton(text="Сегодня", callback_data=f"today_{group_id}")],
         [InlineKeyboardButton(text="Текущая неделя", callback_data=f"week_0_{group_id}")],
         [InlineKeyboardButton(text="Следующая неделя", callback_data=f"week_1_{group_id}")],
-        [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")],
+        [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")],
     ])
 
 
@@ -323,8 +555,26 @@ async def process_institute(callback: CallbackQuery):
     institute_name = callback.data.split("_", 1)[1]
     await callback.message.edit_text(
         f"Институт: {institute_name}\n\nВыбери группу:",
-        reply_markup=get_groups_keyboard(institute_name),
+        reply_markup=get_groups_keyboard(institute_name, 0),
     )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("instpage_"))
+async def process_page(callback: CallbackQuery):
+    # формат: instpage_{institute}_{page}
+    parts = callback.data.split("_", 2)
+    institute_name = parts[1]
+    page = int(parts[2])
+    await callback.message.edit_text(
+        f"Институт: {institute_name}\n\nВыбери группу:",
+        reply_markup=get_groups_keyboard(institute_name, page),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "noop")
+async def noop(callback: CallbackQuery):
     await callback.answer()
 
 
@@ -363,7 +613,7 @@ async def show_today(callback: CallbackQuery):
         await callback.message.edit_text(
             f"Ошибка: {e}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
+                [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
             ]),
         )
         await callback.answer()
@@ -384,7 +634,7 @@ async def show_today(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
+            [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
         ]),
     )
     await callback.answer()
@@ -412,7 +662,7 @@ async def show_week(callback: CallbackQuery):
         await callback.message.edit_text(
             f"Ошибка: {e}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
+                [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
             ]),
         )
         await callback.answer()
@@ -434,7 +684,7 @@ async def show_week(callback: CallbackQuery):
     await callback.message.edit_text(
         text.strip(),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
+            [InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")]
         ]),
     )
     await callback.answer()
@@ -449,7 +699,7 @@ async def deadlines(message: Message):
 async def help_cmd(message: Message):
     await message.answer(
         "Я умею:\n"
-        "- Показывать расписание по группам ИАМиТ\n"
+        "- Показывать расписание по всем институтам ИРНИТУ\n"
         "- Скоро: напоминать о дедлайнах\n\n"
         "Просто нажимай кнопки.",
         reply_markup=get_main_keyboard(),
