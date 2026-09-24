@@ -97,7 +97,7 @@ def parse_schedule(html: str):
         value = item.find("div", class_="info-block-item-value")
         if label and value and "Показана неделя" in label.get_text():
             txt = value.get_text(strip=True).lower()
-            # ВАЖНО: Сайт ИРНИТУ помечает недели наоборот — инвертируем
+            # Сайт помечает недели наоборот — инвертируем
             week_parity = "even" if "нечет" in txt else "odd"
 
     days = []
@@ -315,9 +315,7 @@ async def show_today(callback: CallbackQuery):
     await callback.message.edit_text("Загружаю...")
 
     today = _now_irkutsk()
-    # Из-за сдвига недель на сайте: чтобы получить текущую неделю,
-    # запрашиваем дату следующей недели
-    monday = _monday_of_week(today) + timedelta(days=7)
+    monday = _monday_of_week(today)
 
     try:
         html = await fetch_week_html(group_id, monday)
@@ -366,9 +364,7 @@ async def show_week(callback: CallbackQuery):
     await callback.message.edit_text("Загружаю...")
 
     today = _now_irkutsk()
-    # Инвертируем offset из-за сдвига недель на сайте ИРНИТУ
-    real_offset = 1 - offset
-    target_monday = _monday_of_week(today) + timedelta(days=7 * real_offset)
+    target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
 
     try:
         html = await fetch_week_html(group_id, target_monday)
