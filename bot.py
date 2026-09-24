@@ -166,13 +166,9 @@ def parse_schedule(html: str):
 # ЗАГРУЗКА HTML
 # ============================================================
 async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
-    """
-    Получает HTML расписания на неделю, начинающуюся с target_monday.
-    Использует URL-формат: /raspisanie/grup/{group_id}/{DD.MM.YYYY}/
-    """
     date_str = target_monday.strftime("%d.%m.%Y")
     url = f"https://www.istu.edu/raspisanie/grup/{group_id}/{date_str}/"
-    
+
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -181,7 +177,7 @@ async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
         ),
         "Accept-Language": "ru-RU,ru;q=0.9",
     }
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
@@ -318,7 +314,9 @@ async def show_today(callback: CallbackQuery):
     await callback.message.edit_text("Загружаю...")
 
     today = _now_irkutsk()
-    monday = _monday_of_week(today)
+    # Сайт возвращает неделю со сдвигом: чтобы получить текущую неделю,
+    # запрашиваем дату следующей недели
+    monday = _monday_of_week(today) + timedelta(days=7)
 
     try:
         html = await fetch_week_html(group_id, monday)
@@ -367,7 +365,10 @@ async def show_week(callback: CallbackQuery):
     await callback.message.edit_text("Загружаю...")
 
     today = _now_irkutsk()
-    target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
+    # Инвертируем offset из-за сдвига недель на сайте ИРНИТУ:
+    # запрос на текущую неделю отдаёт следующую, и наоборот
+    real_offset = 1 - offset
+    target_monday = _monday_of_week(today) + timedelta(days=7 * real_offset)
 
     try:
         html = await fetch_week_html(group_id, target_monday)
@@ -385,15 +386,10 @@ async def show_week(callback: CallbackQuery):
         await callback.answer()
         return
 
-    requested_str = target_monday.strftime("%d.%m.%Y")
-    returned_ok = (start == requested_str) if start else False
-
     title = "Текущая неделя" if offset == 0 else "Следующая неделя"
     header = f"{title}\nГруппа: {group_name}"
     if start and end:
         header += f"\n{start} - {end}"
-    if not returned_ok and start:
-        header += f"\n(сайт отдал неделю с {start}, ожидалось с {requested_str})"
 
     if not days:
         text = header + "\n\nРасписание не найдено."
@@ -438,7 +434,6 @@ async def main():
         stream=sys.stdout,
         force=True,
     )
-    # Удаляем webhook — иначе long polling не работает
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, запускаю polling")
     await dp.start_polling(bot)
