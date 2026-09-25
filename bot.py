@@ -10,14 +10,15 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message, ReplyKeyboardMarkup, KeyboardButton,
-    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
+    FSInputFile
 )
 
 # ============================================================
 # НАСТРОЙКИ
 # ============================================================
 TOKEN = "8953672814:AAG4cxGgLJRVv-EXzDip6cT7u6NO7vez18E"
-ADMIN_ID = 6014557174  # ← ВСТАВЬ СВОЙ TELEGRAM ID (узнать через /myid в боте)
+ADMIN_ID = 6014557174  # ← ВСТАВЬ СВОЙ TELEGRAM ID (узнать через /myid)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -525,9 +526,9 @@ async def fetch_week_html(group_id: str, target_monday: datetime) -> str:
 
 
 def format_day(day: dict) -> str:
-    lines = [day["name"], ""]
+    lines = [f"📅 {day['name']}", ""]
     if not day["lessons"]:
-        lines.append("Занятий нет.")
+        lines.append("🎉 Занятий нет!")
         lines.append("")
         return "\n".join(lines)
 
@@ -541,24 +542,26 @@ def format_day(day: dict) -> str:
             subj = les["subject"] or "—"
             if les["type"]:
                 subj += f" ({les['type']})"
-            prefix = "!! " if ("перенос" in subj.lower() or "перенес" in subj.lower()) else ""
+            prefix = "⚠️ " if ("перенос" in subj.lower() or "перенес" in subj.lower()) else ""
+
             if i == 0:
-                lines.append(f"{prefix}{_time_range(time_str)}")
-                lines.append(f"  {subj}")
+                lines.append(f"🕐 {prefix}{_time_range(time_str)}")
+                lines.append(f"  📖 {subj}")
             else:
                 if les["subgroup"]:
-                    lines.append(f"  подгр. {les['subgroup']}: {subj}")
+                    lines.append(f"  👥 подгр. {les['subgroup']}: {subj}")
                 else:
-                    lines.append(f"  {subj}")
+                    lines.append(f"  📖 {subj}")
+
             details = []
             if les["teacher"]:
-                details.append(les["teacher"])
+                details.append(f"👤 {les['teacher']}")
             if les["auditorium"]:
-                details.append(f"ауд. {les['auditorium']}")
+                details.append(f"🚪 ауд. {les['auditorium']}")
             if les["subgroup"] and i == 0 and len(lessons) == 1:
-                details.append(f"подгр. {les['subgroup']}")
+                details.append(f"👥 подгр. {les['subgroup']}")
             if details:
-                lines.append(f"  {', '.join(details)}")
+                lines.append(f"  {'  '.join(details)}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -572,7 +575,7 @@ async def send_schedule_for_date(user_id: int, group_id: str, group_name: str, t
     date_str = target_date.strftime("%d.%m.%Y")
     day = next((d for d in days if d["date"] == date_str), None)
     if day is None:
-        text = f"{title} ({date_str})\n\nЗанятий нет."
+        text = f"{title}\n\n🎉 Занятий нет!"
     else:
         text = f"{title}\n\n" + format_day(day).strip()
     if len(text) > 4000:
@@ -589,8 +592,8 @@ async def send_schedule_for_date(user_id: int, group_id: str, group_name: str, t
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
-            [KeyboardButton(text="Уведомления"), KeyboardButton(text="Помощь")],
+            [KeyboardButton(text="🎓 Моя группа"), KeyboardButton(text="📅 Расписание")],
+            [KeyboardButton(text="🔔 Уведомления"), KeyboardButton(text="ℹ️ Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -627,21 +630,21 @@ def get_groups_keyboard(institute_name: str, page: int = 0):
         if page < total_pages - 1:
             nav.append(InlineKeyboardButton(text=">>", callback_data=f"instpage_{institute_name}_{page+1}"))
         kb.append(nav)
-    kb.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def get_schedule_actions_keyboard(group_id: str, is_my_group: bool = False):
     buttons = [
-        [InlineKeyboardButton(text="Сегодня", callback_data=f"today_{group_id}")],
-        [InlineKeyboardButton(text="Текущая неделя", callback_data=f"week_0_{group_id}")],
-        [InlineKeyboardButton(text="Следующая неделя", callback_data=f"week_1_{group_id}")],
+        [InlineKeyboardButton(text="☀️ Сегодня", callback_data=f"today_{group_id}")],
+        [InlineKeyboardButton(text="📅 Текущая неделя", callback_data=f"week_0_{group_id}")],
+        [InlineKeyboardButton(text="📅 Следующая неделя", callback_data=f"week_1_{group_id}")],
     ]
     if is_my_group:
-        buttons.append([InlineKeyboardButton(text="Забыть группу", callback_data="forget_my")])
+        buttons.append([InlineKeyboardButton(text="❌ Забыть группу", callback_data="forget_my")])
     else:
-        buttons.append([InlineKeyboardButton(text="Сделать моей группой", callback_data=f"save_my_{group_id}")])
-    buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
+        buttons.append([InlineKeyboardButton(text="⭐ Сделать моей группой", callback_data=f"save_my_{group_id}")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -650,7 +653,7 @@ def get_notify_keyboard(current: tuple = None):
     for label, h, m in NOTIFY_PRESETS:
         mark = " ✅" if current and current[0] == h and current[1] == m else ""
         buttons.append([InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"notify_{h}_{m}")])
-    buttons.append([InlineKeyboardButton(text="Выключить", callback_data="notify_off")])
+    buttons.append([InlineKeyboardButton(text="🔕 Выключить", callback_data="notify_off")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -661,10 +664,10 @@ def get_notify_keyboard(current: tuple = None):
 async def start(message: Message):
     _ensure_user(message.from_user.id)
     saved = get_user_group(message.from_user.id)
-    hint = f"\n\nТвоя группа: {saved[1]}" if saved else \
-           "\n\nСовет: выбери группу через «Расписание» и нажми «Сделать моей группой»."
+    hint = f"\n\n🎓 Твоя группа: {saved[1]}" if saved else \
+           "\n\n💡 Совет: выбери группу через «📅 Расписание» и нажми «⭐ Сделать моей группой»."
     await message.answer(
-        f"Привет, {message.from_user.full_name}!\n\n"
+        f"👋 Привет, {message.from_user.full_name}!\n\n"
         "Я бот для студентов ИРНИТУ." + hint,
         reply_markup=get_main_keyboard(),
     )
@@ -672,7 +675,36 @@ async def start(message: Message):
 
 @dp.message(Command("myid"))
 async def cmd_myid(message: Message):
-    await message.answer(f"Твой Telegram ID: {message.from_user.id}")
+    await message.answer(f"🆔 Твой Telegram ID: {message.from_user.id}")
+
+
+@dp.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Команда только для администратора.")
+        return
+    await message.answer(
+        "👑 Админ-команды\n\n"
+        "🆔 /myid\n"
+        "   Показывает твой Telegram ID.\n"
+        "   Нужен один раз — чтобы вписать в ADMIN_ID.\n\n"
+        "📊 /stats\n"
+        "   Статистика бота:\n"
+        "   • всего пользователей\n"
+        "   • с сохранённой группой\n"
+        "   • с включёнными уведомлениями\n\n"
+        "📤 /broadcast Текст\n"
+        "   Рассылает текст всем пользователям бота.\n"
+        "   Пример: /broadcast Привет! Бот теперь умеет уведомления.\n\n"
+        "💾 /backup\n"
+        "   Присылает файл базы users.db в Telegram.\n"
+        "   Делай перед каждым обновлением кода.\n\n"
+        "📥 /restore\n"
+        "   Восстанавливает базу из файла.\n"
+        "   Отправь файл боту с подписью /restore.\n\n"
+        "👑 /admin\n"
+        "   Показывает этот список команд."
+    )
 
 
 @dp.message(Command("stats"))
@@ -682,10 +714,10 @@ async def cmd_stats(message: Message):
         return
     total, with_group, with_notify = get_stats()
     await message.answer(
-        f"Статистика бота:\n\n"
-        f"Всего пользователей: {total}\n"
-        f"С сохранённой группой: {with_group}\n"
-        f"С уведомлениями: {with_notify}"
+        f"📊 Статистика бота:\n\n"
+        f"👥 Всего пользователей: {total}\n"
+        f"🎓 С сохранённой группой: {with_group}\n"
+        f"🔔 С уведомлениями: {with_notify}"
     )
 
 
@@ -710,7 +742,7 @@ async def cmd_broadcast(message: Message):
         await message.answer("В базе нет пользователей.")
         return
 
-    status_msg = await message.answer(f"Отправляю {len(user_ids)} пользователям...")
+    status_msg = await message.answer(f"📤 Отправляю {len(user_ids)} пользователям...")
 
     sent = 0
     failed = 0
@@ -724,52 +756,103 @@ async def cmd_broadcast(message: Message):
         await asyncio.sleep(0.05)
 
     await status_msg.edit_text(
-        f"Рассылка завершена.\n\n"
-        f"Отправлено: {sent}\n"
-        f"Не доставлено: {failed}"
+        f"✅ Рассылка завершена.\n\n"
+        f"📤 Отправлено: {sent}\n"
+        f"❌ Не доставлено: {failed}"
     )
 
 
-@dp.message(F.text == "Расписание")
+@dp.message(Command("backup"))
+async def cmd_backup(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Команда только для администратора.")
+        return
+    try:
+        total, with_group, with_notify = get_stats()
+        doc = FSInputFile(DB_PATH, filename="users_backup.db")
+        await message.answer_document(
+            doc,
+            caption=(
+                f"💾 Резервная копия базы.\n\n"
+                f"👥 Всего: {total}\n"
+                f"🎓 С группой: {with_group}\n"
+                f"🔔 С уведомлениями: {with_notify}"
+            ),
+        )
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("restore"))
+async def cmd_restore(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Команда только для администратора.")
+        return
+    if not message.document:
+        await message.answer(
+            "Пришли файл базы `.db` вместе с командой `/restore` в подписи."
+        )
+        return
+    try:
+        file = await bot.get_file(message.document.file_id)
+        await bot.download_file(file.file_path, DB_PATH)
+        init_db()
+        total, with_group, with_notify = get_stats()
+        await message.answer(
+            f"✅ База восстановлена.\n\n"
+            f"👥 Всего: {total}\n"
+            f"🎓 С группой: {with_group}\n"
+            f"🔔 С уведомлениями: {with_notify}"
+        )
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(F.text == "📅 Расписание")
 async def show_institutes(message: Message):
     await message.answer("Выбери институт:", reply_markup=get_institutes_keyboard())
 
 
-@dp.message(F.text == "Моя группа")
+@dp.message(F.text == "🎓 Моя группа")
 async def show_my_group(message: Message):
     saved = get_user_group(message.from_user.id)
     if not saved:
         await message.answer(
             "У тебя нет сохранённой группы.\n\n"
-            "Выбери её через «Расписание» → институт → группу, "
-            "затем нажми «Сделать моей группой».",
+            "Выбери её через «📅 Расписание» → институт → группу, "
+            "затем нажми «⭐ Сделать моей группой».",
             reply_markup=get_main_keyboard(),
         )
         return
     group_id, group_name = saved
     await message.answer(
-        f"Моя группа: {group_name}\n\nЧто показать?",
+        f"🎓 Моя группа: {group_name}\n\nЧто показать?",
         reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True),
     )
 
 
-@dp.message(F.text == "Уведомления")
+@dp.message(F.text == "🔔 Уведомления")
 async def notifications_menu(message: Message):
     saved = get_user_group(message.from_user.id)
     if not saved:
         await message.answer(
-            "Сначала сохрани свою группу (через «Расписание»). "
+            "Сначала сохрани свою группу (через «📅 Расписание»). "
             "Потом можно настроить уведомления.",
             reply_markup=get_main_keyboard(),
         )
         return
     current = get_notify_time(message.from_user.id)
     if current:
-        status = f"Сейчас уведомления приходят в {current[0]:02d}:{current[1]:02d}."
+        h, m = current
+        when = "на сегодня" if h < 12 else "на завтра"
+        status = f"🔔 Сейчас уведомления приходят в {h:02d}:{m:02d} (расписание {when})."
     else:
-        status = "Уведомления выключены."
+        status = "🔕 Уведомления выключены."
     await message.answer(
-        f"{status}\n\nВыбери время, когда присылать расписание на завтра:",
+        f"{status}\n\n"
+        "Выбери время:\n"
+        "☀️ Утро (7:00, 8:00) — приходит расписание на СЕГОДНЯ.\n"
+        "🌙 Вечер (19:00–22:00) — приходит расписание на ЗАВТРА.",
         reply_markup=get_notify_keyboard(current),
     )
 
@@ -778,17 +861,25 @@ async def notifications_menu(message: Message):
 async def process_notify(callback: CallbackQuery):
     if callback.data == "notify_off":
         set_notify_time(callback.from_user.id, -1, 0)
-        await callback.message.edit_text("Уведомления выключены.")
+        await callback.message.edit_text("🔕 Уведомления выключены.")
         await callback.answer("Выключено")
         return
     parts = callback.data.split("_")
     h, m = int(parts[1]), int(parts[2])
     set_notify_time(callback.from_user.id, h, m)
-    await callback.message.edit_text(
-        f"Уведомления включены.\n\n"
-        f"Каждый день в {h:02d}:{m:02d} (по Иркутску) бот будет присылать "
-        f"расписание на завтра.",
-    )
+    if h < 12:
+        text = (
+            f"✅ Уведомления включены.\n\n"
+            f"☀️ Каждый день в {h:02d}:{m:02d} (по Иркутску) бот будет присылать "
+            f"расписание на СЕГОДНЯ."
+        )
+    else:
+        text = (
+            f"✅ Уведомления включены.\n\n"
+            f"🌙 Каждый день в {h:02d}:{m:02d} (по Иркутску) бот будет присылать "
+            f"расписание на ЗАВТРА."
+        )
+    await callback.message.edit_text(text)
     await callback.answer("Сохранено")
 
 
@@ -836,8 +927,8 @@ async def save_my_group(callback: CallbackQuery):
     group_name = _group_name_by_id(group_id)
     save_user_group(callback.from_user.id, group_id, group_name)
     await callback.message.edit_text(
-        f"Группа {group_name} сохранена как твоя.\n\n"
-        f"Теперь в меню есть «Моя группа» и можно настроить «Уведомления».",
+        f"⭐ Группа {group_name} сохранена как твоя.\n\n"
+        f"Теперь в меню есть «🎓 Моя группа» и можно настроить «🔔 Уведомления».",
         reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True),
     )
     await callback.answer("Сохранено")
@@ -847,8 +938,8 @@ async def save_my_group(callback: CallbackQuery):
 async def forget_my_group(callback: CallbackQuery):
     delete_user_group(callback.from_user.id)
     await callback.message.edit_text(
-        "Группа удалена. Уведомления тоже отключены.\n\n"
-        "Можешь выбрать новую через «Расписание».",
+        "❌ Группа удалена. Уведомления тоже отключены.\n\n"
+        "Можешь выбрать новую через «📅 Расписание».",
     )
     await callback.answer("Удалено")
 
@@ -862,7 +953,7 @@ async def back_to_institutes(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("today_"))
 async def show_today(callback: CallbackQuery):
     group_id = callback.data.split("_", 1)[1]
-    await callback.message.edit_text("Загружаю...")
+    await callback.message.edit_text("⏳ Загружаю...")
     today = _now_irkutsk()
     monday = _monday_of_week(today)
     try:
@@ -877,14 +968,14 @@ async def show_today(callback: CallbackQuery):
         return
     today_str = today.strftime("%d.%m.%Y")
     day = next((d for d in days if d["date"] == today_str), None)
-    header = f"Сегодня {today_str}"
+    header = f"☀️ Сегодня {today_str}"
     if start and end:
-        header += f" (неделя {start} - {end})"
-    text = f"{header}\n\n" + (format_day(day).strip() if day else "Занятий нет.")
+        header += f"\n🗓 неделя {start} – {end}"
+    text = f"{header}\n\n" + (format_day(day).strip() if day else "🎉 Занятий нет!")
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
         ]),
     )
     await callback.answer()
@@ -896,7 +987,7 @@ async def show_week(callback: CallbackQuery):
     offset = int(parts[1])
     group_id = parts[2]
     group_name = _group_name_by_id(group_id)
-    await callback.message.edit_text("Загружаю...")
+    await callback.message.edit_text("⏳ Загружаю...")
     today = _now_irkutsk()
     target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
     try:
@@ -909,29 +1000,31 @@ async def show_week(callback: CallbackQuery):
         await callback.message.edit_text(f"Ошибка: {e}")
         await callback.answer()
         return
-    title = "Текущая неделя" if offset == 0 else "Следующая неделя"
-    header = f"{title}\nГруппа: {group_name}"
+    title = "📅 Текущая неделя" if offset == 0 else "📅 Следующая неделя"
+    header = f"{title}\n🎓 Группа: {group_name}"
     if start and end:
-        header += f"\n{start} - {end}"
+        header += f"\n🗓 {start} – {end}"
     text = header + "\n\n" + ("\n".join(format_day(d) for d in days) if days else "Расписание не найдено.")
     if len(text) > 4000:
         text = text[:4000] + "\n… (обрезано)"
     await callback.message.edit_text(
         text.strip(),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data=f"group_{group_id}")]
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"group_{group_id}")]
         ]),
     )
     await callback.answer()
 
 
-@dp.message(F.text == "Помощь")
+@dp.message(F.text == "ℹ️ Помощь")
 async def help_cmd(message: Message):
     await message.answer(
-        "Я умею:\n"
-        "- Показывать расписание по всем институтам ИРНИТУ\n"
-        "- Запоминать твою группу («Моя группа»)\n"
-        "- Присылать расписание на завтра в выбранное время («Уведомления»)\n\n"
+        "ℹ️ Что я умею:\n\n"
+        "📅 Показывать расписание по всем институтам ИРНИТУ\n"
+        "🎓 Запоминать твою группу («Моя группа»)\n"
+        "🔔 Присылать расписание:\n"
+        "    ☀️ утром (7:00, 8:00) — на СЕГОДНЯ\n"
+        "    🌙 вечером (19:00–22:00) — на ЗАВТРА\n\n"
         "Просто нажимай кнопки.",
         reply_markup=get_main_keyboard(),
     )
@@ -951,12 +1044,19 @@ async def notification_loop():
                 users = get_users_to_notify(now.hour, now.minute)
                 if users:
                     logging.info(f"[NOTIFY] {now.hour:02d}:{now.minute:02d}, получателей: {len(users)}")
-                    tomorrow = now + timedelta(days=1)
+
+                    if now.hour < 12:
+                        target = now
+                        title_tpl = "☀️ Расписание на сегодня\n🎓 Группа: {}"
+                    else:
+                        target = now + timedelta(days=1)
+                        title_tpl = "🌙 Расписание на завтра\n🎓 Группа: {}"
+
                     for user_id, group_id, group_name in users:
                         try:
                             await send_schedule_for_date(
-                                user_id, group_id, group_name, tomorrow,
-                                f"Расписание на завтра ({group_name})"
+                                user_id, group_id, group_name, target,
+                                title_tpl.format(group_name)
                             )
                         except Exception as e:
                             logging.error(f"[NOTIFY] Ошибка для {user_id}: {e}")
