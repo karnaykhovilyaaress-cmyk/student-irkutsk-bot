@@ -35,13 +35,17 @@ if not GIGACHAT_CREDENTIALS:
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Инициализация клиента GigaChat
+# Инициализация клиента GigaChat (с указанием модели)
 giga_client = None
 if GIGACHAT_CREDENTIALS:
     try:
         from gigachat import GigaChat
-        giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS, verify_ssl_certs=False)
-        logging.info("GigaChat клиент инициализирован")
+        giga_client = GigaChat(
+            credentials=GIGACHAT_CREDENTIALS,
+            verify_ssl_certs=False,
+            model="GigaChat"  # ← указана модель
+        )
+        logging.info("GigaChat клиент инициализирован (модель GigaChat)")
     except Exception as e:
         logging.error(f"Не удалось инициализировать GigaChat: {e}")
 
