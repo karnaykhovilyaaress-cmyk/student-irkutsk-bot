@@ -3,13 +3,11 @@ import re
 import sys
 import sqlite3
 import logging
-import hmac
-import hashlib
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -19,10 +17,11 @@ from aiogram.types import (
 )
 
 # ============================================================
-# НАСТРОЙКИ
+# НАСТРОЙКИ — ВПИШИ СВОИ ЗНАЧЕНИЯ!
 # ============================================================
 TOKEN = "8953672814:AAG4cxGgLJRVv-EXzDip6cT7u6NO7vez18E"
-ADMIN_ID = 6014557174  # ← ВСТАВЬ СВОЙ TELEGRAM ID (узнать через /myid)
+ADMIN_ID = 6014557174  # ← ВСТАВЬ СВОЙ TELEGRAM ID (узнать командой /myid)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -214,7 +213,6 @@ def get_stats():
     fb_count = conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     tasks_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE done=0").fetchone()[0]
     notes_count = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
-    # VIP
     now_iso = datetime.now(timezone.utc).isoformat()
     vip_count = conn.execute("SELECT COUNT(*) FROM vip WHERE expiry > ?", (now_iso,)).fetchone()[0]
     conn.close()
@@ -230,11 +228,9 @@ def get_all_user_ids():
 
 # ---- VIP ----
 def set_vip(user_id, days, tier="premium"):
-    """Выдаёт или продлевает VIP на N дней."""
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT expiry FROM vip WHERE user_id=?", (user_id,)).fetchone()
     now = datetime.now(timezone.utc)
-
     base = now
     if row and row[0]:
         try:
@@ -243,7 +239,6 @@ def set_vip(user_id, days, tier="premium"):
                 base = current_expiry
         except Exception:
             pass
-
     new_expiry = base + timedelta(days=days)
     conn.execute(
         "INSERT OR REPLACE INTO vip (user_id, expiry, tier, granted_at) VALUES (?, ?, ?, ?)",
@@ -955,8 +950,9 @@ def get_vip_keyboard(is_active=False):
 
 # ============================================================
 # ГЛОБАЛЬНЫЙ ХЕНДЛЕР КНОПОК МЕНЮ
+# StateFilter("*") — ловит кнопки из любого FSM-состояния
 # ============================================================
-@dp.message(F.text.in_(MENU_BUTTONS))
+@dp.message(StateFilter("*"), F.text.in_(MENU_BUTTONS))
 async def menu_button_global(message: Message, state: FSMContext):
     await state.clear()
     text = message.text
@@ -998,7 +994,7 @@ async def start(message: Message):
 
 @dp.message(Command("myid"))
 async def cmd_myid(message: Message):
-    await message.answer(f"🆔 Твой Telegram ID: {message.from_user.id}")
+    await message.answer(f"🆔 Твой Telegram ID: `{message.from_user.id}`", parse_mode="Markdown")
 
 
 @dp.message(Command("cancel"))
@@ -1024,22 +1020,22 @@ async def cmd_admin(message: Message):
         "👤 *Личное*\n"
         "🆔 `/myid` — показать твой Telegram ID\n\n"
         "📊 *Аналитика*\n"
-        "📊 `/stats` — полная статистика (пользователи, группы, уведомления, кэш, задачи, заметки, VIP)\n"
-        "📬 `/feedback_list` — последние 20 обращений пользователей\n\n"
+        "📊 `/stats` — статистика (пользователи, группы, кэш, задачи, заметки, VIP)\n"
+        "📬 `/feedback_list` — последние 20 обращений\n\n"
         "📣 *Коммуникация*\n"
-        "📤 `/broadcast Текст` — отправить сообщение всем пользователям\n"
-        "↩️ Ответ на сообщение бота в личке — ответить на обращение пользователя\n\n"
+        "📤 `/broadcast Текст` — рассылка всем\n"
+        "↩️ Reply на сообщение бота — ответить пользователю\n\n"
         "💎 *VIP-управление*\n"
         "💎 `/give_vip user_id дней` — выдать или продлить VIP\n"
-        "❌ `/revoke_vip user_id` — снять VIP с пользователя\n"
-        "📋 `/vip_list` — список всех активных VIP\n\n"
+        "❌ `/revoke_vip user_id` — снять VIP\n"
+        "📋 `/vip_list` — список активных VIP\n\n"
         "💾 *База данных*\n"
-        "💾 `/backup` — скачать резервную копию базы в Telegram\n"
-        "📥 `/restore` — восстановить базу из файла (отправь файл с командой в подписи)\n\n"
+        "💾 `/backup` — скачать резервную копию\n"
+        "📥 `/restore` — восстановить из файла (файл с командой в подписи)\n\n"
         "🛠 *Обслуживание*\n"
         "🧹 `/clearcache` — очистить кэш расписания\n"
-        "🔔 `/checknow` — проверить изменения расписания прямо сейчас\n"
-        "📡 `/monitor` — проверить, отвечает ли сайт ИРНИТУ\n\n"
+        "🔔 `/checknow` — проверить изменения прямо сейчас\n"
+        "📡 `/monitor` — проверить сайт ИРНИТУ\n\n"
         "👑 `/admin` — этот список",
         parse_mode="Markdown"
     )
@@ -1197,7 +1193,6 @@ async def cmd_give_vip(message: Message):
     if days <= 0:
         await message.answer("⚠️ Дней должно быть больше нуля.")
         return
-
     expiry = set_vip(uid, days)
     exp_local = expiry + timedelta(hours=8)
     await message.answer(
@@ -1761,8 +1756,7 @@ async def vip_menu(message: Message):
             f"*Что доступно:*\n"
             f"📊 Расширенная статистика\n"
             f"⭐ Приоритетная поддержка\n"
-            f"🤖 Персональный ИИ-помощник (скоро)\n\n"
-            f"Кнопка «📊 Статистика» появилась в меню.",
+            f"🤖 Персональный ИИ-помощник (скоро)",
             reply_markup=get_vip_keyboard(is_active=True),
             parse_mode="Markdown"
         )
@@ -1771,7 +1765,7 @@ async def vip_menu(message: Message):
             "💎 *VIP-подписка*\n\n"
             "Что даёт VIP:\n"
             "📊 Расширенная статистика по расписанию\n"
-            "⭐ Приоритетная поддержка (твои сообщения обрабатываются первыми)\n"
+            "⭐ Приоритетная поддержка\n"
             "🤖 Персональный ИИ-помощник (скоро)\n\n"
             "Всё остальное — расписание, уведомления, задачи, заметки — доступно "
             "бесплатно и без ограничений.\n\n"
