@@ -34,6 +34,11 @@ NOTIFY_PRESETS = [
     ("21:00", 21, 0), ("22:00", 22, 0),
 ]
 
+MENU_BUTTONS = {
+    "🎓 Моя группа", "📅 Расписание", "🔔 Уведомления", "📝 Задачи",
+    "🗒 Заметки", "📬 Обратная связь", "ℹ️ Помощь",
+}
+
 
 # ============================================================
 # СОСТОЯНИЯ FSM
@@ -47,9 +52,6 @@ class TaskState(StatesGroup):
 class NoteState(StatesGroup):
     waiting_subject = State()
     waiting_text = State()
-
-class AuditoriumState(StatesGroup):
-    waiting_code = State()
 
 
 # ============================================================
@@ -354,15 +356,20 @@ def get_tasks_with_due():
 
 # ---- Заметки ----
 def add_or_update_note(user_id, subject, text):
+    """Добавляет или обновляет заметку (регистронезависимо)."""
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT id FROM notes WHERE user_id=? AND subject=?",
-                       (user_id, subject)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
+        (user_id, subject)
+    ).fetchone()
     if row:
         conn.execute("UPDATE notes SET text=?, created_at=? WHERE id=?",
                      (text, datetime.now(timezone.utc).isoformat(), row[0]))
     else:
-        conn.execute("INSERT INTO notes (user_id, subject, text, created_at) VALUES (?, ?, ?, ?)",
-                     (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
+        conn.execute(
+            "INSERT INTO notes (user_id, subject, text, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, subject, text, datetime.now(timezone.utc).isoformat())
+        )
     conn.commit(); conn.close()
 
 
@@ -375,11 +382,20 @@ def get_user_notes(user_id):
 
 
 def get_note(user_id, subject):
+    """Регистронезависимый поиск заметки по предмету."""
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT text FROM notes WHERE user_id=? AND subject=?",
-                       (user_id, subject)).fetchone()
+    row = conn.execute(
+        "SELECT text FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
+        (user_id, subject)
+    ).fetchone()
     conn.close()
     return row[0] if row else None
+
+
+def delete_note_by_id(note_id, user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
+    conn.commit(); conn.close()
 
 
 # ============================================================
@@ -522,24 +538,6 @@ LESSON_TIMES = {
     "15:30": "17:00", "15:45": "17:15", "17:10": "18:40", "17:25": "18:55",
     "18:50": "20:20", "19:05": "20:35",
 }
-
-BUILDINGS = {
-    "А": {"name": "Административный корпус", "addr": "ул. Лермонтова, 83"},
-    "Б": {"name": "Библиотека (Б-корпус)",   "addr": "ул. Лермонтова, 83"},
-    "В": {"name": "Вспомогательный корпус",  "addr": "ул. Лермонтова, 83"},
-    "Г": {"name": "Главный корпус",          "addr": "ул. Лермонтова, 83"},
-    "Д": {"name": "Д-корпус",                "addr": "ул. Лермонтова, 83"},
-    "Е": {"name": "Е-корпус",                "addr": "ул. Лермонтова, 83"},
-    "Ж": {"name": "Ж-корпус",                "addr": "ул. Лермонтова, 83"},
-    "И": {"name": "Инженерный корпус",       "addr": "ул. Лермонтова, 83"},
-    "К": {"name": "К-корпус",                "addr": "ул. Лермонтова, 83"},
-    "Л": {"name": "Л-корпус",                "addr": "ул. Лермонтова, 83"},
-    "М": {"name": "М-корпус",                "addr": "ул. Лермонтова, 83"},
-    "Н": {"name": "Научный корпус",          "addr": "ул. Лермонтова, 83"},
-    "ТП": {"name": "Технопарк",              "addr": "ул. Лермонтова, 83"},
-}
-
-TWOGIS_URL = "https://2gis.ru/irkutsk/search/ИРНИТУ"
 
 
 # ============================================================
@@ -729,6 +727,7 @@ def format_day(day, user_id=None):
                 notes_lines.append(f"📝 {subj}: {note}")
         if notes_lines:
             lines.append("— — —")
+            lines.append("*Заметки:*")
             lines.extend(notes_lines)
 
     return "\n".join(lines).rstrip() + "\n"
@@ -762,8 +761,8 @@ def get_main_keyboard():
         keyboard=[
             [KeyboardButton(text="🎓 Моя группа"), KeyboardButton(text="📅 Расписание")],
             [KeyboardButton(text="🔔 Уведомления"), KeyboardButton(text="📝 Задачи")],
-            [KeyboardButton(text="🗒 Заметки"), KeyboardButton(text="🗺 Аудитория")],
-            [KeyboardButton(text="📬 Обратная связь"), KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="🗒 Заметки"), KeyboardButton(text="📬 Обратная связь")],
+            [KeyboardButton(text="ℹ️ Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -841,9 +840,48 @@ def get_tasks_keyboard():
 
 def get_notes_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Добавить/изменить заметку", callback_data="note_add")],
+        [InlineKeyboardButton(text="➕ Добавить заметку", callback_data="note_add")],
         [InlineKeyboardButton(text="📋 Мои заметки", callback_data="note_list")],
     ])
+
+
+def get_notes_list_keyboard(notes):
+    kb = []
+    for nid, subj, _text in notes:
+        label = subj[:25] + "…" if len(subj) > 25 else subj
+        kb.append([
+            InlineKeyboardButton(text=f"✏️ {label}", callback_data=f"note_edit_{nid}"),
+            InlineKeyboardButton(text=f"❌ {label}", callback_data=f"note_del_{nid}"),
+        ])
+    kb.append([InlineKeyboardButton(text="➕ Добавить заметку", callback_data="note_add")])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="note_back")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+# ============================================================
+# ГЛОБАЛЬНЫЙ ХЕНДЛЕР КНОПОК МЕНЮ
+# Ловит нажатия кнопок из любого FSM-состояния и сбрасывает состояние
+# ВАЖНО: регистрируется ПЕРВЫМ, чтобы перехватывать кнопки раньше state-хендлеров
+# ============================================================
+@dp.message(F.text.in_(MENU_BUTTONS))
+async def menu_button_global(message: Message, state: FSMContext):
+    await state.clear()
+    text = message.text
+
+    if text == "🎓 Моя группа":
+        await show_my_group(message)
+    elif text == "📅 Расписание":
+        await show_institutes(message)
+    elif text == "🔔 Уведомления":
+        await notifications_menu(message)
+    elif text == "📝 Задачи":
+        await tasks_menu(message)
+    elif text == "🗒 Заметки":
+        await notes_menu(message)
+    elif text == "📬 Обратная связь":
+        await feedback_start(message, state)
+    elif text == "ℹ️ Помощь":
+        await help_cmd(message)
 
 
 # ============================================================
@@ -886,17 +924,24 @@ async def cmd_admin(message: Message):
         await message.answer("Команда только для администратора.")
         return
     await message.answer(
-        "👑 Админ-команды\n\n"
-        "🆔 /myid — твой Telegram ID\n"
-        "📊 /stats — статистика\n"
-        "📤 /broadcast Текст — рассылка\n"
-        "💾 /backup — резервная копия\n"
-        "📥 /restore — восстановить из файла\n"
-        "📬 /feedback_list — обращения\n"
-        "🧹 /clearcache — очистить кэш\n"
-        "🔔 /checknow — проверить изменения\n"
-        "📡 /monitor — статус сайта ИРНИТУ\n"
-        "👑 /admin — этот список"
+        "👑 *Админ-команды*\n\n"
+        "👤 *Личное*\n"
+        "🆔 `/myid` — показать твой Telegram ID\n\n"
+        "📊 *Аналитика*\n"
+        "📊 `/stats` — полная статистика (пользователи, группы, уведомления, кэш, задачи, заметки)\n"
+        "📬 `/feedback_list` — последние 20 обращений пользователей\n\n"
+        "📣 *Коммуникация*\n"
+        "📤 `/broadcast Текст` — отправить сообщение всем пользователям\n"
+        "↩️ Ответ на сообщение бота в личке — ответить на обращение пользователя\n\n"
+        "💾 *База данных*\n"
+        "💾 `/backup` — скачать резервную копию базы в Telegram\n"
+        "📥 `/restore` — восстановить базу из файла (отправь файл с командой в подписи)\n\n"
+        "🛠 *Обслуживание*\n"
+        "🧹 `/clearcache` — очистить кэш расписания\n"
+        "🔔 `/checknow` — проверить изменения расписания прямо сейчас\n"
+        "📡 `/monitor` — проверить, отвечает ли сайт ИРНИТУ\n\n"
+        "👑 `/admin` — этот список",
+        parse_mode="Markdown"
     )
 
 
@@ -1374,22 +1419,23 @@ async def notes_menu(message: Message):
         text = ("🗒 Заметки к предметам\n\n"
                 "Заметка привязывается к названию предмета и показывается под расписанием дня, "
                 "если этот предмет есть в этот день.\n\n"
-                "У тебя пока нет заметок.")
+                "У тебя пока нет заметок. Нажми «➕ Добавить заметку».")
     else:
         lines = ["🗒 Твои заметки:\n"]
-        for nid, subj, text_note in notes:
-            lines.append(f"• {subj}: {text_note}")
+        for i, (nid, subj, text_note) in enumerate(notes, 1):
+            lines.append(f"{i}. *{subj}*\n   {text_note}")
         text = "\n".join(lines)
         if len(text) > 4000:
             text = text[:4000] + "\n…"
-    await message.answer(text, reply_markup=get_notes_keyboard())
+    await message.answer(text, reply_markup=get_notes_keyboard(), parse_mode="Markdown")
 
 
 @dp.callback_query(F.data == "note_add")
 async def note_add_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
-        "✏️ Напиши название предмета (как в расписании).\n\n"
+        "✏️ Напиши название предмета точно так, как он указан в расписании.\n\n"
         "Например: `Математика` или `Иностранный язык`.\n\n"
+        "⚠️ Регистр не важен, но слова должны совпадать.\n\n"
         "Для отмены — /cancel.",
         parse_mode="Markdown")
     await state.set_state(NoteState.waiting_subject)
@@ -1402,10 +1448,16 @@ async def note_subject(message: Message, state: FSMContext):
     if not subj:
         await message.answer("Пусто. Напиши название предмета.")
         return
+    if len(subj) > 100:
+        await message.answer("Слишком длинное название. Максимум 100 символов.")
+        return
     await state.update_data(subject=subj)
     existing = get_note(message.from_user.id, subj)
     if existing:
-        await message.answer(f"У тебя уже есть заметка к «{subj}»:\n\n{existing}\n\nНапиши новый текст для замены.")
+        await message.answer(
+            f"У тебя уже есть заметка к «{subj}»:\n\n_{existing}_\n\n"
+            f"Напиши новый текст — старая заметка заменится.",
+            parse_mode="Markdown")
     else:
         await message.answer(f"✏️ Теперь напиши текст заметки к «{subj}».")
     await state.set_state(NoteState.waiting_text)
@@ -1416,6 +1468,9 @@ async def note_text(message: Message, state: FSMContext):
     text = (message.text or "").strip()
     if not text:
         await message.answer("Пусто. Напиши текст заметки.")
+        return
+    if len(text) > 500:
+        await message.answer("Слишком длинный текст. Максимум 500 символов.")
         return
     data = await state.get_data()
     subj = data.get("subject", "")
@@ -1436,67 +1491,74 @@ async def note_text(message: Message, state: FSMContext):
 async def note_list(callback: CallbackQuery):
     notes = get_user_notes(callback.from_user.id)
     if not notes:
-        await callback.message.edit_text("🗒 У тебя нет заметок.", reply_markup=get_notes_keyboard())
+        await callback.message.edit_text(
+            "🗒 У тебя нет заметок.\n\nНажми «➕ Добавить заметку».",
+            reply_markup=get_notes_keyboard())
         await callback.answer(); return
     lines = ["🗒 Твои заметки:\n"]
-    for nid, subj, text_note in notes:
-        lines.append(f"• {subj}: {text_note}")
+    for i, (nid, subj, text_note) in enumerate(notes, 1):
+        lines.append(f"{i}. *{subj}*\n   {text_note}")
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:4000] + "\n…"
-    await callback.message.edit_text(text, reply_markup=get_notes_keyboard())
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_notes_list_keyboard(notes),
+        parse_mode="Markdown")
     await callback.answer()
 
 
-# ============================================================
-# АУДИТОРИИ
-# ============================================================
-@dp.message(F.text == "🗺 Аудитория")
-async def ask_auditorium(message: Message, state: FSMContext):
-    await message.answer(
-        "🗺 Напиши номер аудитории — покажу, в каком это корпусе.\n\n"
-        "Например: `Б-307`, `И-319`, `К-104`.\n\n"
-        "Для отмены — /cancel.",
+@dp.callback_query(F.data == "note_back")
+async def note_back(callback: CallbackQuery):
+    await callback.message.edit_text("🗒 Заметки", reply_markup=get_notes_keyboard())
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("note_del_"))
+async def note_delete(callback: CallbackQuery):
+    nid = int(callback.data.split("_", 2)[2])
+    delete_note_by_id(nid, callback.from_user.id)
+    await callback.answer("❌ Удалено")
+    notes = get_user_notes(callback.from_user.id)
+    if not notes:
+        await callback.message.edit_text(
+            "🗒 У тебя нет заметок.\n\nНажми «➕ Добавить заметку».",
+            reply_markup=get_notes_keyboard())
+        return
+    lines = ["🗒 Твои заметки:\n"]
+    for i, (nid2, subj, text_note) in enumerate(notes, 1):
+        lines.append(f"{i}. *{subj}*\n   {text_note}")
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:4000] + "\n…"
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_notes_list_keyboard(notes),
         parse_mode="Markdown")
-    await state.set_state(AuditoriumState.waiting_code)
 
 
-@dp.message(AuditoriumState.waiting_code)
-async def process_auditorium(message: Message, state: FSMContext):
-    raw = (message.text or "").strip().upper()
-    if not raw:
-        await message.answer("Пусто. Напиши номер аудитории.")
+@dp.callback_query(F.data.startswith("note_edit_"))
+async def note_edit(callback: CallbackQuery, state: FSMContext):
+    nid = int(callback.data.split("_", 2)[2])
+    notes = get_user_notes(callback.from_user.id)
+    target = None
+    for n in notes:
+        if n[0] == nid:
+            target = n
+            break
+    if not target:
+        await callback.answer("Заметка не найдена")
         return
-    m = re.match(r"^([А-ЯЁ]+)[\-\s]?(\d+.*)$", raw)
-    if not m:
-        await message.answer("⚠️ Не понял номер. Формат: `Б-307` или `И-319`.",
-            parse_mode="Markdown")
-        return
-    building_code = m.group(1)
-    room_number = m.group(2)
-
-    building = None
-    if building_code.startswith("ТП"):
-        building = BUILDINGS["ТП"]
-        building_code = "ТП"
-    else:
-        building = BUILDINGS.get(building_code[:1])
-
-    lines = [f"🚪 Аудитория: {building_code}-{room_number}", ""]
-    if building:
-        lines.append(f"🏛 Корпус: {building['name']}")
-        lines.append(f"📍 Адрес: {building['addr']}")
-    else:
-        lines.append(f"🏛 Корпус: {building_code} (неизвестный)")
-        lines.append("📍 Адрес: уточни в расписании")
-    lines.append("")
-    lines.append("🗺 Открыть карту ИРНИТУ в 2ГИС:")
-    lines.append(TWOGIS_URL)
-
-    await state.clear()
-    await message.answer("\n".join(lines),
-        reply_markup=get_main_keyboard(),
-        disable_web_page_preview=True)
+    _, subj, old_text = target
+    await state.update_data(subject=subj, edit_id=nid)
+    await callback.message.edit_text(
+        f"✏️ Редактирование заметки к «{subj}»\n\n"
+        f"Старый текст:\n_{old_text}_\n\n"
+        f"Напиши новый текст.\n\n"
+        f"Для отмены — /cancel.",
+        parse_mode="Markdown")
+    await state.set_state(NoteState.waiting_text)
+    await callback.answer()
 
 
 # ============================================================
@@ -1566,7 +1628,6 @@ async def help_cmd(message: Message):
         "    🔔 следить за изменениями (переносы, замены)\n"
         "📝 Личные задачи с напоминаниями\n"
         "🗒 Заметки к предметам (показываются в расписании дня)\n"
-        "🗺 Поиск аудитории по номеру (Б-307, И-319 и т.д.)\n"
         "📬 Обратная связь администратору\n\n"
         "Просто нажимай кнопки.",
         reply_markup=get_main_keyboard())
