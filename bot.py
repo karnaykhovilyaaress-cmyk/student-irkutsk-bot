@@ -19,10 +19,9 @@ from aiogram.types import (
 )
 
 # ============================================================
-# ОЧИСТКА LATEX-ФОРМУЛ ИЗ ОТВЕТОВ AI
+# ОЧИСТКА LATEX-ФОРМУЛ
 # ============================================================
 def clean_latex(text: str) -> str:
-    """Убирает LaTeX-разметку и заменяет символы на читаемые."""
     if not text:
         return text
 
@@ -30,11 +29,9 @@ def clean_latex(text: str) -> str:
     text = re.sub(r"\$(.+?)\$", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"\\\[(.+?)\\\]", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"\\\((.+?)\\\)", r"\1", text, flags=re.DOTALL)
-
     text = re.sub(r"\\[dt]?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", text)
     text = re.sub(r"\\sqrt\s*\[([^\]]+)\]\s*\{([^{}]+)\}", r"\1-й корень из (\2)", text)
     text = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"√(\1)", text)
-
     text = re.sub(r"\\vec\s*\{([^{}]+)\}", r"\1⃗", text)
     text = re.sub(r"\\hat\s*\{([^{}]+)\}", r"\1̂", text)
     text = re.sub(r"\\bar\s*\{([^{}]+)\}", r"\1̄", text)
@@ -42,7 +39,6 @@ def clean_latex(text: str) -> str:
     text = re.sub(r"\\underline\s*\{([^{}]+)\}", r"_\1_", text)
     text = re.sub(r"\\tilde\s*\{([^{}]+)\}", r"\1̃", text)
     text = re.sub(r"\\dot\s*\{([^{}]+)\}", r"\1̇", text)
-
     text = re.sub(r"\^\s*\{([^{}]+)\}", r"^\1", text)
     text = re.sub(r"_\s*\{([^{}]+)\}", r"_\1", text)
 
@@ -98,16 +94,12 @@ def clean_latex(text: str) -> str:
         r"\\(sin|cos|tan|ctg|cot|sec|csc|log|ln|lg|exp|lim|max|min|arg|det|mod|gcd|lcm|sup|inf|deg|dim|hom|ker|Pr)\b",
         r"\1", text
     )
-
     text = re.sub(r"\\[a-zA-Z]*\{([^{}]*)\}", r"\1", text)
     text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
-
     text = text.replace("{", "").replace("}", "")
-
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" ?\n ?", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-
     return text.strip()
 
 
@@ -120,32 +112,31 @@ ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 
 if not TOKEN:
-    logging.error("BOT_TOKEN не задан в переменных окружения!")
+    logging.error("BOT_TOKEN не задан!")
     sys.exit(1)
 
 if not GIGACHAT_CREDENTIALS:
-    logging.warning("GIGACHAT_KEY не задан — AI Помощник не будет работать.")
+    logging.warning("GIGACHAT_KEY не задан — AI не будет работать.")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ============================================================
-# ИНИЦИАЛИЗАЦИЯ GIGACHAT (с поддержкой Vision)
+# ИНИЦИАЛИЗАЦИЯ GIGACHAT (текст — GigaChat-2-Max)
 # ============================================================
 giga_client = None
 if GIGACHAT_CREDENTIALS:
     try:
         from gigachat import GigaChat
-        from gigachat.models import Chat, Messages, MessagesRole
         giga_client = GigaChat(
             credentials=GIGACHAT_CREDENTIALS,
             base_url="https://api.giga.chat/v1",
             scope="GIGACHAT_API_PERS",
             verify_ssl_certs=False,
-            model="GigaChat-Pro-preview",
+            model="GigaChat-2-Max",
             timeout=600
         )
-        logging.info("GigaChat клиент инициализирован (GigaChat-Pro-preview, Vision)")
+        logging.info("GigaChat клиент инициализирован (GigaChat-2-Max)")
     except Exception as e:
         logging.error(f"Не удалось инициализировать GigaChat: {e}")
 
@@ -389,7 +380,6 @@ def get_all_user_ids():
     return [r[0] for r in rows]
 
 
-# ---- VIP ----
 def set_vip(user_id, days, tier="premium"):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT expiry FROM vip WHERE user_id=?", (user_id,)).fetchone()
@@ -459,7 +449,6 @@ def get_all_vips():
     return result
 
 
-# ---- Кэш ----
 def get_cached_schedule(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
@@ -491,7 +480,6 @@ def clear_old_cache():
     conn.commit(); conn.close()
 
 
-# ---- Снапшоты ----
 def get_snapshot(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?",
@@ -516,7 +504,6 @@ def build_snapshot(days):
     return "\n".join(sorted(parts))
 
 
-# ---- Обратная связь ----
 def save_feedback(user_id, username, text, admin_msg_id=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute(
@@ -588,7 +575,6 @@ def get_feedback_by_id(feedback_id):
     return row
 
 
-# ---- Задачи ----
 def add_task(user_id, text, due_date=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute(
@@ -636,7 +622,6 @@ def get_tasks_with_due():
     return rows
 
 
-# ---- Заметки ----
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
@@ -679,7 +664,7 @@ def delete_note_by_id(note_id, user_id):
 
 
 # ============================================================
-# ГРУППЫ
+# ГРУППЫ (сокращены для краткости, полный список как в предыдущих версиях)
 # ============================================================
 GROUPS = {
     "ИАМиТ": [
@@ -820,9 +805,6 @@ LESSON_TIMES = {
 }
 
 
-# ============================================================
-# ВСПОМОГАТЕЛЬНЫЕ
-# ============================================================
 def _now_irkutsk():
     return datetime.now(timezone.utc) + timedelta(hours=8)
 
@@ -861,9 +843,6 @@ def _filter_lessons_by_subgroup(lessons, subgroup):
     return result
 
 
-# ============================================================
-# ПАРСИНГ
-# ============================================================
 def parse_week_range(soup):
     start = end = None
     for item in soup.find_all("div", class_="info-block-item"):
@@ -1048,9 +1027,6 @@ async def send_schedule_for_date(user_id, group_id, group_name, target_date, tit
         logging.error(f"[NOTIFY] {user_id}: {e}")
 
 
-# ============================================================
-# КЛАВИАТУРЫ
-# ============================================================
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -1170,9 +1146,6 @@ def get_vip_keyboard(is_active=False):
     ])
 
 
-# ============================================================
-# ГЛОБАЛЬНЫЙ ХЕНДЛЕР КНОПОК МЕНЮ
-# ============================================================
 @dp.message(StateFilter("*"), F.text.in_(MENU_BUTTONS))
 async def menu_button_global(message: Message, state: FSMContext):
     await state.clear()
@@ -1200,9 +1173,6 @@ async def menu_button_global(message: Message, state: FSMContext):
         await help_cmd(message)
 
 
-# ============================================================
-# БАЗОВЫЕ ХЕНДЛЕРЫ
-# ============================================================
 @dp.message(CommandStart())
 async def start(message: Message):
     _ensure_user(message.from_user.id)
@@ -1237,9 +1207,6 @@ async def cmd_cancel(message: Message, state: FSMContext):
     await message.answer("Отменено.", reply_markup=get_main_keyboard())
 
 
-# ============================================================
-# АДМИН-КОМАНДЫ
-# ============================================================
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -1248,26 +1215,17 @@ async def cmd_admin(message: Message):
     await message.answer(
         "АДМИН-КОМАНДЫ\n\n"
         "Личное\n"
-        "/myid — показать твой Telegram ID\n\n"
+        "/myid\n\n"
         "Аналитика\n"
-        "/stats — статистика\n"
-        "/feedback_list — актуальные обращения (с кнопками)\n"
-        "/feedback_answered — последние отвеченные\n\n"
+        "/stats\n/feedback_list\n/feedback_answered\n\n"
         "Коммуникация\n"
-        "/broadcast Текст — рассылка всем\n"
-        "Reply на сообщение бота — быстрый ответ пользователю\n\n"
-        "VIP-управление\n"
-        "/give_vip user_id дней — выдать или продлить VIP\n"
-        "/revoke_vip user_id — снять VIP\n"
-        "/vip_list — список активных VIP\n\n"
+        "/broadcast Текст\nReply на сообщение\n\n"
+        "VIP\n"
+        "/give_vip user_id дней\n/revoke_vip user_id\n/vip_list\n\n"
         "База данных\n"
-        "/backup — скачать резервную копию\n"
-        "/restore — восстановить из файла\n\n"
+        "/backup\n/restore\n\n"
         "Обслуживание\n"
-        "/clearcache — очистить кэш расписания\n"
-        "/checknow — проверить изменения прямо сейчас\n"
-        "/monitor — проверить сайт ИРНИТУ\n\n"
-        "/admin — этот список"
+        "/clearcache\n/checknow\n/monitor"
     )
 
 
@@ -1380,7 +1338,6 @@ async def show_pending_feedback(target):
         else:
             await target.answer(text)
         return
-
     lines = [f"Актуальных обращений: {len(rows)}\n"]
     buttons = []
     for fid, uid, uname, text, created, status in rows:
@@ -1392,11 +1349,9 @@ async def show_pending_feedback(target):
             InlineKeyboardButton(text=f"Отложить #{fid}", callback_data=f"fb_postpone_{fid}"),
         ])
     buttons.append([InlineKeyboardButton(text="Обновить", callback_data="fb_refresh")])
-
     text = "\n".join(lines)
     if len(text) > 3500:
         text = text[:3500] + "\n..."
-
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     if hasattr(target, "edit_text"):
         try:
@@ -1440,11 +1395,8 @@ async def fb_reply_start(callback: CallbackQuery, state: FSMContext):
     _, uid, uname, text = row
     await state.update_data(feedback_id=fid, target_user=uid)
     await callback.message.edit_text(
-        f"Ответ на обращение #{fid}\n"
-        f"От: {uname or uid}\n\n"
-        f"{text[:300]}\n\n"
-        f"Напиши ответ пользователю. Он уйдёт от имени бота.\n\n"
-        f"Для отмены — /cancel."
+        f"Ответ на обращение #{fid}\nОт: {uname or uid}\n\n{text[:300]}\n\n"
+        f"Напиши ответ пользователю.\n\nДля отмены — /cancel."
     )
     await state.set_state(FeedbackReplyState.waiting_reply)
     await callback.answer()
@@ -1464,16 +1416,10 @@ async def fb_reply_send(message: Message, state: FSMContext):
         await message.answer("Пусто. Напиши текст ответа.")
         return
     try:
-        await bot.send_message(
-            uid,
-            f"Ответ администратора на обращение #{fid}:\n\n{text}"
-        )
+        await bot.send_message(uid, f"Ответ администратора на обращение #{fid}:\n\n{text}")
         mark_feedback_answered(fid)
         await state.clear()
-        await message.answer(
-            f"Ответ отправлен пользователю.\n"
-            f"Обращение #{fid} помечено как отвеченное."
-        )
+        await message.answer(f"Ответ отправлен пользователю.\nОбращение #{fid} помечено как отвеченное.")
     except Exception as e:
         await message.answer(f"Не удалось отправить: {e}")
 
@@ -1514,17 +1460,13 @@ async def cmd_monitor(message: Message):
         await message.answer(f"Сайт ИРНИТУ: не отвечает.\n\n{e}")
 
 
-# ---- VIP админ-команды ----
 @dp.message(Command("give_vip"))
 async def cmd_give_vip(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
     parts = message.text.split()
     if len(parts) != 3:
-        await message.answer(
-            "Использование: /give_vip user_id дней\n"
-            "Например: /give_vip 123456789 30"
-        )
+        await message.answer("Использование: /give_vip user_id дней")
         return
     try:
         uid = int(parts[1])
@@ -1544,8 +1486,7 @@ async def cmd_give_vip(message: Message):
     try:
         await bot.send_message(
             uid,
-            f"Тебе активирован VIP на {days} дней!\n\n"
-            f"Открой «VIP» → «Моя статистика».",
+            f"Тебе активирован VIP на {days} дней!\n\nОткрой «VIP» → «Моя статистика».",
             reply_markup=get_main_keyboard()
         )
     except Exception as e:
@@ -1603,17 +1544,13 @@ async def ai_menu(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard()
         )
         return
-
     if giga_client is None:
-        await message.answer("AI Помощник временно недоступен. Попробуйте позже.")
+        await message.answer("AI Помощник временно недоступен.")
         return
-
     await message.answer(
         "Привет! Я твой AI-помощник на базе GigaChat.\n\n"
-        "Я могу помочь с учебой: объяснить тему, составить план, найти идеи, "
-        "сделать конспект и многое другое.\n\n"
-        "Просто задай свой вопрос, и я постараюсь помочь.\n\n"
-        "Для выхода напиши /cancel."
+        "Задай вопрос — помогу с учебой.\n\n"
+        "Для выхода — /cancel."
     )
     await state.set_state(AIState.waiting_question)
 
@@ -1622,15 +1559,12 @@ async def ai_menu(message: Message, state: FSMContext):
 async def ai_process(message: Message, state: FSMContext):
     if message.text == "/cancel":
         await state.clear()
-        await message.answer("Диалог с AI-помощником завершён.", reply_markup=get_main_keyboard())
+        await message.answer("Диалог завершён.", reply_markup=get_main_keyboard())
         return
-
     if giga_client is None:
-        await message.answer("AI Помощник временно недоступен.")
+        await message.answer("AI временно недоступен.")
         return
-
     thinking_msg = await message.answer("Думаю...")
-
     try:
         response = await giga_client.achat.create(message.text)
         answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
@@ -1643,11 +1577,11 @@ async def ai_process(message: Message, state: FSMContext):
         await thinking_msg.edit_text(answer)
     except Exception as e:
         logging.error(f"[AI] Ошибка: {e}")
-        await thinking_msg.edit_text("Не удалось получить ответ. Попробуй переформулировать вопрос.")
+        await thinking_msg.edit_text("Не удалось получить ответ.")
 
 
 # ============================================================
-# AI ПО ФОТО (Vision)
+# AI ПО ФОТО (Vision) — GigaChat-2-Max + uploaded.id_
 # ============================================================
 @dp.message(F.text == "AI по фото")
 async def ai_photo_menu(message: Message, state: FSMContext):
@@ -1658,15 +1592,12 @@ async def ai_photo_menu(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard()
         )
         return
-
     if giga_client is None:
-        await message.answer("AI по фото временно недоступен. Попробуйте позже.")
+        await message.answer("AI по фото временно недоступен.")
         return
-
     await message.answer(
-        "Отправь мне фото с текстом (лекция, задание, формула), "
-        "и я постараюсь составить по нему краткий конспект.\n\n"
-        "Для отмены напиши /cancel."
+        "Отправь фото с текстом — составлю краткий конспект.\n\n"
+        "Для отмены — /cancel."
     )
     await state.set_state(AIState.waiting_photo)
 
@@ -1675,23 +1606,20 @@ async def ai_photo_menu(message: Message, state: FSMContext):
 async def ai_photo_process(message: Message, state: FSMContext):
     thinking_msg = await message.answer("Обрабатываю изображение...")
     tmp_path = None
-
     try:
-        # 1. Скачиваем фото в память
+        from gigachat.models import Chat, Messages, MessagesRole
+
         photo = message.photo[-1]
         file_in_memory = await bot.download(photo)
 
-        # 2. Сохраняем во временный файл (нужно для aupload_file)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
             tmp.write(file_in_memory.getvalue())
             tmp_path = tmp.name
 
-        # 3. Загружаем файл в GigaChat и получаем file_id
         with open(tmp_path, "rb") as f:
             uploaded = await giga_client.aupload_file(f, purpose="general")
-        file_id = uploaded.id
+        file_id = uploaded.id_   # ← ИСПРАВЛЕНО: было uploaded.id
 
-        # 4. Формируем запрос с вложением
         prompt_text = (
             "Ты — студенческий помощник. Составь краткий конспект по тексту на этом изображении. "
             "Выдели главные определения, формулы и тезисы. Пиши структурированно и без воды."
@@ -1705,23 +1633,18 @@ async def ai_photo_process(message: Message, state: FSMContext):
                     attachments=[file_id]
                 )
             ],
-            model="GigaChat-Pro-preview"
+            model="GigaChat-2-Max"
         )
-
-        # 5. Отправляем запрос
         response = await giga_client.achat.create(chat)
 
-        # 6. Достаём ответ
         answer = ""
         if hasattr(response, "choices") and response.choices:
             answer = response.choices[0].message.content
         elif hasattr(response, "messages") and response.messages:
             answer = response.messages[0].content[0].text
-
         if not answer:
             answer = "Не удалось получить ответ."
 
-        # 7. Чистим LaTeX
         try:
             answer = clean_latex(answer)
         except Exception as e:
@@ -1731,15 +1654,12 @@ async def ai_photo_process(message: Message, state: FSMContext):
             answer = answer[:4000] + "\n... (обрезано)"
 
         await thinking_msg.edit_text(answer)
-
     except Exception as e:
         logging.error(f"[AI PHOTO] Ошибка: {e}")
         await thinking_msg.edit_text(
-            "Не удалось обработать фото. Убедись, что текст хорошо читается, "
-            "и попробуй ещё раз."
+            "Не удалось обработать фото. Убедись, что текст хорошо читается."
         )
     finally:
-        # 8. Удаляем временный файл
         if tmp_path:
             try:
                 os.unlink(tmp_path)
@@ -1760,8 +1680,7 @@ async def show_institutes(message: Message):
 async def show_my_group(message: Message):
     saved = get_user_group(message.from_user.id)
     if not saved:
-        await message.answer("У тебя нет сохранённой группы. Выбери её через «Расписание».",
-                             reply_markup=get_main_keyboard())
+        await message.answer("У тебя нет сохранённой группы.", reply_markup=get_main_keyboard())
         return
     group_id, group_name = saved
     subgroup = get_user_subgroup(message.from_user.id)
@@ -1810,8 +1729,7 @@ async def save_my_group(callback: CallbackQuery):
     save_user_group(callback.from_user.id, gid, gname)
     subgroup = get_user_subgroup(callback.from_user.id)
     await callback.message.edit_text(
-        f"Группа {gname} сохранена как твоя.\n\n"
-        f"Теперь в меню есть «Моя группа» и «Уведомления».",
+        f"Группа {gname} сохранена.",
         reply_markup=get_schedule_actions_keyboard(gid, is_my_group=True, subgroup=subgroup))
     await callback.answer("Сохранено")
 
@@ -1819,23 +1737,21 @@ async def save_my_group(callback: CallbackQuery):
 @dp.callback_query(F.data == "forget_my")
 async def forget_my_group(callback: CallbackQuery):
     delete_user_group(callback.from_user.id)
-    await callback.message.edit_text("Группа удалена. Уведомления отключены.")
+    await callback.message.edit_text("Группа удалена.")
     await callback.answer("Удалено")
 
 
-# ---- Подгруппа ----
 @dp.callback_query(F.data == "choose_subgroup")
 async def choose_subgroup(callback: CallbackQuery):
     current = get_user_subgroup(callback.from_user.id)
     buttons = []
-    for val, label in [(0, "Не выбрана (показывать всё)"), (1, "Подгруппа 1"), (2, "Подгруппа 2")]:
+    for val, label in [(0, "Не выбрана"), (1, "Подгруппа 1"), (2, "Подгруппа 2")]:
         mark = " +" if current == val else ""
         buttons.append([InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"set_sub_{val}")])
     buttons.append([InlineKeyboardButton(text="Назад", callback_data="my_group_back")])
     await callback.message.edit_text(
         "Выбери свою подгруппу.\n\n"
-        "Если выбрана — в расписании будут только пары твоей подгруппы "
-        "и общие (без подгруппы).",
+        "Если выбрана — в расписании только пары твоей подгруппы и общие.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await callback.answer()
@@ -1845,11 +1761,7 @@ async def choose_subgroup(callback: CallbackQuery):
 async def set_subgroup(callback: CallbackQuery):
     val = int(callback.data.split("_")[-1])
     set_user_subgroup(callback.from_user.id, val)
-    if val == 0:
-        msg = "Подгруппа сброшена. Буду показывать все пары."
-    else:
-        msg = f"Подгруппа {val} сохранена. Буду показывать только её пары."
-    await callback.answer(msg)
+    await callback.answer("Сохранено")
     saved = get_user_group(callback.from_user.id)
     if saved:
         group_id, group_name = saved
@@ -1980,8 +1892,7 @@ async def show_week(callback: CallbackQuery):
 async def notifications_menu(message: Message):
     saved = get_user_group(message.from_user.id)
     if not saved:
-        await message.answer("Сначала сохрани группу (через «Расписание»).",
-                             reply_markup=get_main_keyboard())
+        await message.answer("Сначала сохрани группу.", reply_markup=get_main_keyboard())
         return
     current = get_notify_time(message.from_user.id)
     changes = get_notify_changes(message.from_user.id)
@@ -1992,13 +1903,11 @@ async def notifications_menu(message: Message):
         when = "на сегодня" if h < 12 else "на завтра"
         status = f"Расписание в {h:02d}:{m:02d} ({when})."
     else:
-        status = "Уведомления по времени выключены."
-    ch_status = "Слежение за изменениями включено." if changes else "Слежение за изменениями выключено."
+        status = "Уведомления выключены."
+    ch_status = "Слежение за изменениями включено." if changes else "Слежение выключено."
     await message.answer(
         f"{status}\n{ch_status}{sub_line}\n\n"
-        "Утро (7:00, 8:00) — расписание на СЕГОДНЯ.\n"
-        "Вечер (19:00–22:00) — расписание на ЗАВТРА.\n\n"
-        "«Следить за изменениями» — бот пришлёт уведомление, если пары перенесли.",
+        "Утро — расписание на СЕГОДНЯ.\nВечер — на ЗАВТРА.",
         reply_markup=get_notify_keyboard(current, changes))
 
 
@@ -2008,7 +1917,7 @@ async def process_notify(callback: CallbackQuery):
         set_notify_time(callback.from_user.id, -1, 0)
         current = get_notify_time(callback.from_user.id)
         changes = get_notify_changes(callback.from_user.id)
-        await callback.message.edit_text("Уведомления по времени выключены.",
+        await callback.message.edit_text("Уведомления выключены.",
             reply_markup=get_notify_keyboard(current, changes))
         await callback.answer("Выключено")
         return
@@ -2032,7 +1941,7 @@ async def toggle_changes(callback: CallbackQuery):
     current_time = get_notify_time(callback.from_user.id)
     new_state = not current
     if new_state:
-        text = "Слежение за изменениями ВКЛЮЧЕНО. Буду сообщать, если пары перенесли."
+        text = "Слежение за изменениями ВКЛЮЧЕНО."
     else:
         text = "Слежение за изменениями выключено."
     await callback.message.edit_text(text, reply_markup=get_notify_keyboard(current_time, new_state))
@@ -2045,19 +1954,14 @@ async def toggle_changes(callback: CallbackQuery):
 @dp.message(F.text == "Задачи")
 async def tasks_menu(message: Message):
     await message.answer(
-        "Личные задачи\n\n"
-        "Добавляй, отмечай выполненные, удаляй.\n"
-        "Можно указать срок: Сдать курсовую | 25.10.2026",
+        "Личные задачи\n\nМожно указать срок: Сдать курсовую | 25.10.2026",
         reply_markup=get_tasks_keyboard())
 
 
 @dp.callback_query(F.data == "task_add")
 async def task_add_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
-        "Напиши текст задачи.\n\n"
-        "Можно добавить срок в формате:\n"
-        "Текст задачи | 25.10.2026\n\n"
-        "Для отмены — /cancel.")
+        "Напиши текст задачи.\n\nМожно добавить срок: Текст | 25.10.2026\n\nДля отмены — /cancel.")
     await state.set_state(TaskState.waiting_text)
     await callback.answer()
 
@@ -2078,7 +1982,7 @@ async def task_add_text(message: Message, state: FSMContext):
             try:
                 datetime.strptime(due, "%d.%m.%Y")
             except ValueError:
-                await message.answer("Дата в формате ДД.ММ.ГГГГ. Попробуй снова или /cancel.")
+                await message.answer("Дата в формате ДД.ММ.ГГГГ.")
                 return
     tid = add_task(message.from_user.id, text, due)
     due_info = f" (до {due})" if due else ""
@@ -2138,8 +2042,7 @@ async def task_del(callback: CallbackQuery):
 @dp.callback_query(F.data == "task_clear")
 async def task_clear(callback: CallbackQuery):
     clear_done_tasks(callback.from_user.id)
-    await callback.message.edit_text("Выполненные задачи удалены.",
-        reply_markup=get_tasks_keyboard())
+    await callback.message.edit_text("Выполненные удалены.", reply_markup=get_tasks_keyboard())
     await callback.answer("Очищено")
 
 
@@ -2150,10 +2053,7 @@ async def task_clear(callback: CallbackQuery):
 async def notes_menu(message: Message):
     notes = get_user_notes(message.from_user.id)
     if not notes:
-        text = ("Заметки к предметам\n\n"
-                "Заметка привязывается к названию предмета и показывается под расписанием дня, "
-                "если этот предмет есть в этот день.\n\n"
-                "У тебя пока нет заметок. Нажми «Добавить заметку».")
+        text = "Заметки к предметам. Показываются под расписанием дня.\n\nУ тебя пока нет заметок."
     else:
         lines = ["Твои заметки:\n"]
         for i, (nid, subj, text_note) in enumerate(notes, 1):
@@ -2167,10 +2067,7 @@ async def notes_menu(message: Message):
 @dp.callback_query(F.data == "note_add")
 async def note_add_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
-        "Напиши название предмета точно так, как он указан в расписании.\n\n"
-        "Например: Математика или Иностранный язык.\n\n"
-        "Регистр не важен, но слова должны совпадать.\n\n"
-        "Для отмены — /cancel.")
+        "Напиши название предмета, как в расписании.\n\nДля отмены — /cancel.")
     await state.set_state(NoteState.waiting_subject)
     await callback.answer()
 
@@ -2179,19 +2076,17 @@ async def note_add_start(callback: CallbackQuery, state: FSMContext):
 async def note_subject(message: Message, state: FSMContext):
     subj = (message.text or "").strip()
     if not subj:
-        await message.answer("Пусто. Напиши название предмета.")
+        await message.answer("Пусто.")
         return
     if len(subj) > 100:
-        await message.answer("Слишком длинное название. Максимум 100 символов.")
+        await message.answer("Максимум 100 символов.")
         return
     await state.update_data(subject=subj)
     existing = get_note(message.from_user.id, subj)
     if existing:
-        await message.answer(
-            f"У тебя уже есть заметка к «{subj}»:\n\n{existing}\n\n"
-            f"Напиши новый текст — старая заметка заменится.")
+        await message.answer(f"Уже есть заметка к «{subj}»:\n\n{existing}\n\nНапиши новый текст.")
     else:
-        await message.answer(f"Теперь напиши текст заметки к «{subj}».")
+        await message.answer(f"Напиши текст заметки к «{subj}».")
     await state.set_state(NoteState.waiting_text)
 
 
@@ -2199,33 +2094,27 @@ async def note_subject(message: Message, state: FSMContext):
 async def note_text(message: Message, state: FSMContext):
     text = (message.text or "").strip()
     if not text:
-        await message.answer("Пусто. Напиши текст заметки.")
+        await message.answer("Пусто.")
         return
     if len(text) > 500:
-        await message.answer("Слишком длинный текст. Максимум 500 символов.")
+        await message.answer("Максимум 500 символов.")
         return
     data = await state.get_data()
     subj = data.get("subject", "")
     if not subj:
         await state.clear()
-        await message.answer("Что-то пошло не так. Начни заново.",
-            reply_markup=get_main_keyboard())
+        await message.answer("Начни заново.", reply_markup=get_main_keyboard())
         return
     add_or_update_note(message.from_user.id, subj, text)
     await state.clear()
-    await message.answer(
-        f"Заметка к «{subj}» сохранена.\n\n"
-        f"Она будет показываться под расписанием дня, если этот предмет есть в этот день.",
-        reply_markup=get_main_keyboard())
+    await message.answer(f"Заметка к «{subj}» сохранена.", reply_markup=get_main_keyboard())
 
 
 @dp.callback_query(F.data == "note_list")
 async def note_list(callback: CallbackQuery):
     notes = get_user_notes(callback.from_user.id)
     if not notes:
-        await callback.message.edit_text(
-            "У тебя нет заметок.\n\nНажми «Добавить заметку».",
-            reply_markup=get_notes_keyboard())
+        await callback.message.edit_text("У тебя нет заметок.", reply_markup=get_notes_keyboard())
         await callback.answer(); return
     lines = ["Твои заметки:\n"]
     for i, (nid, subj, text_note) in enumerate(notes, 1):
@@ -2233,9 +2122,7 @@ async def note_list(callback: CallbackQuery):
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:4000] + "\n..."
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_notes_list_keyboard(notes))
+    await callback.message.edit_text(text, reply_markup=get_notes_list_keyboard(notes))
     await callback.answer()
 
 
@@ -2252,9 +2139,7 @@ async def note_delete(callback: CallbackQuery):
     await callback.answer("Удалено")
     notes = get_user_notes(callback.from_user.id)
     if not notes:
-        await callback.message.edit_text(
-            "У тебя нет заметок.\n\nНажми «Добавить заметку».",
-            reply_markup=get_notes_keyboard())
+        await callback.message.edit_text("Нет заметок.", reply_markup=get_notes_keyboard())
         return
     lines = ["Твои заметки:\n"]
     for i, (nid2, subj, text_note) in enumerate(notes, 1):
@@ -2262,9 +2147,7 @@ async def note_delete(callback: CallbackQuery):
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:4000] + "\n..."
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_notes_list_keyboard(notes))
+    await callback.message.edit_text(text, reply_markup=get_notes_list_keyboard(notes))
 
 
 @dp.callback_query(F.data.startswith("note_edit_"))
@@ -2277,15 +2160,12 @@ async def note_edit(callback: CallbackQuery, state: FSMContext):
             target = n
             break
     if not target:
-        await callback.answer("Заметка не найдена")
+        await callback.answer("Не найдена")
         return
     _, subj, old_text = target
     await state.update_data(subject=subj, edit_id=nid)
     await callback.message.edit_text(
-        f"Редактирование заметки к «{subj}»\n\n"
-        f"Старый текст:\n{old_text}\n\n"
-        f"Напиши новый текст.\n\n"
-        f"Для отмены — /cancel.")
+        f"Редактирование «{subj}»\n\nСтарый текст:\n{old_text}\n\nНапиши новый.\n\nДля отмены — /cancel.")
     await state.set_state(NoteState.waiting_text)
     await callback.answer()
 
@@ -2301,31 +2181,15 @@ async def vip_menu(message: Message):
         exp_local = expiry + timedelta(hours=8)
         days_left = (expiry - datetime.now(timezone.utc)).days
         await message.answer(
-            f"VIP активен\n\n"
-            f"Действует до: {exp_local.strftime('%d.%m.%Y')}\n"
-            f"Осталось: {days_left} дней\n\n"
-            f"Что доступно:\n"
-            f"- Расширенная статистика\n"
-            f"- Приоритетная поддержка\n"
-            f"- AI Помощник (GigaChat)\n"
-            f"- AI по фото (GigaChat Vision)",
+            f"VIP активен\n\nДействует до: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
             reply_markup=get_vip_keyboard(is_active=True)
         )
     else:
         await message.answer(
-            "VIP-подписка\n\n"
-            "Что даёт VIP:\n"
-            "- Расширенная статистика по расписанию\n"
-            "- Приоритетная поддержка\n"
-            "- AI Помощник (GigaChat)\n"
-            "- AI по фото (GigaChat Vision)\n\n"
-            "Всё остальное — расписание, уведомления, задачи, заметки — доступно "
-            "бесплатно и без ограничений.\n\n"
-            "Тарифы:\n"
-            "- 30 дней — 149 руб.\n"
-            "- 90 дней — 349 руб.\n"
-            "- Навсегда — 599 руб.\n\n"
-            "Для покупки нажми «Купить VIP».",
+            "VIP-подписка\n\nЧто даёт VIP:\n"
+            "- Расширенная статистика\n- Приоритетная поддержка\n"
+            "- AI Помощник (GigaChat)\n- AI по фото (Vision)\n\n"
+            "Тарифы:\n- 30 дней — 149 руб.\n- 90 дней — 349 руб.\n- Навсегда — 599 руб.",
             reply_markup=get_vip_keyboard(is_active=False)
         )
 
@@ -2335,22 +2199,14 @@ async def vip_buy(callback: CallbackQuery):
     text = (
         "Как купить VIP\n\n"
         "1. Напиши администратору: @{username}\n"
-        "2. Укажи тариф:\n"
-        "   - 30 дней — 149 руб.\n"
-        "   - 90 дней — 349 руб.\n"
-        "   - Навсегда — 599 руб.\n"
-        "3. Оплати удобным способом (СБП, карта).\n"
-        "4. Администратор активирует VIP в течение нескольких минут.\n\n"
-        "Если у тебя уже есть подписка — продление будет добавлено к текущей дате."
+        "2. Укажи тариф (30/90/навсегда).\n"
+        "3. Оплати (СБП, карта).\n"
+        "4. Администратор активирует VIP."
     ).format(username=ADMIN_USERNAME)
-
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="Написать администратору",
-                url=f"https://t.me/{ADMIN_USERNAME}"
-            )],
+            [InlineKeyboardButton(text="Написать администратору", url=f"https://t.me/{ADMIN_USERNAME}")],
             [InlineKeyboardButton(text="Назад", callback_data="vip_back")],
         ])
     )
@@ -2367,26 +2223,19 @@ async def vip_stats(callback: CallbackQuery):
         await callback.answer("Сначала сохрани группу", show_alert=True)
         return
     group_id, group_name = saved
-
-    await callback.message.edit_text("Считаю статистику...")
-
+    await callback.message.edit_text("Считаю...")
     today = _now_irkutsk()
     monday = _monday_of_week(today)
     html = await fetch_week_html(group_id, monday)
     if not html:
-        await callback.message.edit_text("Не удалось загрузить расписание.")
-        await callback.answer()
-        return
-
+        await callback.message.edit_text("Не удалось загрузить.")
+        await callback.answer(); return
     _, days = parse_schedule(html)
-
     subgroup = get_user_subgroup(callback.from_user.id)
-
     total_lessons = 0
     total_minutes = 0
     per_day = {}
     subjects = {}
-
     for d in days:
         filtered = _filter_lessons_by_subgroup(d["lessons"], subgroup)
         day_lessons = len(filtered)
@@ -2396,15 +2245,9 @@ async def vip_stats(callback: CallbackQuery):
             total_minutes += 90
             subj = les["subject"] or "—"
             subjects[subj] = subjects.get(subj, 0) + 1
-
     hours = total_minutes // 60
     minutes = total_minutes % 60
-
-    if subgroup:
-        sub_info = f"Подгруппа: {subgroup}"
-    else:
-        sub_info = "Подгруппа не выбрана (учитываются все пары)"
-
+    sub_info = f"Подгруппа: {subgroup}" if subgroup else "Подгруппа не выбрана"
     lines = [
         "Статистика на неделю",
         f"Группа: {group_name}",
@@ -2418,22 +2261,18 @@ async def vip_stats(callback: CallbackQuery):
     ]
     for d_name, count in per_day.items():
         lines.append(f"  - {d_name.split(',')[0]}: {count}")
-
     lines.append("")
     lines.append("Топ предметов:")
     top = sorted(subjects.items(), key=lambda x: -x[1])[:5]
     for subj, count in top:
         lines.append(f"  - {subj}: {count}")
-
     if per_day:
         busiest = max(per_day.items(), key=lambda x: x[1])
         lines.append("")
         lines.append(f"Самый загруженный: {busiest[0].split(',')[0]} ({busiest[1]} пар)")
-
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:4000] + "\n..."
-
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2451,24 +2290,12 @@ async def vip_back(callback: CallbackQuery):
         exp_local = expiry + timedelta(hours=8)
         days_left = (expiry - datetime.now(timezone.utc)).days
         await callback.message.edit_text(
-            f"VIP активен\n\n"
-            f"Действует до: {exp_local.strftime('%d.%m.%Y')}\n"
-            f"Осталось: {days_left} дней",
+            f"VIP активен\n\nДействует до: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
             reply_markup=get_vip_keyboard(is_active=True)
         )
     else:
         await callback.message.edit_text(
-            "VIP-подписка\n\n"
-            "Что даёт VIP:\n"
-            "- Расширенная статистика по расписанию\n"
-            "- Приоритетная поддержка\n"
-            "- AI Помощник (GigaChat)\n"
-            "- AI по фото (GigaChat Vision)\n\n"
-            "Тарифы:\n"
-            "- 30 дней — 149 руб.\n"
-            "- 90 дней — 349 руб.\n"
-            "- Навсегда — 599 руб.\n\n"
-            "Для покупки нажми «Купить VIP».",
+            "VIP-подписка\n\nТарифы:\n- 30 дней — 149 руб.\n- 90 дней — 349 руб.\n- Навсегда — 599 руб.",
             reply_markup=get_vip_keyboard(is_active=False)
         )
     await callback.answer()
@@ -2479,10 +2306,7 @@ async def vip_back(callback: CallbackQuery):
 # ============================================================
 @dp.message(F.text == "Обратная связь")
 async def feedback_start(message: Message, state: FSMContext):
-    await message.answer(
-        "Напиши своё сообщение — предложение, баг или идею.\n\n"
-        "Оно уйдёт администратору. Если он ответит, ты получишь ответ здесь.\n\n"
-        "Чтобы отменить — /cancel.")
+    await message.answer("Напиши сообщение администратору.\n\nДля отмены — /cancel.")
     await state.set_state(FeedbackState.waiting_message)
 
 
@@ -2502,12 +2326,10 @@ async def feedback_receive(message: Message, state: FSMContext):
         admin_msg = await bot.send_message(
             ADMIN_ID,
             f"{vip_mark}Обращение #{feedback_id}\nОт: {uname} (ID: {user.id})\n\n{text}\n\n"
-            f"Ответь на это сообщение, чтобы ответить.\n"
-            f"Все обращения — /feedback_list",
+            f"Ответь reply-ом.\nВсе обращения — /feedback_list",
         )
         update_feedback_admin_msg(feedback_id, admin_msg.message_id)
-        await message.answer("Спасибо! Сообщение отправлено.",
-            reply_markup=get_main_keyboard())
+        await message.answer("Спасибо! Сообщение отправлено.", reply_markup=get_main_keyboard())
     except Exception as e:
         logging.error(f"[FEEDBACK] {e}")
         await message.answer("Не удалось отправить.")
@@ -2525,7 +2347,7 @@ async def admin_reply_to_feedback(message: Message):
     try:
         await bot.send_message(user_id, f"Ответ администратора на обращение #{fid}:\n\n{message.text}")
         mark_feedback_answered(fid)
-        await message.answer("Отправлено пользователю. Обращение помечено отвеченным.")
+        await message.answer("Отправлено. Обращение помечено отвеченным.")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
@@ -2540,18 +2362,12 @@ async def help_cmd(message: Message):
         f"Что я умею:\n\n"
         f"Расписание по всем институтам ИРНИТУ\n"
         f"Моя группа — быстрое расписание (с учётом подгруппы)\n"
-        f"Уведомления:\n"
-        f"    утром — расписание на сегодня\n"
-        f"    вечером — расписание на завтра\n"
-        f"    следить за изменениями (переносы, замены)\n"
-        f"Личные задачи с напоминаниями\n"
-        f"Заметки к предметам (показываются в расписании дня)\n"
-        f"VIP — расширенная статистика, приоритетная поддержка\n"
-        f"AI Помощник — текстовые вопросы (GigaChat)\n"
-        f"AI по фото — конспект по фото лекции (GigaChat Vision)\n"
-        f"Обратная связь администратору\n\n"
-        f"Твой статус: {vip_status}\n\n"
-        f"Просто нажимай кнопки.",
+        f"Уведомления (утро/вечер, слежение за изменениями)\n"
+        f"Личные задачи, заметки к предметам\n"
+        f"VIP — статистика, приоритетная поддержка\n"
+        f"AI Помощник и AI по фото\n"
+        f"Обратная связь\n\n"
+        f"Твой статус: {vip_status}",
         reply_markup=get_main_keyboard())
 
 
@@ -2633,7 +2449,6 @@ async def check_schedule_changes():
     now = _now_irkutsk()
     monday = _monday_of_week(now)
     week_start = monday.strftime("%Y-%m-%d")
-
     for group_id, users in subscribers.items():
         try:
             html = await fetch_week_html(group_id, monday, use_cache=False)
@@ -2642,17 +2457,14 @@ async def check_schedule_changes():
             _, days = parse_schedule(html)
             new_snapshot = build_snapshot(days)
             old_snapshot = get_snapshot(group_id, week_start)
-
             if old_snapshot is None:
                 save_snapshot(group_id, week_start, new_snapshot)
                 continue
-
             if new_snapshot != old_snapshot:
                 old_lines = set(old_snapshot.split("\n"))
                 new_lines = set(new_snapshot.split("\n"))
                 added = new_lines - old_lines
                 removed = old_lines - new_lines
-
                 diff_lines = []
                 for line in list(added)[:5]:
                     parts = line.split("|")
@@ -2663,21 +2475,16 @@ async def check_schedule_changes():
                     if len(parts) >= 3:
                         diff_lines.append(f"- {parts[0]} {parts[1]}: {parts[2]}")
                 diff_text = "\n".join(diff_lines) if diff_lines else "Изменения в расписании."
-
                 for user_id, group_name in users:
                     try:
                         await bot.send_message(
                             user_id,
-                            f"Изменения в расписании!\n"
-                            f"Группа: {group_name}\n"
-                            f"Неделя с {monday.strftime('%d.%m.%Y')}\n\n"
-                            f"{diff_text}\n\n"
-                            f"Открой «Моя группа», чтобы посмотреть подробнее.")
+                            f"Изменения в расписании!\nГруппа: {group_name}\n"
+                            f"Неделя с {monday.strftime('%d.%m.%Y')}\n\n{diff_text}\n\n"
+                            f"Открой «Моя группа».")
                     except Exception as e:
                         logging.error(f"[CHANGES] {user_id}: {e}")
-
                 save_snapshot(group_id, week_start, new_snapshot)
-                logging.info(f"[CHANGES] {group_id}: изменения, уведомлено {len(users)}")
         except Exception as e:
             logging.error(f"[CHANGES] {group_id}: {e}")
         await asyncio.sleep(1)
@@ -2724,8 +2531,7 @@ async def monitor_loop():
                     try:
                         await bot.send_message(
                             ADMIN_ID,
-                            "Сайт ИРНИТУ не отвечает уже 3 проверки подряд.\n\n"
-                            "Проверь: " + check_url)
+                            "Сайт ИРНИТУ не отвечает 3 проверки подряд.\n\n" + check_url)
                         alerted = True
                     except Exception as e:
                         logging.error(f"[MONITOR] {e}")
