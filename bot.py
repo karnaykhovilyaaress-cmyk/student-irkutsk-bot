@@ -4,6 +4,7 @@ import re
 import sys
 import sqlite3
 import logging
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from bs4 import BeautifulSoup
@@ -16,6 +17,112 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
     FSInputFile
 )
+
+# ============================================================
+# ОЧИСТКА LATEX-ФОРМУЛ ИЗ ОТВЕТОВ AI
+# ============================================================
+def clean_latex(text: str) -> str:
+    """Убирает LaTeX-разметку и заменяет символы на читаемые."""
+    if not text:
+        return text
+
+    # 1. Убираем маркеры формул: $$...$$, $...$, \[...\], \(...\)
+    text = re.sub(r"\$\$(.+?)\$\$", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"\$(.+?)\$", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"\\\[(.+?)\\\]", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"\\\((.+?)\\\)", r"\1", text, flags=re.DOTALL)
+
+    # 2. Дроби: \frac{a}{b}, \dfrac, \tfrac
+    text = re.sub(r"\\[dt]?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", text)
+
+    # 3. Корни: \sqrt[n]{x} и \sqrt{x}
+    text = re.sub(r"\\sqrt\s*\[([^\]]+)\]\s*\{([^{}]+)\}", r"\1-й корень из (\2)", text)
+    text = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"√(\1)", text)
+
+    # 4. Векторы, шляпы, бары
+    text = re.sub(r"\\vec\s*\{([^{}]+)\}", r"\1⃗", text)
+    text = re.sub(r"\\hat\s*\{([^{}]+)\}", r"\1̂", text)
+    text = re.sub(r"\\bar\s*\{([^{}]+)\}", r"\1̄", text)
+    text = re.sub(r"\\overline\s*\{([^{}]+)\}", r"\1̄", text)
+    text = re.sub(r"\\underline\s*\{([^{}]+)\}", r"_\1_", text)
+    text = re.sub(r"\\tilde\s*\{([^{}]+)\}", r"\1̃", text)
+    text = re.sub(r"\\dot\s*\{([^{}]+)\}", r"\1̇", text)
+
+    # 5. Степени и индексы
+    text = re.sub(r"\^\s*\{([^{}]+)\}", r"^\1", text)
+    text = re.sub(r"_\s*\{([^{}]+)\}", r"_\1", text)
+
+    # 6. Греческие буквы
+    greek = {
+        r"\\alpha": "α", r"\\beta": "β", r"\\gamma": "γ", r"\\delta": "δ",
+        r"\\epsilon": "ε", r"\\varepsilon": "ε", r"\\zeta": "ζ", r"\\eta": "η",
+        r"\\theta": "θ", r"\\vartheta": "ϑ", r"\\iota": "ι", r"\\kappa": "κ",
+        r"\\lambda": "λ", r"\\mu": "μ", r"\\nu": "ν", r"\\xi": "ξ", r"\\pi": "π",
+        r"\\varpi": "ϖ", r"\\rho": "ρ", r"\\varrho": "ϱ", r"\\sigma": "σ",
+        r"\\varsigma": "ς", r"\\tau": "τ", r"\\upsilon": "υ", r"\\phi": "φ",
+        r"\\varphi": "φ", r"\\chi": "χ", r"\\psi": "ψ", r"\\omega": "ω",
+        r"\\Gamma": "Γ", r"\\Delta": "Δ", r"\\Theta": "Θ", r"\\Lambda": "Λ",
+        r"\\Xi": "Ξ", r"\\Pi": "Π", r"\\Sigma": "Σ", r"\\Upsilon": "Υ",
+        r"\\Phi": "Φ", r"\\Psi": "Ψ", r"\\Omega": "Ω",
+    }
+    for cmd, repl in greek.items():
+        text = re.sub(cmd + r"\b", repl, text)
+
+    # 7. Математические операторы и знаки
+    replacements = {
+        r"\\cdot": "·", r"\\times": "×", r"\\div": "÷", r"\\ast": "*",
+        r"\\pm": "±", r"\\mp": "∓",
+        r"\\leq": "≤", r"\\le": "≤", r"\\geq": "≥", r"\\ge": "≥",
+        r"\\neq": "≠", r"\\ne": "≠", r"\\approx": "≈", r"\\sim": "~",
+        r"\\equiv": "≡", r"\\cong": "≅", r"\\propto": "∝",
+        r"\\infty": "∞", r"\\partial": "∂", r"\\nabla": "∇",
+        r"\\sum": "Σ", r"\\prod": "Π", r"\\int": "∫", r"\\oint": "∮",
+        r"\\rightarrow": "→", r"\\to": "→", r"\\leftarrow": "←",
+        r"\\Rightarrow": "⇒", r"\\Leftarrow": "⇐",
+        r"\\leftrightarrow": "↔", r"\\Leftrightarrow": "⇔",
+        r"\\uparrow": "↑", r"\\downarrow": "↓",
+        r"\\in": "∈", r"\\notin": "∉", r"\\subset": "⊂", r"\\supset": "⊃",
+        r"\\subseteq": "⊆", r"\\supseteq": "⊇",
+        r"\\cup": "∪", r"\\cap": "∩", r"\\setminus": "\\",
+        r"\\forall": "∀", r"\\exists": "∃", r"\\nexists": "∄",
+        r"\\emptyset": "∅", r"\\varnothing": "∅",
+        r"\\angle": "∠", r"\\degree": "°", r"\\circ": "°",
+        r"\\perp": "⊥", r"\\parallel": "∥",
+        r"\\ldots": "...", r"\\dots": "...", r"\\cdots": "...",
+        r"\\vdots": "⋮", r"\\ddots": "⋱",
+        r"\\langle": "⟨", r"\\rangle": "⟩",
+        r"\\lceil": "⌈", r"\\rceil": "⌉",
+        r"\\lfloor": "⌊", r"\\rfloor": "⌋",
+        r"\\|": "‖", r"\\Vert": "‖", r"\\vert": "|",
+        r"\\{": "{", r"\\}": "}",
+        r"\\&": "&", r"\\%": "%", r"\\#": "#", r"\\_": "_",
+        r"\\$": "$",
+        r"\\quad": "  ", r"\\qquad": "    ",
+        r"\\, ": " ", r"\\;": " ", r"\\:": " ", r"\\!": "",
+    }
+    for cmd, repl in replacements.items():
+        text = re.sub(cmd, repl, text)
+
+    # 8. Функции — просто убираем слэш
+    text = re.sub(
+        r"\\(sin|cos|tan|ctg|cot|sec|csc|log|ln|lg|exp|lim|max|min|arg|det|mod|gcd|lcm|sup|inf|deg|dim|hom|ker|Pr)\b",
+        r"\1", text
+    )
+
+    # 9. Текстовые команды: \text{...}, \mathrm{...}, \mathbf{...}, \mathbb{...}, \mathcal{...}
+    text = re.sub(r"\\[a-zA-Z]*\{([^{}]*)\}", r"\1", text)
+    text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
+
+    # 10. Фигурные скобки, оставшиеся без команды
+    text = text.replace("{", "").replace("}", "")
+
+    # 11. Убираем лишние пробелы и пустые строки
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" ?\n ?", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
 
 # ============================================================
 # НАСТРОЙКИ — БЕРУТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ BotHost
@@ -36,7 +143,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ============================================================
-# ИНИЦИАЛИЗАЦИЯ GIGACHAT (исправлено)
+# ИНИЦИАЛИЗАЦИЯ GIGACHAT (с поддержкой Vision)
 # ============================================================
 giga_client = None
 if GIGACHAT_CREDENTIALS:
@@ -49,7 +156,7 @@ if GIGACHAT_CREDENTIALS:
             verify_ssl_certs=False,
             model="GigaChat-2-Max"
         )
-        logging.info("GigaChat клиент инициализирован (модель GigaChat-2-Max)")
+        logging.info("GigaChat клиент инициализирован (модель GigaChat-2-Max, Vision)")
     except Exception as e:
         logging.error(f"Не удалось инициализировать GigaChat: {e}")
 
@@ -65,7 +172,8 @@ NOTIFY_PRESETS = [
 
 MENU_BUTTONS = {
     "Моя группа", "Расписание", "Уведомления", "Задачи",
-    "Заметки", "VIP", "AI Помощник", "Обратная связь", "Помощь",
+    "Заметки", "VIP", "AI Помощник", "AI по фото",
+    "Обратная связь", "Помощь",
 }
 
 
@@ -87,6 +195,7 @@ class NoteState(StatesGroup):
 
 class AIState(StatesGroup):
     waiting_question = State()
+    waiting_photo = State()
 
 
 # ============================================================
@@ -959,8 +1068,8 @@ def get_main_keyboard():
             [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
             [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
             [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
-            [KeyboardButton(text="AI Помощник"), KeyboardButton(text="Обратная связь")],
-            [KeyboardButton(text="Помощь")],
+            [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
+            [KeyboardButton(text="Обратная связь"), KeyboardButton(text="Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -1094,6 +1203,8 @@ async def menu_button_global(message: Message, state: FSMContext):
         await vip_menu(message)
     elif text == "AI Помощник":
         await ai_menu(message, state)
+    elif text == "AI по фото":
+        await ai_photo_menu(message, state)
     elif text == "Обратная связь":
         await feedback_start(message, state)
     elif text == "Помощь":
@@ -1492,7 +1603,7 @@ async def cmd_vip_list(message: Message):
 
 
 # ============================================================
-# AI ПОМОЩНИК
+# AI ПОМОЩНИК (текст)
 # ============================================================
 @dp.message(F.text == "AI Помощник")
 async def ai_menu(message: Message, state: FSMContext):
@@ -1534,12 +1645,84 @@ async def ai_process(message: Message, state: FSMContext):
     try:
         response = await giga_client.achat.create(message.text)
         answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
+        answer = clean_latex(answer)  # ← очищаем LaTeX
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
         await thinking_msg.edit_text(answer)
     except Exception as e:
         logging.error(f"[AI] Ошибка: {e}")
         await thinking_msg.edit_text("Не удалось получить ответ. Попробуй переформулировать вопрос.")
+
+
+# ============================================================
+# AI ПО ФОТО (Vision)
+# ============================================================
+@dp.message(F.text == "AI по фото")
+async def ai_photo_menu(message: Message, state: FSMContext):
+    if not is_vip(message.from_user.id):
+        await message.answer(
+            "AI по фото доступен только VIP-пользователям.\n\n"
+            "Открой «VIP», чтобы узнать, как получить доступ.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+
+    if giga_client is None:
+        await message.answer("AI по фото временно недоступен. Попробуйте позже.")
+        return
+
+    await message.answer(
+        "Отправь мне фото с текстом (лекция, задание, формула), "
+        "и я постараюсь составить по нему краткий конспект.\n\n"
+        "Для отмены напиши /cancel."
+    )
+    await state.set_state(AIState.waiting_photo)
+
+
+@dp.message(AIState.waiting_photo, F.photo)
+async def ai_photo_process(message: Message, state: FSMContext):
+    thinking_msg = await message.answer("Обрабатываю изображение...")
+
+    try:
+        # Получаем фото в максимальном качестве
+        photo = message.photo[-1]
+
+        # Скачиваем файл в память (BytesIO), не сохраняя на диск
+        file_in_memory = await bot.download(photo)
+
+        # Формируем запрос к GigaChat с изображением
+        prompt_text = (
+            "Ты — студенческий помощник. Составь краткий конспект по тексту на этом изображении. "
+            "Выдели главные определения, формулы и тезисы. Пиши структурированно и без воды."
+        )
+
+        # Отправляем в GigaChat с текстом и изображением
+        response = await giga_client.achat.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt_text,
+                    "attachments": [file_in_memory],
+                }
+            ]
+        )
+
+        answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
+        answer = clean_latex(answer)  # ← очищаем LaTeX
+
+        if len(answer) > 4000:
+            answer = answer[:4000] + "\n... (обрезано)"
+
+        await thinking_msg.edit_text(answer)
+
+    except Exception as e:
+        logging.error(f"[AI PHOTO] Ошибка: {e}")
+        await thinking_msg.edit_text(
+            "Не удалось обработать фото. Убедись, что текст хорошо читается, "
+            "и попробуй ещё раз."
+        )
+    finally:
+        await state.clear()
 
 
 # ============================================================
@@ -2101,7 +2284,8 @@ async def vip_menu(message: Message):
             f"Что доступно:\n"
             f"- Расширенная статистика\n"
             f"- Приоритетная поддержка\n"
-            f"- AI Помощник (GigaChat)",
+            f"- AI Помощник (GigaChat)\n"
+            f"- AI по фото (GigaChat Vision)",
             reply_markup=get_vip_keyboard(is_active=True)
         )
     else:
@@ -2110,7 +2294,8 @@ async def vip_menu(message: Message):
             "Что даёт VIP:\n"
             "- Расширенная статистика по расписанию\n"
             "- Приоритетная поддержка\n"
-            "- AI Помощник (GigaChat)\n\n"
+            "- AI Помощник (GigaChat)\n"
+            "- AI по фото (GigaChat Vision)\n\n"
             "Всё остальное — расписание, уведомления, задачи, заметки — доступно "
             "бесплатно и без ограничений.\n\n"
             "Тарифы:\n"
@@ -2254,7 +2439,8 @@ async def vip_back(callback: CallbackQuery):
             "Что даёт VIP:\n"
             "- Расширенная статистика по расписанию\n"
             "- Приоритетная поддержка\n"
-            "- AI Помощник (GigaChat)\n\n"
+            "- AI Помощник (GigaChat)\n"
+            "- AI по фото (GigaChat Vision)\n\n"
             "Тарифы:\n"
             "- 30 дней — 149 руб.\n"
             "- 90 дней — 349 руб.\n"
@@ -2337,7 +2523,9 @@ async def help_cmd(message: Message):
         f"    следить за изменениями (переносы, замены)\n"
         f"Личные задачи с напоминаниями\n"
         f"Заметки к предметам (показываются в расписании дня)\n"
-        f"VIP — расширенная статистика, приоритетная поддержка, AI Помощник\n"
+        f"VIP — расширенная статистика, приоритетная поддержка\n"
+        f"AI Помощник — текстовые вопросы (GigaChat)\n"
+        f"AI по фото — конспект по фото лекции (GigaChat Vision)\n"
         f"Обратная связь администратору\n\n"
         f"Твой статус: {vip_status}\n\n"
         f"Просто нажимай кнопки.",
