@@ -2,3 +2,4 @@ aiogram
 aiohttp
 beautifulsoup4
 gigachat>=0.2.0
+google-cloud-vision
