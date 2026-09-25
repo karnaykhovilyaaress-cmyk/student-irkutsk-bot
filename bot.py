@@ -19,9 +19,9 @@ from aiogram.types import (
 # ============================================================
 # НАСТРОЙКИ — ВПИШИ СВОИ ЗНАЧЕНИЯ!
 # ============================================================
-TOKEN = "8953672814:AAHW-lj6JSyz-Hbek-sLG9XjrE9C8evpjUU"
+TOKEN = "8953672814:AAFWKM1mi7Vot1ml6Kz7StA0C9aL7OYeikQ"
 ADMIN_ID = 6014557174  # ← ТВОЙ TELEGRAM ID (узнать через /myid)
-ADMIN_USERNAME = "@ilyaech"  # без @, например "karnaykhovilyaaress"
+ADMIN_USERNAME = "ilyaech"  # без @, например "karnaykhovilyaaress"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
