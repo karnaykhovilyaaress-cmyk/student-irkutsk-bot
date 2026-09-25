@@ -68,42 +68,41 @@ def clean_latex(text: str) -> str:
     for cmd, repl in greek.items():
         text = re.sub(cmd + r"\b", repl, text)
 
-    # 7. Математические операторы и знаки
-    replacements = {
-        r"\\cdot": "·", r"\\times": "×", r"\\div": "÷", r"\\ast": "*",
-        r"\\pm": "±", r"\\mp": "∓",
-        r"\\leq": "≤", r"\\le": "≤", r"\\geq": "≥", r"\\ge": "≥",
-        r"\\neq": "≠", r"\\ne": "≠", r"\\approx": "≈", r"\\sim": "~",
-        r"\\equiv": "≡", r"\\cong": "≅", r"\\propto": "∝",
-        r"\\infty": "∞", r"\\partial": "∂", r"\\nabla": "∇",
-        r"\\sum": "Σ", r"\\prod": "Π", r"\\int": "∫", r"\\oint": "∮",
-        r"\\rightarrow": "→", r"\\to": "→", r"\\leftarrow": "←",
-        r"\\Rightarrow": "⇒", r"\\Leftarrow": "⇐",
-        r"\\leftrightarrow": "↔", r"\\Leftrightarrow": "⇔",
-        r"\\uparrow": "↑", r"\\downarrow": "↓",
-        r"\\in": "∈", r"\\notin": "∉", r"\\subset": "⊂", r"\\supset": "⊃",
-        r"\\subseteq": "⊆", r"\\supseteq": "⊇",
-        r"\\cup": "∪", r"\\cap": "∩", r"\\setminus": "\\",
-        r"\\forall": "∀", r"\\exists": "∃", r"\\nexists": "∄",
-        r"\\emptyset": "∅", r"\\varnothing": "∅",
-        r"\\angle": "∠", r"\\degree": "°", r"\\circ": "°",
-        r"\\perp": "⊥", r"\\parallel": "∥",
-        r"\\ldots": "...", r"\\dots": "...", r"\\cdots": "...",
-        r"\\vdots": "⋮", r"\\ddots": "⋱",
-        r"\\langle": "⟨", r"\\rangle": "⟩",
-        r"\\lceil": "⌈", r"\\rceil": "⌉",
-        r"\\lfloor": "⌊", r"\\rfloor": "⌋",
-        r"\\|": "‖", r"\\Vert": "‖", r"\\vert": "|",
-        r"\\{": "{", r"\\}": "}",
-        r"\\&": "&", r"\\%": "%", r"\\#": "#", r"\\_": "_",
-        r"\\$": "$",
-        r"\\quad": "  ", r"\\qquad": "    ",
-        r"\\, ": " ", r"\\;": " ", r"\\:": " ", r"\\!": "",
-    }
-    for cmd, repl in replacements.items():
+    # 7. Математические операторы и знаки (список пар — надёжнее dict)
+    replacements = [
+        (r"\\cdot", "·"), (r"\\times", "×"), (r"\\div", "÷"), (r"\\ast", "*"),
+        (r"\\pm", "±"), (r"\\mp", "∓"),
+        (r"\\leq", "≤"), (r"\\le", "≤"), (r"\\geq", "≥"), (r"\\ge", "≥"),
+        (r"\\neq", "≠"), (r"\\ne", "≠"), (r"\\approx", "≈"), (r"\\sim", "~"),
+        (r"\\equiv", "≡"), (r"\\cong", "≅"), (r"\\propto", "∝"),
+        (r"\\infty", "∞"), (r"\\partial", "∂"), (r"\\nabla", "∇"),
+        (r"\\sum", "Σ"), (r"\\prod", "Π"), (r"\\int", "∫"), (r"\\oint", "∮"),
+        (r"\\rightarrow", "→"), (r"\\to", "→"), (r"\\leftarrow", "←"),
+        (r"\\Rightarrow", "⇒"), (r"\\Leftarrow", "⇐"),
+        (r"\\leftrightarrow", "↔"), (r"\\Leftrightarrow", "⇔"),
+        (r"\\uparrow", "↑"), (r"\\downarrow", "↓"),
+        (r"\\in", "∈"), (r"\\notin", "∉"),
+        (r"\\subset", "⊂"), (r"\\supset", "⊃"),
+        (r"\\subseteq", "⊆"), (r"\\supseteq", "⊇"),
+        (r"\\cup", "∪"), (r"\\cap", "∩"),
+        (r"\\setminus", "/"),
+        (r"\\forall", "∀"), (r"\\exists", "∃"), (r"\\nexists", "∄"),
+        (r"\\emptyset", "∅"), (r"\\varnothing", "∅"),
+        (r"\\angle", "∠"), (r"\\degree", "°"), (r"\\circ", "°"),
+        (r"\\perp", "⊥"), (r"\\parallel", "∥"),
+        (r"\\ldots", "..."), (r"\\dots", "..."), (r"\\cdots", "..."),
+        (r"\\vdots", "⋮"), (r"\\ddots", "⋱"),
+        (r"\\langle", "⟨"), (r"\\rangle", "⟩"),
+        (r"\\lceil", "⌈"), (r"\\rceil", "⌉"),
+        (r"\\lfloor", "⌊"), (r"\\rfloor", "⌋"),
+        (r"\\Vert", "‖"), (r"\\vert", "|"),
+        (r"\\quad", "  "), (r"\\qquad", "    "),
+        (r"\\! ", ""), (r"\\,", " "), (r"\\;", " "), (r"\\:", " "),
+    ]
+    for cmd, repl in replacements:
         text = re.sub(cmd, repl, text)
 
-    # 8. Функции — просто убираем слэш
+    # 8. Функции — убираем слэш
     text = re.sub(
         r"\\(sin|cos|tan|ctg|cot|sec|csc|log|ln|lg|exp|lim|max|min|arg|det|mod|gcd|lcm|sup|inf|deg|dim|hom|ker|Pr)\b",
         r"\1", text
@@ -1645,7 +1644,10 @@ async def ai_process(message: Message, state: FSMContext):
     try:
         response = await giga_client.achat.create(message.text)
         answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
-        answer = clean_latex(answer)  # ← очищаем LaTeX
+        try:
+            answer = clean_latex(answer)
+        except Exception as e:
+            logging.error(f"[clean_latex] Ошибка: {e}")
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
         await thinking_msg.edit_text(answer)
@@ -1684,19 +1686,14 @@ async def ai_photo_process(message: Message, state: FSMContext):
     thinking_msg = await message.answer("Обрабатываю изображение...")
 
     try:
-        # Получаем фото в максимальном качестве
         photo = message.photo[-1]
-
-        # Скачиваем файл в память (BytesIO), не сохраняя на диск
         file_in_memory = await bot.download(photo)
 
-        # Формируем запрос к GigaChat с изображением
         prompt_text = (
             "Ты — студенческий помощник. Составь краткий конспект по тексту на этом изображении. "
             "Выдели главные определения, формулы и тезисы. Пиши структурированно и без воды."
         )
 
-        # Отправляем в GigaChat с текстом и изображением
         response = await giga_client.achat.create(
             messages=[
                 {
@@ -1708,7 +1705,10 @@ async def ai_photo_process(message: Message, state: FSMContext):
         )
 
         answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
-        answer = clean_latex(answer)  # ← очищаем LaTeX
+        try:
+            answer = clean_latex(answer)
+        except Exception as e:
+            logging.error(f"[clean_latex] Ошибка: {e}")
 
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
