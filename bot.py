@@ -20,11 +20,23 @@ from aiogram.types import (
 # НАСТРОЙКИ — ВПИШИ СВОИ ЗНАЧЕНИЯ!
 # ============================================================
 TOKEN = "8953672814:AAFWKM1mi7Vot1ml6Kz7StA0C9aL7OYeikQ"
-ADMIN_ID = 6014557174  # ← ТВОЙ TELEGRAM ID (узнать через /myid)
-ADMIN_USERNAME = "ilyaech"  # без @, например "karnaykhovilyaaress"
+ADMIN_ID = 6014557174
+ADMIN_USERNAME = "ilyaech"  # без @
+
+# Ключ GigaChat (тот, что ты прислал)
+GIGACHAT_CREDENTIALS = "MDFhMGQ4MGUtNDczZi03ZWM4LWFmNTEtZDdiZGIwZTMyMjRlOmY4OWI2ZWYzLTUyOTktNGQ3Zi04NWYxLTk2NTE5OTczOWZkYg=="
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+# Инициализация клиента GigaChat
+giga_client = None
+try:
+    from gigachat import GigaChat
+    giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS, verify_ssl_certs=False)
+    logging.info("GigaChat клиент инициализирован")
+except Exception as e:
+    logging.error(f"Не удалось инициализировать GigaChat: {e}")
 
 DB_PATH = "users.db"
 CACHE_TTL_HOURS = 2
@@ -38,7 +50,7 @@ NOTIFY_PRESETS = [
 
 MENU_BUTTONS = {
     "Моя группа", "Расписание", "Уведомления", "Задачи",
-    "Заметки", "VIP", "Обратная связь", "Помощь",
+    "Заметки", "VIP", "AI Помощник", "Обратная связь", "Помощь",
 }
 
 
@@ -57,6 +69,9 @@ class TaskState(StatesGroup):
 class NoteState(StatesGroup):
     waiting_subject = State()
     waiting_text = State()
+
+class AIState(StatesGroup):
+    waiting_question = State()
 
 
 # ============================================================
@@ -929,7 +944,8 @@ def get_main_keyboard():
             [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
             [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
             [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
-            [KeyboardButton(text="Обратная связь"), KeyboardButton(text="Помощь")],
+            [KeyboardButton(text="AI Помощник"), KeyboardButton(text="Обратная связь")],
+            [KeyboardButton(text="Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -1061,6 +1077,8 @@ async def menu_button_global(message: Message, state: FSMContext):
         await notes_menu(message)
     elif text == "VIP":
         await vip_menu(message)
+    elif text == "AI Помощник":
+        await ai_menu(message, state)
     elif text == "Обратная связь":
         await feedback_start(message, state)
     elif text == "Помощь":
@@ -1456,6 +1474,61 @@ async def cmd_vip_list(message: Message):
     if len(text) > 4000:
         text = text[:4000] + "\n..."
     await message.answer(text)
+
+
+# ============================================================
+# AI ПОМОЩНИК
+# ============================================================
+@dp.message(F.text == "AI Помощник")
+async def ai_menu(message: Message, state: FSMContext):
+    if not is_vip(message.from_user.id):
+        await message.answer(
+            "AI Помощник доступен только VIP-пользователям.\n\n"
+            "Открой «VIP», чтобы узнать, как получить доступ.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+
+    if giga_client is None:
+        await message.answer("AI Помощник временно недоступен. Попробуйте позже.")
+        return
+
+    await message.answer(
+        "Привет! Я твой AI-помощник на базе GigaChat.\n\n"
+        "Я могу помочь с учебой: объяснить тему, составить план, найти идеи, "
+        "сделать конспект и многое другое.\n\n"
+        "Просто задай свой вопрос, и я постараюсь помочь.\n\n"
+        "Для выхода напиши /cancel."
+    )
+    await state.set_state(AIState.waiting_question)
+
+
+@dp.message(AIState.waiting_question)
+async def ai_process(message: Message, state: FSMContext):
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer("Диалог с AI-помощником завершён.", reply_markup=get_main_keyboard())
+        return
+
+    if giga_client is None:
+        await message.answer("AI Помощник временно недоступен.")
+        return
+
+    thinking_msg = await message.answer("Думаю...")
+
+    try:
+        response = await giga_client.achat.create(message.text)
+        # GigaChat возвращает структуру messages[0].content[0].text
+        answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
+        if len(answer) > 4000:
+            answer = answer[:4000] + "\n... (обрезано)"
+        await thinking_msg.edit_text(answer)
+    except Exception as e:
+        logging.error(f"[AI] Ошибка: {e}")
+        await thinking_msg.edit_text("Не удалось получить ответ. Попробуй переформулировать вопрос.")
+
+    # Не сбрасываем состояние, чтобы можно было задавать следующие вопросы
+    # await state.clear()
 
 
 # ============================================================
@@ -2017,7 +2090,7 @@ async def vip_menu(message: Message):
             f"Что доступно:\n"
             f"- Расширенная статистика\n"
             f"- Приоритетная поддержка\n"
-            f"- Персональный ИИ-помощник (скоро)",
+            f"- AI Помощник (GigaChat)",
             reply_markup=get_vip_keyboard(is_active=True)
         )
     else:
@@ -2026,7 +2099,7 @@ async def vip_menu(message: Message):
             "Что даёт VIP:\n"
             "- Расширенная статистика по расписанию\n"
             "- Приоритетная поддержка\n"
-            "- Персональный ИИ-помощник (скоро)\n\n"
+            "- AI Помощник (GigaChat)\n\n"
             "Всё остальное — расписание, уведомления, задачи, заметки — доступно "
             "бесплатно и без ограничений.\n\n"
             "Тарифы:\n"
@@ -2170,7 +2243,7 @@ async def vip_back(callback: CallbackQuery):
             "Что даёт VIP:\n"
             "- Расширенная статистика по расписанию\n"
             "- Приоритетная поддержка\n"
-            "- Персональный ИИ-помощник (скоро)\n\n"
+            "- AI Помощник (GigaChat)\n\n"
             "Тарифы:\n"
             "- 30 дней — 149 руб.\n"
             "- 90 дней — 349 руб.\n"
@@ -2253,7 +2326,7 @@ async def help_cmd(message: Message):
         f"    следить за изменениями (переносы, замены)\n"
         f"Личные задачи с напоминаниями\n"
         f"Заметки к предметам (показываются в расписании дня)\n"
-        f"VIP — расширенная статистика и приоритетная поддержка\n"
+        f"VIP — расширенная статистика, приоритетная поддержка, AI Помощник\n"
         f"Обратная связь администратору\n\n"
         f"Твой статус: {vip_status}\n\n"
         f"Просто нажимай кнопки.",
