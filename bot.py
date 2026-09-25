@@ -3,6 +3,8 @@ import re
 import sys
 import sqlite3
 import logging
+import hmac
+import hashlib
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from bs4 import BeautifulSoup
@@ -36,7 +38,7 @@ NOTIFY_PRESETS = [
 
 MENU_BUTTONS = {
     "🎓 Моя группа", "📅 Расписание", "🔔 Уведомления", "📝 Задачи",
-    "🗒 Заметки", "📬 Обратная связь", "ℹ️ Помощь",
+    "🗒 Заметки", "💎 VIP", "📬 Обратная связь", "ℹ️ Помощь",
 }
 
 
@@ -105,6 +107,14 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER, subject TEXT, text TEXT,
             created_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS vip (
+            user_id INTEGER PRIMARY KEY,
+            expiry TEXT,
+            tier TEXT DEFAULT 'premium',
+            granted_at TEXT
         )
     """)
     conn.commit(); conn.close()
@@ -204,8 +214,11 @@ def get_stats():
     fb_count = conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     tasks_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE done=0").fetchone()[0]
     notes_count = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+    # VIP
+    now_iso = datetime.now(timezone.utc).isoformat()
+    vip_count = conn.execute("SELECT COUNT(*) FROM vip WHERE expiry > ?", (now_iso,)).fetchone()[0]
     conn.close()
-    return total, with_group, with_notify, changes, cache_count, fb_count, tasks_count, notes_count
+    return total, with_group, with_notify, changes, cache_count, fb_count, tasks_count, notes_count, vip_count
 
 
 def get_all_user_ids():
@@ -213,6 +226,79 @@ def get_all_user_ids():
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r[0] for r in rows]
+
+
+# ---- VIP ----
+def set_vip(user_id, days, tier="premium"):
+    """Выдаёт или продлевает VIP на N дней."""
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT expiry FROM vip WHERE user_id=?", (user_id,)).fetchone()
+    now = datetime.now(timezone.utc)
+
+    base = now
+    if row and row[0]:
+        try:
+            current_expiry = datetime.fromisoformat(row[0])
+            if current_expiry > now:
+                base = current_expiry
+        except Exception:
+            pass
+
+    new_expiry = base + timedelta(days=days)
+    conn.execute(
+        "INSERT OR REPLACE INTO vip (user_id, expiry, tier, granted_at) VALUES (?, ?, ?, ?)",
+        (user_id, new_expiry.isoformat(), tier, now.isoformat())
+    )
+    conn.commit(); conn.close()
+    return new_expiry
+
+
+def is_vip(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT expiry FROM vip WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    if not row or not row[0]:
+        return False
+    try:
+        return datetime.fromisoformat(row[0]) > datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
+def get_vip_info(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT expiry, tier FROM vip WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    if not row or not row[0]:
+        return None
+    try:
+        expiry = datetime.fromisoformat(row[0])
+        if expiry > datetime.now(timezone.utc):
+            return expiry, row[1] or "premium"
+    except Exception:
+        pass
+    return None
+
+
+def revoke_vip(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM vip WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
+
+
+def get_all_vips():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("SELECT user_id, expiry, tier FROM vip").fetchall()
+    conn.close()
+    now = datetime.now(timezone.utc)
+    result = []
+    for uid, exp, tier in rows:
+        try:
+            if datetime.fromisoformat(exp) > now:
+                result.append((uid, exp, tier))
+        except Exception:
+            pass
+    return result
 
 
 # ---- Кэш ----
@@ -356,7 +442,6 @@ def get_tasks_with_due():
 
 # ---- Заметки ----
 def add_or_update_note(user_id, subject, text):
-    """Добавляет или обновляет заметку (регистронезависимо)."""
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
         "SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
@@ -382,7 +467,6 @@ def get_user_notes(user_id):
 
 
 def get_note(user_id, subject):
-    """Регистронезависимый поиск заметки по предмету."""
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
         "SELECT text FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
@@ -761,8 +845,8 @@ def get_main_keyboard():
         keyboard=[
             [KeyboardButton(text="🎓 Моя группа"), KeyboardButton(text="📅 Расписание")],
             [KeyboardButton(text="🔔 Уведомления"), KeyboardButton(text="📝 Задачи")],
-            [KeyboardButton(text="🗒 Заметки"), KeyboardButton(text="📬 Обратная связь")],
-            [KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="🗒 Заметки"), KeyboardButton(text="💎 VIP")],
+            [KeyboardButton(text="📬 Обратная связь"), KeyboardButton(text="ℹ️ Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -858,10 +942,19 @@ def get_notes_list_keyboard(notes):
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
+def get_vip_keyboard(is_active=False):
+    if is_active:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Моя статистика", callback_data="vip_stats")],
+            [InlineKeyboardButton(text="💳 Продлить подписку", callback_data="vip_buy")],
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Купить VIP", callback_data="vip_buy")],
+    ])
+
+
 # ============================================================
 # ГЛОБАЛЬНЫЙ ХЕНДЛЕР КНОПОК МЕНЮ
-# Ловит нажатия кнопок из любого FSM-состояния и сбрасывает состояние
-# ВАЖНО: регистрируется ПЕРВЫМ, чтобы перехватывать кнопки раньше state-хендлеров
 # ============================================================
 @dp.message(F.text.in_(MENU_BUTTONS))
 async def menu_button_global(message: Message, state: FSMContext):
@@ -878,6 +971,8 @@ async def menu_button_global(message: Message, state: FSMContext):
         await tasks_menu(message)
     elif text == "🗒 Заметки":
         await notes_menu(message)
+    elif text == "💎 VIP":
+        await vip_menu(message)
     elif text == "📬 Обратная связь":
         await feedback_start(message, state)
     elif text == "ℹ️ Помощь":
@@ -891,7 +986,8 @@ async def menu_button_global(message: Message, state: FSMContext):
 async def start(message: Message):
     _ensure_user(message.from_user.id)
     saved = get_user_group(message.from_user.id)
-    hint = f"\n\n🎓 Твоя группа: {saved[1]}" if saved else \
+    vip_mark = " 💎" if is_vip(message.from_user.id) else ""
+    hint = f"\n\n🎓 Твоя группа: {saved[1]}{vip_mark}" if saved else \
            "\n\n💡 Совет: выбери группу через «📅 Расписание» и нажми «⭐ Сделать моей группой»."
     await message.answer(
         f"👋 Привет, {message.from_user.full_name}!\n\n"
@@ -928,11 +1024,15 @@ async def cmd_admin(message: Message):
         "👤 *Личное*\n"
         "🆔 `/myid` — показать твой Telegram ID\n\n"
         "📊 *Аналитика*\n"
-        "📊 `/stats` — полная статистика (пользователи, группы, уведомления, кэш, задачи, заметки)\n"
+        "📊 `/stats` — полная статистика (пользователи, группы, уведомления, кэш, задачи, заметки, VIP)\n"
         "📬 `/feedback_list` — последние 20 обращений пользователей\n\n"
         "📣 *Коммуникация*\n"
         "📤 `/broadcast Текст` — отправить сообщение всем пользователям\n"
         "↩️ Ответ на сообщение бота в личке — ответить на обращение пользователя\n\n"
+        "💎 *VIP-управление*\n"
+        "💎 `/give_vip user_id дней` — выдать или продлить VIP\n"
+        "❌ `/revoke_vip user_id` — снять VIP с пользователя\n"
+        "📋 `/vip_list` — список всех активных VIP\n\n"
         "💾 *База данных*\n"
         "💾 `/backup` — скачать резервную копию базы в Telegram\n"
         "📥 `/restore` — восстановить базу из файла (отправь файл с командой в подписи)\n\n"
@@ -960,7 +1060,8 @@ async def cmd_stats(message: Message):
         f"💾 В кэше: {s[4]}\n"
         f"📬 Обращений: {s[5]}\n"
         f"📝 Активных задач: {s[6]}\n"
-        f"🗒 Заметок: {s[7]}"
+        f"🗒 Заметок: {s[7]}\n"
+        f"💎 Активных VIP: {s[8]}"
     )
 
 
@@ -996,7 +1097,8 @@ async def cmd_backup(message: Message):
         s = get_stats()
         doc = FSInputFile(DB_PATH, filename="users_backup.db")
         await message.answer_document(doc, caption=(
-            f"💾 Резервная копия\n👥 {s[0]} | 🎓 {s[1]} | 🔔 {s[2]} | "
+            f"💾 Резервная копия\n"
+            f"👥 {s[0]} | 🎓 {s[1]} | 🔔 {s[2]} | 💎 VIP: {s[8]}\n"
             f"📝 {s[6]} задач | 🗒 {s[7]} заметок"))
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
@@ -1014,7 +1116,7 @@ async def cmd_restore(message: Message):
         await bot.download_file(file.file_path, DB_PATH)
         init_db()
         s = get_stats()
-        await message.answer(f"✅ База восстановлена. Всего: {s[0]}")
+        await message.answer(f"✅ База восстановлена. Всего: {s[0]}, VIP: {s[8]}")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
@@ -1029,7 +1131,8 @@ async def cmd_feedback_list(message: Message):
         return
     lines = ["📬 Последние обращения:\n"]
     for fid, uid, uname, text, created in rows:
-        lines.append(f"#{fid} | {uname or uid}\n{text[:200]}\n")
+        vip_mark = "⭐ " if is_vip(uid) else ""
+        lines.append(f"#{fid} | {vip_mark}{uname or uid}\n{text[:200]}\n")
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:4000] + "\n…"
@@ -1070,6 +1173,86 @@ async def cmd_monitor(message: Message):
                     await message.answer(f"📡 Сайт ИРНИТУ: ⚠️ HTTP {response.status}")
     except Exception as e:
         await message.answer(f"📡 Сайт ИРНИТУ: 🚨 не отвечает.\n\n{e}")
+
+
+# ---- VIP админ-команды ----
+@dp.message(Command("give_vip"))
+async def cmd_give_vip(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    parts = message.text.split()
+    if len(parts) != 3:
+        await message.answer(
+            "Использование: `/give_vip user_id дней`\n"
+            "Например: `/give_vip 123456789 30`",
+            parse_mode="Markdown"
+        )
+        return
+    try:
+        uid = int(parts[1])
+        days = int(parts[2])
+    except ValueError:
+        await message.answer("⚠️ user_id и дней должны быть числами.")
+        return
+    if days <= 0:
+        await message.answer("⚠️ Дней должно быть больше нуля.")
+        return
+
+    expiry = set_vip(uid, days)
+    exp_local = expiry + timedelta(hours=8)
+    await message.answer(
+        f"✅ VIP выдан пользователю `{uid}` на {days} дней.\n"
+        f"Действует до: {exp_local.strftime('%d.%m.%Y')}",
+        parse_mode="Markdown"
+    )
+    try:
+        await bot.send_message(
+            uid,
+            f"💎 Тебе активирован VIP на {days} дней!\n\n"
+            f"Открой «💎 VIP» → «📊 Моя статистика».",
+            reply_markup=get_main_keyboard()
+        )
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось уведомить пользователя: {e}")
+
+
+@dp.message(Command("revoke_vip"))
+async def cmd_revoke_vip(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer("Использование: `/revoke_vip user_id`", parse_mode="Markdown")
+        return
+    try:
+        uid = int(parts[1])
+    except ValueError:
+        await message.answer("⚠️ user_id должен быть числом.")
+        return
+    revoke_vip(uid)
+    await message.answer(f"✅ VIP снят с `{uid}`.", parse_mode="Markdown")
+
+
+@dp.message(Command("vip_list"))
+async def cmd_vip_list(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    vips = get_all_vips()
+    if not vips:
+        await message.answer("Активных VIP пока нет.")
+        return
+    lines = [f"💎 Активных VIP: {len(vips)}\n"]
+    for uid, exp, tier in vips[:50]:
+        try:
+            exp_local = datetime.fromisoformat(exp) + timedelta(hours=8)
+            days = (datetime.fromisoformat(exp) - datetime.now(timezone.utc)).days
+            lines.append(f"• `{uid}` — до {exp_local.strftime('%d.%m.%Y')} ({days} дн.)")
+        except Exception:
+            lines.append(f"• `{uid}` — {exp}")
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:4000] + "\n…"
+    await message.answer(text, parse_mode="Markdown")
 
 
 # ============================================================
@@ -1562,6 +1745,151 @@ async def note_edit(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
+# VIP
+# ============================================================
+@dp.message(F.text == "💎 VIP")
+async def vip_menu(message: Message):
+    info = get_vip_info(message.from_user.id)
+    if info:
+        expiry, tier = info
+        exp_local = expiry + timedelta(hours=8)
+        days_left = (expiry - datetime.now(timezone.utc)).days
+        await message.answer(
+            f"💎 *VIP активен*\n\n"
+            f"📅 Действует до: {exp_local.strftime('%d.%m.%Y')}\n"
+            f"⏳ Осталось: {days_left} дней\n\n"
+            f"*Что доступно:*\n"
+            f"📊 Расширенная статистика\n"
+            f"⭐ Приоритетная поддержка\n"
+            f"🤖 Персональный ИИ-помощник (скоро)\n\n"
+            f"Кнопка «📊 Статистика» появилась в меню.",
+            reply_markup=get_vip_keyboard(is_active=True),
+            parse_mode="Markdown"
+        )
+    else:
+        await message.answer(
+            "💎 *VIP-подписка*\n\n"
+            "Что даёт VIP:\n"
+            "📊 Расширенная статистика по расписанию\n"
+            "⭐ Приоритетная поддержка (твои сообщения обрабатываются первыми)\n"
+            "🤖 Персональный ИИ-помощник (скоро)\n\n"
+            "Всё остальное — расписание, уведомления, задачи, заметки — доступно "
+            "бесплатно и без ограничений.\n\n"
+            "Тарифы:\n"
+            "• 30 дней — 149 ₽\n"
+            "• 90 дней — 349 ₽\n"
+            "• Навсегда — 599 ₽",
+            reply_markup=get_vip_keyboard(is_active=False),
+            parse_mode="Markdown"
+        )
+
+
+@dp.callback_query(F.data == "vip_buy")
+async def vip_buy(callback: CallbackQuery):
+    await callback.answer(
+        "Оплата пока недоступна. Напиши администратору: он выдаст VIP вручную.",
+        show_alert=True
+    )
+
+
+@dp.callback_query(F.data == "vip_stats")
+async def vip_stats(callback: CallbackQuery):
+    if not is_vip(callback.from_user.id):
+        await callback.answer("VIP не активен", show_alert=True)
+        return
+    saved = get_user_group(callback.from_user.id)
+    if not saved:
+        await callback.answer("Сначала сохрани группу", show_alert=True)
+        return
+    group_id, group_name = saved
+
+    await callback.message.edit_text("⏳ Считаю статистику...")
+
+    today = _now_irkutsk()
+    monday = _monday_of_week(today)
+    html = await fetch_week_html(group_id, monday)
+    if not html:
+        await callback.message.edit_text("⚠️ Не удалось загрузить расписание.")
+        await callback.answer()
+        return
+
+    _, days = parse_schedule(html)
+
+    total_lessons = 0
+    total_minutes = 0
+    per_day = {}
+    subjects = {}
+
+    for d in days:
+        day_lessons = len(d["lessons"])
+        per_day[d["name"]] = day_lessons
+        total_lessons += day_lessons
+        for les in d["lessons"]:
+            total_minutes += 90
+            subj = les["subject"] or "—"
+            subjects[subj] = subjects.get(subj, 0) + 1
+
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+
+    lines = [
+        f"📊 *Статистика на неделю*",
+        f"🎓 Группа: {group_name}",
+        f"🗓 {monday.strftime('%d.%m.%Y')} – {(monday + timedelta(days=6)).strftime('%d.%m.%Y')}",
+        "",
+        f"📚 Всего пар: *{total_lessons}*",
+        f"⏱ Всего времени: *{hours} ч {minutes} мин*",
+        "",
+        "*По дням:*",
+    ]
+    for d_name, count in per_day.items():
+        lines.append(f"  • {d_name.split(',')[0]}: {count}")
+
+    lines.append("")
+    lines.append("*Топ предметов:*")
+    top = sorted(subjects.items(), key=lambda x: -x[1])[:5]
+    for subj, count in top:
+        lines.append(f"  • {subj}: {count}")
+
+    if per_day:
+        busiest = max(per_day.items(), key=lambda x: x[1])
+        lines.append("")
+        lines.append(f"🔥 Самый загруженный: *{busiest[0].split(',')[0]}* ({busiest[1]} пар)")
+
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:4000] + "\n…"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="vip_back")]
+        ]),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "vip_back")
+async def vip_back(callback: CallbackQuery):
+    info = get_vip_info(callback.from_user.id)
+    if info:
+        expiry, tier = info
+        exp_local = expiry + timedelta(hours=8)
+        days_left = (expiry - datetime.now(timezone.utc)).days
+        await callback.message.edit_text(
+            f"💎 *VIP активен*\n\n"
+            f"📅 Действует до: {exp_local.strftime('%d.%m.%Y')}\n"
+            f"⏳ Осталось: {days_left} дней",
+            reply_markup=get_vip_keyboard(is_active=True),
+            parse_mode="Markdown"
+        )
+    else:
+        await callback.message.edit_text("💎 VIP не активен.")
+    await callback.answer()
+
+
+# ============================================================
 # ОБРАТНАЯ СВЯЗЬ
 # ============================================================
 @dp.message(F.text == "📬 Обратная связь")
@@ -1585,9 +1913,10 @@ async def feedback_receive(message: Message, state: FSMContext):
     uname = f"@{user.username}" if user.username else user.full_name
     feedback_id = save_feedback(user.id, uname, text)
     try:
+        vip_mark = "⭐ VIP | " if is_vip(user.id) else ""
         admin_msg = await bot.send_message(
             ADMIN_ID,
-            f"📬 Обращение #{feedback_id}\nОт: {uname} (ID: {user.id})\n\n{text}\n\n"
+            f"📬 {vip_mark}Обращение #{feedback_id}\nОт: {uname} (ID: {user.id})\n\n{text}\n\n"
             f"↩️ Ответь на это сообщение, чтобы ответить.")
         update_feedback_admin_msg(feedback_id, admin_msg.message_id)
         await message.answer("✅ Спасибо! Сообщение отправлено.",
@@ -1618,18 +1947,21 @@ async def admin_reply_to_feedback(message: Message):
 # ============================================================
 @dp.message(F.text == "ℹ️ Помощь")
 async def help_cmd(message: Message):
+    vip_status = "💎 VIP активен" if is_vip(message.from_user.id) else "🆓 Бесплатный"
     await message.answer(
-        "ℹ️ Что я умею:\n\n"
-        "📅 Расписание по всем институтам ИРНИТУ\n"
-        "🎓 Моя группа — быстрое расписание\n"
-        "🔔 Уведомления:\n"
-        "    ☀️ утром — расписание на сегодня\n"
-        "    🌙 вечером — расписание на завтра\n"
-        "    🔔 следить за изменениями (переносы, замены)\n"
-        "📝 Личные задачи с напоминаниями\n"
-        "🗒 Заметки к предметам (показываются в расписании дня)\n"
-        "📬 Обратная связь администратору\n\n"
-        "Просто нажимай кнопки.",
+        f"ℹ️ Что я умею:\n\n"
+        f"📅 Расписание по всем институтам ИРНИТУ\n"
+        f"🎓 Моя группа — быстрое расписание\n"
+        f"🔔 Уведомления:\n"
+        f"    ☀️ утром — расписание на сегодня\n"
+        f"    🌙 вечером — расписание на завтра\n"
+        f"    🔔 следить за изменениями (переносы, замены)\n"
+        f"📝 Личные задачи с напоминаниями\n"
+        f"🗒 Заметки к предметам (показываются в расписании дня)\n"
+        f"💎 VIP — расширенная статистика и приоритетная поддержка\n"
+        f"📬 Обратная связь администратору\n\n"
+        f"Твой статус: {vip_status}\n\n"
+        f"Просто нажимай кнопки.",
         reply_markup=get_main_keyboard())
 
 
