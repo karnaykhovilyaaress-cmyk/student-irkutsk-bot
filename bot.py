@@ -20,7 +20,8 @@ from aiogram.types import (
 # НАСТРОЙКИ — ВПИШИ СВОИ ЗНАЧЕНИЯ!
 # ============================================================
 TOKEN = "8953672814:AAHW-lj6JSyz-Hbek-sLG9XjrE9C8evpjUU"
-ADMIN_ID = 6014557174
+ADMIN_ID = 6014557174  # ← ТВОЙ TELEGRAM ID (узнать через /myid)
+ADMIN_USERNAME = "@ilyaech"  # без @, например "karnaykhovilyaaress"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -2031,17 +2032,37 @@ async def vip_menu(message: Message):
             "Тарифы:\n"
             "- 30 дней — 149 руб.\n"
             "- 90 дней — 349 руб.\n"
-            "- Навсегда — 599 руб.",
+            "- Навсегда — 599 руб.\n\n"
+            "Для покупки нажми «Купить VIP».",
             reply_markup=get_vip_keyboard(is_active=False)
         )
 
 
 @dp.callback_query(F.data == "vip_buy")
 async def vip_buy(callback: CallbackQuery):
-    await callback.answer(
-        "Оплата пока недоступна. Напиши администратору: он выдаст VIP вручную.",
-        show_alert=True
+    text = (
+        "Как купить VIP\n\n"
+        "1. Напиши администратору: @{username}\n"
+        "2. Укажи тариф:\n"
+        "   - 30 дней — 149 руб.\n"
+        "   - 90 дней — 349 руб.\n"
+        "   - Навсегда — 599 руб.\n"
+        "3. Оплати удобным способом (СБП, карта).\n"
+        "4. Администратор активирует VIP в течение нескольких минут.\n\n"
+        "Если у тебя уже есть подписка — продление будет добавлено к текущей дате."
+    ).format(username=ADMIN_USERNAME)
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Написать администратору",
+                url=f"https://t.me/{ADMIN_USERNAME}"
+            )],
+            [InlineKeyboardButton(text="Назад", callback_data="vip_back")],
+        ])
     )
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "vip_stats")
@@ -2144,7 +2165,19 @@ async def vip_back(callback: CallbackQuery):
             reply_markup=get_vip_keyboard(is_active=True)
         )
     else:
-        await callback.message.edit_text("VIP не активен.")
+        await callback.message.edit_text(
+            "VIP-подписка\n\n"
+            "Что даёт VIP:\n"
+            "- Расширенная статистика по расписанию\n"
+            "- Приоритетная поддержка\n"
+            "- Персональный ИИ-помощник (скоро)\n\n"
+            "Тарифы:\n"
+            "- 30 дней — 149 руб.\n"
+            "- 90 дней — 349 руб.\n"
+            "- Навсегда — 599 руб.\n\n"
+            "Для покупки нажми «Купить VIP».",
+            reply_markup=get_vip_keyboard(is_active=False)
+        )
     await callback.answer()
 
 
