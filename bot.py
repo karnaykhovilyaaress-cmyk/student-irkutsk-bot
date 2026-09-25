@@ -1,3 +1,4 @@
+import os
 import asyncio
 import re
 import sys
@@ -17,26 +18,32 @@ from aiogram.types import (
 )
 
 # ============================================================
-# НАСТРОЙКИ — ВПИШИ СВОИ ЗНАЧЕНИЯ!
+# НАСТРОЙКИ — БЕРУТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ BotHost
 # ============================================================
-TOKEN = "8953672814:AAFWKM1mi7Vot1ml6Kz7StA0C9aL7OYeikQ"
+TOKEN = os.getenv("BOT_TOKEN", "")
+GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"  # без @
 
-# Ключ GigaChat (тот, что ты прислал)
-GIGACHAT_CREDENTIALS = "MDFhMGQ4MGUtNDczZi03ZWM4LWFmNTEtZDdiZGIwZTMyMjRlOmY4OWI2ZWYzLTUyOTktNGQ3Zi04NWYxLTk2NTE5OTczOWZkYg=="
+if not TOKEN:
+    logging.error("BOT_TOKEN не задан в переменных окружения!")
+    sys.exit(1)
+
+if not GIGACHAT_CREDENTIALS:
+    logging.warning("GIGACHAT_KEY не задан — AI Помощник не будет работать.")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # Инициализация клиента GigaChat
 giga_client = None
-try:
-    from gigachat import GigaChat
-    giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS, verify_ssl_certs=False)
-    logging.info("GigaChat клиент инициализирован")
-except Exception as e:
-    logging.error(f"Не удалось инициализировать GigaChat: {e}")
+if GIGACHAT_CREDENTIALS:
+    try:
+        from gigachat import GigaChat
+        giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS, verify_ssl_certs=False)
+        logging.info("GigaChat клиент инициализирован")
+    except Exception as e:
+        logging.error(f"Не удалось инициализировать GigaChat: {e}")
 
 DB_PATH = "users.db"
 CACHE_TTL_HOURS = 2
@@ -1518,7 +1525,6 @@ async def ai_process(message: Message, state: FSMContext):
 
     try:
         response = await giga_client.achat.create(message.text)
-        # GigaChat возвращает структуру messages[0].content[0].text
         answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
@@ -1526,9 +1532,6 @@ async def ai_process(message: Message, state: FSMContext):
     except Exception as e:
         logging.error(f"[AI] Ошибка: {e}")
         await thinking_msg.edit_text("Не удалось получить ответ. Попробуй переформулировать вопрос.")
-
-    # Не сбрасываем состояние, чтобы можно было задавать следующие вопросы
-    # await state.clear()
 
 
 # ============================================================
