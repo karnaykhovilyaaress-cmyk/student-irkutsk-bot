@@ -4,7 +4,7 @@ import re
 import sys
 import sqlite3
 import logging
-from io import BytesIO
+import tempfile
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from bs4 import BeautifulSoup
@@ -26,20 +26,15 @@ def clean_latex(text: str) -> str:
     if not text:
         return text
 
-    # 1. Убираем маркеры формул: $$...$$, $...$, \[...\], \(...\)
     text = re.sub(r"\$\$(.+?)\$\$", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"\$(.+?)\$", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"\\\[(.+?)\\\]", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"\\\((.+?)\\\)", r"\1", text, flags=re.DOTALL)
 
-    # 2. Дроби: \frac{a}{b}, \dfrac, \tfrac
     text = re.sub(r"\\[dt]?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", text)
-
-    # 3. Корни: \sqrt[n]{x} и \sqrt{x}
     text = re.sub(r"\\sqrt\s*\[([^\]]+)\]\s*\{([^{}]+)\}", r"\1-й корень из (\2)", text)
     text = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"√(\1)", text)
 
-    # 4. Векторы, шляпы, бары
     text = re.sub(r"\\vec\s*\{([^{}]+)\}", r"\1⃗", text)
     text = re.sub(r"\\hat\s*\{([^{}]+)\}", r"\1̂", text)
     text = re.sub(r"\\bar\s*\{([^{}]+)\}", r"\1̄", text)
@@ -48,11 +43,9 @@ def clean_latex(text: str) -> str:
     text = re.sub(r"\\tilde\s*\{([^{}]+)\}", r"\1̃", text)
     text = re.sub(r"\\dot\s*\{([^{}]+)\}", r"\1̇", text)
 
-    # 5. Степени и индексы
     text = re.sub(r"\^\s*\{([^{}]+)\}", r"^\1", text)
     text = re.sub(r"_\s*\{([^{}]+)\}", r"_\1", text)
 
-    # 6. Греческие буквы
     greek = {
         r"\\alpha": "α", r"\\beta": "β", r"\\gamma": "γ", r"\\delta": "δ",
         r"\\epsilon": "ε", r"\\varepsilon": "ε", r"\\zeta": "ζ", r"\\eta": "η",
@@ -68,7 +61,6 @@ def clean_latex(text: str) -> str:
     for cmd, repl in greek.items():
         text = re.sub(cmd + r"\b", repl, text)
 
-    # 7. Математические операторы и знаки (список пар — надёжнее dict)
     replacements = [
         (r"\\cdot", "·"), (r"\\times", "×"), (r"\\div", "÷"), (r"\\ast", "*"),
         (r"\\pm", "±"), (r"\\mp", "∓"),
@@ -102,20 +94,16 @@ def clean_latex(text: str) -> str:
     for cmd, repl in replacements:
         text = re.sub(cmd, repl, text)
 
-    # 8. Функции — убираем слэш
     text = re.sub(
         r"\\(sin|cos|tan|ctg|cot|sec|csc|log|ln|lg|exp|lim|max|min|arg|det|mod|gcd|lcm|sup|inf|deg|dim|hom|ker|Pr)\b",
         r"\1", text
     )
 
-    # 9. Текстовые команды: \text{...}, \mathrm{...}, \mathbf{...}, \mathbb{...}, \mathcal{...}
     text = re.sub(r"\\[a-zA-Z]*\{([^{}]*)\}", r"\1", text)
     text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
 
-    # 10. Фигурные скобки, оставшиеся без команды
     text = text.replace("{", "").replace("}", "")
 
-    # 11. Убираем лишние пробелы и пустые строки
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" ?\n ?", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -124,12 +112,12 @@ def clean_latex(text: str) -> str:
 
 
 # ============================================================
-# НАСТРОЙКИ — БЕРУТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ BotHost
+# НАСТРОЙКИ
 # ============================================================
 TOKEN = os.getenv("BOT_TOKEN", "")
 GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
 ADMIN_ID = 6014557174
-ADMIN_USERNAME = "ilyaech"  # без @
+ADMIN_USERNAME = "ilyaech"
 
 if not TOKEN:
     logging.error("BOT_TOKEN не задан в переменных окружения!")
@@ -148,14 +136,16 @@ giga_client = None
 if GIGACHAT_CREDENTIALS:
     try:
         from gigachat import GigaChat
+        from gigachat.models import Chat, Messages, MessagesRole
         giga_client = GigaChat(
             credentials=GIGACHAT_CREDENTIALS,
             base_url="https://api.giga.chat/v1",
             scope="GIGACHAT_API_PERS",
             verify_ssl_certs=False,
-            model="GigaChat-2-Max"
+            model="GigaChat-Pro-preview",
+            timeout=600
         )
-        logging.info("GigaChat клиент инициализирован (модель GigaChat-2-Max, Vision)")
+        logging.info("GigaChat клиент инициализирован (GigaChat-Pro-preview, Vision)")
     except Exception as e:
         logging.error(f"Не удалось инициализировать GigaChat: {e}")
 
@@ -1684,27 +1674,54 @@ async def ai_photo_menu(message: Message, state: FSMContext):
 @dp.message(AIState.waiting_photo, F.photo)
 async def ai_photo_process(message: Message, state: FSMContext):
     thinking_msg = await message.answer("Обрабатываю изображение...")
+    tmp_path = None
 
     try:
+        # 1. Скачиваем фото в память
         photo = message.photo[-1]
         file_in_memory = await bot.download(photo)
 
+        # 2. Сохраняем во временный файл (нужно для aupload_file)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(file_in_memory.getvalue())
+            tmp_path = tmp.name
+
+        # 3. Загружаем файл в GigaChat и получаем file_id
+        with open(tmp_path, "rb") as f:
+            uploaded = await giga_client.aupload_file(f, purpose="general")
+        file_id = uploaded.id
+
+        # 4. Формируем запрос с вложением
         prompt_text = (
             "Ты — студенческий помощник. Составь краткий конспект по тексту на этом изображении. "
             "Выдели главные определения, формулы и тезисы. Пиши структурированно и без воды."
         )
 
-        response = await giga_client.achat.create(
+        chat = Chat(
             messages=[
-                {
-                    "role": "user",
-                    "content": prompt_text,
-                    "attachments": [file_in_memory],
-                }
-            ]
+                Messages(
+                    role=MessagesRole.USER,
+                    content=prompt_text,
+                    attachments=[file_id]
+                )
+            ],
+            model="GigaChat-Pro-preview"
         )
 
-        answer = response.messages[0].content[0].text if response.messages else "Не удалось получить ответ."
+        # 5. Отправляем запрос
+        response = await giga_client.achat.create(chat)
+
+        # 6. Достаём ответ
+        answer = ""
+        if hasattr(response, "choices") and response.choices:
+            answer = response.choices[0].message.content
+        elif hasattr(response, "messages") and response.messages:
+            answer = response.messages[0].content[0].text
+
+        if not answer:
+            answer = "Не удалось получить ответ."
+
+        # 7. Чистим LaTeX
         try:
             answer = clean_latex(answer)
         except Exception as e:
@@ -1722,6 +1739,12 @@ async def ai_photo_process(message: Message, state: FSMContext):
             "и попробуй ещё раз."
         )
     finally:
+        # 8. Удаляем временный файл
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
         await state.clear()
 
 
