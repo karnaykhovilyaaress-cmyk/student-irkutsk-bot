@@ -94,9 +94,6 @@ if not TOKEN:
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# ============================================================
-# ИНИЦИАЛИЗАЦИЯ GIGACHAT
-# ============================================================
 giga_client = None
 if GIGACHAT_CREDENTIALS:
     try:
@@ -112,11 +109,6 @@ if GIGACHAT_CREDENTIALS:
         logging.info("GigaChat клиент инициализирован")
     except Exception as e:
         logging.error(f"GigaChat ошибка: {e}")
-
-if YANDEX_VISION_API_KEY and YANDEX_FOLDER_ID:
-    logging.info("Yandex Vision настроен")
-else:
-    logging.warning("Yandex Vision не настроен (нет ключа или Folder ID)")
 
 DB_PATH = "users.db"
 CACHE_TTL_HOURS = 2
@@ -1074,9 +1066,6 @@ async def menu_button_global(message: Message, state: FSMContext):
         await help_cmd(message)
 
 
-# ============================================================
-# БАЗОВЫЕ ХЕНДЛЕРЫ
-# ============================================================
 @dp.message(CommandStart())
 async def start(message: Message):
     _ensure_user(message.from_user.id)
@@ -1444,7 +1433,7 @@ async def ai_process(message: Message, state: FSMContext):
 
 
 # ============================================================
-# AI ПО ФОТО (Yandex Vision OCR + GigaChat)
+# AI ПО ФОТО (Yandex Vision OCR + GigaChat) — ИСПРАВЛЕНО
 # ============================================================
 @dp.message(F.text == "AI по фото")
 async def ai_photo_menu(message: Message, state: FSMContext):
@@ -1464,8 +1453,9 @@ async def ai_photo_process(message: Message, state: FSMContext):
     try:
         photo = message.photo[-1]
         file_in_memory = await bot.download(photo)
-        image_bytes = file_in_memory.getvalue()
+        image_bytes = file_in_memory.read()  # ← ИСПРАВЛЕНО: было .getvalue()
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+        logging.info(f"[VISION] base64 length: {len(image_base64)}")
 
         headers = {
             "Content-Type": "application/json",
