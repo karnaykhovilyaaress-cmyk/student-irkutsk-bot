@@ -123,9 +123,9 @@ YANDEX_VISION_API_KEY = os.getenv("YANDEX_VISION_API_KEY", "")
 YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
-BOT_USERNAME = "@student_irk38_bot"  # ← замени на username своего бота без @
+BOT_USERNAME = "@student_irk38_bot"
 
-REFERRAL_DAYS = 3  # сколько дней VIP давать за реферала
+REFERRAL_DAYS = 3
 
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!")
@@ -153,7 +153,7 @@ if GIGACHAT_CREDENTIALS:
 DB_PATH = os.getenv("DB_PATH", "users.db")
 CACHE_TTL_HOURS = 2
 CHANGES_CHECK_INTERVAL_MIN = 60
-DAILY_QUOTE_HOUR = 10  # по Иркутску
+DAILY_QUOTE_HOUR = 10
 
 NOTIFY_PRESETS = [
     ("7:00", 7, 0), ("8:00", 8, 0),
@@ -164,7 +164,7 @@ NOTIFY_PRESETS = [
 MENU_BUTTONS = {
     "Моя группа", "Расписание", "Уведомления", "Задачи",
     "Заметки", "VIP", "AI Помощник", "AI по фото",
-    "Стипендия", "Пригласить друга",
+    "Стипендия", "Пригласить друга", "Цитата дня",
     "Обратная связь", "Помощь",
 }
 
@@ -256,19 +256,16 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-    # Рефералы
     conn.execute("""CREATE TABLE IF NOT EXISTS referrals (
         user_id INTEGER PRIMARY KEY,
         referrer_id INTEGER,
         created_at TEXT,
         rewarded INTEGER DEFAULT 0)""")
 
-    # Подписка на цитату дня
     conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (
         user_id INTEGER PRIMARY KEY,
         subscribed_at TEXT)""")
 
-    # Стипендия и оценки
     conn.execute("""CREATE TABLE IF NOT EXISTS scholarship (
         user_id INTEGER PRIMARY KEY,
         current_amount INTEGER DEFAULT 0,
@@ -336,13 +333,10 @@ def user_exists(user_id):
     return row is not None
 
 
-# ---------- РЕФЕРАЛЫ ----------
 def add_referral(new_user_id, referrer_id):
-    """Возвращает True, если запись создана (реферал засчитан)."""
     if new_user_id == referrer_id:
         return False
     conn = sqlite3.connect(DB_PATH)
-    # уже есть запись?
     row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?",
                        (new_user_id,)).fetchone()
     if row:
@@ -372,15 +366,6 @@ def get_referral_stats(user_id):
     return total, rewarded
 
 
-def get_referrer(new_user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?",
-                       (new_user_id,)).fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
-# ---------- ЦИТАТА ДНЯ ----------
 def daily_subscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -410,7 +395,6 @@ def daily_get_all_subscribers():
     return [r[0] for r in rows]
 
 
-# ---------- СТИПЕНДИЯ ----------
 def set_scholarship_amount(user_id, amount):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -456,9 +440,6 @@ def clear_grades(user_id):
     conn.commit(); conn.close()
 
 
-# ============================================================
-# ОСТАЛЬНЫЕ ФУНКЦИИ БД (без изменений)
-# ============================================================
 def save_user_group(user_id, group_id, group_name):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
@@ -748,7 +729,6 @@ def get_feedback_by_id(feedback_id):
     return row
 
 
-# ---------- ЗАДАЧИ ----------
 def add_task(user_id, text, due_date=None, priority=1, due_time=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute(
@@ -862,7 +842,6 @@ def count_user_tasks(user_id):
     return active, done
 
 
-# ---------- ЗАМЕТКИ ----------
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
@@ -1258,7 +1237,8 @@ def get_main_keyboard():
             [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
             [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
             [KeyboardButton(text="Стипендия"), KeyboardButton(text="Пригласить друга")],
-            [KeyboardButton(text="Обратная связь"), KeyboardButton(text="Помощь")],
+            [KeyboardButton(text="Цитата дня"), KeyboardButton(text="Обратная связь")],
+            [KeyboardButton(text="Помощь")],
         ], resize_keyboard=True)
 
 
@@ -1448,9 +1428,11 @@ async def menu_button_global(message: Message, state: FSMContext):
     elif text == "AI по фото":
         await ai_photo_menu(message, state)
     elif text == "Стипендия":
-        await scholarship_menu(message)
+        await scholarship_menu(message, state)
     elif text == "Пригласить друга":
         await referral_menu(message)
+    elif text == "Цитата дня":
+        await daily_quote_menu(message)
     elif text == "Обратная связь":
         await feedback_start(message, state)
     elif text == "Помощь":
@@ -1459,18 +1441,15 @@ async def menu_button_global(message: Message, state: FSMContext):
 
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
-    """Обрабатываем реферальную ссылку t.me/bot?start=ref_123"""
     await state.clear()
     user_id = message.from_user.id
     args = message.text.split(maxsplit=1)
     ref_payload = args[1].strip() if len(args) > 1 else ""
 
-    # Проверяем, новый ли пользователь
     was_known = user_exists(user_id)
 
     _ensure_user(user_id)
 
-    # Обрабатываем реферала
     referral_msg = ""
     if ref_payload.startswith("ref_") and not was_known:
         try:
@@ -1480,7 +1459,6 @@ async def start(message: Message, state: FSMContext):
         if referrer_id and referrer_id != user_id and user_exists(referrer_id):
             ok = add_referral(user_id, referrer_id)
             if ok:
-                # Начисляем VIP обоим
                 set_vip(referrer_id, REFERRAL_DAYS)
                 set_vip(user_id, REFERRAL_DAYS)
                 mark_referral_rewarded(user_id)
@@ -1506,7 +1484,9 @@ async def start(message: Message, state: FSMContext):
     hint = f"\n\nТвоя группа: {saved[1]}{sub_mark}{vip_mark}" if saved else \
            "\n\nСовет: выбери группу через «Расписание»."
     await message.answer(
-        f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ." + hint + referral_msg,
+        f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ."
+        f"{hint}{referral_msg}\n\n"
+        f"В меню есть кнопка «Цитата дня» — там можно получать мотивацию каждое утро.",
         reply_markup=get_main_keyboard())
 
 
@@ -1527,8 +1507,19 @@ async def cmd_cancel(message: Message, state: FSMContext):
 
 @dp.message(Command("quote"))
 async def cmd_quote(message: Message):
-    """Быстрый доступ к цитате дня."""
-    await message.answer(random.choice(DAILY_QUOTES), reply_markup=get_daily_keyboard())
+    await daily_quote_menu(message)
+
+
+# ============================================================
+# ЦИТАТА ДНЯ — МЕНЮ
+# ============================================================
+async def daily_quote_menu(message: Message):
+    subscribed = daily_is_subscribed(message.from_user.id)
+    status = "подписан на 10:00" if subscribed else "не подписан"
+    await message.answer(
+        f"{random.choice(DAILY_QUOTES)}\n\n"
+        f"Статус подписки: {status}",
+        reply_markup=get_daily_keyboard())
 
 
 # ============================================================
@@ -2332,7 +2323,7 @@ async def notifications_menu(message: Message):
     daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
     await message.answer(
         f"{status}\n{ch_status}{sub_line}\n"
-        f"Цитата дня: {daily_status}\n\n"
+        f"Цитата дня: {daily_status} (управление — кнопка «Цитата дня»)\n\n"
         f"Утро — на СЕГОДНЯ. Вечер — на ЗАВТРА.",
         reply_markup=get_notify_keyboard(current, changes))
 
@@ -2372,12 +2363,14 @@ async def toggle_changes(callback: CallbackQuery):
 
 
 # ============================================================
-# ЦИТАТА ДНЯ
+# ЦИТАТА ДНЯ — CALLBACKS
 # ============================================================
 @dp.callback_query(F.data == "daily_quote_now")
 async def daily_quote_now(callback: CallbackQuery):
+    subscribed = daily_is_subscribed(callback.from_user.id)
+    status = "подписан на 10:00" if subscribed else "не подписан"
     await callback.message.edit_text(
-        random.choice(DAILY_QUOTES),
+        f"{random.choice(DAILY_QUOTES)}\n\nСтатус подписки: {status}",
         reply_markup=get_daily_keyboard())
     await callback.answer()
 
@@ -2403,7 +2396,7 @@ async def daily_off(callback: CallbackQuery):
 # ============================================================
 # СТИПЕНДИЯ
 # ============================================================
-async def scholarship_menu(message: Message):
+async def scholarship_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
     if not is_vip(user_id):
         await message.answer(
@@ -2421,14 +2414,9 @@ async def scholarship_menu(message: Message):
             "Напиши сумму одним числом, например: 2000\n\n"
             "/cancel — отменить"
         )
-        # Переводим в FSM
-        # (используем scholarship_amount_setup как маркер через state)
-        # Для этого нужен state — используем локальный контекст
-        # В глобальном обработчике кнопок state уже очищен, поэтому попросим ввести.
-        # Проще: сделаем отдельный стейт.
+        await state.set_state(ScholarshipState.waiting_current_amount)
         return
 
-    # Уже есть сумма
     grades = get_grades(user_id)
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     count5 = sum(1 for g in grades if g[2] == 5)
@@ -2579,7 +2567,6 @@ async def sch_del(callback: CallbackQuery):
         return
     delete_grade(gid, callback.from_user.id)
     await callback.answer("Удалено")
-    # Перерисуем список
     await sch_list(callback)
 
 
@@ -2644,15 +2631,13 @@ async def sch_result(callback: CallbackQuery):
         lines.append(f"  двоек: {count2}")
     lines.append("")
 
-    # Прогноз
     if count2 > 0 or count3 > 0:
         lines.append("Прогноз: на академическую не проходишь.")
         lines.append("Есть тройки/двойки — нужно закрыть их на 4 или 5.")
     elif avg >= 4.5:
-        potential = max(amount * 2, amount + 3000)  # условно
         lines.append("Прогноз: проходишь на академическую.")
         lines.append("Прогноз: можешь претендовать на повышенную.")
-        lines.append(f"Потенциально стипендия может быть примерно в 2 раза выше текущей.")
+        lines.append("Потенциально стипендия может быть примерно в 2 раза выше текущей.")
     elif avg >= 4.0:
         lines.append("Прогноз: проходишь на академическую.")
         lines.append("До повышенной не хватает среднего 4.5.")
@@ -3463,7 +3448,7 @@ async def help_cmd(message: Message):
         f"Что я умею:\n\n"
         f"Расписание ИРНИТУ\nМоя группа (с подгруппой)\n"
         f"Уведомления, задачи, заметки\n"
-        f"Цитата дня (подписка: {daily_status})\n"
+        f"Цитата дня (статус: {daily_status})\n"
         f"Стипендия (только для VIP)\n"
         f"AI Помощник и AI по фото\n"
         f"Пригласить друга — +3 дня VIP\n"
@@ -3558,7 +3543,6 @@ async def task_reminder_loop():
 
 
 async def daily_quote_loop():
-    """Раз в день в DAILY_QUOTE_HOUR:00 по Иркутску рассылаем цитату подписчикам."""
     last_sent_date = None
     while True:
         try:
