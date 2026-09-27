@@ -35,9 +35,9 @@ def clean_latex(text: str) -> str:
     text = re.sub(r"\\[dt]?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", text)
     text = re.sub(r"\\sqrt\s*\[([^\]]+)\]\s*\{([^{}]+)\}", r"\1-й корень из (\2)", text)
     text = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"√(\1)", text)
-    text = re.sub(r"\\vec\s*\{([^{}]+)\}", r"\1⃗", text)
-    text = re.sub(r"\\hat\s*\{([^{}]+)\}", r"\1̂", text)
-    text = re.sub(r"\\bar\s*\{([^{}]+)\}", r"\1̄", text)
+    text = re.sub(r"\\vec\s*\{([^{}]+)\}", r"\1", text)
+    text = re.sub(r"\\hat\s*\{([^{}]+)\}", r"\1", text)
+    text = re.sub(r"\\bar\s*\{([^{}]+)\}", r"\1", text)
     text = re.sub(r"\^\s*\{([^{}]+)\}", r"^\1", text)
     text = re.sub(r"_\s*\{([^{}]+)\}", r"_\1", text)
     greek = {
@@ -163,11 +163,11 @@ MENU_BUTTONS = {
 }
 
 PRIORITY_LABELS = {
-    0: "🟢 низкий",
-    1: "🟡 средний",
-    2: "🔴 высокий",
+    0: "низкий",
+    1: "средний",
+    2: "высокий",
 }
-PRIORITY_EMOJI = {0: "🟢", 1: "🟡", 2: "🔴"}
+PRIORITY_MARK = {0: "[ ]", 1: "[~]", 2: "[!]"}
 
 
 # ============================================================
@@ -192,6 +192,7 @@ class NoteState(StatesGroup):
 class AIState(StatesGroup):
     waiting_question = State()
     waiting_photo = State()
+    waiting_photo_mode = State()
 
 
 # ============================================================
@@ -1127,11 +1128,11 @@ def get_notify_keyboard(current=None, changes_on=False):
 
 def get_tasks_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Добавить задачу", callback_data="task_add")],
-        [InlineKeyboardButton(text="📋 Мои задачи", callback_data="task_list")],
-        [InlineKeyboardButton(text="✅ Выполненные", callback_data="task_done_list")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="task_stats")],
-        [InlineKeyboardButton(text="🗑 Очистить выполненные", callback_data="task_clear")],
+        [InlineKeyboardButton(text="Добавить задачу", callback_data="task_add")],
+        [InlineKeyboardButton(text="Мои задачи", callback_data="task_list")],
+        [InlineKeyboardButton(text="Выполненные", callback_data="task_done_list")],
+        [InlineKeyboardButton(text="Статистика", callback_data="task_stats")],
+        [InlineKeyboardButton(text="Очистить выполненные", callback_data="task_clear")],
     ])
 
 
@@ -1139,7 +1140,7 @@ def get_task_priority_keyboard(action: str, task_id: int = 0, current: int = -1)
     prefix = "task_prio_add_" if action == "add" else "task_prio_edit_"
     buttons = []
     for p in (2, 1, 0):
-        mark = " ✓" if p == current else ""
+        mark = " +" if p == current else ""
         buttons.append([InlineKeyboardButton(
             text=f"{PRIORITY_LABELS[p]}{mark}",
             callback_data=f"{prefix}{p}" + (f"_{task_id}" if action == "edit" else ""))])
@@ -1155,14 +1156,6 @@ def get_task_due_keyboard(task_id: int = 0, edit: bool = False):
         [InlineKeyboardButton(text="+1 неделя", callback_data=f"{prefix}week{suffix}")],
         [InlineKeyboardButton(text="Без срока", callback_data=f"{prefix}none{suffix}")],
         [InlineKeyboardButton(text="Своя дата", callback_data=f"{prefix}custom{suffix}")],
-    ])
-
-
-def get_task_actions_keyboard(task_id: int):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Выполнено", callback_data=f"task_done_{task_id}"),
-         InlineKeyboardButton(text="✏ Изменить", callback_data=f"task_edit_{task_id}")],
-        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"task_del_{task_id}")],
     ])
 
 
@@ -1203,6 +1196,14 @@ def get_vip_keyboard(is_active=False):
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Купить VIP", callback_data="vip_buy")],
+    ])
+
+
+def get_ai_photo_mode_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Краткий конспект", callback_data="ai_photo_conspect")],
+        [InlineKeyboardButton(text="Решить задание", callback_data="ai_photo_solve")],
+        [InlineKeyboardButton(text="Отмена", callback_data="ai_photo_cancel")],
     ])
 
 
@@ -1269,39 +1270,39 @@ async def cmd_cancel(message: Message, state: FSMContext):
 # ============================================================
 # АДМИН
 # ============================================================
-ADMIN_HELP_TEXT = """🛠 АДМИН-КОМАНДЫ
+ADMIN_HELP_TEXT = """АДМИН-КОМАНДЫ
 
-📊 СТАТИСТИКА
+СТАТИСТИКА
 /stats — общее число пользователей в боте
 /vip_list — список активных VIP-подписок (ID, до какой даты, сколько дней осталось)
 
-💬 ОБРАТНАЯ СВЯЗЬ
-/feedback_list — все актуальные обращения (новые + отложенные)
+ОБРАТНАЯ СВЯЗЬ
+/feedback_list — все актуальные обращения (новые и отложенные)
    К каждому обращению кнопки «Ответить» и «Отложить».
    Также можно ответить reply-ом на сообщение бота с обращением.
 /feedback_answered — последние 10 отвеченных обращений
 
-📢 РАССЫЛКА
+РАССЫЛКА
 /broadcast Текст — отправить сообщение всем пользователям бота
-   Пример: /broadcast Привет! Завтра не будет пары по матану.
+   Пример: /broadcast Завтра не будет пары по матану.
 
-💎 VIP-ПОДПИСКИ
+VIP-ПОДПИСКИ
 /give_vip user_id дней — выдать VIP на N дней (можно продлевать)
    Пример: /give_vip 123456789 30
 /revoke_vip user_id — снять VIP досрочно
 /vip_list — список активных VIP
 
-🗄 БАЗА ДАННЫХ
+БАЗА ДАННЫХ
 /backup — прислать файл users.db в чат (резервная копия)
 /restore — восстановить базу из файла .db
    Пришли файл .db с командой /restore в подписи к нему.
 
-🔄 РАСПИСАНИЕ И СЕТЬ
+РАСПИСАНИЕ И СЕТЬ
 /clearcache — очистить кэш расписаний (заставит бота загрузить заново)
 /checknow — вручную запустить проверку изменений в расписании
 /monitor — проверить, отвечает ли сайт ИРНИТУ
 
-👤 ПРОЧЕЕ
+ПРОЧЕЕ
 /myid — узнать свой Telegram ID
 /admin — показать это сообщение
 """
@@ -1660,16 +1661,54 @@ async def ai_photo_menu(message: Message, state: FSMContext):
     if not YANDEX_VISION_API_KEY:
         await message.answer("Yandex Vision не настроен. Обратись к администратору.")
         return
-    await message.answer("Отправь фото с текстом — распознаю и составлю конспект.\n\n/cancel — выйти.")
+    await message.answer(
+        "Отправь фото с текстом или заданием.\n\n"
+        "После отправки выберешь режим:\n"
+        "- Краткий конспект\n"
+        "- Решить задание\n\n"
+        "/cancel — выйти."
+    )
     await state.set_state(AIState.waiting_photo)
 
 
 @dp.message(AIState.waiting_photo, F.photo)
-async def ai_photo_process(message: Message, state: FSMContext):
-    thinking_msg = await message.answer("Распознаю текст с изображения...")
+async def ai_photo_receive(message: Message, state: FSMContext):
+    """Принимаем фото, сохраняем file_id, предлагаем выбрать режим."""
+    photo = message.photo[-1]
+    await state.update_data(photo_file_id=photo.file_id)
+    await message.answer("Что сделать с фото?", reply_markup=get_ai_photo_mode_keyboard())
+    await state.set_state(AIState.waiting_photo_mode)
+
+
+@dp.callback_query(AIState.waiting_photo_mode, F.data == "ai_photo_cancel")
+async def ai_photo_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Отменено.")
+    await callback.answer()
+
+
+@dp.callback_query(AIState.waiting_photo_mode, F.data.in_({"ai_photo_conspect", "ai_photo_solve"}))
+async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
+    mode = callback.data
+    data = await state.get_data()
+    file_id = data.get("photo_file_id")
+    if not file_id:
+        await callback.message.edit_text("Фото потерялось. Отправь заново.")
+        await state.clear()
+        await callback.answer()
+        return
+
+    if mode == "ai_photo_conspect":
+        await callback.message.edit_text("Распознаю текст с изображения...")
+    else:
+        await callback.message.edit_text("Распознаю задание с изображения...")
+    await callback.answer()
+
+    thinking_msg = callback.message
     try:
-        photo = message.photo[-1]
-        file_in_memory = await bot.download(photo)
+        # --- Скачиваем фото по file_id ---
+        file = await bot.get_file(file_id)
+        file_in_memory = await bot.download_file(file.file_path)
         image_bytes = file_in_memory.getvalue()
         if not image_bytes:
             await thinking_msg.edit_text("Не удалось прочитать файл. Попробуй ещё раз.")
@@ -1678,6 +1717,7 @@ async def ai_photo_process(message: Message, state: FSMContext):
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
         logging.info(f"[VISION] base64 length: {len(image_base64)}")
 
+        # --- Запрос в Yandex OCR ---
         headers = {
             "Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
             "Content-Type": "application/json",
@@ -1688,8 +1728,6 @@ async def ai_photo_process(message: Message, state: FSMContext):
             "model": "page",
             "content": image_base64,
         }
-
-        logging.info(f"[VISION] payload keys: {list(payload.keys())}")
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -1718,6 +1756,7 @@ async def ai_photo_process(message: Message, state: FSMContext):
 
         logging.info(f"[VISION] Распознано {len(full_text)} символов")
 
+        # --- Если GigaChat недоступен, отдаём сырой текст ---
         if giga_client is None:
             out = f"Распознанный текст:\n\n{full_text}"
             if len(out) > 4000:
@@ -1725,20 +1764,42 @@ async def ai_photo_process(message: Message, state: FSMContext):
             await thinking_msg.edit_text(out)
             return
 
-        await thinking_msg.edit_text("Составляю конспект...")
-
-        prompt = (
-            "Ты — студенческий помощник. Составь краткий конспект по этому тексту.\n\n"
-            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
-            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-            "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
-            "- Формулы пиши обычным текстом: дроби через /, степени через ^, "
-            "корни через √(), индексы через _.\n"
-            "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
-            "- Структурируй текст простыми списками через «- » или нумерацией.\n"
-            "- Пиши без воды, только по делу.\n\n"
-            f"Текст:\n{full_text}"
-        )
+        # --- Готовим промпт в зависимости от режима ---
+        if mode == "ai_photo_conspect":
+            await thinking_msg.edit_text("Составляю конспект...")
+            prompt = (
+                "Ты — студенческий помощник. Составь краткий конспект по этому тексту.\n\n"
+                "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+                "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+                "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+                "- Формулы пиши обычным текстом: дроби через /, степени через ^, "
+                "корни через √(), индексы через _.\n"
+                "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
+                "- Структурируй текст простыми списками через «- » или нумерацией.\n"
+                "- Выдели главные определения, формулы и тезисы.\n"
+                "- Пиши без воды, только по делу.\n\n"
+                f"Текст:\n{full_text}"
+            )
+        else:  # ai_photo_solve
+            await thinking_msg.edit_text("Решаю задание...")
+            prompt = (
+                "Ты — студенческий помощник. На фото задание (задача, пример, упражнение).\n"
+                "Реши его подробно и понятно, как для студента.\n\n"
+                "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+                "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+                "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+                "- Формулы пиши обычным текстом: дроби через /, степени через ^, "
+                "корни через √(), индексы через _.\n"
+                "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
+                "- Структура ответа:\n"
+                "  1. Что дано (если есть).\n"
+                "  2. Что нужно найти.\n"
+                "  3. Решение по шагам с пояснениями.\n"
+                "  4. Ответ.\n"
+                "- Не пропускай шаги, объясняй переходы.\n"
+                "- Пиши без воды.\n\n"
+                f"Задание:\n{full_text}"
+            )
 
         try:
             resp = await giga_client.achat(prompt)
@@ -2094,19 +2155,19 @@ def _tasks_view(user_id):
 
     lines = []
     if overdue:
-        lines.append("⚠ ПРОСРОЧЕНО:")
+        lines.append("ПРОСРОЧЕНО:")
         for t in overdue:
             tid, text, due_date, done, created_at, priority, due_time = t
-            p = PRIORITY_EMOJI.get(priority or 0, "🟡")
+            p = PRIORITY_MARK.get(priority or 1, "[~]")
             lines.append(f"  {p} #{tid} {text}")
             lines.append(f"      срок: {_format_due(due_date, due_time)}")
         lines.append("")
 
     if normal:
-        lines.append("📋 Активные:")
+        lines.append("Активные:")
         for t in normal:
             tid, text, due_date, done, created_at, priority, due_time = t
-            p = PRIORITY_EMOJI.get(priority or 0, "🟡")
+            p = PRIORITY_MARK.get(priority or 1, "[~]")
             lines.append(f"  {p} #{tid} {text}")
             if due_date:
                 lines.append(f"      срок: {_format_due(due_date, due_time)}")
@@ -2116,12 +2177,12 @@ def _tasks_view(user_id):
     for t in (overdue + normal)[:10]:
         tid = t[0]
         kb.append([
-            InlineKeyboardButton(text=f"✅ #{tid}", callback_data=f"task_done_{tid}"),
-            InlineKeyboardButton(text=f"✏ #{tid}", callback_data=f"task_edit_{tid}"),
-            InlineKeyboardButton(text=f"🗑 #{tid}", callback_data=f"task_del_{tid}"),
+            InlineKeyboardButton(text=f"Готово #{tid}", callback_data=f"task_done_{tid}"),
+            InlineKeyboardButton(text=f"Изменить #{tid}", callback_data=f"task_edit_{tid}"),
+            InlineKeyboardButton(text=f"Удалить #{tid}", callback_data=f"task_del_{tid}"),
         ])
-    kb.append([InlineKeyboardButton(text="➕ Добавить задачу", callback_data="task_add")])
-    kb.append([InlineKeyboardButton(text="📊 Статистика", callback_data="task_stats")])
+    kb.append([InlineKeyboardButton(text="Добавить задачу", callback_data="task_add")])
+    kb.append([InlineKeyboardButton(text="Статистика", callback_data="task_stats")])
     kb.append([InlineKeyboardButton(text="Назад", callback_data="task_back")])
 
     text = "\n".join(lines).rstrip()
@@ -2154,8 +2215,8 @@ async def task_add_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "Напиши текст задачи.\n\n"
         "Можно сразу со сроком одной строкой:\n"
-        "  Купить хлеб | 25.10.2026\n"
-        "  Сдать отчёт | 25.10.2026 14:00\n\n"
+        "  Сдать лабу по физике | 25.10.2026\n"
+        "  Подготовиться к коллоквиуму | 26.10.2026 18:00\n\n"
         "/cancel — отменить"
     )
     await state.set_state(TaskState.waiting_text)
@@ -2215,10 +2276,10 @@ async def task_add_priority(callback: CallbackQuery, state: FSMContext):
     tid = add_task(callback.from_user.id, text, due_date, priority, due_time)
     await state.clear()
     due_info = f"\nСрок: {_format_due(due_date, due_time)}" if due_date else ""
-    p_label = PRIORITY_LABELS.get(priority, "🟡 средний")
+    p_label = PRIORITY_LABELS.get(priority, "средний")
     await callback.message.edit_text(
-        f"✅ Задача #{tid} добавлена\n\n"
-        f"{p_label}\n{text}{due_info}")
+        f"Задача #{tid} добавлена\n\n"
+        f"Приоритет: {p_label}\n{text}{due_info}")
     await callback.answer("Добавлено")
 
 
@@ -2240,7 +2301,7 @@ async def task_done(callback: CallbackQuery):
         await callback.answer("Ошибка")
         return
     mark_task_done(tid, callback.from_user.id)
-    await callback.answer("✅ Готово")
+    await callback.answer("Готово")
     text, kb = _tasks_view(callback.from_user.id)
     try:
         await callback.message.edit_text(text, reply_markup=kb)
@@ -2258,7 +2319,7 @@ async def task_done_list(callback: CallbackQuery):
                 [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
         await callback.answer()
         return
-    lines = [f"✅ Выполнено за 7 дней: {len(rows)}\n"]
+    lines = [f"Выполнено за 7 дней: {len(rows)}\n"]
     for row in rows[:30]:
         tid, text, due_date, done, created_at, priority, due_time, done_at = row
         try:
@@ -2273,7 +2334,7 @@ async def task_done_list(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗑 Очистить", callback_data="task_clear")],
+            [InlineKeyboardButton(text="Очистить", callback_data="task_clear")],
             [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
     await callback.answer()
 
@@ -2311,14 +2372,14 @@ async def task_stats(callback: CallbackQuery):
     for t in tasks:
         by_prio[t[5] or 1] = by_prio.get(t[5] or 1, 0) + 1
     lines = [
-        "📊 Статистика\n",
+        "Статистика\n",
         f"Активных: {active}",
         f"  из них просрочено: {overdue_count}",
         "",
         "По приоритету:",
-        f"  🔴 высокий: {by_prio.get(2, 0)}",
-        f"  🟡 средний: {by_prio.get(1, 0)}",
-        f"  🟢 низкий: {by_prio.get(0, 0)}",
+        f"  высокий: {by_prio.get(2, 0)}",
+        f"  средний: {by_prio.get(1, 0)}",
+        f"  низкий: {by_prio.get(0, 0)}",
         "",
         f"Всего выполнено: {done}",
     ]
@@ -2344,10 +2405,10 @@ async def task_edit(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Не найдено")
         return
     _, text, due_date, done, created_at, priority, due_time, done_at = row
-    p_label = PRIORITY_LABELS.get(priority or 0, "🟡 средний")
+    p_label = PRIORITY_LABELS.get(priority or 1, "средний")
     due_str = _format_due(due_date, due_time) if due_date else "без срока"
     await callback.message.edit_text(
-        f"✏ Задача #{tid}\n\n"
+        f"Задача #{tid}\n\n"
         f"Текст: {text}\n"
         f"Приоритет: {p_label}\n"
         f"Срок: {due_str}\n\n"
@@ -2385,7 +2446,7 @@ async def task_edit_text_save(message: Message, state: FSMContext):
         return
     update_task(tid, message.from_user.id, text=text)
     await state.clear()
-    await message.answer(f"✅ Текст задачи #{tid} обновлён.", reply_markup=get_main_keyboard())
+    await message.answer(f"Текст задачи #{tid} обновлён.", reply_markup=get_main_keyboard())
 
 
 @dp.callback_query(F.data.startswith("task_edit_due_"))
@@ -2438,7 +2499,7 @@ async def task_edit_due_choice(callback: CallbackQuery, state: FSMContext):
         return
     update_task(tid, callback.from_user.id, due_date=new_due, due_time=new_time or "")
     await callback.message.edit_text(
-        f"✅ Новый срок: {_format_due(new_due, new_time)}",
+        f"Новый срок: {_format_due(new_due, new_time)}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
     await callback.answer("Готово")
@@ -2472,7 +2533,7 @@ async def task_edit_due_save(message: Message, state: FSMContext):
         return
     update_task(tid, message.from_user.id, due_date=due_date, due_time=due_time or "")
     await state.clear()
-    await message.answer(f"✅ Срок задачи #{tid} обновлён: {_format_due(due_date, due_time)}",
+    await message.answer(f"Срок задачи #{tid} обновлён: {_format_due(due_date, due_time)}",
                          reply_markup=get_main_keyboard())
 
 
@@ -2483,7 +2544,7 @@ async def task_edit_prio_start(callback: CallbackQuery):
     if not row:
         await callback.answer("Не найдено")
         return
-    current = row[5] or 0
+    current = row[5] or 1
     await callback.message.edit_text(
         "Выбери новый приоритет:",
         reply_markup=get_task_priority_keyboard("edit", task_id=tid, current=current))
@@ -2497,7 +2558,7 @@ async def task_edit_prio_save(callback: CallbackQuery):
     tid = int(parts[4])
     update_task(tid, callback.from_user.id, priority=priority)
     await callback.message.edit_text(
-        f"✅ Приоритет: {PRIORITY_LABELS[priority]}",
+        f"Приоритет: {PRIORITY_LABELS[priority]}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
     await callback.answer("Готово")
@@ -2642,7 +2703,7 @@ async def vip_menu(message: Message):
         await message.answer(
             "VIP-подписка\n\nЧто даёт:\n- Расширенная статистика\n- Приоритетная поддержка\n"
             "- AI Помощник\n- AI по фото\n\n"
-            "Тарифы:\n- 30 дней — 149 ₽\n- 90 дней — 349 ₽\n- Навсегда — 599 ₽",
+            "Тарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб",
             reply_markup=get_vip_keyboard(is_active=False))
 
 
@@ -2651,7 +2712,7 @@ async def vip_buy(callback: CallbackQuery):
     text = (
         "Как купить VIP\n\n"
         "1. Напиши администратору: @{username}\n"
-        "2. Укажи тариф (30/90/навсегда).\n"
+        "2. Укажи тариф (30 / 90 / навсегда).\n"
         "3. Оплати (СБП, карта).\n"
         "4. Администратор активирует."
     ).format(username=ADMIN_USERNAME)
@@ -2726,7 +2787,7 @@ async def vip_back(callback: CallbackQuery):
             reply_markup=get_vip_keyboard(is_active=True))
     else:
         await callback.message.edit_text(
-            "VIP-подписка\n\nТарифы:\n- 30 дней — 149 ₽\n- 90 дней — 349 ₽\n- Навсегда — 599 ₽",
+            "VIP-подписка\n\nТарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб",
             reply_markup=get_vip_keyboard(is_active=False))
     await callback.answer()
 
@@ -2838,7 +2899,7 @@ async def task_reminder_loop():
             for user_id, task_id, text, due_date, priority, due_time in rows:
                 if due_date is None:
                     continue
-                p_emoji = PRIORITY_EMOJI.get(priority or 0, "🟡")
+                p_label = PRIORITY_LABELS.get(priority or 1, "средний")
 
                 for target_date, label in ((tomorrow, "завтра"), (today, "сегодня")):
                     if due_date == target_date:
@@ -2853,7 +2914,10 @@ async def task_reminder_loop():
                             time_str = f" {due_time}" if due_time else ""
                             await bot.send_message(
                                 user_id,
-                                f"⏰ Напоминание\n\n{p_emoji} #{task_id} {text}\nСрок: {due_date}{time_str} ({label})")
+                                f"Напоминание о задаче\n\n"
+                                f"#{task_id} {text}\n"
+                                f"Приоритет: {p_label}\n"
+                                f"Срок: {due_date}{time_str} ({label})")
                             sent_keys.add(key)
                         except Exception as e:
                             logging.error(f"[TASK] {user_id}: {e}")
@@ -2867,7 +2931,10 @@ async def task_reminder_loop():
                             if key not in hour_sent_keys:
                                 await bot.send_message(
                                     user_id,
-                                    f"🔔 Через час\n\n{p_emoji} #{task_id} {text}\nСрок: {due_date} {due_time}")
+                                    f"Через час срок\n\n"
+                                    f"#{task_id} {text}\n"
+                                    f"Приоритет: {p_label}\n"
+                                    f"Срок: {due_date} {due_time}")
                                 hour_sent_keys.add(key)
                     except Exception as e:
                         logging.error(f"[TASK-HOUR] {user_id}: {e}")
