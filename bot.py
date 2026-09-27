@@ -82,6 +82,38 @@ def clean_latex(text: str) -> str:
 
 
 # ============================================================
+# ОЧИСТКА MARKDOWN
+# ============================================================
+def clean_markdown(text: str) -> str:
+    if not text:
+        return text
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"__(.+?)__", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"\*(.+?)\*", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"```[a-zA-Z]*\n?(.+?)```", r"\1", text, flags=re.DOTALL)
+    lines = text.split("\n")
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        if re.fullmatch(r"\|?[\s\-:|]+\|?", stripped) and "-" in stripped:
+            continue
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            cells = [c for c in cells if c]
+            out.append("  ".join(cells))
+        else:
+            out.append(line)
+    text = "\n".join(out)
+    text = re.sub(r"^[\-\*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+# ============================================================
 # НАСТРОЙКИ
 # ============================================================
 TOKEN = os.getenv("BOT_TOKEN", "")
@@ -130,6 +162,13 @@ MENU_BUTTONS = {
     "Обратная связь", "Помощь",
 }
 
+PRIORITY_LABELS = {
+    0: "🟢 низкий",
+    1: "🟡 средний",
+    2: "🔴 высокий",
+}
+PRIORITY_EMOJI = {0: "🟢", 1: "🟡", 2: "🔴"}
+
 
 # ============================================================
 # FSM
@@ -142,6 +181,9 @@ class FeedbackReplyState(StatesGroup):
 
 class TaskState(StatesGroup):
     waiting_text = State()
+    waiting_due = State()
+    waiting_edit_text = State()
+    waiting_edit_due = State()
 
 class NoteState(StatesGroup):
     waiting_subject = State()
@@ -188,9 +230,21 @@ def init_db():
         except sqlite3.OperationalError:
             pass
     conn.execute("UPDATE feedback SET status='new' WHERE status IS NULL")
+
     conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, text TEXT,
-        due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT)""")
+        due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT,
+        priority INTEGER DEFAULT 1, due_time TEXT, done_at TEXT)""")
+    for alter in [
+        "ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 1",
+        "ALTER TABLE tasks ADD COLUMN due_time TEXT",
+        "ALTER TABLE tasks ADD COLUMN done_at TEXT",
+    ]:
+        try:
+            conn.execute(alter)
+        except sqlite3.OperationalError:
+            pass
+
     conn.execute("""CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT,
         text TEXT, created_at TEXT)""")
@@ -495,30 +549,83 @@ def get_feedback_by_id(feedback_id):
     return row
 
 
-def add_task(user_id, text, due_date=None):
+# ---------- ЗАДАЧИ ----------
+def add_task(user_id, text, due_date=None, priority=1, due_time=None):
     conn = sqlite3.connect(DB_PATH)
-    cur = conn.execute("INSERT INTO tasks (user_id, text, due_date, done, created_at) VALUES (?, ?, ?, 0, ?)",
-                       (user_id, text, due_date, datetime.now(timezone.utc).isoformat()))
+    cur = conn.execute(
+        "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time) "
+        "VALUES (?, ?, ?, 0, ?, ?, ?)",
+        (user_id, text, due_date, datetime.now(timezone.utc).isoformat(), priority, due_time))
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
 
 
+def update_task(task_id, user_id, text=None, due_date=None, priority=None,
+                due_time=None, reset_due=False):
+    conn = sqlite3.connect(DB_PATH)
+    fields = []
+    values = []
+    if text is not None:
+        fields.append("text=?"); values.append(text)
+    if reset_due:
+        fields.append("due_date=NULL"); fields.append("due_time=NULL")
+    else:
+        if due_date is not None:
+            fields.append("due_date=?"); values.append(due_date)
+        if due_time is not None:
+            fields.append("due_time=?"); values.append(due_time)
+    if priority is not None:
+        fields.append("priority=?"); values.append(priority)
+    if not fields:
+        conn.close(); return
+    values.extend([task_id, user_id])
+    conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
+    conn.commit(); conn.close()
+
+
+def get_task(task_id, user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at "
+        "FROM tasks WHERE id=? AND user_id=?",
+        (task_id, user_id)).fetchone()
+    conn.close()
+    return row
+
+
 def get_user_tasks(user_id, only_active=True):
     conn = sqlite3.connect(DB_PATH)
     if only_active:
-        rows = conn.execute("SELECT id, text, due_date, done FROM tasks WHERE user_id=? AND done=0 ORDER BY id DESC",
-                            (user_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT id, text, due_date, done, created_at, priority, due_time "
+            "FROM tasks WHERE user_id=? AND done=0",
+            (user_id,)).fetchall()
     else:
-        rows = conn.execute("SELECT id, text, due_date, done FROM tasks WHERE user_id=? ORDER BY id DESC",
-                            (user_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT id, text, due_date, done, created_at, priority, due_time "
+            "FROM tasks WHERE user_id=? ORDER BY id DESC",
+            (user_id,)).fetchall()
+    conn.close()
+    return rows
+
+
+def get_done_tasks(user_id, days=7):
+    conn = sqlite3.connect(DB_PATH)
+    threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    rows = conn.execute(
+        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at "
+        "FROM tasks WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? "
+        "ORDER BY done_at DESC",
+        (user_id, threshold)).fetchall()
     conn.close()
     return rows
 
 
 def mark_task_done(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE tasks SET done=1 WHERE id=? AND user_id=?", (task_id, user_id))
+    conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
+                 (datetime.now(timezone.utc).isoformat(), task_id, user_id))
     conn.commit(); conn.close()
 
 
@@ -536,11 +643,27 @@ def clear_done_tasks(user_id):
 
 def get_tasks_with_due():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT user_id, id, text, due_date FROM tasks WHERE done=0 AND due_date IS NOT NULL").fetchall()
+    rows = conn.execute(
+        "SELECT user_id, id, text, due_date, priority, due_time "
+        "FROM tasks WHERE done=0 AND due_date IS NOT NULL").fetchall()
     conn.close()
     return rows
 
 
+def count_user_tasks(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT "
+        "SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) "
+        "FROM tasks WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    active = row[0] or 0
+    done = row[1] or 0
+    return active, done
+
+
+# ---------- ЗАМЕТКИ ----------
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
@@ -1004,9 +1127,51 @@ def get_notify_keyboard(current=None, changes_on=False):
 
 def get_tasks_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Добавить задачу", callback_data="task_add")],
-        [InlineKeyboardButton(text="Мои задачи", callback_data="task_list")],
-        [InlineKeyboardButton(text="Очистить выполненные", callback_data="task_clear")],
+        [InlineKeyboardButton(text="➕ Добавить задачу", callback_data="task_add")],
+        [InlineKeyboardButton(text="📋 Мои задачи", callback_data="task_list")],
+        [InlineKeyboardButton(text="✅ Выполненные", callback_data="task_done_list")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="task_stats")],
+        [InlineKeyboardButton(text="🗑 Очистить выполненные", callback_data="task_clear")],
+    ])
+
+
+def get_task_priority_keyboard(action: str, task_id: int = 0, current: int = -1):
+    prefix = "task_prio_add_" if action == "add" else "task_prio_edit_"
+    buttons = []
+    for p in (2, 1, 0):
+        mark = " ✓" if p == current else ""
+        buttons.append([InlineKeyboardButton(
+            text=f"{PRIORITY_LABELS[p]}{mark}",
+            callback_data=f"{prefix}{p}" + (f"_{task_id}" if action == "edit" else ""))])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_task_due_keyboard(task_id: int = 0, edit: bool = False):
+    prefix = "task_due_edit_" if edit else "task_due_add_"
+    suffix = f"_{task_id}" if edit else ""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Сегодня", callback_data=f"{prefix}today{suffix}")],
+        [InlineKeyboardButton(text="Завтра", callback_data=f"{prefix}tomorrow{suffix}")],
+        [InlineKeyboardButton(text="+1 неделя", callback_data=f"{prefix}week{suffix}")],
+        [InlineKeyboardButton(text="Без срока", callback_data=f"{prefix}none{suffix}")],
+        [InlineKeyboardButton(text="Своя дата", callback_data=f"{prefix}custom{suffix}")],
+    ])
+
+
+def get_task_actions_keyboard(task_id: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Выполнено", callback_data=f"task_done_{task_id}"),
+         InlineKeyboardButton(text="✏ Изменить", callback_data=f"task_edit_{task_id}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"task_del_{task_id}")],
+    ])
+
+
+def get_task_edit_keyboard(task_id: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Изменить текст", callback_data=f"task_edit_text_{task_id}")],
+        [InlineKeyboardButton(text="Изменить срок", callback_data=f"task_edit_due_{task_id}")],
+        [InlineKeyboardButton(text="Изменить приоритет", callback_data=f"task_edit_prio_{task_id}")],
+        [InlineKeyboardButton(text="Назад", callback_data="task_list")],
     ])
 
 
@@ -1104,18 +1269,50 @@ async def cmd_cancel(message: Message, state: FSMContext):
 # ============================================================
 # АДМИН
 # ============================================================
+ADMIN_HELP_TEXT = """🛠 АДМИН-КОМАНДЫ
+
+📊 СТАТИСТИКА
+/stats — общее число пользователей в боте
+/vip_list — список активных VIP-подписок (ID, до какой даты, сколько дней осталось)
+
+💬 ОБРАТНАЯ СВЯЗЬ
+/feedback_list — все актуальные обращения (новые + отложенные)
+   К каждому обращению кнопки «Ответить» и «Отложить».
+   Также можно ответить reply-ом на сообщение бота с обращением.
+/feedback_answered — последние 10 отвеченных обращений
+
+📢 РАССЫЛКА
+/broadcast Текст — отправить сообщение всем пользователям бота
+   Пример: /broadcast Привет! Завтра не будет пары по матану.
+
+💎 VIP-ПОДПИСКИ
+/give_vip user_id дней — выдать VIP на N дней (можно продлевать)
+   Пример: /give_vip 123456789 30
+/revoke_vip user_id — снять VIP досрочно
+/vip_list — список активных VIP
+
+🗄 БАЗА ДАННЫХ
+/backup — прислать файл users.db в чат (резервная копия)
+/restore — восстановить базу из файла .db
+   Пришли файл .db с командой /restore в подписи к нему.
+
+🔄 РАСПИСАНИЕ И СЕТЬ
+/clearcache — очистить кэш расписаний (заставит бота загрузить заново)
+/checknow — вручную запустить проверку изменений в расписании
+/monitor — проверить, отвечает ли сайт ИРНИТУ
+
+👤 ПРОЧЕЕ
+/myid — узнать свой Telegram ID
+/admin — показать это сообщение
+"""
+
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("Только для админа.")
         return
-    await message.answer(
-        "АДМИН-КОМАНДЫ\n\n"
-        "/myid\n/stats — сколько всего пользователей\n"
-        "/feedback_list\n/feedback_answered\n"
-        "/broadcast Текст\n"
-        "/give_vip user_id дней\n/revoke_vip user_id\n/vip_list\n"
-        "/backup\n/restore\n/clearcache\n/checknow\n/monitor")
+    await message.answer(ADMIN_HELP_TEXT)
 
 
 @dp.message(Command("stats"))
@@ -1302,14 +1499,14 @@ async def cmd_clearcache(message: Message):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM schedule_cache")
     conn.commit(); conn.close()
-    await message.answer("Кэш очищен.")
+    await message.answer("Кэш расписаний очищен.")
 
 
 @dp.message(Command("checknow"))
 async def cmd_checknow(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer("Проверяю...")
+    await message.answer("Проверяю изменения в расписании...")
     await check_schedule_changes()
     await message.answer("Готово.")
 
@@ -1422,15 +1619,28 @@ async def ai_process(message: Message, state: FSMContext):
         return
     thinking_msg = await message.answer("Думаю...")
     try:
-        response = await giga_client.achat(message.text)
+        prompt = (
+            "Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
+            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+            "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+            "- Формулы пиши обычным текстом: дроби через /, степени через ^, "
+            "корни через √(), индексы через _.\n"
+            "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
+            "- Структурируй текст простыми списками через «- » или нумерацией.\n"
+            "- Пиши без воды, только по делу.\n\n"
+            f"Вопрос: {message.text}"
+        )
+        response = await giga_client.achat(prompt)
         try:
             answer = response.choices[0].message.content
         except AttributeError:
             answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
         try:
             answer = clean_latex(answer)
+            answer = clean_markdown(answer)
         except Exception as e:
-            logging.error(f"[clean_latex] {e}")
+            logging.error(f"[clean_text] {e}")
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
         await thinking_msg.edit_text(answer)
@@ -1480,7 +1690,6 @@ async def ai_photo_process(message: Message, state: FSMContext):
         }
 
         logging.info(f"[VISION] payload keys: {list(payload.keys())}")
-        logging.info(f"[VISION] content len: {len(payload['content'])}")
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -1519,10 +1728,16 @@ async def ai_photo_process(message: Message, state: FSMContext):
         await thinking_msg.edit_text("Составляю конспект...")
 
         prompt = (
-            "Ты — студенческий помощник. Составь краткий конспект по этому тексту. "
-            "Выдели главные определения, формулы и тезисы. "
-            "Пиши структурированно и без воды.\n\n"
-            f"{full_text}"
+            "Ты — студенческий помощник. Составь краткий конспект по этому тексту.\n\n"
+            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+            "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+            "- Формулы пиши обычным текстом: дроби через /, степени через ^, "
+            "корни через √(), индексы через _.\n"
+            "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
+            "- Структурируй текст простыми списками через «- » или нумерацией.\n"
+            "- Пиши без воды, только по делу.\n\n"
+            f"Текст:\n{full_text}"
         )
 
         try:
@@ -1537,8 +1752,9 @@ async def ai_photo_process(message: Message, state: FSMContext):
 
         try:
             answer = clean_latex(answer)
+            answer = clean_markdown(answer)
         except Exception as e:
-            logging.error(f"[clean_latex] {e}")
+            logging.error(f"[clean_text] {e}")
 
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
@@ -1815,19 +2031,158 @@ async def toggle_changes(callback: CallbackQuery):
 
 
 # ============================================================
-# ЗАДАЧИ
+# ЗАДАЧИ — МЕНЮ И СПИСКИ
 # ============================================================
+def _format_due(due_date, due_time):
+    if not due_date:
+        return "без срока"
+    result = due_date
+    if due_time:
+        result += f" {due_time}"
+    now = _now_irkutsk()
+    today_str = now.strftime("%d.%m.%Y")
+    tomorrow_str = (now + timedelta(days=1)).strftime("%d.%m.%Y")
+    if due_date == today_str:
+        result += " (сегодня)"
+    elif due_date == tomorrow_str:
+        result += " (завтра)"
+    return result
+
+
+def _is_overdue(due_date, due_time):
+    if not due_date:
+        return False
+    now = _now_irkutsk()
+    try:
+        if due_time:
+            dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
+        else:
+            dt = datetime.strptime(due_date, "%d.%m.%Y").replace(hour=23, minute=59)
+        return dt < now
+    except Exception:
+        return False
+
+
+def _sort_tasks(tasks):
+    def key(t):
+        tid, text, due_date, done, created_at, priority, due_time = t
+        overdue = 1 if _is_overdue(due_date, due_time) else 0
+        if due_date:
+            try:
+                if due_time:
+                    dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
+                else:
+                    dt = datetime.strptime(due_date, "%d.%m.%Y")
+                date_key = dt.timestamp()
+            except Exception:
+                date_key = float("inf")
+        else:
+            date_key = float("inf")
+        return (-overdue, date_key, -(priority or 0), tid)
+
+    return sorted(tasks, key=key)
+
+
+def _tasks_view(user_id):
+    tasks = get_user_tasks(user_id, only_active=True)
+    if not tasks:
+        return "Нет активных задач.\n\nДобавь первую кнопкой ниже.", get_tasks_keyboard()
+
+    tasks = _sort_tasks(tasks)
+    overdue = [t for t in tasks if _is_overdue(t[2], t[6])]
+    normal = [t for t in tasks if not _is_overdue(t[2], t[6])]
+
+    lines = []
+    if overdue:
+        lines.append("⚠ ПРОСРОЧЕНО:")
+        for t in overdue:
+            tid, text, due_date, done, created_at, priority, due_time = t
+            p = PRIORITY_EMOJI.get(priority or 0, "🟡")
+            lines.append(f"  {p} #{tid} {text}")
+            lines.append(f"      срок: {_format_due(due_date, due_time)}")
+        lines.append("")
+
+    if normal:
+        lines.append("📋 Активные:")
+        for t in normal:
+            tid, text, due_date, done, created_at, priority, due_time = t
+            p = PRIORITY_EMOJI.get(priority or 0, "🟡")
+            lines.append(f"  {p} #{tid} {text}")
+            if due_date:
+                lines.append(f"      срок: {_format_due(due_date, due_time)}")
+        lines.append("")
+
+    kb = []
+    for t in (overdue + normal)[:10]:
+        tid = t[0]
+        kb.append([
+            InlineKeyboardButton(text=f"✅ #{tid}", callback_data=f"task_done_{tid}"),
+            InlineKeyboardButton(text=f"✏ #{tid}", callback_data=f"task_edit_{tid}"),
+            InlineKeyboardButton(text=f"🗑 #{tid}", callback_data=f"task_del_{tid}"),
+        ])
+    kb.append([InlineKeyboardButton(text="➕ Добавить задачу", callback_data="task_add")])
+    kb.append([InlineKeyboardButton(text="📊 Статистика", callback_data="task_stats")])
+    kb.append([InlineKeyboardButton(text="Назад", callback_data="task_back")])
+
+    text = "\n".join(lines).rstrip()
+    if len(text) > 3500:
+        text = text[:3500] + "\n..."
+    return text, InlineKeyboardMarkup(inline_keyboard=kb)
+
+
 @dp.message(F.text == "Задачи")
 async def tasks_menu(message: Message):
-    await message.answer("Личные задачи\n\nМожно указать срок: Текст | 25.10.2026",
+    active, done = count_user_tasks(message.from_user.id)
+    await message.answer(
+        f"Личные задачи\n\n"
+        f"Активных: {active}\nВыполнено: {done}\n\n"
+        f"Что сделать?",
         reply_markup=get_tasks_keyboard())
+
+
+@dp.callback_query(F.data == "task_back")
+async def task_back(callback: CallbackQuery):
+    active, done = count_user_tasks(callback.from_user.id)
+    await callback.message.edit_text(
+        f"Личные задачи\n\nАктивных: {active}\nВыполнено: {done}",
+        reply_markup=get_tasks_keyboard())
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "task_add")
 async def task_add_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Напиши задачу.\n\nФормат: Текст | 25.10.2026\n\n/cancel")
+    await callback.message.edit_text(
+        "Напиши текст задачи.\n\n"
+        "Можно сразу со сроком одной строкой:\n"
+        "  Купить хлеб | 25.10.2026\n"
+        "  Сдать отчёт | 25.10.2026 14:00\n\n"
+        "/cancel — отменить"
+    )
     await state.set_state(TaskState.waiting_text)
     await callback.answer()
+
+
+def _parse_task_input(raw: str):
+    due_date = None
+    due_time = None
+    text = raw
+    if "|" in raw:
+        parts = [p.strip() for p in raw.split("|", 1)]
+        text = parts[0]
+        due_str = parts[1] if len(parts) > 1 else ""
+        if due_str:
+            for fmt, has_time in (("%d.%m.%Y %H:%M", True), ("%d.%m.%Y", False)):
+                try:
+                    dt = datetime.strptime(due_str, fmt)
+                    due_date = dt.strftime("%d.%m.%Y")
+                    if has_time:
+                        due_time = dt.strftime("%H:%M")
+                    break
+                except ValueError:
+                    continue
+            else:
+                return None
+    return text, due_date, due_time
 
 
 @dp.message(TaskState.waiting_text)
@@ -1836,40 +2191,35 @@ async def task_add_text(message: Message, state: FSMContext):
     if not raw:
         await message.answer("Пусто.")
         return
-    due = None
-    text = raw
-    if "|" in raw:
-        parts = [p.strip() for p in raw.split("|", 1)]
-        text = parts[0]
-        due = parts[1] if len(parts) > 1 else None
-        if due:
-            try:
-                datetime.strptime(due, "%d.%m.%Y")
-            except ValueError:
-                await message.answer("Дата ДД.ММ.ГГГГ.")
-                return
-    tid = add_task(message.from_user.id, text, due)
-    due_info = f" (до {due})" if due else ""
+    parsed = _parse_task_input(raw)
+    if parsed is None:
+        await message.answer("Неверный формат даты. Используй ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ.")
+        return
+    text, due_date, due_time = parsed
+    await state.update_data(task_text=text, task_due_date=due_date, task_due_time=due_time)
+    await message.answer("Выбери приоритет:", reply_markup=get_task_priority_keyboard("add"))
+    await state.set_state(TaskState.waiting_due)
+
+
+@dp.callback_query(F.data.startswith("task_prio_add_"))
+async def task_add_priority(callback: CallbackQuery, state: FSMContext):
+    try:
+        priority = int(callback.data.split("_")[-1])
+    except ValueError:
+        await callback.answer("Ошибка")
+        return
+    data = await state.get_data()
+    text = data.get("task_text", "")
+    due_date = data.get("task_due_date")
+    due_time = data.get("task_due_time")
+    tid = add_task(callback.from_user.id, text, due_date, priority, due_time)
     await state.clear()
-    await message.answer(f"Задача #{tid} добавлена{due_info}.\n\n{text}",
-                         reply_markup=get_main_keyboard())
-
-
-def _tasks_view(user_id):
-    tasks = get_user_tasks(user_id, only_active=True)
-    if not tasks:
-        return "Нет активных задач.", get_tasks_keyboard()
-    kb = []
-    lines = ["Твои задачи:\n"]
-    for tid, text, due, done in tasks:
-        due_str = f" (до {due})" if due else ""
-        lines.append(f"#{tid} {text}{due_str}")
-        kb.append([
-            InlineKeyboardButton(text=f"V #{tid}", callback_data=f"task_done_{tid}"),
-            InlineKeyboardButton(text=f"X #{tid}", callback_data=f"task_del_{tid}"),
-        ])
-    kb.append([InlineKeyboardButton(text="Назад", callback_data="task_back")])
-    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
+    due_info = f"\nСрок: {_format_due(due_date, due_time)}" if due_date else ""
+    p_label = PRIORITY_LABELS.get(priority, "🟡 средний")
+    await callback.message.edit_text(
+        f"✅ Задача #{tid} добавлена\n\n"
+        f"{p_label}\n{text}{due_info}")
+    await callback.answer("Добавлено")
 
 
 @dp.callback_query(F.data == "task_list")
@@ -1879,35 +2229,278 @@ async def task_list(callback: CallbackQuery):
     await callback.answer()
 
 
-@dp.callback_query(F.data == "task_back")
-async def task_back(callback: CallbackQuery):
-    await callback.message.edit_text("Личные задачи", reply_markup=get_tasks_keyboard())
-    await callback.answer()
-
-
 @dp.callback_query(F.data.startswith("task_done_"))
 async def task_done(callback: CallbackQuery):
-    tid = int(callback.data.split("_", 2)[2])
+    data = callback.data
+    if data == "task_done_list":
+        return
+    try:
+        tid = int(data.split("_")[-1])
+    except ValueError:
+        await callback.answer("Ошибка")
+        return
     mark_task_done(tid, callback.from_user.id)
-    await callback.answer("Готово")
+    await callback.answer("✅ Готово")
     text, kb = _tasks_view(callback.from_user.id)
-    await callback.message.edit_text(text, reply_markup=kb)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
 
 
-@dp.callback_query(F.data.startswith("task_del_"))
-async def task_del(callback: CallbackQuery):
-    tid = int(callback.data.split("_", 2)[2])
-    delete_task(tid, callback.from_user.id)
-    await callback.answer("Удалено")
-    text, kb = _tasks_view(callback.from_user.id)
-    await callback.message.edit_text(text, reply_markup=kb)
+@dp.callback_query(F.data == "task_done_list")
+async def task_done_list(callback: CallbackQuery):
+    rows = get_done_tasks(callback.from_user.id, days=7)
+    if not rows:
+        await callback.message.edit_text(
+            "За последние 7 дней ничего не выполнено.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
+        await callback.answer()
+        return
+    lines = [f"✅ Выполнено за 7 дней: {len(rows)}\n"]
+    for row in rows[:30]:
+        tid, text, due_date, done, created_at, priority, due_time, done_at = row
+        try:
+            done_local = datetime.fromisoformat(done_at) + timedelta(hours=8)
+            done_str = done_local.strftime("%d.%m %H:%M")
+        except Exception:
+            done_str = ""
+        lines.append(f"  #{tid} {text}  ({done_str})")
+    text = "\n".join(lines)
+    if len(text) > 3500:
+        text = text[:3500] + "\n..."
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 Очистить", callback_data="task_clear")],
+            [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "task_clear")
 async def task_clear(callback: CallbackQuery):
     clear_done_tasks(callback.from_user.id)
-    await callback.message.edit_text("Очищено.", reply_markup=get_tasks_keyboard())
-    await callback.answer("Ок")
+    await callback.message.edit_text("Выполненные задачи удалены.",
+        reply_markup=get_tasks_keyboard())
+    await callback.answer("Очищено")
+
+
+@dp.callback_query(F.data.startswith("task_del_"))
+async def task_del(callback: CallbackQuery):
+    try:
+        tid = int(callback.data.split("_")[-1])
+    except ValueError:
+        await callback.answer("Ошибка")
+        return
+    delete_task(tid, callback.from_user.id)
+    await callback.answer("Удалено")
+    text, kb = _tasks_view(callback.from_user.id)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data == "task_stats")
+async def task_stats(callback: CallbackQuery):
+    active, done = count_user_tasks(callback.from_user.id)
+    tasks = get_user_tasks(callback.from_user.id, only_active=True)
+    overdue_count = sum(1 for t in tasks if _is_overdue(t[2], t[6]))
+    by_prio = {0: 0, 1: 0, 2: 0}
+    for t in tasks:
+        by_prio[t[5] or 1] = by_prio.get(t[5] or 1, 0) + 1
+    lines = [
+        "📊 Статистика\n",
+        f"Активных: {active}",
+        f"  из них просрочено: {overdue_count}",
+        "",
+        "По приоритету:",
+        f"  🔴 высокий: {by_prio.get(2, 0)}",
+        f"  🟡 средний: {by_prio.get(1, 0)}",
+        f"  🟢 низкий: {by_prio.get(0, 0)}",
+        "",
+        f"Всего выполнено: {done}",
+    ]
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("task_edit_"))
+async def task_edit(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    if len(parts) != 3:
+        return
+    try:
+        tid = int(parts[2])
+    except ValueError:
+        await callback.answer("Ошибка")
+        return
+    row = get_task(tid, callback.from_user.id)
+    if not row:
+        await callback.answer("Не найдено")
+        return
+    _, text, due_date, done, created_at, priority, due_time, done_at = row
+    p_label = PRIORITY_LABELS.get(priority or 0, "🟡 средний")
+    due_str = _format_due(due_date, due_time) if due_date else "без срока"
+    await callback.message.edit_text(
+        f"✏ Задача #{tid}\n\n"
+        f"Текст: {text}\n"
+        f"Приоритет: {p_label}\n"
+        f"Срок: {due_str}\n\n"
+        f"Что изменить?",
+        reply_markup=get_task_edit_keyboard(tid))
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("task_edit_text_"))
+async def task_edit_text_start(callback: CallbackQuery, state: FSMContext):
+    tid = int(callback.data.split("_")[-1])
+    row = get_task(tid, callback.from_user.id)
+    if not row:
+        await callback.answer("Не найдено")
+        return
+    await state.update_data(edit_task_id=tid)
+    await callback.message.edit_text(
+        f"Текущий текст: {row[1]}\n\nНапиши новый текст.\n\n/cancel",
+    )
+    await state.set_state(TaskState.waiting_edit_text)
+    await callback.answer()
+
+
+@dp.message(TaskState.waiting_edit_text)
+async def task_edit_text_save(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer("Пусто.")
+        return
+    data = await state.get_data()
+    tid = data.get("edit_task_id")
+    if not tid:
+        await state.clear()
+        await message.answer("Начни заново.")
+        return
+    update_task(tid, message.from_user.id, text=text)
+    await state.clear()
+    await message.answer(f"✅ Текст задачи #{tid} обновлён.", reply_markup=get_main_keyboard())
+
+
+@dp.callback_query(F.data.startswith("task_edit_due_"))
+async def task_edit_due_start(callback: CallbackQuery, state: FSMContext):
+    tid = int(callback.data.split("_")[-1])
+    row = get_task(tid, callback.from_user.id)
+    if not row:
+        await callback.answer("Не найдено")
+        return
+    await state.update_data(edit_task_id=tid)
+    await callback.message.edit_text(
+        "Новый срок:",
+        reply_markup=get_task_due_keyboard(tid, edit=True))
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("task_due_edit_"))
+async def task_edit_due_choice(callback: CallbackQuery, state: FSMContext):
+    data = callback.data
+    parts = data.split("_")
+    choice = parts[3]
+    tid = int(parts[4])
+    now = _now_irkutsk()
+    if choice == "today":
+        new_due = now.strftime("%d.%m.%Y")
+        new_time = None
+    elif choice == "tomorrow":
+        new_due = (now + timedelta(days=1)).strftime("%d.%m.%Y")
+        new_time = None
+    elif choice == "week":
+        new_due = (now + timedelta(days=7)).strftime("%d.%m.%Y")
+        new_time = None
+    elif choice == "none":
+        update_task(tid, callback.from_user.id, reset_due=True)
+        await callback.message.edit_text("Срок убран.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
+        await callback.answer("Готово")
+        return
+    elif choice == "custom":
+        await state.update_data(edit_task_id=tid)
+        await callback.message.edit_text(
+            "Напиши дату в формате ДД.ММ.ГГГГ\n"
+            "Можно с временем: ДД.ММ.ГГГГ ЧЧ:ММ\n\n/cancel")
+        await state.set_state(TaskState.waiting_edit_due)
+        await callback.answer()
+        return
+    else:
+        await callback.answer("Неизвестно")
+        return
+    update_task(tid, callback.from_user.id, due_date=new_due, due_time=new_time or "")
+    await callback.message.edit_text(
+        f"✅ Новый срок: {_format_due(new_due, new_time)}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
+    await callback.answer("Готово")
+
+
+@dp.message(TaskState.waiting_edit_due)
+async def task_edit_due_save(message: Message, state: FSMContext):
+    raw = (message.text or "").strip()
+    if not raw:
+        await message.answer("Пусто.")
+        return
+    due_date = None
+    due_time = None
+    for fmt, has_time in (("%d.%m.%Y %H:%M", True), ("%d.%m.%Y", False)):
+        try:
+            dt = datetime.strptime(raw, fmt)
+            due_date = dt.strftime("%d.%m.%Y")
+            if has_time:
+                due_time = dt.strftime("%H:%M")
+            break
+        except ValueError:
+            continue
+    if due_date is None:
+        await message.answer("Неверный формат. Используй ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ.")
+        return
+    data = await state.get_data()
+    tid = data.get("edit_task_id")
+    if not tid:
+        await state.clear()
+        await message.answer("Начни заново.")
+        return
+    update_task(tid, message.from_user.id, due_date=due_date, due_time=due_time or "")
+    await state.clear()
+    await message.answer(f"✅ Срок задачи #{tid} обновлён: {_format_due(due_date, due_time)}",
+                         reply_markup=get_main_keyboard())
+
+
+@dp.callback_query(F.data.startswith("task_edit_prio_"))
+async def task_edit_prio_start(callback: CallbackQuery):
+    tid = int(callback.data.split("_")[-1])
+    row = get_task(tid, callback.from_user.id)
+    if not row:
+        await callback.answer("Не найдено")
+        return
+    current = row[5] or 0
+    await callback.message.edit_text(
+        "Выбери новый приоритет:",
+        reply_markup=get_task_priority_keyboard("edit", task_id=tid, current=current))
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("task_prio_edit_"))
+async def task_edit_prio_save(callback: CallbackQuery):
+    parts = callback.data.split("_")
+    priority = int(parts[3])
+    tid = int(parts[4])
+    update_task(tid, callback.from_user.id, priority=priority)
+    await callback.message.edit_text(
+        f"✅ Приоритет: {PRIORITY_LABELS[priority]}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
+    await callback.answer("Готово")
 
 
 # ============================================================
@@ -2235,16 +2828,21 @@ async def notification_loop():
 
 async def task_reminder_loop():
     sent_keys = set()
+    hour_sent_keys = set()
     while True:
         try:
             now = _now_irkutsk()
             today = now.strftime("%d.%m.%Y")
             tomorrow = (now + timedelta(days=1)).strftime("%d.%m.%Y")
             rows = get_tasks_with_due()
-            for user_id, task_id, text, due in rows:
+            for user_id, task_id, text, due_date, priority, due_time in rows:
+                if due_date is None:
+                    continue
+                p_emoji = PRIORITY_EMOJI.get(priority or 0, "🟡")
+
                 for target_date, label in ((tomorrow, "завтра"), (today, "сегодня")):
-                    if due == target_date:
-                        key = f"{user_id}:{task_id}:{due}:{label}"
+                    if due_date == target_date:
+                        key = f"{user_id}:{task_id}:{due_date}:{label}"
                         if key in sent_keys:
                             continue
                         if label == "завтра" and not (now.hour == 20 and now.minute < 10):
@@ -2252,14 +2850,30 @@ async def task_reminder_loop():
                         if label == "сегодня" and not (now.hour == 8 and now.minute < 10):
                             continue
                         try:
-                            await bot.send_message(user_id,
-                                f"Напоминание о задаче:\n\n#{task_id} {text}\nСрок: {due} ({label})")
+                            time_str = f" {due_time}" if due_time else ""
+                            await bot.send_message(
+                                user_id,
+                                f"⏰ Напоминание\n\n{p_emoji} #{task_id} {text}\nСрок: {due_date}{time_str} ({label})")
                             sent_keys.add(key)
                         except Exception as e:
                             logging.error(f"[TASK] {user_id}: {e}")
+
+                if due_time:
+                    try:
+                        due_dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
+                        delta_min = (due_dt - now).total_seconds() / 60
+                        if 55 <= delta_min <= 65:
+                            key = f"{user_id}:{task_id}:{due_date} {due_time}:hour"
+                            if key not in hour_sent_keys:
+                                await bot.send_message(
+                                    user_id,
+                                    f"🔔 Через час\n\n{p_emoji} #{task_id} {text}\nСрок: {due_date} {due_time}")
+                                hour_sent_keys.add(key)
+                    except Exception as e:
+                        logging.error(f"[TASK-HOUR] {user_id}: {e}")
         except Exception as e:
             logging.exception(f"[TASK] {e}")
-        await asyncio.sleep(600)
+        await asyncio.sleep(300)
 
 
 async def cache_cleanup_loop():
