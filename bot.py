@@ -2,9 +2,9 @@ import os
 import asyncio
 import re
 import sys
+import base64
 import sqlite3
 import logging
-import tempfile
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from bs4 import BeautifulSoup
@@ -34,59 +34,40 @@ def clean_latex(text: str) -> str:
     text = re.sub(r"\\vec\s*\{([^{}]+)\}", r"\1⃗", text)
     text = re.sub(r"\\hat\s*\{([^{}]+)\}", r"\1̂", text)
     text = re.sub(r"\\bar\s*\{([^{}]+)\}", r"\1̄", text)
-    text = re.sub(r"\\overline\s*\{([^{}]+)\}", r"\1̄", text)
-    text = re.sub(r"\\underline\s*\{([^{}]+)\}", r"_\1_", text)
     text = re.sub(r"\^\s*\{([^{}]+)\}", r"^\1", text)
     text = re.sub(r"_\s*\{([^{}]+)\}", r"_\1", text)
     greek = {
         r"\\alpha": "α", r"\\beta": "β", r"\\gamma": "γ", r"\\delta": "δ",
-        r"\\epsilon": "ε", r"\\varepsilon": "ε", r"\\zeta": "ζ", r"\\eta": "η",
-        r"\\theta": "θ", r"\\iota": "ι", r"\\kappa": "κ", r"\\lambda": "λ",
-        r"\\mu": "μ", r"\\nu": "ν", r"\\xi": "ξ", r"\\pi": "π",
-        r"\\rho": "ρ", r"\\sigma": "σ", r"\\tau": "τ", r"\\upsilon": "υ",
+        r"\\epsilon": "ε", r"\\theta": "θ", r"\\lambda": "λ",
+        r"\\mu": "μ", r"\\nu": "ν", r"\\pi": "π",
+        r"\\rho": "ρ", r"\\sigma": "σ", r"\\tau": "τ",
         r"\\phi": "φ", r"\\varphi": "φ", r"\\chi": "χ", r"\\psi": "ψ",
         r"\\omega": "ω", r"\\Gamma": "Γ", r"\\Delta": "Δ", r"\\Theta": "Θ",
-        r"\\Lambda": "Λ", r"\\Xi": "Ξ", r"\\Pi": "Π", r"\\Sigma": "Σ",
-        r"\\Upsilon": "Υ", r"\\Phi": "Φ", r"\\Psi": "Ψ", r"\\Omega": "Ω",
+        r"\\Lambda": "Λ", r"\\Pi": "Π", r"\\Sigma": "Σ",
+        r"\\Phi": "Φ", r"\\Psi": "Ψ", r"\\Omega": "Ω",
     }
     for cmd, repl in greek.items():
         text = re.sub(cmd + r"\b", repl, text)
     replacements = [
-        (r"\\cdot", "·"), (r"\\times", "×"), (r"\\div", "÷"), (r"\\ast", "*"),
-        (r"\\pm", "±"), (r"\\mp", "∓"),
-        (r"\\leq", "≤"), (r"\\le", "≤"), (r"\\geq", "≥"), (r"\\ge", "≥"),
-        (r"\\neq", "≠"), (r"\\ne", "≠"), (r"\\approx", "≈"), (r"\\sim", "~"),
-        (r"\\equiv", "≡"), (r"\\cong", "≅"), (r"\\propto", "∝"),
-        (r"\\infty", "∞"), (r"\\partial", "∂"), (r"\\nabla", "∇"),
-        (r"\\sum", "Σ"), (r"\\prod", "Π"), (r"\\int", "∫"), (r"\\oint", "∮"),
+        (r"\\cdot", "·"), (r"\\times", "×"), (r"\\div", "÷"),
+        (r"\\pm", "±"), (r"\\leq", "≤"), (r"\\le", "≤"),
+        (r"\\geq", "≥"), (r"\\ge", "≥"), (r"\\neq", "≠"),
+        (r"\\approx", "≈"), (r"\\infty", "∞"),
+        (r"\\sum", "Σ"), (r"\\prod", "Π"), (r"\\int", "∫"),
         (r"\\rightarrow", "→"), (r"\\to", "→"), (r"\\leftarrow", "←"),
-        (r"\\Rightarrow", "⇒"), (r"\\Leftarrow", "⇐"),
-        (r"\\leftrightarrow", "↔"), (r"\\Leftrightarrow", "⇔"),
-        (r"\\uparrow", "↑"), (r"\\downarrow", "↓"),
+        (r"\\Rightarrow", "⇒"), (r"\\leftrightarrow", "↔"),
         (r"\\in", "∈"), (r"\\notin", "∉"),
         (r"\\subset", "⊂"), (r"\\supset", "⊃"),
-        (r"\\subseteq", "⊆"), (r"\\supseteq", "⊇"),
         (r"\\cup", "∪"), (r"\\cap", "∩"),
-        (r"\\setminus", "/"),
-        (r"\\forall", "∀"), (r"\\exists", "∃"), (r"\\nexists", "∄"),
-        (r"\\emptyset", "∅"), (r"\\varnothing", "∅"),
-        (r"\\angle", "∠"), (r"\\degree", "°"), (r"\\circ", "°"),
-        (r"\\perp", "⊥"), (r"\\parallel", "∥"),
+        (r"\\forall", "∀"), (r"\\exists", "∃"),
+        (r"\\emptyset", "∅"), (r"\\angle", "∠"), (r"\\degree", "°"),
         (r"\\ldots", "..."), (r"\\dots", "..."), (r"\\cdots", "..."),
-        (r"\\vdots", "⋮"), (r"\\ddots", "⋱"),
-        (r"\\langle", "⟨"), (r"\\rangle", "⟩"),
-        (r"\\lceil", "⌈"), (r"\\rceil", "⌉"),
-        (r"\\lfloor", "⌊"), (r"\\rfloor", "⌋"),
-        (r"\\Vert", "‖"), (r"\\vert", "|"),
-        (r"\\quad", "  "), (r"\\qquad", "    "),
-        (r"\\! ", ""), (r"\\,", " "), (r"\\;", " "), (r"\\:", " "),
     ]
     for cmd, repl in replacements:
         text = re.sub(cmd, repl, text)
     text = re.sub(
-        r"\\(sin|cos|tan|ctg|cot|sec|csc|log|ln|lg|exp|lim|max|min|arg|det|mod|gcd|lcm|sup|inf|deg|dim|hom|ker|Pr)\b",
-        r"\1", text
-    )
+        r"\\(sin|cos|tan|ctg|cot|log|ln|lg|exp|lim|max|min|arg|det|mod)\b",
+        r"\1", text)
     text = re.sub(r"\\[a-zA-Z]*\{([^{}]*)\}", r"\1", text)
     text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
     text = text.replace("{", "").replace("}", "")
@@ -101,6 +82,8 @@ def clean_latex(text: str) -> str:
 # ============================================================
 TOKEN = os.getenv("BOT_TOKEN", "")
 GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
+YANDEX_VISION_API_KEY = os.getenv("YANDEX_VISION_API_KEY", "")
+YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 
@@ -126,9 +109,14 @@ if GIGACHAT_CREDENTIALS:
             model="GigaChat-2-Max",
             timeout=600
         )
-        logging.info("GigaChat клиент инициализирован (GigaChat-2-Max)")
+        logging.info("GigaChat клиент инициализирован")
     except Exception as e:
-        logging.error(f"Не удалось инициализировать GigaChat: {e}")
+        logging.error(f"GigaChat ошибка: {e}")
+
+if YANDEX_VISION_API_KEY and YANDEX_FOLDER_ID:
+    logging.info("Yandex Vision настроен")
+else:
+    logging.warning("Yandex Vision не настроен (нет ключа или Folder ID)")
 
 DB_PATH = "users.db"
 CACHE_TTL_HOURS = 2
@@ -173,17 +161,10 @@ class AIState(StatesGroup):
 # ============================================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            group_id TEXT,
-            group_name TEXT,
-            notify_hour INTEGER DEFAULT -1,
-            notify_minute INTEGER DEFAULT 0,
-            notify_changes INTEGER DEFAULT 0,
-            subgroup INTEGER DEFAULT 0
-        )
-    """)
+    conn.execute("""CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY, group_id TEXT, group_name TEXT,
+        notify_hour INTEGER DEFAULT -1, notify_minute INTEGER DEFAULT 0,
+        notify_changes INTEGER DEFAULT 0, subgroup INTEGER DEFAULT 0)""")
     for alter in [
         "ALTER TABLE users ADD COLUMN notify_changes INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN subgroup INTEGER DEFAULT 0",
@@ -192,26 +173,16 @@ def init_db():
             conn.execute(alter)
         except sqlite3.OperationalError:
             pass
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS schedule_cache (
-            group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
-            PRIMARY KEY (group_id, week_start)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS schedule_snapshots (
-            group_id TEXT, week_start TEXT, snapshot TEXT, updated_at TEXT,
-            PRIMARY KEY (group_id, week_start)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS feedback (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, username TEXT, text TEXT,
-            created_at TEXT, admin_msg_id INTEGER,
-            status TEXT DEFAULT 'new', answered_at TEXT
-        )
-    """)
+    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (
+        group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
+        PRIMARY KEY (group_id, week_start))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_snapshots (
+        group_id TEXT, week_start TEXT, snapshot TEXT, updated_at TEXT,
+        PRIMARY KEY (group_id, week_start))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT,
+        text TEXT, created_at TEXT, admin_msg_id INTEGER,
+        status TEXT DEFAULT 'new', answered_at TEXT)""")
     for alter in [
         "ALTER TABLE feedback ADD COLUMN status TEXT DEFAULT 'new'",
         "ALTER TABLE feedback ADD COLUMN answered_at TEXT",
@@ -221,25 +192,15 @@ def init_db():
         except sqlite3.OperationalError:
             pass
     conn.execute("UPDATE feedback SET status='new' WHERE status IS NULL")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, text TEXT, due_date TEXT,
-            done INTEGER DEFAULT 0, created_at TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS notes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, subject TEXT, text TEXT, created_at TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS vip (
-            user_id INTEGER PRIMARY KEY,
-            expiry TEXT, tier TEXT DEFAULT 'premium', granted_at TEXT
-        )
-    """)
+    conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, text TEXT,
+        due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT,
+        text TEXT, created_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS vip (
+        user_id INTEGER PRIMARY KEY, expiry TEXT,
+        tier TEXT DEFAULT 'premium', granted_at TEXT)""")
     conn.commit(); conn.close()
 
 
@@ -332,8 +293,7 @@ def get_changes_subscribers():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT user_id, group_id, group_name FROM users "
-        "WHERE notify_changes=1 AND group_id IS NOT NULL"
-    ).fetchall()
+        "WHERE notify_changes=1 AND group_id IS NOT NULL").fetchall()
     conn.close()
     result = {}
     for uid, gid, gname in rows:
@@ -341,20 +301,11 @@ def get_changes_subscribers():
     return result
 
 
-def get_stats():
+def get_total_users():
     conn = sqlite3.connect(DB_PATH)
-    total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    with_group = conn.execute("SELECT COUNT(*) FROM users WHERE group_id IS NOT NULL").fetchone()[0]
-    with_notify = conn.execute("SELECT COUNT(*) FROM users WHERE notify_hour >= 0 AND group_id IS NOT NULL").fetchone()[0]
-    changes = conn.execute("SELECT COUNT(*) FROM users WHERE notify_changes=1 AND group_id IS NOT NULL").fetchone()[0]
-    cache_count = conn.execute("SELECT COUNT(*) FROM schedule_cache").fetchone()[0]
-    fb_count = conn.execute("SELECT COUNT(*) FROM feedback WHERE COALESCE(status,'new') IN ('new','postponed')").fetchone()[0]
-    tasks_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE done=0").fetchone()[0]
-    notes_count = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
-    now_iso = datetime.now(timezone.utc).isoformat()
-    vip_count = conn.execute("SELECT COUNT(*) FROM vip WHERE expiry > ?", (now_iso,)).fetchone()[0]
+    n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     conn.close()
-    return total, with_group, with_notify, changes, cache_count, fb_count, tasks_count, notes_count, vip_count
+    return n
 
 
 def get_all_user_ids():
@@ -377,10 +328,8 @@ def set_vip(user_id, days, tier="premium"):
         except Exception:
             pass
     new_expiry = base + timedelta(days=days)
-    conn.execute(
-        "INSERT OR REPLACE INTO vip (user_id, expiry, tier, granted_at) VALUES (?, ?, ?, ?)",
-        (user_id, new_expiry.isoformat(), tier, now.isoformat())
-    )
+    conn.execute("INSERT OR REPLACE INTO vip (user_id, expiry, tier, granted_at) VALUES (?, ?, ?, ?)",
+                 (user_id, new_expiry.isoformat(), tier, now.isoformat()))
     conn.commit(); conn.close()
     return new_expiry
 
@@ -435,9 +384,8 @@ def get_all_vips():
 
 def get_cached_schedule(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT html, cached_at FROM schedule_cache WHERE group_id=? AND week_start=?",
-        (group_id, week_start)).fetchone()
+    row = conn.execute("SELECT html, cached_at FROM schedule_cache WHERE group_id=? AND week_start=?",
+                       (group_id, week_start)).fetchone()
     conn.close()
     if not row:
         return None
@@ -490,9 +438,8 @@ def build_snapshot(days):
 
 def save_feedback(user_id, username, text, admin_msg_id=None):
     conn = sqlite3.connect(DB_PATH)
-    cur = conn.execute(
-        "INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
-        (user_id, username, text, datetime.now(timezone.utc).isoformat(), admin_msg_id))
+    cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
+                       (user_id, username, text, datetime.now(timezone.utc).isoformat(), admin_msg_id))
     fid = cur.lastrowid
     conn.commit(); conn.close()
     return fid
@@ -516,20 +463,17 @@ def get_pending_feedback():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT id, user_id, username, text, created_at, COALESCE(status,'new') "
-        "FROM feedback "
-        "WHERE COALESCE(status,'new') IN ('new', 'postponed') "
-        "ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC"
-    ).fetchall()
+        "FROM feedback WHERE COALESCE(status,'new') IN ('new', 'postponed') "
+        "ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC").fetchall()
     conn.close()
     return rows
 
 
 def get_answered_feedback(limit=10):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT id, user_id, username, text, created_at, answered_at "
-        "FROM feedback WHERE status='answered' ORDER BY id DESC LIMIT ?",
-        (limit,)).fetchall()
+    rows = conn.execute("SELECT id, user_id, username, text, created_at, answered_at "
+                       "FROM feedback WHERE status='answered' ORDER BY id DESC LIMIT ?",
+                       (limit,)).fetchall()
     conn.close()
     return rows
 
@@ -542,28 +486,23 @@ def set_feedback_status(feedback_id, status):
 
 def mark_feedback_answered(feedback_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "UPDATE feedback SET status='answered', answered_at=? WHERE id=?",
-        (datetime.now(timezone.utc).isoformat(), feedback_id)
-    )
+    conn.execute("UPDATE feedback SET status='answered', answered_at=? WHERE id=?",
+                 (datetime.now(timezone.utc).isoformat(), feedback_id))
     conn.commit(); conn.close()
 
 
 def get_feedback_by_id(feedback_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT id, user_id, username, text FROM feedback WHERE id=?",
-        (feedback_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?",
+                       (feedback_id,)).fetchone()
     conn.close()
     return row
 
 
 def add_task(user_id, text, due_date=None):
     conn = sqlite3.connect(DB_PATH)
-    cur = conn.execute(
-        "INSERT INTO tasks (user_id, text, due_date, done, created_at) VALUES (?, ?, ?, 0, ?)",
-        (user_id, text, due_date, datetime.now(timezone.utc).isoformat()))
+    cur = conn.execute("INSERT INTO tasks (user_id, text, due_date, done, created_at) VALUES (?, ?, ?, 0, ?)",
+                       (user_id, text, due_date, datetime.now(timezone.utc).isoformat()))
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
@@ -608,18 +547,14 @@ def get_tasks_with_due():
 
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
-        (user_id, subject)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
+                       (user_id, subject)).fetchone()
     if row:
         conn.execute("UPDATE notes SET text=?, created_at=? WHERE id=?",
                      (text, datetime.now(timezone.utc).isoformat(), row[0]))
     else:
-        conn.execute(
-            "INSERT INTO notes (user_id, subject, text, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, subject, text, datetime.now(timezone.utc).isoformat())
-        )
+        conn.execute("INSERT INTO notes (user_id, subject, text, created_at) VALUES (?, ?, ?, ?)",
+                     (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 
@@ -633,10 +568,8 @@ def get_user_notes(user_id):
 
 def get_note(user_id, subject):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT text FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
-        (user_id, subject)
-    ).fetchone()
+    row = conn.execute("SELECT text FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
+                       (user_id, subject)).fetchone()
     conn.close()
     return row[0] if row else None
 
@@ -789,9 +722,6 @@ LESSON_TIMES = {
 }
 
 
-# ============================================================
-# ВСПОМОГАТЕЛЬНЫЕ
-# ============================================================
 def _now_irkutsk():
     return datetime.now(timezone.utc) + timedelta(hours=8)
 
@@ -893,10 +823,8 @@ def parse_schedule(html):
                         subgroup = sm.group(1)
                     aud_div = cls.find("div", class_="schcls-item-aud")
                     auditorium = aud_div.get_text(strip=True) if aud_div else ""
-                    lessons.append({
-                        "time": time_str, "subject": subject, "type": lesson_type,
-                        "teacher": teacher, "subgroup": subgroup, "auditorium": auditorium,
-                    })
+                    lessons.append({"time": time_str, "subject": subject, "type": lesson_type,
+                                    "teacher": teacher, "subgroup": subgroup, "auditorium": auditorium})
         days.append({"date": date_str, "name": day_name, "lessons": lessons})
     return week_parity, days
 
@@ -906,19 +834,14 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
     if use_cache:
         cached = get_cached_schedule(group_id, week_start_str)
         if cached:
-            logging.info(f"[CACHE] HIT {group_id} {week_start_str}")
             return cached
     date_str = target_monday.strftime("%d.%m.%Y")
     url = f"https://www.istu.edu/raspisanie/grup/{group_id}/{date_str}/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        "Accept-Language": "ru-RU,ru;q=0.9",
-    }
+    headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ru-RU,ru;q=0.9"}
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 html = await response.text()
-                logging.info(f"[WEEK] GET {url} -> {response.status}, len={len(html)}")
                 if response.status == 200 and html:
                     save_cached_schedule(group_id, week_start_str, html)
                 return html
@@ -1006,6 +929,9 @@ async def send_schedule_for_date(user_id, group_id, group_name, target_date, tit
         logging.error(f"[NOTIFY] {user_id}: {e}")
 
 
+# ============================================================
+# КЛАВИАТУРЫ
+# ============================================================
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -1014,9 +940,7 @@ def get_main_keyboard():
             [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
             [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
             [KeyboardButton(text="Обратная связь"), KeyboardButton(text="Помощь")],
-        ],
-        resize_keyboard=True,
-    )
+        ], resize_keyboard=True)
 
 
 def get_institutes_keyboard():
@@ -1122,7 +1046,7 @@ def get_vip_keyboard(is_active=False):
 
 
 # ============================================================
-# ГЛОБАЛЬНЫЙ ХЕНДЛЕР КНОПОК
+# ГЛОБАЛЬНЫЙ ХЕНДЛЕР
 # ============================================================
 @dp.message(StateFilter("*"), F.text.in_(MENU_BUTTONS))
 async def menu_button_global(message: Message, state: FSMContext):
@@ -1165,10 +1089,8 @@ async def start(message: Message):
             sub_mark = f" (подгр. {sub})"
     hint = f"\n\nТвоя группа: {saved[1]}{sub_mark}{vip_mark}" if saved else \
            "\n\nСовет: выбери группу через «Расписание»."
-    await message.answer(
-        f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ." + hint,
-        reply_markup=get_main_keyboard(),
-    )
+    await message.answer(f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ." + hint,
+                         reply_markup=get_main_keyboard())
 
 
 @dp.message(Command("myid"))
@@ -1192,14 +1114,15 @@ async def cmd_cancel(message: Message, state: FSMContext):
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer("Команда только для администратора.")
+        await message.answer("Только для админа.")
         return
     await message.answer(
         "АДМИН-КОМАНДЫ\n\n"
-        "/myid\n/stats\n/feedback_list\n/feedback_answered\n"
-        "/broadcast Текст\n/give_vip user_id дней\n/revoke_vip user_id\n/vip_list\n"
-        "/backup\n/restore\n/clearcache\n/checknow\n/monitor"
-    )
+        "/myid\n/stats — сколько всего пользователей\n"
+        "/feedback_list\n/feedback_answered\n"
+        "/broadcast Текст\n"
+        "/give_vip user_id дней\n/revoke_vip user_id\n/vip_list\n"
+        "/backup\n/restore\n/clearcache\n/checknow\n/monitor")
 
 
 @dp.message(Command("stats"))
@@ -1207,12 +1130,8 @@ async def cmd_stats(message: Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("Только для админа.")
         return
-    s = get_stats()
-    await message.answer(
-        f"Статистика:\n\nВсего: {s[0]}\nС группой: {s[1]}\n"
-        f"С уведомлениями: {s[2]}\nСледят: {s[3]}\nВ кэше: {s[4]}\n"
-        f"Обращений: {s[5]}\nЗадач: {s[6]}\nЗаметок: {s[7]}\nVIP: {s[8]}"
-    )
+    total = get_total_users()
+    await message.answer(f"Пользователей в боте: {total}")
 
 
 @dp.message(Command("broadcast"))
@@ -1244,11 +1163,9 @@ async def cmd_backup(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
     try:
-        s = get_stats()
+        total = get_total_users()
         doc = FSInputFile(DB_PATH, filename="users_backup.db")
-        await message.answer_document(doc, caption=(
-            f"Резервная копия\n{s[0]} | {s[1]} | {s[2]} | VIP: {s[8]}\n"
-            f"{s[6]} задач | {s[7]} заметок"))
+        await message.answer_document(doc, caption=f"Резервная копия. Всего пользователей: {total}")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
@@ -1264,8 +1181,7 @@ async def cmd_restore(message: Message):
         file = await bot.get_file(message.document.file_id)
         await bot.download_file(file.file_path, DB_PATH)
         init_db()
-        s = get_stats()
-        await message.answer(f"База восстановлена. Всего: {s[0]}, VIP: {s[8]}")
+        await message.answer(f"База восстановлена. Всего: {get_total_users()}")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
@@ -1343,7 +1259,7 @@ async def fb_postpone(callback: CallbackQuery):
         return
     fid = int(callback.data.split("_")[-1])
     set_feedback_status(fid, "postponed")
-    await callback.answer(f"Обращение #{fid} отложено")
+    await callback.answer(f"#{fid} отложено")
     await show_pending_feedback(callback.message)
 
 
@@ -1359,10 +1275,7 @@ async def fb_reply_start(callback: CallbackQuery, state: FSMContext):
         return
     _, uid, uname, text = row
     await state.update_data(feedback_id=fid, target_user=uid)
-    await callback.message.edit_text(
-        f"Ответ на #{fid}\nОт: {uname or uid}\n\n{text[:300]}\n\n"
-        f"Напиши ответ.\n\nДля отмены — /cancel."
-    )
+    await callback.message.edit_text(f"Ответ на #{fid}\nОт: {uname or uid}\n\n{text[:300]}\n\nНапиши ответ.\n\n/cancel")
     await state.set_state(FeedbackReplyState.waiting_reply)
     await callback.answer()
 
@@ -1384,7 +1297,7 @@ async def fb_reply_send(message: Message, state: FSMContext):
         await bot.send_message(uid, f"Ответ администратора на обращение #{fid}:\n\n{text}")
         mark_feedback_answered(fid)
         await state.clear()
-        await message.answer(f"Отправлено. #{fid} помечено отвеченным.")
+        await message.answer(f"Отправлено. #{fid} отвечено.")
     except Exception as e:
         await message.answer(f"Не удалось: {e}")
 
@@ -1431,12 +1344,12 @@ async def cmd_give_vip(message: Message):
         return
     parts = message.text.split()
     if len(parts) != 3:
-        await message.answer("Использование: /give_vip user_id дней")
+        await message.answer("/give_vip user_id дней")
         return
     try:
         uid = int(parts[1]); days = int(parts[2])
     except ValueError:
-        await message.answer("Числа нужны.")
+        await message.answer("Числа.")
         return
     if days <= 0:
         await message.answer("Дней > 0.")
@@ -1448,7 +1361,7 @@ async def cmd_give_vip(message: Message):
         await bot.send_message(uid, f"Тебе активирован VIP на {days} дней!\n\nОткрой «VIP».",
                                reply_markup=get_main_keyboard())
     except Exception as e:
-        await message.answer(f"Не удалось уведомить: {e}")
+        await message.answer(f"Не уведомил: {e}")
 
 
 @dp.message(Command("revoke_vip"))
@@ -1457,7 +1370,7 @@ async def cmd_revoke_vip(message: Message):
         return
     parts = message.text.split()
     if len(parts) != 2:
-        await message.answer("Использование: /revoke_vip user_id")
+        await message.answer("/revoke_vip user_id")
         return
     try:
         uid = int(parts[1])
@@ -1491,20 +1404,17 @@ async def cmd_vip_list(message: Message):
 
 
 # ============================================================
-# AI ТЕКСТ
+# AI ТЕКСТ (GigaChat)
 # ============================================================
 @dp.message(F.text == "AI Помощник")
 async def ai_menu(message: Message, state: FSMContext):
     if not is_vip(message.from_user.id):
-        await message.answer("AI Помощник только для VIP.\n\nОткрой «VIP».",
-                             reply_markup=get_main_keyboard())
+        await message.answer("AI Помощник только для VIP.", reply_markup=get_main_keyboard())
         return
     if giga_client is None:
-        await message.answer("AI временно недоступен.")
+        await message.answer("AI недоступен.")
         return
-    await message.answer(
-        "Привет! Я AI-помощник на базе GigaChat.\n\nЗадай вопрос.\n\nДля выхода — /cancel."
-    )
+    await message.answer("Привет! Я AI-помощник на GigaChat.\n\nЗадай вопрос.\n\n/cancel — выйти.")
     await state.set_state(AIState.waiting_question)
 
 
@@ -1534,70 +1444,98 @@ async def ai_process(message: Message, state: FSMContext):
 
 
 # ============================================================
-# AI ПО ФОТО (ChatCompletionRequest)
+# AI ПО ФОТО (Yandex Vision OCR + GigaChat)
 # ============================================================
 @dp.message(F.text == "AI по фото")
 async def ai_photo_menu(message: Message, state: FSMContext):
     if not is_vip(message.from_user.id):
         await message.answer("AI по фото только для VIP.", reply_markup=get_main_keyboard())
         return
-    if giga_client is None:
-        await message.answer("AI по фото недоступен.")
+    if not YANDEX_VISION_API_KEY or not YANDEX_FOLDER_ID:
+        await message.answer("Yandex Vision не настроен. Обратись к администратору.")
         return
-    await message.answer("Отправь фото с текстом — составлю конспект.\n\nДля отмены — /cancel.")
+    await message.answer("Отправь фото с текстом — распознаю и составлю конспект.\n\n/cancel — выйти.")
     await state.set_state(AIState.waiting_photo)
 
 
 @dp.message(AIState.waiting_photo, F.photo)
 async def ai_photo_process(message: Message, state: FSMContext):
-    thinking_msg = await message.answer("Обрабатываю изображение...")
-    tmp_path = None
+    thinking_msg = await message.answer("Распознаю текст с изображения...")
     try:
-        from gigachat.models import ChatCompletionRequest, ChatMessage, ChatContentPart
-
         photo = message.photo[-1]
         file_in_memory = await bot.download(photo)
+        image_bytes = file_in_memory.getvalue()
+        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            tmp.write(file_in_memory.getvalue())
-            tmp_path = tmp.name
-
-        with open(tmp_path, "rb") as f:
-            uploaded = await giga_client.aupload_file(f, purpose="general")
-        file_id = uploaded.id_
-
-        request = ChatCompletionRequest(
-            messages=[
-                ChatMessage(
-                    role="user",
-                    content=[
-                        ChatContentPart(type="text", text=(
-                            "Ты — студенческий помощник. Составь краткий конспект по тексту на этом изображении. "
-                            "Выдели главные определения, формулы и тезисы. Пиши структурированно и без воды."
-                        )),
-                        ChatContentPart(type="image", file_id=file_id),
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
+        }
+        payload = {
+            "folderId": YANDEX_FOLDER_ID,
+            "analyze_specs": [
+                {
+                    "content": image_base64,
+                    "features": [
+                        {"type": "TEXT_DETECTION",
+                         "text_detection_config": {"language_codes": ["ru", "en"]}}
                     ]
-                )
-            ],
-            model="GigaChat-2-Max"
+                }
+            ]
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText",
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logging.error(f"[VISION] HTTP {response.status}: {error_text}")
+                    await thinking_msg.edit_text("Не удалось распознать текст. Попробуй другое фото.")
+                    await state.clear()
+                    return
+                result = await response.json()
+
+        full_text = ""
+        try:
+            blocks = result.get("result", {}).get("textAnnotation", {}).get("blocks", [])
+            for block in blocks:
+                for line in block.get("lines", []):
+                    for word in line.get("words", []):
+                        full_text += word.get("text", "") + " "
+                    full_text += "\n"
+        except Exception as e:
+            logging.error(f"[VISION] Ошибка разбора: {e}")
+
+        if not full_text.strip():
+            await thinking_msg.edit_text("Текст на изображении не найден.")
+            await state.clear()
+            return
+
+        logging.info(f"[VISION] Распознано {len(full_text)} символов")
+
+        await thinking_msg.edit_text("Составляю конспект...")
+
+        if giga_client is None:
+            await thinking_msg.edit_text(f"Распознанный текст:\n\n{full_text[:3500]}")
+            await state.clear()
+            return
+
+        prompt = (
+            "Ты — студенческий помощник. Составь краткий конспект по этому тексту. "
+            "Выдели главные определения, формулы и тезисы. Пиши структурированно и без воды.\n\n"
+            f"{full_text}"
         )
 
-        response = await giga_client.achat.create(request)
-
-        answer = ""
-        if hasattr(response, "choices") and response.choices:
-            answer = response.choices[0].message.content
-        elif hasattr(response, "messages") and response.messages:
-            msg = response.messages[0]
-            if isinstance(msg.content, list):
-                for part in msg.content:
-                    if hasattr(part, "text") and part.text:
-                        answer += part.text
-            elif isinstance(msg.content, str):
-                answer = msg.content
-
-        if not answer:
-            answer = "Не удалось получить ответ."
+        try:
+            response_giga = await giga_client.achat.create(prompt)
+            answer = response_giga.messages[0].content[0].text if response_giga.messages else full_text
+        except Exception as e:
+            logging.error(f"[GIGACHAT] Ошибка: {e}")
+            answer = f"Распознанный текст:\n\n{full_text[:3500]}"
 
         try:
             answer = clean_latex(answer)
@@ -1608,17 +1546,11 @@ async def ai_photo_process(message: Message, state: FSMContext):
             answer = answer[:4000] + "\n... (обрезано)"
 
         await thinking_msg.edit_text(answer)
+
     except Exception as e:
         logging.error(f"[AI PHOTO] Ошибка: {e}")
-        await thinking_msg.edit_text(
-            "Не удалось обработать фото. Убедись, что текст хорошо читается."
-        )
+        await thinking_msg.edit_text("Не удалось обработать фото. Попробуй ещё раз.")
     finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
         await state.clear()
 
 
@@ -1702,8 +1634,7 @@ async def choose_subgroup(callback: CallbackQuery):
         mark = " +" if current == val else ""
         buttons.append([InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"set_sub_{val}")])
     buttons.append([InlineKeyboardButton(text="Назад", callback_data="my_group_back")])
-    await callback.message.edit_text(
-        "Выбери подгруппу.\n\nПри выборе — только пары твоей подгруппы и общие.",
+    await callback.message.edit_text("Выбери подгруппу.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
@@ -1777,7 +1708,7 @@ async def refresh_schedule(callback: CallbackQuery):
     monday = _monday_of_week(today)
     html = await fetch_week_html(gid, monday, use_cache=False)
     if not html:
-        await callback.message.edit_text("Не удалось обновить.",
+        await callback.message.edit_text("Не удалось.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
         await callback.answer(); return
@@ -1799,8 +1730,7 @@ async def refresh_schedule(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("week_"))
 async def show_week(callback: CallbackQuery):
     parts = callback.data.split("_", 2)
-    offset = int(parts[1])
-    gid = parts[2]
+    offset = int(parts[1]); gid = parts[2]
     gname = _group_name_by_id(gid)
     await callback.message.edit_text("Загружаю...")
     today = _now_irkutsk()
@@ -1878,10 +1808,7 @@ async def toggle_changes(callback: CallbackQuery):
     set_notify_changes(callback.from_user.id, not current)
     current_time = get_notify_time(callback.from_user.id)
     new_state = not current
-    if new_state:
-        text = "Слежение за изменениями ВКЛЮЧЕНО."
-    else:
-        text = "Слежение выключено."
+    text = "Слежение ВКЛЮЧЕНО." if new_state else "Слежение выключено."
     await callback.message.edit_text(text, reply_markup=get_notify_keyboard(current_time, new_state))
     await callback.answer("Ок")
 
@@ -1897,7 +1824,7 @@ async def tasks_menu(message: Message):
 
 @dp.callback_query(F.data == "task_add")
 async def task_add_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Напиши задачу.\n\nФормат: Текст | 25.10.2026\n\nОтмена — /cancel.")
+    await callback.message.edit_text("Напиши задачу.\n\nФормат: Текст | 25.10.2026\n\n/cancel")
     await state.set_state(TaskState.waiting_text)
     await callback.answer()
 
@@ -2002,7 +1929,7 @@ async def notes_menu(message: Message):
 
 @dp.callback_query(F.data == "note_add")
 async def note_add_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Напиши название предмета.\n\nОтмена — /cancel.")
+    await callback.message.edit_text("Напиши название предмета.\n\n/cancel")
     await state.set_state(NoteState.waiting_subject)
     await callback.answer()
 
@@ -2099,8 +2026,7 @@ async def note_edit(callback: CallbackQuery, state: FSMContext):
         return
     _, subj, old_text = target
     await state.update_data(subject=subj, edit_id=nid)
-    await callback.message.edit_text(
-        f"Редактирование «{subj}»\n\nСтарый текст:\n{old_text}\n\nНапиши новый.\n\nОтмена — /cancel.")
+    await callback.message.edit_text(f"Редактирование «{subj}»\n\nСтарый текст:\n{old_text}\n\nНапиши новый.\n\n/cancel")
     await state.set_state(NoteState.waiting_text)
     await callback.answer()
 
@@ -2120,8 +2046,8 @@ async def vip_menu(message: Message):
             reply_markup=get_vip_keyboard(is_active=True))
     else:
         await message.answer(
-            "VIP-подписка\n\nЧто даёт:\n- Расширенная статистика\n"
-            "- Приоритетная поддержка\n- AI Помощник\n- AI по фото\n\n"
+            "VIP-подписка\n\nЧто даёт:\n- Расширенная статистика\n- Приоритетная поддержка\n"
+            "- AI Помощник\n- AI по фото\n\n"
             "Тарифы:\n- 30 дней — 149 ₽\n- 90 дней — 349 ₽\n- Навсегда — 599 ₽",
             reply_markup=get_vip_keyboard(is_active=False))
 
@@ -2135,10 +2061,9 @@ async def vip_buy(callback: CallbackQuery):
         "3. Оплати (СБП, карта).\n"
         "4. Администратор активирует."
     ).format(username=ADMIN_USERNAME)
-    await callback.message.edit_text(text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Написать администратору", url=f"https://t.me/{ADMIN_USERNAME}")],
-            [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Написать администратору", url=f"https://t.me/{ADMIN_USERNAME}")],
+        [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
     await callback.answer()
 
 
@@ -2161,10 +2086,8 @@ async def vip_stats(callback: CallbackQuery):
         await callback.answer(); return
     _, days = parse_schedule(html)
     subgroup = get_user_subgroup(callback.from_user.id)
-    total_lessons = 0
-    total_minutes = 0
-    per_day = {}
-    subjects = {}
+    total_lessons = 0; total_minutes = 0
+    per_day = {}; subjects = {}
     for d in days:
         filtered = _filter_lessons_by_subgroup(d["lessons"], subgroup)
         day_lessons = len(filtered)
@@ -2177,34 +2100,23 @@ async def vip_stats(callback: CallbackQuery):
     hours = total_minutes // 60
     minutes = total_minutes % 60
     sub_info = f"Подгруппа: {subgroup}" if subgroup else "Подгруппа не выбрана"
-    lines = [
-        "Статистика на неделю",
-        f"Группа: {group_name}",
-        sub_info,
-        f"{monday.strftime('%d.%m.%Y')} - {(monday + timedelta(days=6)).strftime('%d.%m.%Y')}",
-        "",
-        f"Всего пар: {total_lessons}",
-        f"Всего времени: {hours} ч {minutes} мин",
-        "",
-        "По дням:",
-    ]
+    lines = ["Статистика на неделю", f"Группа: {group_name}", sub_info,
+             f"{monday.strftime('%d.%m.%Y')} - {(monday + timedelta(days=6)).strftime('%d.%m.%Y')}",
+             "", f"Всего пар: {total_lessons}", f"Всего времени: {hours} ч {minutes} мин", "", "По дням:"]
     for d_name, count in per_day.items():
         lines.append(f"  - {d_name.split(',')[0]}: {count}")
-    lines.append("")
-    lines.append("Топ предметов:")
+    lines.append(""); lines.append("Топ предметов:")
     top = sorted(subjects.items(), key=lambda x: -x[1])[:5]
     for subj, count in top:
         lines.append(f"  - {subj}: {count}")
     if per_day:
         busiest = max(per_day.items(), key=lambda x: x[1])
-        lines.append("")
-        lines.append(f"Самый загруженный: {busiest[0].split(',')[0]} ({busiest[1]} пар)")
+        lines.append(""); lines.append(f"Самый загруженный: {busiest[0].split(',')[0]} ({busiest[1]} пар)")
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:4000] + "\n..."
-    await callback.message.edit_text(text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
     await callback.answer()
 
 
@@ -2230,7 +2142,7 @@ async def vip_back(callback: CallbackQuery):
 # ============================================================
 @dp.message(F.text == "Обратная связь")
 async def feedback_start(message: Message, state: FSMContext):
-    await message.answer("Напиши сообщение администратору.\n\nОтмена — /cancel.")
+    await message.answer("Напиши сообщение администратору.\n\n/cancel")
     await state.set_state(FeedbackState.waiting_message)
 
 
@@ -2270,7 +2182,7 @@ async def admin_reply_to_feedback(message: Message):
     try:
         await bot.send_message(user_id, f"Ответ администратора на обращение #{fid}:\n\n{message.text}")
         mark_feedback_answered(fid)
-        await message.answer("Отправлено. Помечено отвеченным.")
+        await message.answer("Отправлено.")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
@@ -2284,8 +2196,8 @@ async def help_cmd(message: Message):
     await message.answer(
         f"Что я умею:\n\n"
         f"Расписание ИРНИТУ\nМоя группа (с подгруппой)\n"
-        f"Уведомления (утро/вечер, слежение)\n"
-        f"Задачи, заметки\nVIP — статистика и AI-функции\n"
+        f"Уведомления, задачи, заметки\n"
+        f"VIP — статистика + AI-функции\n"
         f"AI Помощник и AI по фото\nОбратная связь\n\n"
         f"Твой статус: {vip_status}",
         reply_markup=get_main_keyboard())
@@ -2305,11 +2217,9 @@ async def notification_loop():
                 if users:
                     logging.info(f"[NOTIFY] {now.hour:02d}:{now.minute:02d}, {len(users)}")
                     if now.hour < 12:
-                        target = now
-                        title_tpl = "Расписание на сегодня\nГруппа: {}"
+                        target = now; title_tpl = "Расписание на сегодня\nГруппа: {}"
                     else:
-                        target = now + timedelta(days=1)
-                        title_tpl = "Расписание на завтра\nГруппа: {}"
+                        target = now + timedelta(days=1); title_tpl = "Расписание на завтра\nГруппа: {}"
                     for user_id, group_id, group_name in users:
                         try:
                             await send_schedule_for_date(user_id, group_id, group_name, target,
@@ -2398,8 +2308,7 @@ async def check_schedule_changes():
                     try:
                         await bot.send_message(user_id,
                             f"Изменения в расписании!\nГруппа: {group_name}\n"
-                            f"Неделя с {monday.strftime('%d.%m.%Y')}\n\n{diff_text}\n\n"
-                            f"Открой «Моя группа».")
+                            f"Неделя с {monday.strftime('%d.%m.%Y')}\n\n{diff_text}")
                     except Exception as e:
                         logging.error(f"[CHANGES] {user_id}: {e}")
                 save_snapshot(group_id, week_start, new_snapshot)
@@ -2427,8 +2336,7 @@ async def monitor_loop():
             ok = False
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(check_url,
-                                           timeout=aiohttp.ClientTimeout(total=15),
+                    async with session.get(check_url, timeout=aiohttp.ClientTimeout(total=15),
                                            headers={"User-Agent": "Mozilla/5.0"}) as response:
                         ok = (response.status == 200)
             except Exception as e:
@@ -2444,11 +2352,9 @@ async def monitor_loop():
                 failures = 0
             else:
                 failures += 1
-                logging.warning(f"[MONITOR] Провал #{failures}")
                 if failures >= 3 and not alerted:
                     try:
-                        await bot.send_message(ADMIN_ID,
-                            "Сайт ИРНИТУ не отвечает 3 проверки подряд.\n\n" + check_url)
+                        await bot.send_message(ADMIN_ID, "Сайт ИРНИТУ не отвечает 3 проверки.\n\n" + check_url)
                         alerted = True
                     except Exception as e:
                         logging.error(f"[MONITOR] {e}")
@@ -2464,12 +2370,10 @@ async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
-        stream=sys.stdout,
-        force=True,
-    )
+        stream=sys.stdout, force=True)
     init_db()
     await bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Webhook удалён, запускаю polling")
+    logging.info("Webhook удалён, polling")
     asyncio.create_task(notification_loop())
     asyncio.create_task(task_reminder_loop())
     asyncio.create_task(cache_cleanup_loop())
