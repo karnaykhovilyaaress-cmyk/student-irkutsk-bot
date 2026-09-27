@@ -1,7 +1,11 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import asyncio
 import re
 import sys
+import json
 import base64
 import sqlite3
 import logging
@@ -110,7 +114,7 @@ if GIGACHAT_CREDENTIALS:
     except Exception as e:
         logging.error(f"GigaChat ошибка: {e}")
 
-DB_PATH = "users.db"
+DB_PATH = os.getenv("DB_PATH", "users.db")
 CACHE_TTL_HOURS = 2
 CHANGES_CHECK_INTERVAL_MIN = 60
 
@@ -1418,8 +1422,11 @@ async def ai_process(message: Message, state: FSMContext):
         return
     thinking_msg = await message.answer("Думаю...")
     try:
-        response = await giga_client.achat.create(message.text)
-        answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
+        response = await giga_client.achat(message.text)
+        try:
+            answer = response.choices[0].message.content
+        except AttributeError:
+            answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
         try:
             answer = clean_latex(answer)
         except Exception as e:
@@ -1433,14 +1440,14 @@ async def ai_process(message: Message, state: FSMContext):
 
 
 # ============================================================
-# AI ПО ФОТО (Yandex Vision OCR + GigaChat) — ИСПРАВЛЕНО
+# AI ПО ФОТО (Yandex Vision OCR + GigaChat)
 # ============================================================
 @dp.message(F.text == "AI по фото")
 async def ai_photo_menu(message: Message, state: FSMContext):
     if not is_vip(message.from_user.id):
         await message.answer("AI по фото только для VIP.", reply_markup=get_main_keyboard())
         return
-    if not YANDEX_VISION_API_KEY or not YANDEX_FOLDER_ID:
+    if not YANDEX_VISION_API_KEY:
         await message.answer("Yandex Vision не настроен. Обратись к администратору.")
         return
     await message.answer("Отправь фото с текстом — распознаю и составлю конспект.\n\n/cancel — выйти.")
@@ -1453,79 +1460,80 @@ async def ai_photo_process(message: Message, state: FSMContext):
     try:
         photo = message.photo[-1]
         file_in_memory = await bot.download(photo)
-        image_bytes = file_in_memory.read()  # ← ИСПРАВЛЕНО: было .getvalue()
+        image_bytes = file_in_memory.getvalue()
+        if not image_bytes:
+            await thinking_msg.edit_text("Не удалось прочитать файл. Попробуй ещё раз.")
+            return
+
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
         logging.info(f"[VISION] base64 length: {len(image_base64)}")
 
         headers = {
-            "Content-Type": "application/json",
             "Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
+            "Content-Type": "application/json",
         }
         payload = {
-            "folderId": YANDEX_FOLDER_ID,
-            "analyze_specs": [
-                {
-                    "content": image_base64,
-                    "features": [
-                        {"type": "TEXT_DETECTION",
-                         "text_detection_config": {"language_codes": ["ru", "en"]}}
-                    ]
-                }
-            ]
+            "mimeType": "image/jpeg",
+            "languageCodes": ["ru", "en"],
+            "model": "page",
+            "content": image_base64,
         }
+
+        logging.info(f"[VISION] payload keys: {list(payload.keys())}")
+        logging.info(f"[VISION] content len: {len(payload['content'])}")
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText",
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=30)
+                timeout=aiohttp.ClientTimeout(total=30),
             ) as response:
+                body = await response.text()
                 if response.status != 200:
-                    error_text = await response.text()
-                    logging.error(f"[VISION] HTTP {response.status}: {error_text}")
-                    await thinking_msg.edit_text("Не удалось распознать текст. Попробуй другое фото.")
-                    await state.clear()
+                    logging.error(f"[VISION] HTTP {response.status}: {body}")
+                    await thinking_msg.edit_text(
+                        f"Не удалось распознать текст (HTTP {response.status}). Попробуй другое фото."
+                    )
                     return
-                result = await response.json()
+                result = json.loads(body)
 
-        full_text = ""
-        try:
-            blocks = result.get("result", {}).get("textAnnotation", {}).get("blocks", [])
-            for block in blocks:
-                for line in block.get("lines", []):
-                    for word in line.get("words", []):
-                        full_text += word.get("text", "") + " "
-                    full_text += "\n"
-        except Exception as e:
-            logging.error(f"[VISION] Ошибка разбора: {e}")
-
+        full_text = (
+            result.get("result", {})
+                  .get("textAnnotation", {})
+                  .get("fullText", "")
+        )
         if not full_text.strip():
             await thinking_msg.edit_text("Текст на изображении не найден.")
-            await state.clear()
             return
 
         logging.info(f"[VISION] Распознано {len(full_text)} символов")
 
-        await thinking_msg.edit_text("Составляю конспект...")
-
         if giga_client is None:
-            await thinking_msg.edit_text(f"Распознанный текст:\n\n{full_text[:3500]}")
-            await state.clear()
+            out = f"Распознанный текст:\n\n{full_text}"
+            if len(out) > 4000:
+                out = out[:4000] + "\n... (обрезано)"
+            await thinking_msg.edit_text(out)
             return
+
+        await thinking_msg.edit_text("Составляю конспект...")
 
         prompt = (
             "Ты — студенческий помощник. Составь краткий конспект по этому тексту. "
-            "Выдели главные определения, формулы и тезисы. Пиши структурированно и без воды.\n\n"
+            "Выдели главные определения, формулы и тезисы. "
+            "Пиши структурированно и без воды.\n\n"
             f"{full_text}"
         )
 
         try:
-            response_giga = await giga_client.achat.create(prompt)
-            answer = response_giga.messages[0].content[0].text if response_giga.messages else full_text
+            resp = await giga_client.achat(prompt)
+            try:
+                answer = resp.choices[0].message.content
+            except AttributeError:
+                answer = resp.messages[0].content[0].text
         except Exception as e:
-            logging.error(f"[GIGACHAT] Ошибка: {e}")
-            answer = f"Распознанный текст:\n\n{full_text[:3500]}"
+            logging.exception("[GIGACHAT] FAILED")
+            answer = f"Распознанный текст:\n\n{full_text}"
 
         try:
             answer = clean_latex(answer)
@@ -1538,8 +1546,11 @@ async def ai_photo_process(message: Message, state: FSMContext):
         await thinking_msg.edit_text(answer)
 
     except Exception as e:
-        logging.error(f"[AI PHOTO] Ошибка: {e}")
-        await thinking_msg.edit_text("Не удалось обработать фото. Попробуй ещё раз.")
+        logging.exception("[AI PHOTO]")
+        try:
+            await thinking_msg.edit_text("Не удалось обработать фото. Попробуй ещё раз.")
+        except Exception:
+            pass
     finally:
         await state.clear()
 
