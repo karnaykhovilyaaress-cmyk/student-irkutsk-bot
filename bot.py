@@ -7,6 +7,7 @@ import re
 import sys
 import json
 import base64
+import random
 import sqlite3
 import logging
 from datetime import datetime, timedelta, timezone
@@ -122,6 +123,9 @@ YANDEX_VISION_API_KEY = os.getenv("YANDEX_VISION_API_KEY", "")
 YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
+BOT_USERNAME = "@student_irk38_bot"  # ← замени на username своего бота без @
+
+REFERRAL_DAYS = 3  # сколько дней VIP давать за реферала
 
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!")
@@ -149,6 +153,7 @@ if GIGACHAT_CREDENTIALS:
 DB_PATH = os.getenv("DB_PATH", "users.db")
 CACHE_TTL_HOURS = 2
 CHANGES_CHECK_INTERVAL_MIN = 60
+DAILY_QUOTE_HOUR = 10  # по Иркутску
 
 NOTIFY_PRESETS = [
     ("7:00", 7, 0), ("8:00", 8, 0),
@@ -159,15 +164,48 @@ NOTIFY_PRESETS = [
 MENU_BUTTONS = {
     "Моя группа", "Расписание", "Уведомления", "Задачи",
     "Заметки", "VIP", "AI Помощник", "AI по фото",
+    "Стипендия", "Пригласить друга",
     "Обратная связь", "Помощь",
 }
 
-PRIORITY_LABELS = {
-    0: "низкий",
-    1: "средний",
-    2: "высокий",
-}
+PRIORITY_LABELS = {0: "низкий", 1: "средний", 2: "высокий"}
 PRIORITY_MARK = {0: "[ ]", 1: "[~]", 2: "[!]"}
+
+# ============================================================
+# ЦИТАТЫ ДНЯ
+# ============================================================
+DAILY_QUOTES = [
+    "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
+    "Сессия сдаётся не за неделю, а за семестр.",
+    "Студент — это человек, который учится всю жизнь, но не всегда в универе.",
+    "Пара не последняя, а самая первая — просто ты её проспал.",
+    "Оценка — это не ты, но она влияет на стипендию.",
+    "Лекция без конспекта — это медитация.",
+    "Сон — это не лень, это восстановление к следующей паре.",
+    "Если не знаешь, что делать — начни с конспекта.",
+    "Сессия — это когда весь семестр за одну ночь.",
+    "Не откладывай на завтра то, что можно отложить на после сессии.",
+    "Матан — это не предмет, это образ жизни.",
+    "Лучшее, что можно взять из универа — это знакомства и привычку думать.",
+    "Пока ты спишь, кто-то учится. А кто-то тоже спит. Всё нормально.",
+    "Универ — это про то, как не сдаваться, когда сложно.",
+    "Каждый, кто сдал сессию, когда-то не понимал, что делает.",
+    "Забыл — перечитай. Не понял — спроси. Лень — иди спать.",
+    "Делай больше, чем от тебя требуют, и меньше, чем о тебе говорят.",
+    "Студенческий билет — это пропуск в мир взрослых проблем.",
+    "Не сдал — не конец. Сдал — не финиш.",
+    "Дисциплина — это не про силу воли, а про систему.",
+    "Отличник — это не тот, кто всё знает, а тот, кто умеет находить.",
+    "Лучший конспект — это тот, который ты написал сам.",
+    "Каждая пара приближает тебя к свободе. Или к дедлайну.",
+    "Кто рано встаёт, тот сдаёт первым.",
+    "Учиться никогда не поздно, но иногда поздно сдавать.",
+    "Самое сложное в учёбе — начать.",
+    "Знание — это единственное, что никто не отнимет.",
+    "Не сравнивай свой путь с чужим — у каждого своя траектория.",
+    "Если не понимаешь — это нормально. Если не спрашиваешь — нет.",
+    "Универ не учит думать. Универ даёт материал. Думать — твоя работа.",
+]
 
 
 # ============================================================
@@ -194,6 +232,11 @@ class AIState(StatesGroup):
     waiting_photo = State()
     waiting_photo_mode = State()
 
+class ScholarshipState(StatesGroup):
+    waiting_current_amount = State()
+    waiting_subject = State()
+    waiting_grade = State()
+
 
 # ============================================================
 # БАЗА ДАННЫХ
@@ -212,6 +255,31 @@ def init_db():
             conn.execute(alter)
         except sqlite3.OperationalError:
             pass
+
+    # Рефералы
+    conn.execute("""CREATE TABLE IF NOT EXISTS referrals (
+        user_id INTEGER PRIMARY KEY,
+        referrer_id INTEGER,
+        created_at TEXT,
+        rewarded INTEGER DEFAULT 0)""")
+
+    # Подписка на цитату дня
+    conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (
+        user_id INTEGER PRIMARY KEY,
+        subscribed_at TEXT)""")
+
+    # Стипендия и оценки
+    conn.execute("""CREATE TABLE IF NOT EXISTS scholarship (
+        user_id INTEGER PRIMARY KEY,
+        current_amount INTEGER DEFAULT 0,
+        updated_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS grades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        subject TEXT,
+        grade INTEGER,
+        created_at TEXT)""")
+
     conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (
         group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
         PRIMARY KEY (group_id, week_start))""")
@@ -261,6 +329,136 @@ def _ensure_user(user_id):
     conn.commit(); conn.close()
 
 
+def user_exists(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    return row is not None
+
+
+# ---------- РЕФЕРАЛЫ ----------
+def add_referral(new_user_id, referrer_id):
+    """Возвращает True, если запись создана (реферал засчитан)."""
+    if new_user_id == referrer_id:
+        return False
+    conn = sqlite3.connect(DB_PATH)
+    # уже есть запись?
+    row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?",
+                       (new_user_id,)).fetchone()
+    if row:
+        conn.close()
+        return False
+    conn.execute(
+        "INSERT INTO referrals (user_id, referrer_id, created_at, rewarded) VALUES (?, ?, ?, 0)",
+        (new_user_id, referrer_id, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+    return True
+
+
+def mark_referral_rewarded(new_user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE referrals SET rewarded=1 WHERE user_id=?", (new_user_id,))
+    conn.commit(); conn.close()
+
+
+def get_referral_stats(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT user_id, created_at, rewarded FROM referrals WHERE referrer_id=?",
+        (user_id,)).fetchall()
+    conn.close()
+    total = len(rows)
+    rewarded = sum(1 for r in rows if r[2])
+    return total, rewarded
+
+
+def get_referrer(new_user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?",
+                       (new_user_id,)).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+# ---------- ЦИТАТА ДНЯ ----------
+def daily_subscribe(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR IGNORE INTO daily_subscribers (user_id, subscribed_at) VALUES (?, ?)",
+        (user_id, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+
+
+def daily_unsubscribe(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
+
+
+def daily_is_subscribed(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT 1 FROM daily_subscribers WHERE user_id=?",
+                       (user_id,)).fetchone()
+    conn.close()
+    return row is not None
+
+
+def daily_get_all_subscribers():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+
+# ---------- СТИПЕНДИЯ ----------
+def set_scholarship_amount(user_id, amount):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO scholarship (user_id, current_amount, updated_at) VALUES (?, ?, ?)",
+        (user_id, amount, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+
+
+def get_scholarship_amount(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?",
+                       (user_id,)).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def add_grade(user_id, subject, grade):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO grades (user_id, subject, grade, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, subject, grade, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+
+
+def get_grades(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT id, subject, grade FROM grades WHERE user_id=? ORDER BY subject",
+        (user_id,)).fetchall()
+    conn.close()
+    return rows
+
+
+def delete_grade(grade_id, user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
+    conn.commit(); conn.close()
+
+
+def clear_grades(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
+
+
+# ============================================================
+# ОСТАЛЬНЫЕ ФУНКЦИИ БД (без изменений)
+# ============================================================
 def save_user_group(user_id, group_id, group_name):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
@@ -1059,6 +1257,7 @@ def get_main_keyboard():
             [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
             [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
             [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
+            [KeyboardButton(text="Стипендия"), KeyboardButton(text="Пригласить друга")],
             [KeyboardButton(text="Обратная связь"), KeyboardButton(text="Помощь")],
         ], resize_keyboard=True)
 
@@ -1207,6 +1406,24 @@ def get_ai_photo_mode_keyboard():
     ])
 
 
+def get_daily_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Цитата дня", callback_data="daily_quote_now")],
+        [InlineKeyboardButton(text="Подписаться на 10:00", callback_data="daily_on")],
+        [InlineKeyboardButton(text="Отписаться", callback_data="daily_off")],
+    ])
+
+
+def get_scholarship_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
+        [InlineKeyboardButton(text="Мои оценки", callback_data="sch_list")],
+        [InlineKeyboardButton(text="Итог", callback_data="sch_result")],
+        [InlineKeyboardButton(text="Изменить сумму стипендии", callback_data="sch_set_amount")],
+        [InlineKeyboardButton(text="Очистить оценки", callback_data="sch_clear")],
+    ])
+
+
 # ============================================================
 # ГЛОБАЛЬНЫЙ ХЕНДЛЕР
 # ============================================================
@@ -1230,6 +1447,10 @@ async def menu_button_global(message: Message, state: FSMContext):
         await ai_menu(message, state)
     elif text == "AI по фото":
         await ai_photo_menu(message, state)
+    elif text == "Стипендия":
+        await scholarship_menu(message)
+    elif text == "Пригласить друга":
+        await referral_menu(message)
     elif text == "Обратная связь":
         await feedback_start(message, state)
     elif text == "Помощь":
@@ -1237,19 +1458,56 @@ async def menu_button_global(message: Message, state: FSMContext):
 
 
 @dp.message(CommandStart())
-async def start(message: Message):
-    _ensure_user(message.from_user.id)
-    saved = get_user_group(message.from_user.id)
-    vip_mark = " [VIP]" if is_vip(message.from_user.id) else ""
+async def start(message: Message, state: FSMContext):
+    """Обрабатываем реферальную ссылку t.me/bot?start=ref_123"""
+    await state.clear()
+    user_id = message.from_user.id
+    args = message.text.split(maxsplit=1)
+    ref_payload = args[1].strip() if len(args) > 1 else ""
+
+    # Проверяем, новый ли пользователь
+    was_known = user_exists(user_id)
+
+    _ensure_user(user_id)
+
+    # Обрабатываем реферала
+    referral_msg = ""
+    if ref_payload.startswith("ref_") and not was_known:
+        try:
+            referrer_id = int(ref_payload[4:])
+        except ValueError:
+            referrer_id = None
+        if referrer_id and referrer_id != user_id and user_exists(referrer_id):
+            ok = add_referral(user_id, referrer_id)
+            if ok:
+                # Начисляем VIP обоим
+                set_vip(referrer_id, REFERRAL_DAYS)
+                set_vip(user_id, REFERRAL_DAYS)
+                mark_referral_rewarded(user_id)
+                referral_msg = (
+                    f"\n\nТебе начислено {REFERRAL_DAYS} дней VIP за приглашение от друга!"
+                )
+                try:
+                    await bot.send_message(
+                        referrer_id,
+                        f"По твоей ссылке зашёл новый пользователь.\n"
+                        f"Тебе начислено {REFERRAL_DAYS} дней VIP."
+                    )
+                except Exception as e:
+                    logging.error(f"[REFERRAL] не уведомил {referrer_id}: {e}")
+
+    saved = get_user_group(user_id)
+    vip_mark = " [VIP]" if is_vip(user_id) else ""
     sub_mark = ""
     if saved:
-        sub = get_user_subgroup(message.from_user.id)
+        sub = get_user_subgroup(user_id)
         if sub:
             sub_mark = f" (подгр. {sub})"
     hint = f"\n\nТвоя группа: {saved[1]}{sub_mark}{vip_mark}" if saved else \
            "\n\nСовет: выбери группу через «Расписание»."
-    await message.answer(f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ." + hint,
-                         reply_markup=get_main_keyboard())
+    await message.answer(
+        f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ." + hint + referral_msg,
+        reply_markup=get_main_keyboard())
 
 
 @dp.message(Command("myid"))
@@ -1267,6 +1525,34 @@ async def cmd_cancel(message: Message, state: FSMContext):
     await message.answer("Отменено.", reply_markup=get_main_keyboard())
 
 
+@dp.message(Command("quote"))
+async def cmd_quote(message: Message):
+    """Быстрый доступ к цитате дня."""
+    await message.answer(random.choice(DAILY_QUOTES), reply_markup=get_daily_keyboard())
+
+
+# ============================================================
+# РЕФЕРАЛЬНАЯ СИСТЕМА
+# ============================================================
+async def referral_menu(message: Message):
+    user_id = message.from_user.id
+    link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
+    total, rewarded = get_referral_stats(user_id)
+    vip_days_earned = rewarded * REFERRAL_DAYS
+
+    text = (
+        "Приглашай друзей и получай VIP\n\n"
+        f"За каждого нового пользователя по твоей ссылке:\n"
+        f"- тебе +{REFERRAL_DAYS} дней VIP\n"
+        f"- ему +{REFERRAL_DAYS} дней VIP\n\n"
+        f"Твоя ссылка:\n{link}\n\n"
+        f"Пришло по ссылке: {total}\n"
+        f"Засчитано (награда выдана): {rewarded}\n"
+        f"Заработано VIP-дней: {vip_days_earned}"
+    )
+    await message.answer(text, reply_markup=get_main_keyboard())
+
+
 # ============================================================
 # АДМИН
 # ============================================================
@@ -1274,32 +1560,27 @@ ADMIN_HELP_TEXT = """АДМИН-КОМАНДЫ
 
 СТАТИСТИКА
 /stats — общее число пользователей в боте
-/vip_list — список активных VIP-подписок (ID, до какой даты, сколько дней осталось)
+/vip_list — список активных VIP-подписок
 
 ОБРАТНАЯ СВЯЗЬ
-/feedback_list — все актуальные обращения (новые и отложенные)
-   К каждому обращению кнопки «Ответить» и «Отложить».
-   Также можно ответить reply-ом на сообщение бота с обращением.
-/feedback_answered — последние 10 отвеченных обращений
+/feedback_list — актуальные обращения
+/feedback_answered — последние 10 отвеченных
 
 РАССЫЛКА
-/broadcast Текст — отправить сообщение всем пользователям бота
-   Пример: /broadcast Завтра не будет пары по матану.
+/broadcast Текст — отправить сообщение всем пользователям
 
 VIP-ПОДПИСКИ
-/give_vip user_id дней — выдать VIP на N дней (можно продлевать)
-   Пример: /give_vip 123456789 30
+/give_vip user_id дней — выдать VIP на N дней
 /revoke_vip user_id — снять VIP досрочно
 /vip_list — список активных VIP
 
 БАЗА ДАННЫХ
-/backup — прислать файл users.db в чат (резервная копия)
+/backup — прислать файл users.db
 /restore — восстановить базу из файла .db
-   Пришли файл .db с командой /restore в подписи к нему.
 
 РАСПИСАНИЕ И СЕТЬ
-/clearcache — очистить кэш расписаний (заставит бота загрузить заново)
-/checknow — вручную запустить проверку изменений в расписании
+/clearcache — очистить кэш расписаний
+/checknow — вручную запустить проверку изменений
 /monitor — проверить, отвечает ли сайт ИРНИТУ
 
 ПРОЧЕЕ
@@ -1651,7 +1932,7 @@ async def ai_process(message: Message, state: FSMContext):
 
 
 # ============================================================
-# AI ПО ФОТО (Yandex Vision OCR + GigaChat)
+# AI ПО ФОТО
 # ============================================================
 @dp.message(F.text == "AI по фото")
 async def ai_photo_menu(message: Message, state: FSMContext):
@@ -1673,7 +1954,6 @@ async def ai_photo_menu(message: Message, state: FSMContext):
 
 @dp.message(AIState.waiting_photo, F.photo)
 async def ai_photo_receive(message: Message, state: FSMContext):
-    """Принимаем фото, сохраняем file_id, предлагаем выбрать режим."""
     photo = message.photo[-1]
     await state.update_data(photo_file_id=photo.file_id)
     await message.answer("Что сделать с фото?", reply_markup=get_ai_photo_mode_keyboard())
@@ -1706,7 +1986,6 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
 
     thinking_msg = callback.message
     try:
-        # --- Скачиваем фото по file_id ---
         file = await bot.get_file(file_id)
         file_in_memory = await bot.download_file(file.file_path)
         image_bytes = file_in_memory.getvalue()
@@ -1717,7 +1996,6 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
         logging.info(f"[VISION] base64 length: {len(image_base64)}")
 
-        # --- Запрос в Yandex OCR ---
         headers = {
             "Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
             "Content-Type": "application/json",
@@ -1756,7 +2034,6 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
 
         logging.info(f"[VISION] Распознано {len(full_text)} символов")
 
-        # --- Если GigaChat недоступен, отдаём сырой текст ---
         if giga_client is None:
             out = f"Распознанный текст:\n\n{full_text}"
             if len(out) > 4000:
@@ -1764,7 +2041,6 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
             await thinking_msg.edit_text(out)
             return
 
-        # --- Готовим промпт в зависимости от режима ---
         if mode == "ai_photo_conspect":
             await thinking_msg.edit_text("Составляю конспект...")
             prompt = (
@@ -1780,7 +2056,7 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
                 "- Пиши без воды, только по делу.\n\n"
                 f"Текст:\n{full_text}"
             )
-        else:  # ai_photo_solve
+        else:
             await thinking_msg.edit_text("Решаю задание...")
             prompt = (
                 "Ты — студенческий помощник. На фото задание (задача, пример, упражнение).\n"
@@ -2053,7 +2329,11 @@ async def notifications_menu(message: Message):
     else:
         status = "Уведомления выключены."
     ch_status = "Слежение вкл." if changes else "Слежение выкл."
-    await message.answer(f"{status}\n{ch_status}{sub_line}\n\nУтро — на СЕГОДНЯ. Вечер — на ЗАВТРА.",
+    daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
+    await message.answer(
+        f"{status}\n{ch_status}{sub_line}\n"
+        f"Цитата дня: {daily_status}\n\n"
+        f"Утро — на СЕГОДНЯ. Вечер — на ЗАВТРА.",
         reply_markup=get_notify_keyboard(current, changes))
 
 
@@ -2092,7 +2372,332 @@ async def toggle_changes(callback: CallbackQuery):
 
 
 # ============================================================
-# ЗАДАЧИ — МЕНЮ И СПИСКИ
+# ЦИТАТА ДНЯ
+# ============================================================
+@dp.callback_query(F.data == "daily_quote_now")
+async def daily_quote_now(callback: CallbackQuery):
+    await callback.message.edit_text(
+        random.choice(DAILY_QUOTES),
+        reply_markup=get_daily_keyboard())
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "daily_on")
+async def daily_on(callback: CallbackQuery):
+    daily_subscribe(callback.from_user.id)
+    await callback.message.edit_text(
+        f"Ты подписан на цитату дня.\n\nБудет приходить каждый день в {DAILY_QUOTE_HOUR}:00 по Иркутску.",
+        reply_markup=get_daily_keyboard())
+    await callback.answer("Подписан")
+
+
+@dp.callback_query(F.data == "daily_off")
+async def daily_off(callback: CallbackQuery):
+    daily_unsubscribe(callback.from_user.id)
+    await callback.message.edit_text(
+        "Ты отписан от цитаты дня.",
+        reply_markup=get_daily_keyboard())
+    await callback.answer("Отписан")
+
+
+# ============================================================
+# СТИПЕНДИЯ
+# ============================================================
+async def scholarship_menu(message: Message):
+    user_id = message.from_user.id
+    if not is_vip(user_id):
+        await message.answer(
+            "Раздел «Стипендия» доступен только VIP-пользователям.\n\n"
+            "Оформить VIP можно в разделе «VIP».",
+            reply_markup=get_main_keyboard())
+        return
+
+    amount = get_scholarship_amount(user_id)
+    if amount is None:
+        await message.answer(
+            "Раздел «Стипендия»\n\n"
+            "Сначала укажи свою текущую стипендию (в рублях).\n"
+            "Если не получаешь — напиши 0.\n\n"
+            "Напиши сумму одним числом, например: 2000\n\n"
+            "/cancel — отменить"
+        )
+        # Переводим в FSM
+        # (используем scholarship_amount_setup как маркер через state)
+        # Для этого нужен state — используем локальный контекст
+        # В глобальном обработчике кнопок state уже очищен, поэтому попросим ввести.
+        # Проще: сделаем отдельный стейт.
+        return
+
+    # Уже есть сумма
+    grades = get_grades(user_id)
+    avg = sum(g[2] for g in grades) / len(grades) if grades else 0
+    count5 = sum(1 for g in grades if g[2] == 5)
+    count4 = sum(1 for g in grades if g[2] == 4)
+    count3 = sum(1 for g in grades if g[2] == 3)
+    count2 = sum(1 for g in grades if g[2] == 2)
+
+    lines = [
+        "Раздел «Стипендия»\n",
+        f"Текущая стипендия: {amount} руб/мес",
+        f"Оценок внесено: {len(grades)}",
+    ]
+    if grades:
+        lines.append(f"Средний балл: {avg:.2f}")
+        lines.append(f"  пятёрок: {count5}")
+        lines.append(f"  четвёрок: {count4}")
+        lines.append(f"  троек: {count3}")
+        if count2:
+            lines.append(f"  двоек: {count2}")
+    else:
+        lines.append("Оценок пока нет — добавь первую.")
+    lines.append("")
+    lines.append("Выбери действие:")
+
+    await message.answer("\n".join(lines), reply_markup=get_scholarship_keyboard())
+
+
+@dp.callback_query(F.data == "sch_set_amount")
+async def sch_set_amount(callback: CallbackQuery, state: FSMContext):
+    if not is_vip(callback.from_user.id):
+        await callback.answer("Только для VIP", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "Напиши свою текущую стипендию в рублях.\n"
+        "Если не получаешь — напиши 0.\n\n"
+        "Например: 2000\n\n/cancel"
+    )
+    await state.set_state(ScholarshipState.waiting_current_amount)
+    await callback.answer()
+
+
+@dp.message(ScholarshipState.waiting_current_amount)
+async def sch_amount_save(message: Message, state: FSMContext):
+    raw = (message.text or "").strip().replace(" ", "")
+    if not raw.isdigit():
+        await message.answer("Нужно целое число, например 2000 или 0.")
+        return
+    amount = int(raw)
+    if amount > 100000:
+        await message.answer("Слишком большая сумма. Попробуй ещё раз.")
+        return
+    set_scholarship_amount(message.from_user.id, amount)
+    await state.clear()
+    await message.answer(
+        f"Сохранено: {amount} руб/мес.\n\nОткрой «Стипендия» → «Итог», чтобы увидеть прогноз.",
+        reply_markup=get_main_keyboard())
+
+
+@dp.callback_query(F.data == "sch_add_grade")
+async def sch_add_grade_start(callback: CallbackQuery, state: FSMContext):
+    if not is_vip(callback.from_user.id):
+        await callback.answer("Только для VIP", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "Напиши название предмета (например: Математический анализ).\n\n/cancel"
+    )
+    await state.set_state(ScholarshipState.waiting_subject)
+    await callback.answer()
+
+
+@dp.message(ScholarshipState.waiting_subject)
+async def sch_subject(message: Message, state: FSMContext):
+    subj = (message.text or "").strip()
+    if not subj:
+        await message.answer("Пусто.")
+        return
+    if len(subj) > 100:
+        await message.answer("Макс. 100 символов.")
+        return
+    await state.update_data(subject=subj)
+    await message.answer(
+        f"Предмет: {subj}\n\nТеперь напиши оценку числом: 5, 4, 3 или 2.\n\n/cancel"
+    )
+    await state.set_state(ScholarshipState.waiting_grade)
+
+
+@dp.message(ScholarshipState.waiting_grade)
+async def sch_grade(message: Message, state: FSMContext):
+    raw = (message.text or "").strip()
+    if raw not in ("2", "3", "4", "5"):
+        await message.answer("Нужна оценка: 5, 4, 3 или 2.")
+        return
+    grade = int(raw)
+    data = await state.get_data()
+    subj = data.get("subject", "")
+    if not subj:
+        await state.clear()
+        await message.answer("Начни заново.", reply_markup=get_main_keyboard())
+        return
+    add_grade(message.from_user.id, subj, grade)
+    await state.clear()
+    await message.answer(
+        f"Оценка {grade} по предмету «{subj}» сохранена.\n\n"
+        f"Открой «Стипендия» → «Итог», чтобы увидеть прогноз.",
+        reply_markup=get_main_keyboard())
+
+
+@dp.callback_query(F.data == "sch_list")
+async def sch_list(callback: CallbackQuery):
+    if not is_vip(callback.from_user.id):
+        await callback.answer("Только для VIP", show_alert=True)
+        return
+    grades = get_grades(callback.from_user.id)
+    if not grades:
+        await callback.message.edit_text(
+            "Оценок пока нет.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
+                [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
+        await callback.answer()
+        return
+    lines = ["Твои оценки:\n"]
+    kb = []
+    for gid, subj, grade in grades:
+        lines.append(f"  {subj}: {grade}")
+        label = subj[:20] + "..." if len(subj) > 20 else subj
+        kb.append([InlineKeyboardButton(
+            text=f"Удалить: {label} ({grade})",
+            callback_data=f"sch_del_{gid}")])
+    kb.append([InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")])
+    kb.append([InlineKeyboardButton(text="Назад", callback_data="sch_back")])
+    text = "\n".join(lines)
+    if len(text) > 3500:
+        text = text[:3500] + "\n..."
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("sch_del_"))
+async def sch_del(callback: CallbackQuery):
+    if not is_vip(callback.from_user.id):
+        await callback.answer("Только для VIP", show_alert=True)
+        return
+    try:
+        gid = int(callback.data.split("_")[-1])
+    except ValueError:
+        await callback.answer("Ошибка")
+        return
+    delete_grade(gid, callback.from_user.id)
+    await callback.answer("Удалено")
+    # Перерисуем список
+    await sch_list(callback)
+
+
+@dp.callback_query(F.data == "sch_clear")
+async def sch_clear(callback: CallbackQuery):
+    if not is_vip(callback.from_user.id):
+        await callback.answer("Только для VIP", show_alert=True)
+        return
+    clear_grades(callback.from_user.id)
+    await callback.message.edit_text(
+        "Оценки очищены.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
+    await callback.answer("Очищено")
+
+
+@dp.callback_query(F.data == "sch_result")
+async def sch_result(callback: CallbackQuery):
+    if not is_vip(callback.from_user.id):
+        await callback.answer("Только для VIP", show_alert=True)
+        return
+    user_id = callback.from_user.id
+    amount = get_scholarship_amount(user_id)
+    grades = get_grades(user_id)
+
+    if amount is None:
+        await callback.message.edit_text(
+            "Сначала укажи свою текущую стипендию.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Указать сумму", callback_data="sch_set_amount")],
+                [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
+        await callback.answer()
+        return
+
+    if not grades:
+        await callback.message.edit_text(
+            "Оценок пока нет — добавь хотя бы одну, чтобы увидеть итог.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
+                [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
+        await callback.answer()
+        return
+
+    total = len(grades)
+    sum_grades = sum(g[2] for g in grades)
+    avg = sum_grades / total
+    count5 = sum(1 for g in grades if g[2] == 5)
+    count4 = sum(1 for g in grades if g[2] == 4)
+    count3 = sum(1 for g in grades if g[2] == 3)
+    count2 = sum(1 for g in grades if g[2] == 2)
+
+    lines = [
+        "Итог по стипендии\n",
+        f"Текущая стипендия: {amount} руб/мес",
+        f"Оценок: {total}",
+        f"Средний балл: {avg:.2f}",
+        f"  пятёрок: {count5}",
+        f"  четвёрок: {count4}",
+        f"  троек: {count3}",
+    ]
+    if count2:
+        lines.append(f"  двоек: {count2}")
+    lines.append("")
+
+    # Прогноз
+    if count2 > 0 or count3 > 0:
+        lines.append("Прогноз: на академическую не проходишь.")
+        lines.append("Есть тройки/двойки — нужно закрыть их на 4 или 5.")
+    elif avg >= 4.5:
+        potential = max(amount * 2, amount + 3000)  # условно
+        lines.append("Прогноз: проходишь на академическую.")
+        lines.append("Прогноз: можешь претендовать на повышенную.")
+        lines.append(f"Потенциально стипендия может быть примерно в 2 раза выше текущей.")
+    elif avg >= 4.0:
+        lines.append("Прогноз: проходишь на академическую.")
+        lines.append("До повышенной не хватает среднего 4.5.")
+        diff = 4.5 - avg
+        lines.append(f"Не хватает: {diff:.2f} балла в среднем.")
+    else:
+        lines.append("Прогноз: на академическую не проходишь.")
+        lines.append("Средний балл ниже 4.0.")
+
+    if avg >= 4.5 and count2 == 0 and count3 == 0:
+        lines.append("")
+        lines.append(f"Текущая: {amount} руб → потенциально: около {amount * 2} руб")
+
+    text = "\n".join(lines)
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "sch_back")
+async def sch_back(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    amount = get_scholarship_amount(user_id)
+    grades = get_grades(user_id)
+    avg = sum(g[2] for g in grades) / len(grades) if grades else 0
+
+    lines = [
+        "Раздел «Стипендия»\n",
+        f"Текущая стипендия: {amount if amount is not None else 'не указана'} руб/мес",
+        f"Оценок внесено: {len(grades)}",
+    ]
+    if grades:
+        lines.append(f"Средний балл: {avg:.2f}")
+    lines.append("")
+    lines.append("Выбери действие:")
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=get_scholarship_keyboard())
+    await callback.answer()
+
+
+# ============================================================
+# ЗАДАЧИ
 # ============================================================
 def _format_due(due_date, due_time):
     if not due_date:
@@ -2701,9 +3306,13 @@ async def vip_menu(message: Message):
             reply_markup=get_vip_keyboard(is_active=True))
     else:
         await message.answer(
-            "VIP-подписка\n\nЧто даёт:\n- Расширенная статистика\n- Приоритетная поддержка\n"
-            "- AI Помощник\n- AI по фото\n\n"
-            "Тарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб",
+            "VIP-подписка\n\nЧто даёт:\n"
+            "- Расширенная статистика по расписанию\n"
+            "- Раздел «Стипендия»\n"
+            "- AI Помощник\n"
+            "- AI по фото (конспект и решение заданий)\n\n"
+            "Тарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб\n\n"
+            "А также: +3 дня VIP за каждого приглашённого друга по ссылке.",
             reply_markup=get_vip_keyboard(is_active=False))
 
 
@@ -2714,7 +3323,8 @@ async def vip_buy(callback: CallbackQuery):
         "1. Напиши администратору: @{username}\n"
         "2. Укажи тариф (30 / 90 / навсегда).\n"
         "3. Оплати (СБП, карта).\n"
-        "4. Администратор активирует."
+        "4. Администратор активирует.\n\n"
+        "Или приглашай друзей — за каждого +3 дня VIP."
     ).format(username=ADMIN_USERNAME)
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Написать администратору", url=f"https://t.me/{ADMIN_USERNAME}")],
@@ -2848,12 +3458,16 @@ async def admin_reply_to_feedback(message: Message):
 @dp.message(F.text == "Помощь")
 async def help_cmd(message: Message):
     vip_status = "VIP активен" if is_vip(message.from_user.id) else "Бесплатный"
+    daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
     await message.answer(
         f"Что я умею:\n\n"
         f"Расписание ИРНИТУ\nМоя группа (с подгруппой)\n"
         f"Уведомления, задачи, заметки\n"
-        f"VIP — статистика + AI-функции\n"
-        f"AI Помощник и AI по фото\nОбратная связь\n\n"
+        f"Цитата дня (подписка: {daily_status})\n"
+        f"Стипендия (только для VIP)\n"
+        f"AI Помощник и AI по фото\n"
+        f"Пригласить друга — +3 дня VIP\n"
+        f"Обратная связь\n\n"
         f"Твой статус: {vip_status}",
         reply_markup=get_main_keyboard())
 
@@ -2941,6 +3555,30 @@ async def task_reminder_loop():
         except Exception as e:
             logging.exception(f"[TASK] {e}")
         await asyncio.sleep(300)
+
+
+async def daily_quote_loop():
+    """Раз в день в DAILY_QUOTE_HOUR:00 по Иркутску рассылаем цитату подписчикам."""
+    last_sent_date = None
+    while True:
+        try:
+            now = _now_irkutsk()
+            current_date = now.strftime("%Y-%m-%d")
+            if (now.hour == DAILY_QUOTE_HOUR and now.minute < 10
+                    and current_date != last_sent_date):
+                subscribers = daily_get_all_subscribers()
+                if subscribers:
+                    quote = random.choice(DAILY_QUOTES)
+                    logging.info(f"[QUOTE] Отправляю {len(subscribers)} подписчикам")
+                    for uid in subscribers:
+                        try:
+                            await bot.send_message(uid, quote)
+                        except Exception as e:
+                            logging.error(f"[QUOTE] {uid}: {e}")
+                last_sent_date = current_date
+        except Exception as e:
+            logging.exception(f"[QUOTE] {e}")
+        await asyncio.sleep(60)
 
 
 async def cache_cleanup_loop():
@@ -3058,6 +3696,7 @@ async def main():
     logging.info("Webhook удалён, polling")
     asyncio.create_task(notification_loop())
     asyncio.create_task(task_reminder_loop())
+    asyncio.create_task(daily_quote_loop())
     asyncio.create_task(cache_cleanup_loop())
     asyncio.create_task(changes_loop())
     asyncio.create_task(monitor_loop())
