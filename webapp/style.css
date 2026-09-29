@@ -10,6 +10,7 @@
     --accent-red: #e53935;
     --accent-yellow: #fbc02d;
     --accent-green: #43a047;
+    --accent-blue: #1e88e5;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -42,7 +43,10 @@ html, body {
 .loading { text-align: center; color: var(--text-secondary); padding: 40px 0; font-size: 15px; }
 .empty { text-align: center; color: var(--text-secondary); padding: 40px 20px; font-size: 15px; }
 
-.card { background: var(--bg-secondary); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+.card {
+    background: var(--bg-secondary); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 10px;
+}
 .card-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .card-subtitle { font-size: 14px; color: var(--text-secondary); margin-bottom: 4px; }
 .card-meta { font-size: 13px; color: var(--text-secondary); display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
@@ -73,7 +77,7 @@ html, body {
     flex: 1; background: none; border: none;
     color: var(--text-secondary); padding: 8px 4px 6px;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
-    font-size: 11px; cursor: pointer; font-family: inherit;
+    font-size: 10px; cursor: pointer; font-family: inherit;
     transition: color 0.15s;
 }
 .nav-btn.active { color: var(--button); }
@@ -94,4 +98,75 @@ html, body {
     color: #000; font-size: 11px; font-weight: 700;
     padding: 3px 10px; border-radius: 10px; margin-top: 8px;
     text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--button); color: var(--button-text);
+    border: none; border-radius: 10px; padding: 10px 16px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    font-family: inherit; transition: opacity 0.15s;
+    margin-top: 8px;
+}
+.btn:active { opacity: 0.8; }
+.btn-secondary {
+    background: var(--bg-secondary); color: var(--text);
+    border: 1px solid var(--divider);
+}
+
+.input {
+    width: 100%; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--divider); background: var(--bg);
+    color: var(--text); font-size: 15px; font-family: inherit;
+    margin-bottom: 8px; outline: none;
+}
+.input:focus { border-color: var(--button); }
+
+textarea.input { resize: vertical; min-height: 80px; }
+
+.form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.form-row label { flex: 1; font-size: 14px; }
+.form-row select {
+    padding: 8px 12px; border-radius: 10px;
+    border: 1px solid var(--divider); background: var(--bg);
+    color: var(--text); font-size: 14px; font-family: inherit;
+}
+
+.checkbox-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; cursor: pointer;
+}
+.checkbox-row input[type="checkbox"] {
+    width: 20px; height: 20px; cursor: pointer;
+}
+
+.quote-box {
+    background: linear-gradient(135deg, rgba(36, 129, 204, 0.1), rgba(30, 136, 229, 0.05));
+    border-radius: 14px; padding: 20px; text-align: center;
+    font-style: italic; font-size: 16px; line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+.actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.actions-row .btn { margin-top: 0; }
+
+.grade-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0; border-bottom: 1px solid var(--divider);
+}
+.grade-row:last-child { border-bottom: none; }
+.grade-row .grade-value { font-weight: 600; font-size: 16px; }
+
+.tab-buttons {
+    display: flex; gap: 8px; margin-bottom: 12px;
+    background: var(--bg-secondary); border-radius: 10px; padding: 4px;
+}
+.tab-buttons button {
+    flex: 1; background: none; border: none; padding: 8px;
+    border-radius: 8px; font-size: 14px; color: var(--text-secondary);
+    cursor: pointer; font-family: inherit;
+}
+.tab-buttons button.active {
+    background: var(--bg); color: var(--text);
+    font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
