@@ -6,12 +6,16 @@ import asyncio
 import re
 import sys
 import json
+import hmac
 import base64
 import random
+import hashlib
 import sqlite3
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qsl
 import aiohttp
+from aiohttp import web
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command, StateFilter
@@ -20,7 +24,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     Message, ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
-    FSInputFile
+    FSInputFile, WebAppInfo
 )
 
 # ============================================================
@@ -124,6 +128,7 @@ YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # URL веб-версии (BotHost домен), например https://xxx.bothost.tech
 
 REFERRAL_DAYS = 3
 
@@ -1230,16 +1235,18 @@ async def send_schedule_for_date(user_id, group_id, group_name, target_date, tit
 # КЛАВИАТУРЫ
 # ============================================================
 def get_main_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
-            [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
-            [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
-            [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
-            [KeyboardButton(text="Стипендия"), KeyboardButton(text="Пригласить друга")],
-            [KeyboardButton(text="Цитата дня"), KeyboardButton(text="Обратная связь")],
-            [KeyboardButton(text="Помощь")],
-        ], resize_keyboard=True)
+    keyboard = [
+        [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
+        [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
+        [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
+        [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
+        [KeyboardButton(text="Стипендия"), KeyboardButton(text="Пригласить друга")],
+        [KeyboardButton(text="Цитата дня"), KeyboardButton(text="Обратная связь")],
+        [KeyboardButton(text="Помощь")],
+    ]
+    if WEBAPP_URL:
+        keyboard.insert(0, [KeyboardButton(text="Открыть веб-версию", web_app=WebAppInfo(url=WEBAPP_URL))])
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
 def get_institutes_keyboard():
@@ -1483,10 +1490,10 @@ async def start(message: Message, state: FSMContext):
             sub_mark = f" (подгр. {sub})"
     hint = f"\n\nТвоя группа: {saved[1]}{sub_mark}{vip_mark}" if saved else \
            "\n\nСовет: выбери группу через «Расписание»."
+    webapp_hint = "\n\nВ меню есть кнопка «Открыть веб-версию» — расписание в удобном виде." if WEBAPP_URL else ""
     await message.answer(
         f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ."
-        f"{hint}{referral_msg}\n\n"
-        f"В меню есть кнопка «Цитата дня» — там можно получать мотивацию каждое утро.",
+        f"{hint}{referral_msg}{webapp_hint}",
         reply_markup=get_main_keyboard())
 
 
@@ -3444,6 +3451,7 @@ async def admin_reply_to_feedback(message: Message):
 async def help_cmd(message: Message):
     vip_status = "VIP активен" if is_vip(message.from_user.id) else "Бесплатный"
     daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
+    webapp_line = "\nОткрыть веб-версию — кнопка в меню" if WEBAPP_URL else ""
     await message.answer(
         f"Что я умею:\n\n"
         f"Расписание ИРНИТУ\nМоя группа (с подгруппой)\n"
@@ -3452,7 +3460,7 @@ async def help_cmd(message: Message):
         f"Стипендия (только для VIP)\n"
         f"AI Помощник и AI по фото\n"
         f"Пригласить друга — +3 дня VIP\n"
-        f"Обратная связь\n\n"
+        f"Обратная связь\n{webapp_line}\n\n"
         f"Твой статус: {vip_status}",
         reply_markup=get_main_keyboard())
 
@@ -3668,6 +3676,161 @@ async def monitor_loop():
 
 
 # ============================================================
+# ВЕБ-СЕРВЕР (API + статика webapp)
+# ============================================================
+def _verify_init_data(init_data: str) -> dict:
+    """Проверяет подпись initData из Telegram Mini App. Возвращает dict с данными или {}."""
+    if not init_data:
+        return {}
+    try:
+        parsed = dict(parse_qsl(init_data, keep_blank_values=True))
+        received_hash = parsed.pop("hash", None)
+        if not received_hash:
+            return {}
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", TOKEN.encode(), hashlib.sha256).digest()
+        calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        if calc_hash != received_hash:
+            logging.warning("[WEB] initData hash mismatch")
+            return {}
+        return parsed
+    except Exception as e:
+        logging.error(f"[WEB] initData verify error: {e}")
+        return {}
+
+
+def _user_from_init_data(init_data: str):
+    """Возвращает user_id из initData или None."""
+    parsed = _verify_init_data(init_data)
+    if not parsed:
+        return None
+    user_json = parsed.get("user")
+    if not user_json:
+        return None
+    try:
+        user = json.loads(user_json)
+        return int(user.get("id")) if user.get("id") else None
+    except Exception:
+        return None
+
+
+async def api_schedule(request: web.Request):
+    """GET /api/schedule?initData=... — расписание на сегодня для группы пользователя."""
+    init_data = request.query.get("initData", "")
+    user_id = _user_from_init_data(init_data)
+
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    saved = get_user_group(user_id)
+    if not saved:
+        return web.json_response({
+            "error": "no_group",
+            "message": "Сначала выбери группу в боте",
+        }, status=200)
+
+    group_id, group_name = saved
+    subgroup = get_user_subgroup(user_id)
+
+    today = _now_irkutsk()
+    monday = _monday_of_week(today)
+    html = await fetch_week_html(group_id, monday, use_cache=True)
+    if not html:
+        return web.json_response({
+            "error": "no_data",
+            "message": "Не удалось загрузить расписание",
+        }, status=200)
+
+    _, days = parse_schedule(html)
+    today_str = today.strftime("%d.%m.%Y")
+    day = next((d for d in days if d["date"] == today_str), None)
+
+    if day is None:
+        return web.json_response({
+            "date": today_str,
+            "dayName": "",
+            "group": group_name,
+            "subgroup": subgroup,
+            "lessons": [],
+        })
+
+    filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
+    lessons_out = []
+    for les in filtered:
+        time_end = LESSON_TIMES.get(les["time"], "")
+        lessons_out.append({
+            "time": les["time"],
+            "timeEnd": time_end,
+            "subject": les["subject"],
+            "type": les["type"],
+            "teacher": les["teacher"],
+            "auditorium": les["auditorium"],
+            "subgroup": les["subgroup"],
+        })
+
+    return web.json_response({
+        "date": day["date"],
+        "dayName": day["name"],
+        "group": group_name,
+        "subgroup": subgroup,
+        "lessons": lessons_out,
+    })
+
+
+async def api_me(request: web.Request):
+    """GET /api/me?initData=... — информация о пользователе."""
+    init_data = request.query.get("initData", "")
+    user_id = _user_from_init_data(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    saved = get_user_group(user_id)
+    vip = is_vip(user_id)
+    vip_info = get_vip_info(user_id)
+    active, done = count_user_tasks(user_id)
+    notes = get_user_notes(user_id)
+
+    result = {
+        "user_id": user_id,
+        "group": saved[1] if saved else None,
+        "subgroup": get_user_subgroup(user_id),
+        "is_vip": vip,
+        "vip_until": vip_info[0].isoformat() if vip_info else None,
+        "tasks_active": active,
+        "tasks_done": done,
+        "notes_count": len(notes),
+    }
+    return web.json_response(result)
+
+
+async def start_webapp():
+    """HTTP-сервер: статика webapp + API."""
+    port = int(os.getenv("PORT", "3000"))
+    webapp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
+
+    app = web.Application()
+
+    # API
+    app.router.add_get("/api/schedule", api_schedule)
+    app.router.add_get("/api/me", api_me)
+
+    # Статика
+    if os.path.isdir(webapp_dir):
+        app.router.add_static("/", path=webapp_dir, name="static")
+    else:
+        logging.warning(f"[WEB] папка webapp не найдена: {webapp_dir}")
+        async def root(request):
+            return web.Response(text="webapp folder not found", status=404)
+        app.router.add_get("/", root)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info(f"[WEB] сервер запущен на 0.0.0.0:{port}")
+
+
+# ============================================================
 # ЗАПУСК
 # ============================================================
 async def main():
@@ -3678,12 +3841,15 @@ async def main():
     init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, polling")
+
     asyncio.create_task(notification_loop())
     asyncio.create_task(task_reminder_loop())
     asyncio.create_task(daily_quote_loop())
     asyncio.create_task(cache_cleanup_loop())
     asyncio.create_task(changes_loop())
     asyncio.create_task(monitor_loop())
+    asyncio.create_task(start_webapp())
+
     await dp.start_polling(bot)
 
 
