@@ -128,7 +128,7 @@ YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # URL веб-версии (BotHost домен), например https://xxx.bothost.tech
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 REFERRAL_DAYS = 3
 
@@ -3679,7 +3679,6 @@ async def monitor_loop():
 # ВЕБ-СЕРВЕР (API + статика webapp)
 # ============================================================
 def _verify_init_data(init_data: str) -> dict:
-    """Проверяет подпись initData из Telegram Mini App. Возвращает dict с данными или {}."""
     if not init_data:
         return {}
     try:
@@ -3700,7 +3699,6 @@ def _verify_init_data(init_data: str) -> dict:
 
 
 def _user_from_init_data(init_data: str):
-    """Возвращает user_id из initData или None."""
     parsed = _verify_init_data(init_data)
     if not parsed:
         return None
@@ -3715,10 +3713,8 @@ def _user_from_init_data(init_data: str):
 
 
 async def api_schedule(request: web.Request):
-    """GET /api/schedule?initData=... — расписание на сегодня для группы пользователя."""
     init_data = request.query.get("initData", "")
     user_id = _user_from_init_data(init_data)
-
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
 
@@ -3747,11 +3743,8 @@ async def api_schedule(request: web.Request):
 
     if day is None:
         return web.json_response({
-            "date": today_str,
-            "dayName": "",
-            "group": group_name,
-            "subgroup": subgroup,
-            "lessons": [],
+            "date": today_str, "dayName": "", "group": group_name,
+            "subgroup": subgroup, "lessons": [],
         })
 
     filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
@@ -3759,26 +3752,20 @@ async def api_schedule(request: web.Request):
     for les in filtered:
         time_end = LESSON_TIMES.get(les["time"], "")
         lessons_out.append({
-            "time": les["time"],
-            "timeEnd": time_end,
-            "subject": les["subject"],
-            "type": les["type"],
-            "teacher": les["teacher"],
-            "auditorium": les["auditorium"],
+            "time": les["time"], "timeEnd": time_end,
+            "subject": les["subject"], "type": les["type"],
+            "teacher": les["teacher"], "auditorium": les["auditorium"],
             "subgroup": les["subgroup"],
         })
 
     return web.json_response({
-        "date": day["date"],
-        "dayName": day["name"],
-        "group": group_name,
-        "subgroup": subgroup,
+        "date": day["date"], "dayName": day["name"],
+        "group": group_name, "subgroup": subgroup,
         "lessons": lessons_out,
     })
 
 
 async def api_me(request: web.Request):
-    """GET /api/me?initData=... — информация о пользователе."""
     init_data = request.query.get("initData", "")
     user_id = _user_from_init_data(init_data)
     if not user_id:
@@ -3790,7 +3777,7 @@ async def api_me(request: web.Request):
     active, done = count_user_tasks(user_id)
     notes = get_user_notes(user_id)
 
-    result = {
+    return web.json_response({
         "user_id": user_id,
         "group": saved[1] if saved else None,
         "subgroup": get_user_subgroup(user_id),
@@ -3799,28 +3786,35 @@ async def api_me(request: web.Request):
         "tasks_active": active,
         "tasks_done": done,
         "notes_count": len(notes),
-    }
-    return web.json_response(result)
+    })
 
 
 async def start_webapp():
-    """HTTP-сервер: статика webapp + API."""
     port = int(os.getenv("PORT", "3000"))
-    webapp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    possible_paths = [
+        os.path.join(base_dir, "webapp"),
+        os.path.join(os.getcwd(), "webapp"),
+        "/app/webapp",
+        "webapp",
+    ]
+    webapp_dir = None
+    for p in possible_paths:
+        if os.path.isdir(p):
+            webapp_dir = p
+            break
 
     app = web.Application()
-
-    # API
     app.router.add_get("/api/schedule", api_schedule)
     app.router.add_get("/api/me", api_me)
 
-    # Статика
-    if os.path.isdir(webapp_dir):
+    if webapp_dir:
+        logging.info(f"[WEB] отдаю статику из {webapp_dir}")
         app.router.add_static("/", path=webapp_dir, name="static")
     else:
-        logging.warning(f"[WEB] папка webapp не найдена: {webapp_dir}")
+        logging.warning("[WEB] папка webapp не найдена, статика недоступна")
         async def root(request):
-            return web.Response(text="webapp folder not found", status=404)
+            return web.Response(text="webapp not found", status=404)
         app.router.add_get("/", root)
 
     runner = web.AppRunner(app)
