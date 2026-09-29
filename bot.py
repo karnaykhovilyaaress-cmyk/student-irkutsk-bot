@@ -6,11 +6,14 @@ import asyncio
 import re
 import sys
 import json
+import hmac
 import base64
 import random
+import hashlib
 import sqlite3
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qsl
 import aiohttp
 from aiohttp import web
 from bs4 import BeautifulSoup
@@ -21,9 +24,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     Message, ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
-    FSInputFile, WebAppInfo
+    FSInputFile
 )
 from aiogram.utils.web_app import safe_parse_webapp_init_data
+
 
 # ============================================================
 # ОЧИСТКА LATEX
@@ -83,9 +87,7 @@ def clean_latex(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
-# ============================================================
-# ОЧИСТКА MARKDOWN
-# ============================================================
+
 def clean_markdown(text: str) -> str:
     if not text:
         return text
@@ -114,6 +116,7 @@ def clean_markdown(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
+
 # ============================================================
 # НАСТРОЙКИ
 # ============================================================
@@ -124,7 +127,6 @@ YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 REFERRAL_DAYS = 3
 
@@ -208,6 +210,7 @@ DAILY_QUOTES = [
     "Универ не учит думать. Универ даёт материал. Думать — твоя работа.",
 ]
 
+
 # ============================================================
 # FSM
 # ============================================================
@@ -236,6 +239,10 @@ class ScholarshipState(StatesGroup):
     waiting_current_amount = State()
     waiting_subject = State()
     waiting_grade = State()
+
+class WebGroupState(StatesGroup):
+    waiting_group = State()
+
 
 # ============================================================
 # БАЗА ДАННЫХ
@@ -318,16 +325,19 @@ def init_db():
         tier TEXT DEFAULT 'premium', granted_at TEXT)""")
     conn.commit(); conn.close()
 
+
 def _ensure_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit(); conn.close()
+
 
 def user_exists(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row is not None
+
 
 def add_referral(new_user_id, referrer_id):
     if new_user_id == referrer_id:
@@ -344,10 +354,12 @@ def add_referral(new_user_id, referrer_id):
     conn.commit(); conn.close()
     return True
 
+
 def mark_referral_rewarded(new_user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE referrals SET rewarded=1 WHERE user_id=?", (new_user_id,))
     conn.commit(); conn.close()
+
 
 def get_referral_stats(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -359,6 +371,7 @@ def get_referral_stats(user_id):
     rewarded = sum(1 for r in rows if r[2])
     return total, rewarded
 
+
 def daily_subscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -366,10 +379,12 @@ def daily_subscribe(user_id):
         (user_id, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def daily_unsubscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def daily_is_subscribed(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -378,11 +393,13 @@ def daily_is_subscribed(user_id):
     conn.close()
     return row is not None
 
+
 def daily_get_all_subscribers():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
     conn.close()
     return [r[0] for r in rows]
+
 
 def set_scholarship_amount(user_id, amount):
     conn = sqlite3.connect(DB_PATH)
@@ -391,6 +408,7 @@ def set_scholarship_amount(user_id, amount):
         (user_id, amount, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def get_scholarship_amount(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?",
@@ -398,12 +416,14 @@ def get_scholarship_amount(user_id):
     conn.close()
     return row[0] if row else None
 
+
 def add_grade(user_id, subject, grade):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         "INSERT INTO grades (user_id, subject, grade, created_at) VALUES (?, ?, ?, ?)",
         (user_id, subject, grade, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
+
 
 def get_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -413,15 +433,18 @@ def get_grades(user_id):
     conn.close()
     return rows
 
+
 def delete_grade(grade_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
     conn.commit(); conn.close()
 
+
 def clear_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def save_user_group(user_id, group_id, group_name):
     _ensure_user(user_id)
@@ -430,6 +453,7 @@ def save_user_group(user_id, group_id, group_name):
                  (group_id, group_name, user_id))
     conn.commit(); conn.close()
 
+
 def get_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT group_id, group_name FROM users WHERE user_id=?",
@@ -437,11 +461,13 @@ def get_user_group(user_id):
     conn.close()
     return row if row and row[0] else None
 
+
 def delete_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0 WHERE user_id=?",
                  (user_id,))
     conn.commit(); conn.close()
+
 
 def set_user_subgroup(user_id, subgroup):
     _ensure_user(user_id)
@@ -449,11 +475,13 @@ def set_user_subgroup(user_id, subgroup):
     conn.execute("UPDATE users SET subgroup=? WHERE user_id=?", (subgroup, user_id))
     conn.commit(); conn.close()
 
+
 def get_user_subgroup(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT subgroup FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row and row[0] else 0
+
 
 def set_notify_time(user_id, hour, minute):
     _ensure_user(user_id)
@@ -462,12 +490,14 @@ def set_notify_time(user_id, hour, minute):
                  (hour, minute, user_id))
     conn.commit(); conn.close()
 
+
 def get_notify_time(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT notify_hour, notify_minute FROM users WHERE user_id=?",
                        (user_id,)).fetchone()
     conn.close()
     return row if row and row[0] is not None and row[0] >= 0 else None
+
 
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
@@ -476,12 +506,14 @@ def set_notify_changes(user_id, enabled):
                  (1 if enabled else 0, user_id))
     conn.commit(); conn.close()
 
+
 def get_notify_changes(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?",
                        (user_id,)).fetchone()
     conn.close()
     return bool(row and row[0])
+
 
 def get_users_to_notify(hour, minute):
     conn = sqlite3.connect(DB_PATH)
@@ -491,6 +523,7 @@ def get_users_to_notify(hour, minute):
         (hour, minute)).fetchall()
     conn.close()
     return rows
+
 
 def get_changes_subscribers():
     conn = sqlite3.connect(DB_PATH)
@@ -503,17 +536,20 @@ def get_changes_subscribers():
         result.setdefault(gid, []).append((uid, gname))
     return result
 
+
 def get_total_users():
     conn = sqlite3.connect(DB_PATH)
     n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     conn.close()
     return n
 
+
 def get_all_user_ids():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r[0] for r in rows]
+
 
 def set_vip(user_id, days, tier="premium"):
     conn = sqlite3.connect(DB_PATH)
@@ -533,6 +569,7 @@ def set_vip(user_id, days, tier="premium"):
     conn.commit(); conn.close()
     return new_expiry
 
+
 def is_vip(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT expiry FROM vip WHERE user_id=?", (user_id,)).fetchone()
@@ -543,6 +580,7 @@ def is_vip(user_id):
         return datetime.fromisoformat(row[0]) > datetime.now(timezone.utc)
     except Exception:
         return False
+
 
 def get_vip_info(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -558,10 +596,12 @@ def get_vip_info(user_id):
         pass
     return None
 
+
 def revoke_vip(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM vip WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def get_all_vips():
     conn = sqlite3.connect(DB_PATH)
@@ -576,6 +616,7 @@ def get_all_vips():
         except Exception:
             pass
     return result
+
 
 def get_cached_schedule(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
@@ -592,17 +633,20 @@ def get_cached_schedule(group_id, week_start):
         pass
     return None
 
+
 def save_cached_schedule(group_id, week_start, html):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
                  (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def clear_old_cache():
     conn = sqlite3.connect(DB_PATH)
     threshold = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     conn.execute("DELETE FROM schedule_cache WHERE cached_at < ?", (threshold,))
     conn.commit(); conn.close()
+
 
 def get_snapshot(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
@@ -611,11 +655,13 @@ def get_snapshot(group_id, week_start):
     conn.close()
     return row[0] if row else None
 
+
 def save_snapshot(group_id, week_start, snapshot):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR REPLACE INTO schedule_snapshots VALUES (?, ?, ?, ?)",
                  (group_id, week_start, snapshot, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
+
 
 def build_snapshot(days):
     parts = []
@@ -625,6 +671,7 @@ def build_snapshot(days):
                          f"{les['teacher']}|{les['auditorium']}|{les['subgroup']}")
     return "\n".join(sorted(parts))
 
+
 def save_feedback(user_id, username, text, admin_msg_id=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
@@ -633,10 +680,12 @@ def save_feedback(user_id, username, text, admin_msg_id=None):
     conn.commit(); conn.close()
     return fid
 
+
 def update_feedback_admin_msg(feedback_id, admin_msg_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET admin_msg_id=? WHERE id=?", (admin_msg_id, feedback_id))
     conn.commit(); conn.close()
+
 
 def get_feedback_by_admin_msg(admin_msg_id):
     conn = sqlite3.connect(DB_PATH)
@@ -644,6 +693,7 @@ def get_feedback_by_admin_msg(admin_msg_id):
                        (admin_msg_id,)).fetchone()
     conn.close()
     return row
+
 
 def get_pending_feedback():
     conn = sqlite3.connect(DB_PATH)
@@ -654,6 +704,7 @@ def get_pending_feedback():
     conn.close()
     return rows
 
+
 def get_answered_feedback(limit=10):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, user_id, username, text, created_at, answered_at "
@@ -662,10 +713,12 @@ def get_answered_feedback(limit=10):
     conn.close()
     return rows
 
+
 def set_feedback_status(feedback_id, status):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
     conn.commit(); conn.close()
+
 
 def mark_feedback_answered(feedback_id):
     conn = sqlite3.connect(DB_PATH)
@@ -673,12 +726,14 @@ def mark_feedback_answered(feedback_id):
                  (datetime.now(timezone.utc).isoformat(), feedback_id))
     conn.commit(); conn.close()
 
+
 def get_feedback_by_id(feedback_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?",
                        (feedback_id,)).fetchone()
     conn.close()
     return row
+
 
 def add_task(user_id, text, due_date=None, priority=1, due_time=None):
     conn = sqlite3.connect(DB_PATH)
@@ -689,6 +744,7 @@ def add_task(user_id, text, due_date=None, priority=1, due_time=None):
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
+
 
 def update_task(task_id, user_id, text=None, due_date=None, priority=None,
                 due_time=None, reset_due=False):
@@ -712,6 +768,7 @@ def update_task(task_id, user_id, text=None, due_date=None, priority=None,
     conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
+
 def get_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
@@ -720,6 +777,7 @@ def get_task(task_id, user_id):
         (task_id, user_id)).fetchone()
     conn.close()
     return row
+
 
 def get_user_tasks(user_id, only_active=True):
     conn = sqlite3.connect(DB_PATH)
@@ -736,6 +794,7 @@ def get_user_tasks(user_id, only_active=True):
     conn.close()
     return rows
 
+
 def get_done_tasks(user_id, days=7):
     conn = sqlite3.connect(DB_PATH)
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -747,21 +806,25 @@ def get_done_tasks(user_id, days=7):
     conn.close()
     return rows
 
+
 def mark_task_done(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
                  (datetime.now(timezone.utc).isoformat(), task_id, user_id))
     conn.commit(); conn.close()
 
+
 def delete_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
     conn.commit(); conn.close()
 
+
 def clear_done_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
     conn.commit(); conn.close()
+
 
 def get_tasks_with_due():
     conn = sqlite3.connect(DB_PATH)
@@ -770,6 +833,7 @@ def get_tasks_with_due():
         "FROM tasks WHERE done=0 AND due_date IS NOT NULL").fetchall()
     conn.close()
     return rows
+
 
 def count_user_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -783,6 +847,7 @@ def count_user_tasks(user_id):
     done = row[1] or 0
     return active, done
 
+
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
@@ -795,12 +860,14 @@ def add_or_update_note(user_id, subject, text):
                      (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def get_user_notes(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject",
                        (user_id,)).fetchall()
     conn.close()
     return rows
+
 
 def get_note(user_id, subject):
     conn = sqlite3.connect(DB_PATH)
@@ -809,18 +876,145 @@ def get_note(user_id, subject):
     conn.close()
     return row[0] if row else None
 
+
 def delete_note_by_id(note_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
     conn.commit(); conn.close()
 
+
 # ============================================================
-# ГРУППЫ (сокращённый список для примера)
+# ГРУППЫ (полный список — как в твоём коде)
 # ============================================================
 GROUPS = {
-    "ИАМиТ": [{"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"}],
-    "ИВТ": [{"name": "АМПб-26-1", "id": "477984"}, {"name": "АТПб-26-1", "id": "478040"}],
-    "ИИТиАД": [{"name": "АСУб-26-1", "id": "478021"}, {"name": "ИБб-26-1", "id": "478205"}],
+    "ИАМиТ": [
+        {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
+        {"name": "ЛИМб-26-1", "id": "478284"}, {"name": "МИРб-26-1", "id": "478310"},
+        {"name": "ММб-26-1", "id": "478314"}, {"name": "МТб-26-1", "id": "478318"},
+        {"name": "ППТм-26-1", "id": "478441"}, {"name": "СДМ-26-1", "id": "478478"},
+        {"name": "СМ-26-1", "id": "478493"}, {"name": "СМ-26-2", "id": "478494"},
+        {"name": "СМ-26-3", "id": "479896"}, {"name": "ТЭАм-26-1", "id": "478548"},
+        {"name": "УКб-26-1", "id": "478551"}, {"name": "ЦПКм-26-1", "id": "478601"},
+        {"name": "ЭЛб-26-1", "id": "478640"},
+    ],
+    "Аспирантура": [
+        {"name": "аАУП-26-1", "id": "477932"}, {"name": "аБЗТ-26-1", "id": "477934"},
+        {"name": "аБПП-26-1", "id": "477936"}, {"name": "аБТХ-26-1", "id": "477937"},
+        {"name": "аВДС-26-1", "id": "477939"}, {"name": "аГГ-26-1", "id": "477940"},
+        {"name": "аГГМ-26-1", "id": "477942"}, {"name": "аГНГ-26-1", "id": "477946"},
+        {"name": "аГНП-26-1", "id": "477948"}, {"name": "аДВЛ-26-1", "id": "477955"},
+        {"name": "аМВ-26-1", "id": "477977"}, {"name": "аМЕТ-26-1", "id": "477979"},
+        {"name": "аММП-26-1", "id": "479885"}, {"name": "аМН-26-1", "id": "477982"},
+        {"name": "аНСкгм-26-1", "id": "477987"}, {"name": "аНСдсм-26-1", "id": "477986"},
+        {"name": "аОБП-26-1", "id": "477989"}, {"name": "аОХМ-26-1", "id": "477990"},
+        {"name": "аПБ-26-1", "id": "477991"}, {"name": "аРЭоэ-26-1", "id": "478006"},
+        {"name": "аРЭс-26-1", "id": "478007"}, {"name": "аСМХ-26-1", "id": "478010"},
+        {"name": "аССП-26-1", "id": "478013"}, {"name": "аСТМ-26-1", "id": "478014"},
+        {"name": "аТАРР-26-1", "id": "478029"}, {"name": "аТМД-26-1", "id": "478031"},
+        {"name": "аТМН-26-1", "id": "478033"}, {"name": "аТОС-26-1", "id": "478035"},
+        {"name": "аТПС-26-1", "id": "478051"}, {"name": "аТПСК-26-1", "id": "478053"},
+        {"name": "аТТГР-26-1", "id": "478055"}, {"name": "аТХВ-26-1", "id": "478056"},
+        {"name": "аУПП-26-1", "id": "478057"}, {"name": "аУСТ-26-1", "id": "478061"},
+        {"name": "аФХМ-26-1", "id": "478062"}, {"name": "аХТВ-26-1", "id": "478064"},
+        {"name": "аЭКЛ-26-1", "id": "478066"}, {"name": "аЭКО-26-1", "id": "478068"},
+        {"name": "аЭКС-26-1", "id": "478070"}, {"name": "аЭНК-26-1", "id": "478072"},
+        {"name": "аЭТРд-26-1", "id": "478073"}, {"name": "аЭТРоп-26-1", "id": "478075"},
+        {"name": "аЭЭН-26-1", "id": "478077"},
+    ],
+    "БРИКС": [
+        {"name": "ВЗАм-26-1", "id": "478105"}, {"name": "ИИКб-26-1", "id": "478215"},
+        {"name": "ИИКб-26-2", "id": "479891"}, {"name": "КБКб-26-1", "id": "478251"},
+        {"name": "ЛБКб-26-1", "id": "478279"}, {"name": "ЛБКб-26-2", "id": "478280"},
+        {"name": "МДБб-26-1", "id": "478306"}, {"name": "РКИб-26-1", "id": "478455"},
+        {"name": "РКИб-26-2", "id": "478456"}, {"name": "СПРКм-26-1", "id": "479947"},
+        {"name": "УЛм-26-1", "id": "479898"}, {"name": "ФНб-26-1", "id": "478580"},
+        {"name": "ЦТм-26-1", "id": "478605"}, {"name": "ЭПАб-26-1", "id": "478654"},
+        {"name": "ЭЗТм-26-1", "id": "478632"},
+    ],
+    "ДЛРЯ": [
+        {"name": "ИНС-26-1", "id": "479936"}, {"name": "ИНС-26-2", "id": "479937"},
+        {"name": "ИНС-26-3", "id": "479938"}, {"name": "ИНС-26-4", "id": "479939"},
+        {"name": "ИНС-26-5", "id": "479940"}, {"name": "ИНС-26-6", "id": "479941"},
+        {"name": "ИНСм-26-1", "id": "479942"}, {"name": "ИНСм-26-2", "id": "479943"},
+        {"name": "ИНСм-26-3", "id": "479944"},
+    ],
+    "ССГ": [
+        {"name": "ГИИм-26-1", "id": "478127"}, {"name": "ИТГб-26-1", "id": "478243"},
+        {"name": "РМ-26-1", "id": "478460"}, {"name": "РФ-26-1", "id": "478476"},
+        {"name": "ЦГФм-26-1", "id": "478599"},
+    ],
+    "ИАСиД": [
+        {"name": "АД-26-1", "id": "477954"}, {"name": "АДм-26-1", "id": "477957"},
+        {"name": "АРб-26-1", "id": "478002"}, {"name": "АРб-26-2", "id": "478003"},
+        {"name": "ВВб-26-1", "id": "478101"}, {"name": "ВВм-26-1", "id": "478102"},
+        {"name": "ГРб-26-1", "id": "478173"}, {"name": "ГРм-26-1", "id": "478175"},
+        {"name": "ГСХб-26-1", "id": "478179"}, {"name": "ГСХм-26-1", "id": "478181"},
+        {"name": "ДИб-26-1", "id": "479888"}, {"name": "ДСб-26-1", "id": "478192"},
+        {"name": "ДСб-26-2", "id": "478193"}, {"name": "КНб-26-1", "id": "478255"},
+        {"name": "НТЗм-26-1", "id": "478411"}, {"name": "ОТКм-26-1", "id": "478429"},
+        {"name": "ПГСб-26-1", "id": "478436"}, {"name": "РРб-26-1", "id": "478465"},
+        {"name": "СНГб-26-1", "id": "478501"}, {"name": "ССЭм-26-1", "id": "478503"},
+        {"name": "СУЗ-26-1", "id": "478519"}, {"name": "ТГПм-26-1", "id": "478524"},
+        {"name": "ТМПм-26-1", "id": "478536"}, {"name": "УСТб-26-1", "id": "478563"},
+        {"name": "УСТм-26-1", "id": "478565"}, {"name": "УСТмз-26-1", "id": "479899"},
+        {"name": "ЭУНб-26-1", "id": "478714"},
+    ],
+    "ИВТ": [
+        {"name": "АМПб-26-1", "id": "477984"}, {"name": "АТПб-26-1", "id": "478040"},
+        {"name": "АТПб-26-2", "id": "479886"}, {"name": "БТб-26-1", "id": "478096"},
+        {"name": "БТб-26-2", "id": "478097"}, {"name": "ИНОм-26-1", "id": "478222"},
+        {"name": "ИРб-26-1", "id": "478226"}, {"name": "ИФб-26-1", "id": "478247"},
+        {"name": "МЦб-26-1", "id": "478327"}, {"name": "МЦм-26-1", "id": "478336"},
+        {"name": "МЦТб-26-1", "id": "478339"}, {"name": "МХТб-26-1", "id": "478324"},
+        {"name": "НХПм-26-1", "id": "478412"}, {"name": "ОХФм-26-1", "id": "478431"},
+        {"name": "ПИм-26-1", "id": "478438"}, {"name": "РДб-26-1", "id": "478447"},
+        {"name": "РТУм-26-1", "id": "478472"}, {"name": "ХПм-26-1", "id": "478582"},
+        {"name": "ХТм-26-1", "id": "478590"}, {"name": "ХТОб-26-1", "id": "478594"},
+        {"name": "ХТТб-26-1", "id": "478598"},
+    ],
+    "ИИТиАД": [
+        {"name": "АСУб-26-1", "id": "478021"}, {"name": "АСУб-26-2", "id": "478022"},
+        {"name": "БКСм-26-1", "id": "478092"}, {"name": "ИБб-26-1", "id": "478205"},
+        {"name": "ИБб-26-2", "id": "479889"}, {"name": "ИСИб-26-1", "id": "478232"},
+        {"name": "ИСТб-26-1", "id": "478240"}, {"name": "ИСТб-26-2", "id": "478241"},
+        {"name": "ИСТб-26-3", "id": "479892"}, {"name": "ИИТм-26-1", "id": "478219"},
+        {"name": "КСм-26-1", "id": "478261"}, {"name": "ЦППм-26-1", "id": "478603"},
+        {"name": "ЭВМб-26-1", "id": "478624"}, {"name": "ЭВМб-26-2", "id": "479900"},
+    ],
+    "ИН": [
+        {"name": "БЖТм-26-1", "id": "478088"}, {"name": "ГА-26-1", "id": "478109"},
+        {"name": "ГГ-26-1", "id": "478115"}, {"name": "ГМ-26-1", "id": "478134"},
+        {"name": "ГО-26-1", "id": "478146"}, {"name": "ГП-26-1", "id": "478160"},
+        {"name": "ИГ-26-1", "id": "478210"}, {"name": "ИГ-26-2", "id": "479890"},
+        {"name": "НДДб-26-1", "id": "478405"}, {"name": "НДДб-26-2", "id": "478406"},
+        {"name": "НДДб-26-3", "id": "479894"}, {"name": "НДб-26-1", "id": "478396"},
+        {"name": "НДб-26-2", "id": "478397"}, {"name": "НДм-26-1", "id": "478408"},
+        {"name": "ООСб-26-1", "id": "478415"}, {"name": "ОП-26-1", "id": "478421"},
+        {"name": "ПБмз-26-1", "id": "479895"}, {"name": "ТХб-26-1", "id": "478545"},
+        {"name": "ЭКОм-26-1", "id": "478634"},
+    ],
+    "ИЭУП": [
+        {"name": "ВДм-26-1", "id": "479887"}, {"name": "ЖРб-26-1", "id": "478200"},
+        {"name": "ИИм-26-1", "id": "478217"}, {"name": "МБб-26-1", "id": "478297"},
+        {"name": "МБб-26-2", "id": "478298"}, {"name": "МБб-26-3", "id": "479893"},
+        {"name": "НБ-26-1", "id": "478349"}, {"name": "НБ-26-2", "id": "478350"},
+        {"name": "СМТм-26-1", "id": "478497"}, {"name": "ТД-26-1", "id": "478532"},
+        {"name": "ТД-26-2", "id": "478533"}, {"name": "УОБТб-26-1", "id": "478555"},
+        {"name": "ФКб-26-1", "id": "478575"}, {"name": "ФКб-26-2", "id": "478576"},
+        {"name": "ЭМЭНм-26-1", "id": "478646"}, {"name": "ЭМЭНмз-26-1", "id": "479901"},
+        {"name": "ЭПЭб-26-1", "id": "478680"}, {"name": "ЭПЭб-26-2", "id": "478679"},
+        {"name": "ЭТЭКб-26-1", "id": "478706"}, {"name": "ЭТЭКб-26-2", "id": "478707"},
+        {"name": "ЮРУб-26-1", "id": "478723"},
+    ],
+    "ИЭ": [
+        {"name": "ЭАПЭб-26-1", "id": "478614"}, {"name": "КТЭм-26-1", "id": "478273"},
+        {"name": "СТЭб-26-1", "id": "478508"}, {"name": "СТЭб-26-2", "id": "479897"},
+        {"name": "УЭСм-26-1", "id": "478569"}, {"name": "ЦЭм-26-1", "id": "478609"},
+        {"name": "ЭНГм-26-1", "id": "478650"}, {"name": "ЭПб-26-1", "id": "478660"},
+        {"name": "ЭПб-26-2", "id": "478661"}, {"name": "ЭСб-26-1", "id": "478692"},
+        {"name": "ЭСм-26-1", "id": "478699"}, {"name": "ЭСТм-26-1", "id": "478701"},
+        {"name": "ЭУм-26-1", "id": "478709"},
+    ],
 }
 
 LESSON_TIMES = {
@@ -830,8 +1024,10 @@ LESSON_TIMES = {
     "18:50": "20:20", "19:05": "20:35",
 }
 
+
 def _now_irkutsk():
     return datetime.now(timezone.utc) + timedelta(hours=8)
+
 
 def _group_name_by_id(group_id):
     for groups in GROUPS.values():
@@ -840,16 +1036,20 @@ def _group_name_by_id(group_id):
                 return g["name"]
     return "Неизвестная группа"
 
+
 def _monday_of_week(d):
     return d - timedelta(days=d.weekday())
+
 
 def _time_sort_key(t):
     m = re.match(r"(\d+):(\d+)", t)
     return (int(m.group(1)), int(m.group(2))) if m else (99, 99)
 
+
 def _time_range(t):
     end = LESSON_TIMES.get(t)
     return f"{t} - {end}" if end else t
+
 
 def _filter_lessons_by_subgroup(lessons, subgroup):
     if not subgroup:
@@ -861,6 +1061,7 @@ def _filter_lessons_by_subgroup(lessons, subgroup):
         elif str(subgroup) == str(les["subgroup"]):
             result.append(les)
     return result
+
 
 def parse_week_range(soup):
     start = end = None
@@ -876,6 +1077,7 @@ def parse_week_range(soup):
         elif "Окончание действия" in ltxt:
             end = vtxt
     return start, end
+
 
 def parse_schedule(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -929,6 +1131,7 @@ def parse_schedule(html):
         days.append({"date": date_str, "name": day_name, "lessons": lessons})
     return week_parity, days
 
+
 async def fetch_week_html(group_id, target_monday, use_cache=True):
     week_start_str = target_monday.strftime("%Y-%m-%d")
     if use_cache:
@@ -955,6 +1158,7 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
             if row:
                 return row[0]
         return ""
+
 
 def format_day(day, user_id=None):
     subgroup = get_user_subgroup(user_id) if user_id else 0
@@ -1007,6 +1211,7 @@ def format_day(day, user_id=None):
             lines.extend(notes_lines)
     return "\n".join(lines).rstrip() + "\n"
 
+
 async def send_schedule_for_date(user_id, group_id, group_name, target_date, title):
     monday = _monday_of_week(target_date)
     html = await fetch_week_html(group_id, monday, use_cache=True)
@@ -1026,22 +1231,22 @@ async def send_schedule_for_date(user_id, group_id, group_name, target_date, tit
     except Exception as e:
         logging.error(f"[NOTIFY] {user_id}: {e}")
 
+
 # ============================================================
 # КЛАВИАТУРЫ
 # ============================================================
 def get_main_keyboard():
-    keyboard = [
-        [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
-        [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
-        [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
-        [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
-        [KeyboardButton(text="Стипендия"), KeyboardButton(text="Пригласить друга")],
-        [KeyboardButton(text="Цитата дня"), KeyboardButton(text="Обратная связь")],
-        [KeyboardButton(text="Помощь")],
-    ]
-    if WEBAPP_URL:
-        keyboard.insert(0, [KeyboardButton(text="Открыть веб-версию", web_app=WebAppInfo(url=WEBAPP_URL))])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
+            [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
+            [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
+            [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
+            [KeyboardButton(text="Стипендия"), KeyboardButton(text="Пригласить друга")],
+            [KeyboardButton(text="Цитата дня"), KeyboardButton(text="Обратная связь")],
+            [KeyboardButton(text="Помощь")],
+        ], resize_keyboard=True)
+
 
 def get_institutes_keyboard():
     keys = list(GROUPS.keys())
@@ -1052,6 +1257,7 @@ def get_institutes_keyboard():
             row.append(InlineKeyboardButton(text=keys[i+1], callback_data=f"institute_{keys[i+1]}"))
         kb.append(row)
     return InlineKeyboardMarkup(inline_keyboard=kb)
+
 
 def get_groups_keyboard(institute_name, page=0):
     groups = GROUPS.get(institute_name, [])
@@ -1076,6 +1282,7 @@ def get_groups_keyboard(institute_name, page=0):
     kb.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+
 def get_schedule_actions_keyboard(group_id, is_my_group=False, subgroup=0):
     buttons = [
         [InlineKeyboardButton(text="Сегодня", callback_data=f"today_{group_id}")],
@@ -1092,6 +1299,7 @@ def get_schedule_actions_keyboard(group_id, is_my_group=False, subgroup=0):
     buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def get_notify_keyboard(current=None, changes_on=False):
     buttons = []
     for label, h, m in NOTIFY_PRESETS:
@@ -1102,6 +1310,7 @@ def get_notify_keyboard(current=None, changes_on=False):
     buttons.append([InlineKeyboardButton(text=f"Следить за изменениями:{changes_mark}", callback_data="changes_toggle")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def get_tasks_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Добавить задачу", callback_data="task_add")],
@@ -1110,6 +1319,7 @@ def get_tasks_keyboard():
         [InlineKeyboardButton(text="Статистика", callback_data="task_stats")],
         [InlineKeyboardButton(text="Очистить выполненные", callback_data="task_clear")],
     ])
+
 
 def get_task_priority_keyboard(action: str, task_id: int = 0, current: int = -1):
     prefix = "task_prio_add_" if action == "add" else "task_prio_edit_"
@@ -1120,6 +1330,7 @@ def get_task_priority_keyboard(action: str, task_id: int = 0, current: int = -1)
             text=f"{PRIORITY_LABELS[p]}{mark}",
             callback_data=f"{prefix}{p}" + (f"_{task_id}" if action == "edit" else ""))])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 def get_task_due_keyboard(task_id: int = 0, edit: bool = False):
     prefix = "task_due_edit_" if edit else "task_due_add_"
@@ -1132,6 +1343,7 @@ def get_task_due_keyboard(task_id: int = 0, edit: bool = False):
         [InlineKeyboardButton(text="Своя дата", callback_data=f"{prefix}custom{suffix}")],
     ])
 
+
 def get_task_edit_keyboard(task_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Изменить текст", callback_data=f"task_edit_text_{task_id}")],
@@ -1140,11 +1352,13 @@ def get_task_edit_keyboard(task_id: int):
         [InlineKeyboardButton(text="Назад", callback_data="task_list")],
     ])
 
+
 def get_notes_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Добавить заметку", callback_data="note_add")],
         [InlineKeyboardButton(text="Мои заметки", callback_data="note_list")],
     ])
+
 
 def get_notes_list_keyboard(notes):
     kb = []
@@ -1158,6 +1372,7 @@ def get_notes_list_keyboard(notes):
     kb.append([InlineKeyboardButton(text="Назад", callback_data="note_back")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+
 def get_vip_keyboard(is_active=False):
     if is_active:
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -1168,6 +1383,7 @@ def get_vip_keyboard(is_active=False):
         [InlineKeyboardButton(text="Купить VIP", callback_data="vip_buy")],
     ])
 
+
 def get_ai_photo_mode_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Краткий конспект", callback_data="ai_photo_conspect")],
@@ -1175,12 +1391,14 @@ def get_ai_photo_mode_keyboard():
         [InlineKeyboardButton(text="Отмена", callback_data="ai_photo_cancel")],
     ])
 
+
 def get_daily_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Цитата дня", callback_data="daily_quote_now")],
         [InlineKeyboardButton(text="Подписаться на 10:00", callback_data="daily_on")],
         [InlineKeyboardButton(text="Отписаться", callback_data="daily_off")],
     ])
+
 
 def get_scholarship_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -1191,8 +1409,767 @@ def get_scholarship_keyboard():
         [InlineKeyboardButton(text="Очистить оценки", callback_data="sch_clear")],
     ])
 
+
 # ============================================================
-# ГЛОБАЛЬНЫЙ ХЕНДЛЕР
+# ВЕБ-СЕРВЕР: ПРОВЕРКА initData
+# ============================================================
+def _verify_webapp_init(init_data: str):
+    """Возвращает user_id или None."""
+    if not init_data:
+        return None
+    try:
+        data = safe_parse_webapp_init_data(token=TOKEN, init_data=init_data)
+        if data and data.user:
+            return data.user.id
+    except Exception as e:
+        logging.warning(f"[WEB] initData verify error: {e}")
+    return None
+
+
+# ============================================================
+# ВЕБ-СЕРВЕР: API-ЭНДПОИНТЫ
+# ============================================================
+async def api_schedule(request: web.Request):
+    """GET /api/schedule?initData=...&offset=0 — расписание на сегодня/день"""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    saved = get_user_group(user_id)
+    if not saved:
+        return web.json_response({
+            "error": "no_group",
+            "message": "Сначала выбери группу",
+        }, status=200)
+
+    group_id, group_name = saved
+    subgroup = get_user_subgroup(user_id)
+
+    today = _now_irkutsk()
+    monday = _monday_of_week(today)
+    html = await fetch_week_html(group_id, monday, use_cache=True)
+    if not html:
+        return web.json_response({
+            "error": "no_data",
+            "message": "Не удалось загрузить расписание",
+        }, status=200)
+
+    _, days = parse_schedule(html)
+    today_str = today.strftime("%d.%m.%Y")
+    day = next((d for d in days if d["date"] == today_str), None)
+
+    if day is None:
+        return web.json_response({
+            "date": today_str, "dayName": "", "group": group_name,
+            "subgroup": subgroup, "lessons": [],
+        })
+
+    filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
+    lessons_out = []
+    for les in filtered:
+        lessons_out.append({
+            "time": les["time"],
+            "timeEnd": LESSON_TIMES.get(les["time"], ""),
+            "subject": les["subject"],
+            "type": les["type"],
+            "teacher": les["teacher"],
+            "auditorium": les["auditorium"],
+            "subgroup": les["subgroup"],
+        })
+
+    return web.json_response({
+        "date": day["date"],
+        "dayName": day["name"],
+        "group": group_name,
+        "subgroup": subgroup,
+        "lessons": lessons_out,
+    })
+
+
+async def api_week(request: web.Request):
+    """GET /api/week?initData=...&offset=0 — вся неделя"""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    offset = int(request.query.get("offset", "0"))
+    saved = get_user_group(user_id)
+    if not saved:
+        return web.json_response({"error": "no_group"}, status=200)
+
+    group_id, group_name = saved
+    subgroup = get_user_subgroup(user_id)
+
+    today = _now_irkutsk()
+    target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
+    html = await fetch_week_html(group_id, target_monday, use_cache=True)
+    if not html:
+        return web.json_response({"error": "no_data"}, status=200)
+
+    _, days = parse_schedule(html)
+    days_out = []
+    for d in days:
+        filtered = _filter_lessons_by_subgroup(d["lessons"], subgroup)
+        lessons_out = []
+        for les in filtered:
+            lessons_out.append({
+                "time": les["time"],
+                "timeEnd": LESSON_TIMES.get(les["time"], ""),
+                "subject": les["subject"],
+                "type": les["type"],
+                "teacher": les["teacher"],
+                "auditorium": les["auditorium"],
+                "subgroup": les["subgroup"],
+            })
+        days_out.append({
+            "date": d["date"],
+            "name": d["name"],
+            "lessons": lessons_out,
+        })
+
+    return web.json_response({
+        "group": group_name,
+        "subgroup": subgroup,
+        "days": days_out,
+    })
+
+
+async def api_me(request: web.Request):
+    """GET /api/me?initData=... — профиль пользователя"""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    _ensure_user(user_id)
+    saved = get_user_group(user_id)
+    vip_info = get_vip_info(user_id)
+    active, done = count_user_tasks(user_id)
+    notes = get_user_notes(user_id)
+    amount = get_scholarship_amount(user_id)
+    grades = get_grades(user_id)
+    total, rewarded = get_referral_stats(user_id)
+    daily = daily_is_subscribed(user_id)
+    notif = get_notify_time(user_id)
+    changes = get_notify_changes(user_id)
+
+    avg = 0
+    if grades:
+        avg = sum(g[2] for g in grades) / len(grades)
+
+    return web.json_response({
+        "user_id": user_id,
+        "group": saved[1] if saved else None,
+        "group_id": saved[0] if saved else None,
+        "subgroup": get_user_subgroup(user_id),
+        "is_vip": is_vip(user_id),
+        "vip_until": vip_info[0].isoformat() if vip_info else None,
+        "vip_days_left": (vip_info[0] - datetime.now(timezone.utc)).days if vip_info else 0,
+        "tasks_active": active,
+        "tasks_done": done,
+        "notes_count": len(notes),
+        "scholarship_amount": amount,
+        "grades_count": len(grades),
+        "grades_avg": round(avg, 2),
+        "referral_total": total,
+        "referral_rewarded": rewarded,
+        "referral_days": rewarded * REFERRAL_DAYS,
+        "daily_subscribed": daily,
+        "notify_time": f"{notif[0]:02d}:{notif[1]:02d}" if notif else None,
+        "notify_changes": changes,
+    })
+
+
+async def api_groups(request: web.Request):
+    """GET /api/groups — список институтов и групп"""
+    return web.json_response({"groups": GROUPS})
+
+
+async def api_set_group(request: web.Request):
+    """POST /api/set-group {initData, group_id, group_name, subgroup}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    group_id = str(body.get("group_id", ""))
+    group_name = str(body.get("group_name", ""))
+    subgroup = int(body.get("subgroup", 0))
+
+    if not group_id or not group_name:
+        return web.json_response({"error": "no_group"}, status=400)
+
+    save_user_group(user_id, group_id, group_name)
+    set_user_subgroup(user_id, subgroup)
+
+    return web.json_response({"ok": True, "group": group_name, "subgroup": subgroup})
+
+
+async def api_set_subgroup(request: web.Request):
+    """POST /api/set-subgroup {initData, subgroup}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    subgroup = int(body.get("subgroup", 0))
+    set_user_subgroup(user_id, subgroup)
+    return web.json_response({"ok": True, "subgroup": subgroup})
+
+
+# ---------- ЗАДАЧИ ----------
+def _task_to_dict(row):
+    tid, text, due_date, done, created_at, priority, due_time = row
+    overdue = False
+    if due_date and not done:
+        try:
+            if due_time:
+                dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
+            else:
+                dt = datetime.strptime(due_date, "%d.%m.%Y").replace(hour=23, minute=59)
+            overdue = dt < _now_irkutsk()
+        except Exception:
+            pass
+    return {
+        "id": tid,
+        "text": text,
+        "due_date": due_date,
+        "due_time": due_time,
+        "priority": priority or 1,
+        "done": bool(done),
+        "overdue": overdue,
+    }
+
+
+async def api_tasks(request: web.Request):
+    """GET /api/tasks?initData=...&done=0|1"""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    show_done = request.query.get("done", "0") == "1"
+    if show_done:
+        rows = get_done_tasks(user_id, days=7)
+        tasks = []
+        for r in rows:
+            tid, text, due_date, done, created_at, priority, due_time, done_at = r
+            tasks.append({
+                "id": tid, "text": text, "due_date": due_date,
+                "due_time": due_time, "priority": priority or 1,
+                "done": True, "done_at": done_at, "overdue": False,
+            })
+    else:
+        rows = get_user_tasks(user_id, only_active=True)
+        tasks = [_task_to_dict(r) for r in rows]
+
+    active, done_count = count_user_tasks(user_id)
+    return web.json_response({
+        "tasks": tasks,
+        "active": active,
+        "done": done_count,
+    })
+
+
+async def api_task_add(request: web.Request):
+    """POST /api/task-add {initData, text, due_date, due_time, priority}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    text = (body.get("text") or "").strip()
+    if not text:
+        return web.json_response({"error": "empty_text"}, status=400)
+    if len(text) > 500:
+        text = text[:500]
+
+    due_date = body.get("due_date") or None
+    due_time = body.get("due_time") or None
+    priority = int(body.get("priority", 1))
+    if priority not in (0, 1, 2):
+        priority = 1
+
+    tid = add_task(user_id, text, due_date, priority, due_time)
+    return web.json_response({"ok": True, "id": tid})
+
+
+async def api_task_update(request: web.Request):
+    """POST /api/task-update {initData, id, text?, due_date?, due_time?, priority?, done?}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    tid = int(body.get("id", 0))
+    if not tid:
+        return web.json_response({"error": "no_id"}, status=400)
+
+    row = get_task(tid, user_id)
+    if not row:
+        return web.json_response({"error": "not_found"}, status=404)
+
+    if body.get("done") is True:
+        mark_task_done(tid, user_id)
+        return web.json_response({"ok": True, "done": True})
+
+    text = body.get("text")
+    due_date = body.get("due_date")
+    due_time = body.get("due_time")
+    priority = body.get("priority")
+    reset_due = body.get("reset_due", False)
+
+    if priority is not None:
+        priority = int(priority)
+
+    update_task(tid, user_id,
+                text=text if text is not None else None,
+                due_date=due_date if due_date else None,
+                priority=priority,
+                due_time=due_time if due_time is not None else None,
+                reset_due=reset_due)
+    return web.json_response({"ok": True})
+
+
+async def api_task_delete(request: web.Request):
+    """POST /api/task-delete {initData, id}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    tid = int(body.get("id", 0))
+    if not tid:
+        return web.json_response({"error": "no_id"}, status=400)
+
+    delete_task(tid, user_id)
+    return web.json_response({"ok": True})
+
+
+async def api_task_clear(request: web.Request):
+    """POST /api/task-clear {initData}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    clear_done_tasks(user_id)
+    return web.json_response({"ok": True})
+
+
+# ---------- ЗАМЕТКИ ----------
+async def api_notes(request: web.Request):
+    """GET /api/notes?initData=..."""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    rows = get_user_notes(user_id)
+    notes = [{"id": nid, "subject": subj, "text": txt} for nid, subj, txt in rows]
+    return web.json_response({"notes": notes})
+
+
+async def api_note_save(request: web.Request):
+    """POST /api/note-save {initData, subject, text}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    subject = (body.get("subject") or "").strip()
+    text = (body.get("text") or "").strip()
+    if not subject or not text:
+        return web.json_response({"error": "empty"}, status=400)
+    if len(subject) > 100:
+        subject = subject[:100]
+    if len(text) > 500:
+        text = text[:500]
+
+    add_or_update_note(user_id, subject, text)
+    return web.json_response({"ok": True})
+
+
+async def api_note_delete(request: web.Request):
+    """POST /api/note-delete {initData, id}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    nid = int(body.get("id", 0))
+    if not nid:
+        return web.json_response({"error": "no_id"}, status=400)
+
+    delete_note_by_id(nid, user_id)
+    return web.json_response({"ok": True})
+
+
+# ---------- УВЕДОМЛЕНИЯ ----------
+async def api_notify_set(request: web.Request):
+    """POST /api/notify-set {initData, hour, minute, changes}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    hour = int(body.get("hour", -1))
+    minute = int(body.get("minute", 0))
+    changes = bool(body.get("changes", False))
+
+    set_notify_time(user_id, hour, minute)
+    set_notify_changes(user_id, changes)
+    return web.json_response({"ok": True})
+
+
+# ---------- ЦИТАТА ДНЯ ----------
+async def api_quote(request: web.Request):
+    """GET /api/quote?initData=..."""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    subscribed = daily_is_subscribed(user_id)
+    return web.json_response({
+        "quote": random.choice(DAILY_QUOTES),
+        "subscribed": subscribed,
+        "hour": DAILY_QUOTE_HOUR,
+    })
+
+
+async def api_quote_subscribe(request: web.Request):
+    """POST /api/quote-subscribe {initData, subscribe: true|false}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    sub = bool(body.get("subscribe", False))
+    if sub:
+        daily_subscribe(user_id)
+    else:
+        daily_unsubscribe(user_id)
+    return web.json_response({"ok": True, "subscribed": sub})
+
+
+# ---------- РЕФЕРАЛКА ----------
+async def api_referral(request: web.Request):
+    """GET /api/referral?initData=..."""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    total, rewarded = get_referral_stats(user_id)
+    bot_username = BOT_USERNAME.replace("@", "")
+    link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+    return web.json_response({
+        "link": link,
+        "total": total,
+        "rewarded": rewarded,
+        "days": rewarded * REFERRAL_DAYS,
+        "referral_days": REFERRAL_DAYS,
+    })
+
+
+# ---------- СТИПЕНДИЯ ----------
+async def api_scholarship(request: web.Request):
+    """GET /api/scholarship?initData=..."""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    if not is_vip(user_id):
+        return web.json_response({"error": "vip_only"}, status=403)
+
+    amount = get_scholarship_amount(user_id)
+    grades = get_grades(user_id)
+    grades_out = [{"id": gid, "subject": subj, "grade": grade} for gid, subj, grade in grades]
+
+    avg = 0
+    count5 = count4 = count3 = count2 = 0
+    if grades:
+        avg = sum(g[2] for g in grades) / len(grades)
+        count5 = sum(1 for g in grades if g[2] == 5)
+        count4 = sum(1 for g in grades if g[2] == 4)
+        count3 = sum(1 for g in grades if g[2] == 3)
+        count2 = sum(1 for g in grades if g[2] == 2)
+
+    forecast = ""
+    if count2 > 0 or count3 > 0:
+        forecast = "На академическую не проходишь: есть тройки/двойки."
+    elif avg >= 4.5:
+        forecast = "Проходишь на академическую и можешь претендовать на повышенную."
+    elif avg >= 4.0:
+        forecast = f"Проходишь на академическую. До повышенной не хватает {4.5 - avg:.2f}."
+    elif grades:
+        forecast = "На академическую не проходишь: средний балл ниже 4.0."
+
+    return web.json_response({
+        "amount": amount,
+        "grades": grades_out,
+        "avg": round(avg, 2),
+        "count5": count5,
+        "count4": count4,
+        "count3": count3,
+        "count2": count2,
+        "forecast": forecast,
+    })
+
+
+async def api_scholarship_set_amount(request: web.Request):
+    """POST /api/scholarship-set-amount {initData, amount}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    if not is_vip(user_id):
+        return web.json_response({"error": "vip_only"}, status=403)
+
+    amount = int(body.get("amount", 0))
+    if amount < 0 or amount > 100000:
+        return web.json_response({"error": "invalid_amount"}, status=400)
+
+    set_scholarship_amount(user_id, amount)
+    return web.json_response({"ok": True})
+
+
+async def api_scholarship_add_grade(request: web.Request):
+    """POST /api/scholarship-add-grade {initData, subject, grade}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    if not is_vip(user_id):
+        return web.json_response({"error": "vip_only"}, status=403)
+
+    subject = (body.get("subject") or "").strip()
+    grade = int(body.get("grade", 0))
+    if not subject or grade not in (2, 3, 4, 5):
+        return web.json_response({"error": "invalid"}, status=400)
+    if len(subject) > 100:
+        subject = subject[:100]
+
+    add_grade(user_id, subject, grade)
+    return web.json_response({"ok": True})
+
+
+async def api_scholarship_delete_grade(request: web.Request):
+    """POST /api/scholarship-delete-grade {initData, id}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    if not is_vip(user_id):
+        return web.json_response({"error": "vip_only"}, status=403)
+
+    gid = int(body.get("id", 0))
+    if not gid:
+        return web.json_response({"error": "no_id"}, status=400)
+
+    delete_grade(gid, user_id)
+    return web.json_response({"ok": True})
+
+
+async def api_scholarship_clear(request: web.Request):
+    """POST /api/scholarship-clear {initData}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    if not is_vip(user_id):
+        return web.json_response({"error": "vip_only"}, status=403)
+
+    clear_grades(user_id)
+    return web.json_response({"ok": True})
+
+
+# ---------- AI ----------
+async def api_ai(request: web.Request):
+    """POST /api/ai {initData, question}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    if not is_vip(user_id):
+        return web.json_response({"error": "vip_only"}, status=403)
+
+    if giga_client is None:
+        return web.json_response({"error": "ai_unavailable"}, status=503)
+
+    question = (body.get("question") or "").strip()
+    if not question:
+        return web.json_response({"error": "empty"}, status=400)
+    if len(question) > 2000:
+        question = question[:2000]
+
+    try:
+        prompt = (
+            "Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
+            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+            "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+            "- Формулы пиши обычным текстом.\n"
+            "- Структурируй текст простыми списками через «- » или нумерацией.\n"
+            "- Пиши без воды, только по делу.\n\n"
+            f"Вопрос: {question}"
+        )
+        response = await giga_client.achat(prompt)
+        try:
+            answer = response.choices[0].message.content
+        except AttributeError:
+            answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
+        answer = clean_latex(answer)
+        answer = clean_markdown(answer)
+        if len(answer) > 4000:
+            answer = answer[:4000] + "\n... (обрезано)"
+        return web.json_response({"answer": answer})
+    except Exception as e:
+        logging.exception("[AI-WEB]")
+        return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
+
+
+# ---------- ОБРАТНАЯ СВЯЗЬ ----------
+async def api_feedback(request: web.Request):
+    """POST /api/feedback {initData, text}"""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    init_data = body.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    text = (body.get("text") or "").strip()
+    if not text:
+        return web.json_response({"error": "empty"}, status=400)
+    if len(text) > 2000:
+        text = text[:2000]
+
+    uname = f"user_{user_id}"
+    fid = save_feedback(user_id, uname, text)
+    try:
+        vip_mark = "[VIP] " if is_vip(user_id) else ""
+        admin_msg = await bot.send_message(
+            ADMIN_ID,
+            f"{vip_mark}Обращение #{fid} (из веба)\nОт: user_{user_id}\n\n{text}\n\n"
+            f"Ответь reply-ом или через /feedback_list")
+        update_feedback_admin_msg(fid, admin_msg.message_id)
+    except Exception as e:
+        logging.error(f"[FEEDBACK-WEB] {e}")
+
+    return web.json_response({"ok": True, "id": fid})
+
+
+# ---------- VIP ----------
+async def api_vip(request: web.Request):
+    """GET /api/vip?initData=..."""
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    info = get_vip_info(user_id)
+    if info:
+        expiry, tier = info
+        days_left = (expiry - datetime.now(timezone.utc)).days
+        return web.json_response({
+            "is_vip": True,
+            "expiry": expiry.isoformat(),
+            "days_left": days_left,
+            "tier": tier,
+        })
+    return web.json_response({"is_vip": False})
+
+
+# ============================================================
+# ГЛОБАЛЬНЫЙ ХЕНДЛЕР (без отступа — это комментарий верхнего уровня)
 # ============================================================
 @dp.message(StateFilter("*"), F.text.in_(MENU_BUTTONS))
 async def menu_button_global(message: Message, state: FSMContext):
@@ -1225,6 +2202,7 @@ async def menu_button_global(message: Message, state: FSMContext):
     elif text == "Помощь":
         await help_cmd(message)
 
+
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
@@ -1247,10 +2225,13 @@ async def start(message: Message, state: FSMContext):
                 set_vip(referrer_id, REFERRAL_DAYS)
                 set_vip(user_id, REFERRAL_DAYS)
                 mark_referral_rewarded(user_id)
-                referral_msg = (f"\n\nТебе начислено {REFERRAL_DAYS} дней VIP за приглашение от друга!")
+                referral_msg = f"\n\nТебе начислено {REFERRAL_DAYS} дней VIP за приглашение от друга!"
                 try:
-                    await bot.send_message(referrer_id,
-                        f"По твоей ссылке зашёл новый пользователь.\nТебе начислено {REFERRAL_DAYS} дней VIP.")
+                    await bot.send_message(
+                        referrer_id,
+                        f"По твоей ссылке зашёл новый пользователь.\n"
+                        f"Тебе начислено {REFERRAL_DAYS} дней VIP."
+                    )
                 except Exception as e:
                     logging.error(f"[REFERRAL] не уведомил {referrer_id}: {e}")
 
@@ -1261,16 +2242,19 @@ async def start(message: Message, state: FSMContext):
         sub = get_user_subgroup(user_id)
         if sub:
             sub_mark = f" (подгр. {sub})"
-    hint = f"\n\nТвоя группа: {saved[1]}{sub_mark}{vip_mark}" if saved else "\n\nСовет: выбери группу через «Расписание»."
-    webapp_hint = "\n\nВ меню есть кнопка «Открыть веб-версию» — расписание в удобном виде." if WEBAPP_URL else ""
+    hint = f"\n\nТвоя группа: {saved[1]}{sub_mark}{vip_mark}" if saved else \
+           "\n\nСовет: выбери группу через «Расписание»."
     await message.answer(
         f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ."
-        f"{hint}{referral_msg}{webapp_hint}",
+        f"{hint}{referral_msg}\n\n"
+        f"Кнопка Mini App — слева от поля ввода. Там расписание, задачи, заметки и AI.",
         reply_markup=get_main_keyboard())
+
 
 @dp.message(Command("myid"))
 async def cmd_myid(message: Message):
     await message.answer(f"Твой Telegram ID: {message.from_user.id}")
+
 
 @dp.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext):
@@ -1281,17 +2265,22 @@ async def cmd_cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Отменено.", reply_markup=get_main_keyboard())
 
+
 @dp.message(Command("quote"))
 async def cmd_quote(message: Message):
     await daily_quote_menu(message)
 
+
 # ============================================================
-# ЦИТАТА ДНЯ
+# ЦИТАТА ДНЯ — МЕНЮ
 # ============================================================
 async def daily_quote_menu(message: Message):
     subscribed = daily_is_subscribed(message.from_user.id)
     status = "подписан на 10:00" if subscribed else "не подписан"
-    await message.answer(f"{random.choice(DAILY_QUOTES)}\n\nСтатус подписки: {status}", reply_markup=get_daily_keyboard())
+    await message.answer(
+        f"{random.choice(DAILY_QUOTES)}\n\nСтатус подписки: {status}",
+        reply_markup=get_daily_keyboard())
+
 
 # ============================================================
 # РЕФЕРАЛЬНАЯ СИСТЕМА
@@ -1301,28 +2290,55 @@ async def referral_menu(message: Message):
     link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
     total, rewarded = get_referral_stats(user_id)
     vip_days_earned = rewarded * REFERRAL_DAYS
-    text = (f"Приглашай друзей и получай VIP\n\nЗа каждого нового пользователя по твоей ссылке:\n"
-            f"- тебе +{REFERRAL_DAYS} дней VIP\n- ему +{REFERRAL_DAYS} дней VIP\n\n"
-            f"Твоя ссылка:\n{link}\n\nПришло по ссылке: {total}\nЗасчитано (награда выдана): {rewarded}\n"
-            f"Заработано VIP-дней: {vip_days_earned}")
+
+    text = (
+        "Приглашай друзей и получай VIP\n\n"
+        f"За каждого нового пользователя по твоей ссылке:\n"
+        f"- тебе +{REFERRAL_DAYS} дней VIP\n"
+        f"- ему +{REFERRAL_DAYS} дней VIP\n\n"
+        f"Твоя ссылка:\n{link}\n\n"
+        f"Пришло по ссылке: {total}\n"
+        f"Засчитано (награда выдана): {rewarded}\n"
+        f"Заработано VIP-дней: {vip_days_earned}"
+    )
     await message.answer(text, reply_markup=get_main_keyboard())
+
 
 # ============================================================
 # АДМИН
 # ============================================================
 ADMIN_HELP_TEXT = """АДМИН-КОМАНДЫ
-/stats — общее число пользователей
-/vip_list — активные VIP
-/feedback_list — обращения
-/broadcast Текст — рассылка
-/give_vip user_id дней
-/revoke_vip user_id
-/backup — файл users.db
-/restore — восстановить базу
-/clearcache — очистить кэш
-/checknow — проверка изменений
-/monitor — проверка сайта
-/admin — это сообщение"""
+
+СТАТИСТИКА
+/stats — общее число пользователей в боте
+/vip_list — список активных VIP-подписок
+
+ОБРАТНАЯ СВЯЗЬ
+/feedback_list — актуальные обращения
+/feedback_answered — последние 10 отвеченных
+
+РАССЫЛКА
+/broadcast Текст — отправить сообщение всем пользователям
+
+VIP-ПОДПИСКИ
+/give_vip user_id дней — выдать VIP на N дней
+/revoke_vip user_id — снять VIP досрочно
+/vip_list — список активных VIP
+
+БАЗА ДАННЫХ
+/backup — прислать файл users.db
+/restore — восстановить базу из файла .db
+
+РАСПИСАНИЕ И СЕТЬ
+/clearcache — очистить кэш расписаний
+/checknow — вручную запустить проверку изменений
+/monitor — проверить, отвечает ли сайт ИРНИТУ
+
+ПРОЧЕЕ
+/myid — узнать свой Telegram ID
+/admin — показать это сообщение
+"""
+
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
@@ -1331,11 +2347,15 @@ async def cmd_admin(message: Message):
         return
     await message.answer(ADMIN_HELP_TEXT)
 
+
 @dp.message(Command("stats"))
 async def cmd_stats(message: Message):
     if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа.")
         return
-    await message.answer(f"Пользователей в боте: {get_total_users()}")
+    total = get_total_users()
+    await message.answer(f"Пользователей в боте: {total}")
+
 
 @dp.message(Command("broadcast"))
 async def cmd_broadcast(message: Message):
@@ -1360,15 +2380,18 @@ async def cmd_broadcast(message: Message):
         await asyncio.sleep(0.05)
     await status.edit_text(f"Отправлено: {sent}\nНе доставлено: {failed}")
 
+
 @dp.message(Command("backup"))
 async def cmd_backup(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
     try:
+        total = get_total_users()
         doc = FSInputFile(DB_PATH, filename="users_backup.db")
-        await message.answer_document(doc, caption=f"Резервная копия. Всего: {get_total_users()}")
+        await message.answer_document(doc, caption=f"Резервная копия. Всего пользователей: {total}")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
+
 
 @dp.message(Command("restore"))
 async def cmd_restore(message: Message):
@@ -1385,11 +2408,13 @@ async def cmd_restore(message: Message):
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
+
 @dp.message(Command("feedback_list"))
 async def cmd_feedback_list(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
     await show_pending_feedback(message)
+
 
 @dp.message(Command("feedback_answered"))
 async def cmd_feedback_answered(message: Message):
@@ -1403,6 +2428,7 @@ async def cmd_feedback_answered(message: Message):
     for fid, uid, uname, text, created, answered in rows:
         lines.append(f"#{fid} | {uname or uid}\n{text[:150]}\n")
     await message.answer("\n".join(lines)[:4000])
+
 
 async def show_pending_feedback(target):
     rows = get_pending_feedback()
@@ -1439,6 +2465,7 @@ async def show_pending_feedback(target):
     else:
         await target.answer(text, reply_markup=kb)
 
+
 @dp.callback_query(F.data == "fb_refresh")
 async def fb_refresh(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -1446,6 +2473,7 @@ async def fb_refresh(callback: CallbackQuery):
         return
     await show_pending_feedback(callback.message)
     await callback.answer("Обновлено")
+
 
 @dp.callback_query(F.data.startswith("fb_postpone_"))
 async def fb_postpone(callback: CallbackQuery):
@@ -1456,6 +2484,7 @@ async def fb_postpone(callback: CallbackQuery):
     set_feedback_status(fid, "postponed")
     await callback.answer(f"#{fid} отложено")
     await show_pending_feedback(callback.message)
+
 
 @dp.callback_query(F.data.startswith("fb_reply_"))
 async def fb_reply_start(callback: CallbackQuery, state: FSMContext):
@@ -1472,6 +2501,7 @@ async def fb_reply_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(f"Ответ на #{fid}\nОт: {uname or uid}\n\n{text[:300]}\n\nНапиши ответ.\n\n/cancel")
     await state.set_state(FeedbackReplyState.waiting_reply)
     await callback.answer()
+
 
 @dp.message(FeedbackReplyState.waiting_reply)
 async def fb_reply_send(message: Message, state: FSMContext):
@@ -1494,6 +2524,7 @@ async def fb_reply_send(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"Не удалось: {e}")
 
+
 @dp.message(Command("clearcache"))
 async def cmd_clearcache(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -1503,6 +2534,7 @@ async def cmd_clearcache(message: Message):
     conn.commit(); conn.close()
     await message.answer("Кэш расписаний очищен.")
 
+
 @dp.message(Command("checknow"))
 async def cmd_checknow(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -1510,6 +2542,7 @@ async def cmd_checknow(message: Message):
     await message.answer("Проверяю изменения в расписании...")
     await check_schedule_changes()
     await message.answer("Готово.")
+
 
 @dp.message(Command("monitor"))
 async def cmd_monitor(message: Message):
@@ -1526,6 +2559,7 @@ async def cmd_monitor(message: Message):
                     await message.answer(f"Сайт ИРНИТУ: HTTP {response.status}")
     except Exception as e:
         await message.answer(f"Сайт ИРНИТУ: не отвечает.\n\n{e}")
+
 
 @dp.message(Command("give_vip"))
 async def cmd_give_vip(message: Message):
@@ -1552,6 +2586,7 @@ async def cmd_give_vip(message: Message):
     except Exception as e:
         await message.answer(f"Не уведомил: {e}")
 
+
 @dp.message(Command("revoke_vip"))
 async def cmd_revoke_vip(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -1567,6 +2602,7 @@ async def cmd_revoke_vip(message: Message):
         return
     revoke_vip(uid)
     await message.answer(f"VIP снят с {uid}.")
+
 
 @dp.message(Command("vip_list"))
 async def cmd_vip_list(message: Message):
@@ -1589,6 +2625,7 @@ async def cmd_vip_list(message: Message):
         text = text[:4000] + "\n..."
     await message.answer(text)
 
+
 # ============================================================
 # AI ТЕКСТ (GigaChat)
 # ============================================================
@@ -1603,6 +2640,7 @@ async def ai_menu(message: Message, state: FSMContext):
     await message.answer("Привет! Я AI-помощник на GigaChat.\n\nЗадай вопрос.\n\n/cancel — выйти.")
     await state.set_state(AIState.waiting_question)
 
+
 @dp.message(AIState.waiting_question)
 async def ai_process(message: Message, state: FSMContext):
     if message.text == "/cancel":
@@ -1614,13 +2652,18 @@ async def ai_process(message: Message, state: FSMContext):
         return
     thinking_msg = await message.answer("Думаю...")
     try:
-        prompt = ("Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
-                  "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-                  "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
-                  "- Формулы пиши обычным текстом: дроби через /, степени через ^, корни через √(), индексы через _.\n"
-                  "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
-                  "- Структурируй текст простыми списками через «- » или нумерацией.\n- Пиши без воды, только по делу.\n\n"
-                  f"Вопрос: {message.text}")
+        prompt = (
+            "Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
+            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+            "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+            "- Формулы пиши обычным текстом: дроби через /, степени через ^, "
+            "корни через √(), индексы через _.\n"
+            "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
+            "- Структурируй текст простыми списками через «- » или нумерацией.\n"
+            "- Пиши без воды, только по делу.\n\n"
+            f"Вопрос: {message.text}"
+        )
         response = await giga_client.achat(prompt)
         try:
             answer = response.choices[0].message.content
@@ -1638,6 +2681,7 @@ async def ai_process(message: Message, state: FSMContext):
         logging.error(f"[AI] Ошибка: {e}")
         await thinking_msg.edit_text("Не удалось получить ответ.")
 
+
 # ============================================================
 # AI ПО ФОТО
 # ============================================================
@@ -1649,9 +2693,15 @@ async def ai_photo_menu(message: Message, state: FSMContext):
     if not YANDEX_VISION_API_KEY:
         await message.answer("Yandex Vision не настроен. Обратись к администратору.")
         return
-    await message.answer("Отправь фото с текстом или заданием.\n\nПосле отправки выберешь режим:\n"
-                         "- Краткий конспект\n- Решить задание\n\n/cancel — выйти.")
+    await message.answer(
+        "Отправь фото с текстом или заданием.\n\n"
+        "После отправки выберешь режим:\n"
+        "- Краткий конспект\n"
+        "- Решить задание\n\n"
+        "/cancel — выйти."
+    )
     await state.set_state(AIState.waiting_photo)
+
 
 @dp.message(AIState.waiting_photo, F.photo)
 async def ai_photo_receive(message: Message, state: FSMContext):
@@ -1660,11 +2710,13 @@ async def ai_photo_receive(message: Message, state: FSMContext):
     await message.answer("Что сделать с фото?", reply_markup=get_ai_photo_mode_keyboard())
     await state.set_state(AIState.waiting_photo_mode)
 
+
 @dp.callback_query(AIState.waiting_photo_mode, F.data == "ai_photo_cancel")
 async def ai_photo_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("Отменено.")
     await callback.answer()
+
 
 @dp.callback_query(AIState.waiting_photo_mode, F.data.in_({"ai_photo_conspect", "ai_photo_solve"}))
 async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
@@ -1716,13 +2768,17 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
                 body = await response.text()
                 if response.status != 200:
                     logging.error(f"[VISION] HTTP {response.status}: {body}")
-                    await thinking_msg.edit_text(f"Не удалось распознать текст (HTTP {response.status}). Попробуй другое фото.")
+                    await thinking_msg.edit_text(
+                        f"Не удалось распознать текст (HTTP {response.status}). Попробуй другое фото."
+                    )
                     return
                 result = json.loads(body)
 
-        full_text = (result.get("result", {})
-                     .get("textAnnotation", {})
-                     .get("fullText", ""))
+        full_text = (
+            result.get("result", {})
+                  .get("textAnnotation", {})
+                  .get("fullText", "")
+        )
         if not full_text.strip():
             await thinking_msg.edit_text("Текст на изображении не найден.")
             return
@@ -1738,26 +2794,35 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
 
         if mode == "ai_photo_conspect":
             await thinking_msg.edit_text("Составляю конспект...")
-            prompt = ("Ты — студенческий помощник. Составь краткий конспект по этому тексту.\n\n"
-                      "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-                      "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
-                      "- Формулы пиши обычным текстом: дроби через /, степени через ^, корни через √(), индексы через _.\n"
-                      "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
-                      "- Структурируй текст простыми списками через «- » или нумерацией.\n"
-                      "- Выдели главные определения, формулы и тезисы.\n- Пиши без воды, только по делу.\n\n"
-                      f"Текст:\n{full_text}")
+            prompt = (
+                "Ты — студенческий помощник. Составь краткий конспект по этому тексту.\n\n"
+                "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+                "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+                "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+                "- Формулы пиши обычным текстом.\n"
+                "- Структурируй текст простыми списками через «- » или нумерацией.\n"
+                "- Выдели главные определения, формулы и тезисы.\n"
+                "- Пиши без воды, только по делу.\n\n"
+                f"Текст:\n{full_text}"
+            )
         else:
             await thinking_msg.edit_text("Решаю задание...")
-            prompt = ("Ты — студенческий помощник. На фото задание (задача, пример, упражнение).\n"
-                      "Реши его подробно и понятно, как для студента.\n\n"
-                      "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-                      "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
-                      "- Формулы пиши обычным текстом: дроби через /, степени через ^, корни через √(), индексы через _.\n"
-                      "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
-                      "- Структура ответа:\n  1. Что дано (если есть).\n  2. Что нужно найти.\n"
-                      "  3. Решение по шагам с пояснениями.\n  4. Ответ.\n"
-                      "- Не пропускай шаги, объясняй переходы.\n- Пиши без воды.\n\n"
-                      f"Задание:\n{full_text}")
+            prompt = (
+                "Ты — студенческий помощник. На фото задание.\n"
+                "Реши его подробно и понятно, как для студента.\n\n"
+                "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+                "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+                "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+                "- Формулы пиши обычным текстом.\n"
+                "- Структура ответа:\n"
+                "  1. Что дано.\n"
+                "  2. Что нужно найти.\n"
+                "  3. Решение по шагам с пояснениями.\n"
+                "  4. Ответ.\n"
+                "- Не пропускай шаги, объясняй переходы.\n"
+                "- Пиши без воды.\n\n"
+                f"Задание:\n{full_text}"
+            )
 
         try:
             resp = await giga_client.achat(prompt)
@@ -1789,12 +2854,14 @@ async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
     finally:
         await state.clear()
 
+
 # ============================================================
 # РАСПИСАНИЕ
 # ============================================================
 @dp.message(F.text == "Расписание")
 async def show_institutes(message: Message):
     await message.answer("Выбери институт:", reply_markup=get_institutes_keyboard())
+
 
 @dp.message(F.text == "Моя группа")
 async def show_my_group(message: Message):
@@ -1808,21 +2875,27 @@ async def show_my_group(message: Message):
     await message.answer(f"Моя группа: {group_name}{sub_line}\n\nЧто показать?",
                          reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True, subgroup=subgroup))
 
+
 @dp.callback_query(F.data.startswith("institute_"))
 async def process_institute(callback: CallbackQuery):
     name = callback.data.split("_", 1)[1]
-    await callback.message.edit_text(f"Институт: {name}\n\nВыбери группу:", reply_markup=get_groups_keyboard(name, 0))
+    await callback.message.edit_text(f"Институт: {name}\n\nВыбери группу:",
+                                     reply_markup=get_groups_keyboard(name, 0))
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("instpage_"))
 async def process_page(callback: CallbackQuery):
     parts = callback.data.split("_", 2)
-    await callback.message.edit_text(f"Институт: {parts[1]}\n\nВыбери группу:", reply_markup=get_groups_keyboard(parts[1], int(parts[2])))
+    await callback.message.edit_text(f"Институт: {parts[1]}\n\nВыбери группу:",
+                                     reply_markup=get_groups_keyboard(parts[1], int(parts[2])))
     await callback.answer()
+
 
 @dp.callback_query(F.data == "noop")
 async def noop(callback: CallbackQuery):
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("group_"))
 async def process_group(callback: CallbackQuery):
@@ -1835,6 +2908,7 @@ async def process_group(callback: CallbackQuery):
                                      reply_markup=get_schedule_actions_keyboard(gid, is_my_group=is_my, subgroup=subgroup))
     await callback.answer()
 
+
 @dp.callback_query(F.data.startswith("save_my_"))
 async def save_my_group(callback: CallbackQuery):
     gid = callback.data.split("_", 2)[2]
@@ -1845,11 +2919,13 @@ async def save_my_group(callback: CallbackQuery):
         reply_markup=get_schedule_actions_keyboard(gid, is_my_group=True, subgroup=subgroup))
     await callback.answer("Сохранено")
 
+
 @dp.callback_query(F.data == "forget_my")
 async def forget_my_group(callback: CallbackQuery):
     delete_user_group(callback.from_user.id)
     await callback.message.edit_text("Группа удалена.")
     await callback.answer("Удалено")
+
 
 @dp.callback_query(F.data == "choose_subgroup")
 async def choose_subgroup(callback: CallbackQuery):
@@ -1859,8 +2935,10 @@ async def choose_subgroup(callback: CallbackQuery):
         mark = " +" if current == val else ""
         buttons.append([InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"set_sub_{val}")])
     buttons.append([InlineKeyboardButton(text="Назад", callback_data="my_group_back")])
-    await callback.message.edit_text("Выбери подгруппу.", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("Выбери подгруппу.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("set_sub_"))
 async def set_subgroup(callback: CallbackQuery):
@@ -1875,6 +2953,7 @@ async def set_subgroup(callback: CallbackQuery):
         await callback.message.edit_text(f"Моя группа: {group_name}{sub_line}\n\nЧто показать?",
             reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True, subgroup=subgroup))
 
+
 @dp.callback_query(F.data == "my_group_back")
 async def my_group_back(callback: CallbackQuery):
     saved = get_user_group(callback.from_user.id)
@@ -1888,10 +2967,12 @@ async def my_group_back(callback: CallbackQuery):
         reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True, subgroup=subgroup))
     await callback.answer()
 
+
 @dp.callback_query(F.data == "back_to_institutes")
 async def back_to_institutes(callback: CallbackQuery):
     await callback.message.edit_text("Выбери институт:", reply_markup=get_institutes_keyboard())
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("today_"))
 async def show_today(callback: CallbackQuery):
@@ -1919,6 +3000,7 @@ async def show_today(callback: CallbackQuery):
         [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
     await callback.answer()
 
+
 @dp.callback_query(F.data.startswith("refresh_"))
 async def refresh_schedule(callback: CallbackQuery):
     gid = callback.data.split("_", 1)[1]
@@ -1944,6 +3026,7 @@ async def refresh_schedule(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
     await callback.answer("Обновлено")
+
 
 @dp.callback_query(F.data.startswith("week_"))
 async def show_week(callback: CallbackQuery):
@@ -1972,6 +3055,7 @@ async def show_week(callback: CallbackQuery):
         [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
     await callback.answer()
 
+
 # ============================================================
 # УВЕДОМЛЕНИЯ
 # ============================================================
@@ -1995,9 +3079,10 @@ async def notifications_menu(message: Message):
     daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
     await message.answer(
         f"{status}\n{ch_status}{sub_line}\n"
-        f"Цитата дня: {daily_status} (управление — кнопка «Цитата дня»)\n\n"
+        f"Цитата дня: {daily_status}\n\n"
         f"Утро — на СЕГОДНЯ. Вечер — на ЗАВТРА.",
         reply_markup=get_notify_keyboard(current, changes))
+
 
 @dp.callback_query(F.data.startswith("notify_"))
 async def process_notify(callback: CallbackQuery):
@@ -2005,7 +3090,8 @@ async def process_notify(callback: CallbackQuery):
         set_notify_time(callback.from_user.id, -1, 0)
         current = get_notify_time(callback.from_user.id)
         changes = get_notify_changes(callback.from_user.id)
-        await callback.message.edit_text("Уведомления выключены.", reply_markup=get_notify_keyboard(current, changes))
+        await callback.message.edit_text("Уведомления выключены.",
+            reply_markup=get_notify_keyboard(current, changes))
         await callback.answer("Выкл")
         return
     parts = callback.data.split("_")
@@ -2020,6 +3106,7 @@ async def process_notify(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_notify_keyboard(current, changes))
     await callback.answer("Сохранено")
 
+
 @dp.callback_query(F.data == "changes_toggle")
 async def toggle_changes(callback: CallbackQuery):
     current = get_notify_changes(callback.from_user.id)
@@ -2030,6 +3117,7 @@ async def toggle_changes(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_notify_keyboard(current_time, new_state))
     await callback.answer("Ок")
 
+
 # ============================================================
 # ЦИТАТА ДНЯ — CALLBACKS
 # ============================================================
@@ -2037,20 +3125,29 @@ async def toggle_changes(callback: CallbackQuery):
 async def daily_quote_now(callback: CallbackQuery):
     subscribed = daily_is_subscribed(callback.from_user.id)
     status = "подписан на 10:00" if subscribed else "не подписан"
-    await callback.message.edit_text(f"{random.choice(DAILY_QUOTES)}\n\nСтатус подписки: {status}", reply_markup=get_daily_keyboard())
+    await callback.message.edit_text(
+        f"{random.choice(DAILY_QUOTES)}\n\nСтатус подписки: {status}",
+        reply_markup=get_daily_keyboard())
     await callback.answer()
+
 
 @dp.callback_query(F.data == "daily_on")
 async def daily_on(callback: CallbackQuery):
     daily_subscribe(callback.from_user.id)
-    await callback.message.edit_text(f"Ты подписан на цитату дня.\n\nБудет приходить каждый день в {DAILY_QUOTE_HOUR}:00 по Иркутску.", reply_markup=get_daily_keyboard())
+    await callback.message.edit_text(
+        f"Ты подписан на цитату дня.\n\nБудет приходить каждый день в {DAILY_QUOTE_HOUR}:00 по Иркутску.",
+        reply_markup=get_daily_keyboard())
     await callback.answer("Подписан")
+
 
 @dp.callback_query(F.data == "daily_off")
 async def daily_off(callback: CallbackQuery):
     daily_unsubscribe(callback.from_user.id)
-    await callback.message.edit_text("Ты отписан от цитаты дня.", reply_markup=get_daily_keyboard())
+    await callback.message.edit_text(
+        "Ты отписан от цитаты дня.",
+        reply_markup=get_daily_keyboard())
     await callback.answer("Отписан")
+
 
 # ============================================================
 # СТИПЕНДИЯ
@@ -2058,13 +3155,21 @@ async def daily_off(callback: CallbackQuery):
 async def scholarship_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
     if not is_vip(user_id):
-        await message.answer("Раздел «Стипендия» доступен только VIP-пользователям.\n\nОформить VIP можно в разделе «VIP».", reply_markup=get_main_keyboard())
+        await message.answer(
+            "Раздел «Стипендия» доступен только VIP-пользователям.\n\n"
+            "Оформить VIP можно в разделе «VIP».",
+            reply_markup=get_main_keyboard())
         return
 
     amount = get_scholarship_amount(user_id)
     if amount is None:
-        await message.answer("Раздел «Стипендия»\n\nСначала укажи свою текущую стипендию (в рублях).\n"
-                             "Если не получаешь — напиши 0.\n\nНапиши сумму одним числом, например: 2000\n\n/cancel — отменить")
+        await message.answer(
+            "Раздел «Стипендия»\n\n"
+            "Сначала укажи свою текущую стипендию (в рублях).\n"
+            "Если не получаешь — напиши 0.\n\n"
+            "Напиши сумму одним числом, например: 2000\n\n"
+            "/cancel — отменить"
+        )
         await state.set_state(ScholarshipState.waiting_current_amount)
         return
 
@@ -2074,7 +3179,12 @@ async def scholarship_menu(message: Message, state: FSMContext):
     count4 = sum(1 for g in grades if g[2] == 4)
     count3 = sum(1 for g in grades if g[2] == 3)
     count2 = sum(1 for g in grades if g[2] == 2)
-    lines = ["Раздел «Стипендия»\n", f"Текущая стипендия: {amount} руб/мес", f"Оценок внесено: {len(grades)}"]
+
+    lines = [
+        "Раздел «Стипендия»\n",
+        f"Текущая стипендия: {amount} руб/мес",
+        f"Оценок внесено: {len(grades)}",
+    ]
     if grades:
         lines.append(f"Средний балл: {avg:.2f}")
         lines.append(f"  пятёрок: {count5}")
@@ -2086,16 +3196,23 @@ async def scholarship_menu(message: Message, state: FSMContext):
         lines.append("Оценок пока нет — добавь первую.")
     lines.append("")
     lines.append("Выбери действие:")
+
     await message.answer("\n".join(lines), reply_markup=get_scholarship_keyboard())
+
 
 @dp.callback_query(F.data == "sch_set_amount")
 async def sch_set_amount(callback: CallbackQuery, state: FSMContext):
     if not is_vip(callback.from_user.id):
         await callback.answer("Только для VIP", show_alert=True)
         return
-    await callback.message.edit_text("Напиши свою текущую стипендию в рублях.\nЕсли не получаешь — напиши 0.\n\nНапример: 2000\n\n/cancel")
+    await callback.message.edit_text(
+        "Напиши свою текущую стипендию в рублях.\n"
+        "Если не получаешь — напиши 0.\n\n"
+        "Например: 2000\n\n/cancel"
+    )
     await state.set_state(ScholarshipState.waiting_current_amount)
     await callback.answer()
+
 
 @dp.message(ScholarshipState.waiting_current_amount)
 async def sch_amount_save(message: Message, state: FSMContext):
@@ -2109,16 +3226,22 @@ async def sch_amount_save(message: Message, state: FSMContext):
         return
     set_scholarship_amount(message.from_user.id, amount)
     await state.clear()
-    await message.answer(f"Сохранено: {amount} руб/мес.\n\nОткрой «Стипендия» → «Итог», чтобы увидеть прогноз.", reply_markup=get_main_keyboard())
+    await message.answer(
+        f"Сохранено: {amount} руб/мес.\n\nОткрой «Стипендия» → «Итог», чтобы увидеть прогноз.",
+        reply_markup=get_main_keyboard())
+
 
 @dp.callback_query(F.data == "sch_add_grade")
 async def sch_add_grade_start(callback: CallbackQuery, state: FSMContext):
     if not is_vip(callback.from_user.id):
         await callback.answer("Только для VIP", show_alert=True)
         return
-    await callback.message.edit_text("Напиши название предмета (например: Математический анализ).\n\n/cancel")
+    await callback.message.edit_text(
+        "Напиши название предмета (например: Математический анализ).\n\n/cancel"
+    )
     await state.set_state(ScholarshipState.waiting_subject)
     await callback.answer()
+
 
 @dp.message(ScholarshipState.waiting_subject)
 async def sch_subject(message: Message, state: FSMContext):
@@ -2130,8 +3253,11 @@ async def sch_subject(message: Message, state: FSMContext):
         await message.answer("Макс. 100 символов.")
         return
     await state.update_data(subject=subj)
-    await message.answer(f"Предмет: {subj}\n\nТеперь напиши оценку числом: 5, 4, 3 или 2.\n\n/cancel")
+    await message.answer(
+        f"Предмет: {subj}\n\nТеперь напиши оценку числом: 5, 4, 3 или 2.\n\n/cancel"
+    )
     await state.set_state(ScholarshipState.waiting_grade)
+
 
 @dp.message(ScholarshipState.waiting_grade)
 async def sch_grade(message: Message, state: FSMContext):
@@ -2148,7 +3274,11 @@ async def sch_grade(message: Message, state: FSMContext):
         return
     add_grade(message.from_user.id, subj, grade)
     await state.clear()
-    await message.answer(f"Оценка {grade} по предмету «{subj}» сохранена.\n\nОткрой «Стипендия» → «Итог», чтобы увидеть прогноз.", reply_markup=get_main_keyboard())
+    await message.answer(
+        f"Оценка {grade} по предмету «{subj}» сохранена.\n\n"
+        f"Открой «Стипендия» → «Итог», чтобы увидеть прогноз.",
+        reply_markup=get_main_keyboard())
+
 
 @dp.callback_query(F.data == "sch_list")
 async def sch_list(callback: CallbackQuery):
@@ -2157,7 +3287,8 @@ async def sch_list(callback: CallbackQuery):
         return
     grades = get_grades(callback.from_user.id)
     if not grades:
-        await callback.message.edit_text("Оценок пока нет.",
+        await callback.message.edit_text(
+            "Оценок пока нет.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
                 [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
@@ -2168,7 +3299,9 @@ async def sch_list(callback: CallbackQuery):
     for gid, subj, grade in grades:
         lines.append(f"  {subj}: {grade}")
         label = subj[:20] + "..." if len(subj) > 20 else subj
-        kb.append([InlineKeyboardButton(text=f"Удалить: {label} ({grade})", callback_data=f"sch_del_{gid}")])
+        kb.append([InlineKeyboardButton(
+            text=f"Удалить: {label} ({grade})",
+            callback_data=f"sch_del_{gid}")])
     kb.append([InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")])
     kb.append([InlineKeyboardButton(text="Назад", callback_data="sch_back")])
     text = "\n".join(lines)
@@ -2176,6 +3309,7 @@ async def sch_list(callback: CallbackQuery):
         text = text[:3500] + "\n..."
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("sch_del_"))
 async def sch_del(callback: CallbackQuery):
@@ -2191,16 +3325,19 @@ async def sch_del(callback: CallbackQuery):
     await callback.answer("Удалено")
     await sch_list(callback)
 
+
 @dp.callback_query(F.data == "sch_clear")
 async def sch_clear(callback: CallbackQuery):
     if not is_vip(callback.from_user.id):
         await callback.answer("Только для VIP", show_alert=True)
         return
     clear_grades(callback.from_user.id)
-    await callback.message.edit_text("Оценки очищены.",
+    await callback.message.edit_text(
+        "Оценки очищены.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
     await callback.answer("Очищено")
+
 
 @dp.callback_query(F.data == "sch_result")
 async def sch_result(callback: CallbackQuery):
@@ -2210,20 +3347,25 @@ async def sch_result(callback: CallbackQuery):
     user_id = callback.from_user.id
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
+
     if amount is None:
-        await callback.message.edit_text("Сначала укажи свою текущую стипендию.",
+        await callback.message.edit_text(
+            "Сначала укажи свою текущую стипендию.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Указать сумму", callback_data="sch_set_amount")],
                 [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
         await callback.answer()
         return
+
     if not grades:
-        await callback.message.edit_text("Оценок пока нет — добавь хотя бы одну, чтобы увидеть итог.",
+        await callback.message.edit_text(
+            "Оценок пока нет — добавь хотя бы одну, чтобы увидеть итог.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
                 [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
         await callback.answer()
         return
+
     total = len(grades)
     sum_grades = sum(g[2] for g in grades)
     avg = sum_grades / total
@@ -2231,11 +3373,20 @@ async def sch_result(callback: CallbackQuery):
     count4 = sum(1 for g in grades if g[2] == 4)
     count3 = sum(1 for g in grades if g[2] == 3)
     count2 = sum(1 for g in grades if g[2] == 2)
-    lines = ["Итог по стипендии\n", f"Текущая стипендия: {amount} руб/мес", f"Оценок: {total}",
-             f"Средний балл: {avg:.2f}", f"  пятёрок: {count5}", f"  четвёрок: {count4}", f"  троек: {count3}"]
+
+    lines = [
+        "Итог по стипендии\n",
+        f"Текущая стипендия: {amount} руб/мес",
+        f"Оценок: {total}",
+        f"Средний балл: {avg:.2f}",
+        f"  пятёрок: {count5}",
+        f"  четвёрок: {count4}",
+        f"  троек: {count3}",
+    ]
     if count2:
         lines.append(f"  двоек: {count2}")
     lines.append("")
+
     if count2 > 0 or count3 > 0:
         lines.append("Прогноз: на академическую не проходишь.")
         lines.append("Есть тройки/двойки — нужно закрыть их на 4 или 5.")
@@ -2251,13 +3402,18 @@ async def sch_result(callback: CallbackQuery):
     else:
         lines.append("Прогноз: на академическую не проходишь.")
         lines.append("Средний балл ниже 4.0.")
+
     if avg >= 4.5 and count2 == 0 and count3 == 0:
         lines.append("")
         lines.append(f"Текущая: {amount} руб → потенциально: около {amount * 2} руб")
+
     text = "\n".join(lines)
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
     await callback.answer()
+
 
 @dp.callback_query(F.data == "sch_back")
 async def sch_back(callback: CallbackQuery):
@@ -2265,15 +3421,21 @@ async def sch_back(callback: CallbackQuery):
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
-    lines = ["Раздел «Стипендия»\n",
-             f"Текущая стипендия: {amount if amount is not None else 'не указана'} руб/мес",
-             f"Оценок внесено: {len(grades)}"]
+
+    lines = [
+        "Раздел «Стипендия»\n",
+        f"Текущая стипендия: {amount if amount is not None else 'не указана'} руб/мес",
+        f"Оценок внесено: {len(grades)}",
+    ]
     if grades:
         lines.append(f"Средний балл: {avg:.2f}")
     lines.append("")
     lines.append("Выбери действие:")
-    await callback.message.edit_text("\n".join(lines), reply_markup=get_scholarship_keyboard())
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=get_scholarship_keyboard())
     await callback.answer()
+
 
 # ============================================================
 # ЗАДАЧИ
@@ -2293,6 +3455,7 @@ def _format_due(due_date, due_time):
         result += " (завтра)"
     return result
 
+
 def _is_overdue(due_date, due_time):
     if not due_date:
         return False
@@ -2305,6 +3468,7 @@ def _is_overdue(due_date, due_time):
         return dt < now
     except Exception:
         return False
+
 
 def _sort_tasks(tasks):
     def key(t):
@@ -2324,13 +3488,16 @@ def _sort_tasks(tasks):
         return (-overdue, date_key, -(priority or 0), tid)
     return sorted(tasks, key=key)
 
+
 def _tasks_view(user_id):
     tasks = get_user_tasks(user_id, only_active=True)
     if not tasks:
         return "Нет активных задач.\n\nДобавь первую кнопкой ниже.", get_tasks_keyboard()
+
     tasks = _sort_tasks(tasks)
     overdue = [t for t in tasks if _is_overdue(t[2], t[6])]
     normal = [t for t in tasks if not _is_overdue(t[2], t[6])]
+
     lines = []
     if overdue:
         lines.append("ПРОСРОЧЕНО:")
@@ -2340,6 +3507,7 @@ def _tasks_view(user_id):
             lines.append(f"  {p} #{tid} {text}")
             lines.append(f"      срок: {_format_due(due_date, due_time)}")
         lines.append("")
+
     if normal:
         lines.append("Активные:")
         for t in normal:
@@ -2349,6 +3517,7 @@ def _tasks_view(user_id):
             if due_date:
                 lines.append(f"      срок: {_format_due(due_date, due_time)}")
         lines.append("")
+
     kb = []
     for t in (overdue + normal)[:10]:
         tid = t[0]
@@ -2360,29 +3529,44 @@ def _tasks_view(user_id):
     kb.append([InlineKeyboardButton(text="Добавить задачу", callback_data="task_add")])
     kb.append([InlineKeyboardButton(text="Статистика", callback_data="task_stats")])
     kb.append([InlineKeyboardButton(text="Назад", callback_data="task_back")])
+
     text = "\n".join(lines).rstrip()
     if len(text) > 3500:
         text = text[:3500] + "\n..."
     return text, InlineKeyboardMarkup(inline_keyboard=kb)
 
+
 @dp.message(F.text == "Задачи")
 async def tasks_menu(message: Message):
     active, done = count_user_tasks(message.from_user.id)
-    await message.answer(f"Личные задачи\n\nАктивных: {active}\nВыполнено: {done}\n\nЧто сделать?", reply_markup=get_tasks_keyboard())
+    await message.answer(
+        f"Личные задачи\n\n"
+        f"Активных: {active}\nВыполнено: {done}\n\n"
+        f"Что сделать?",
+        reply_markup=get_tasks_keyboard())
+
 
 @dp.callback_query(F.data == "task_back")
 async def task_back(callback: CallbackQuery):
     active, done = count_user_tasks(callback.from_user.id)
-    await callback.message.edit_text(f"Личные задачи\n\nАктивных: {active}\nВыполнено: {done}", reply_markup=get_tasks_keyboard())
+    await callback.message.edit_text(
+        f"Личные задачи\n\nАктивных: {active}\nВыполнено: {done}",
+        reply_markup=get_tasks_keyboard())
     await callback.answer()
+
 
 @dp.callback_query(F.data == "task_add")
 async def task_add_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Напиши текст задачи.\n\nМожно сразу со сроком одной строкой:\n"
-                                     "  Сдать лабу по физике | 25.10.2026\n"
-                                     "  Подготовиться к коллоквиуму | 26.10.2026 18:00\n\n/cancel — отменить")
+    await callback.message.edit_text(
+        "Напиши текст задачи.\n\n"
+        "Можно сразу со сроком одной строкой:\n"
+        "  Сдать лабу по физике | 25.10.2026\n"
+        "  Подготовиться к коллоквиуму | 26.10.2026 18:00\n\n"
+        "/cancel — отменить"
+    )
     await state.set_state(TaskState.waiting_text)
     await callback.answer()
+
 
 def _parse_task_input(raw: str):
     due_date = None
@@ -2406,6 +3590,7 @@ def _parse_task_input(raw: str):
                 return None
     return text, due_date, due_time
 
+
 @dp.message(TaskState.waiting_text)
 async def task_add_text(message: Message, state: FSMContext):
     raw = (message.text or "").strip()
@@ -2420,6 +3605,7 @@ async def task_add_text(message: Message, state: FSMContext):
     await state.update_data(task_text=text, task_due_date=due_date, task_due_time=due_time)
     await message.answer("Выбери приоритет:", reply_markup=get_task_priority_keyboard("add"))
     await state.set_state(TaskState.waiting_due)
+
 
 @dp.callback_query(F.data.startswith("task_prio_add_"))
 async def task_add_priority(callback: CallbackQuery, state: FSMContext):
@@ -2436,14 +3622,18 @@ async def task_add_priority(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     due_info = f"\nСрок: {_format_due(due_date, due_time)}" if due_date else ""
     p_label = PRIORITY_LABELS.get(priority, "средний")
-    await callback.message.edit_text(f"Задача #{tid} добавлена\n\nПриоритет: {p_label}\n{text}{due_info}")
+    await callback.message.edit_text(
+        f"Задача #{tid} добавлена\n\n"
+        f"Приоритет: {p_label}\n{text}{due_info}")
     await callback.answer("Добавлено")
+
 
 @dp.callback_query(F.data == "task_list")
 async def task_list(callback: CallbackQuery):
     text, kb = _tasks_view(callback.from_user.id)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("task_done_"))
 async def task_done(callback: CallbackQuery):
@@ -2463,11 +3653,13 @@ async def task_done(callback: CallbackQuery):
     except Exception:
         pass
 
+
 @dp.callback_query(F.data == "task_done_list")
 async def task_done_list(callback: CallbackQuery):
     rows = get_done_tasks(callback.from_user.id, days=7)
     if not rows:
-        await callback.message.edit_text("За последние 7 дней ничего не выполнено.",
+        await callback.message.edit_text(
+            "За последние 7 дней ничего не выполнено.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
         await callback.answer()
@@ -2484,17 +3676,21 @@ async def task_done_list(callback: CallbackQuery):
     text = "\n".join(lines)
     if len(text) > 3500:
         text = text[:3500] + "\n..."
-    await callback.message.edit_text(text,
+    await callback.message.edit_text(
+        text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Очистить", callback_data="task_clear")],
             [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
     await callback.answer()
 
+
 @dp.callback_query(F.data == "task_clear")
 async def task_clear(callback: CallbackQuery):
     clear_done_tasks(callback.from_user.id)
-    await callback.message.edit_text("Выполненные задачи удалены.", reply_markup=get_tasks_keyboard())
+    await callback.message.edit_text("Выполненные задачи удалены.",
+        reply_markup=get_tasks_keyboard())
     await callback.answer("Очищено")
+
 
 @dp.callback_query(F.data.startswith("task_del_"))
 async def task_del(callback: CallbackQuery):
@@ -2511,6 +3707,7 @@ async def task_del(callback: CallbackQuery):
     except Exception:
         pass
 
+
 @dp.callback_query(F.data == "task_stats")
 async def task_stats(callback: CallbackQuery):
     active, done = count_user_tasks(callback.from_user.id)
@@ -2519,13 +3716,24 @@ async def task_stats(callback: CallbackQuery):
     by_prio = {0: 0, 1: 0, 2: 0}
     for t in tasks:
         by_prio[t[5] or 1] = by_prio.get(t[5] or 1, 0) + 1
-    lines = ["Статистика\n", f"Активных: {active}", f"  из них просрочено: {overdue_count}", "",
-             "По приоритету:", f"  высокий: {by_prio.get(2, 0)}", f"  средний: {by_prio.get(1, 0)}",
-             f"  низкий: {by_prio.get(0, 0)}", "", f"Всего выполнено: {done}"]
-    await callback.message.edit_text("\n".join(lines),
+    lines = [
+        "Статистика\n",
+        f"Активных: {active}",
+        f"  из них просрочено: {overdue_count}",
+        "",
+        "По приоритету:",
+        f"  высокий: {by_prio.get(2, 0)}",
+        f"  средний: {by_prio.get(1, 0)}",
+        f"  низкий: {by_prio.get(0, 0)}",
+        "",
+        f"Всего выполнено: {done}",
+    ]
+    await callback.message.edit_text(
+        "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("task_edit_"))
 async def task_edit(callback: CallbackQuery, state: FSMContext):
@@ -2544,9 +3752,15 @@ async def task_edit(callback: CallbackQuery, state: FSMContext):
     _, text, due_date, done, created_at, priority, due_time, done_at = row
     p_label = PRIORITY_LABELS.get(priority or 1, "средний")
     due_str = _format_due(due_date, due_time) if due_date else "без срока"
-    await callback.message.edit_text(f"Задача #{tid}\n\nТекст: {text}\nПриоритет: {p_label}\nСрок: {due_str}\n\nЧто изменить?",
-                                     reply_markup=get_task_edit_keyboard(tid))
+    await callback.message.edit_text(
+        f"Задача #{tid}\n\n"
+        f"Текст: {text}\n"
+        f"Приоритет: {p_label}\n"
+        f"Срок: {due_str}\n\n"
+        f"Что изменить?",
+        reply_markup=get_task_edit_keyboard(tid))
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("task_edit_text_"))
 async def task_edit_text_start(callback: CallbackQuery, state: FSMContext):
@@ -2556,9 +3770,12 @@ async def task_edit_text_start(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Не найдено")
         return
     await state.update_data(edit_task_id=tid)
-    await callback.message.edit_text(f"Текущий текст: {row[1]}\n\nНапиши новый текст.\n\n/cancel")
+    await callback.message.edit_text(
+        f"Текущий текст: {row[1]}\n\nНапиши новый текст.\n\n/cancel",
+    )
     await state.set_state(TaskState.waiting_edit_text)
     await callback.answer()
+
 
 @dp.message(TaskState.waiting_edit_text)
 async def task_edit_text_save(message: Message, state: FSMContext):
@@ -2576,6 +3793,7 @@ async def task_edit_text_save(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"Текст задачи #{tid} обновлён.", reply_markup=get_main_keyboard())
 
+
 @dp.callback_query(F.data.startswith("task_edit_due_"))
 async def task_edit_due_start(callback: CallbackQuery, state: FSMContext):
     tid = int(callback.data.split("_")[-1])
@@ -2584,8 +3802,11 @@ async def task_edit_due_start(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Не найдено")
         return
     await state.update_data(edit_task_id=tid)
-    await callback.message.edit_text("Новый срок:", reply_markup=get_task_due_keyboard(tid, edit=True))
+    await callback.message.edit_text(
+        "Новый срок:",
+        reply_markup=get_task_due_keyboard(tid, edit=True))
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("task_due_edit_"))
 async def task_edit_due_choice(callback: CallbackQuery, state: FSMContext):
@@ -2612,7 +3833,9 @@ async def task_edit_due_choice(callback: CallbackQuery, state: FSMContext):
         return
     elif choice == "custom":
         await state.update_data(edit_task_id=tid)
-        await callback.message.edit_text("Напиши дату в формате ДД.ММ.ГГГГ\nМожно с временем: ДД.ММ.ГГГГ ЧЧ:ММ\n\n/cancel")
+        await callback.message.edit_text(
+            "Напиши дату в формате ДД.ММ.ГГГГ\n"
+            "Можно с временем: ДД.ММ.ГГГГ ЧЧ:ММ\n\n/cancel")
         await state.set_state(TaskState.waiting_edit_due)
         await callback.answer()
         return
@@ -2620,10 +3843,12 @@ async def task_edit_due_choice(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Неизвестно")
         return
     update_task(tid, callback.from_user.id, due_date=new_due, due_time=new_time or "")
-    await callback.message.edit_text(f"Новый срок: {_format_due(new_due, new_time)}",
+    await callback.message.edit_text(
+        f"Новый срок: {_format_due(new_due, new_time)}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
     await callback.answer("Готово")
+
 
 @dp.message(TaskState.waiting_edit_due)
 async def task_edit_due_save(message: Message, state: FSMContext):
@@ -2653,7 +3878,9 @@ async def task_edit_due_save(message: Message, state: FSMContext):
         return
     update_task(tid, message.from_user.id, due_date=due_date, due_time=due_time or "")
     await state.clear()
-    await message.answer(f"Срок задачи #{tid} обновлён: {_format_due(due_date, due_time)}", reply_markup=get_main_keyboard())
+    await message.answer(f"Срок задачи #{tid} обновлён: {_format_due(due_date, due_time)}",
+                         reply_markup=get_main_keyboard())
+
 
 @dp.callback_query(F.data.startswith("task_edit_prio_"))
 async def task_edit_prio_start(callback: CallbackQuery):
@@ -2663,9 +3890,11 @@ async def task_edit_prio_start(callback: CallbackQuery):
         await callback.answer("Не найдено")
         return
     current = row[5] or 1
-    await callback.message.edit_text("Выбери новый приоритет:",
-                                     reply_markup=get_task_priority_keyboard("edit", task_id=tid, current=current))
+    await callback.message.edit_text(
+        "Выбери новый приоритет:",
+        reply_markup=get_task_priority_keyboard("edit", task_id=tid, current=current))
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("task_prio_edit_"))
 async def task_edit_prio_save(callback: CallbackQuery):
@@ -2673,10 +3902,12 @@ async def task_edit_prio_save(callback: CallbackQuery):
     priority = int(parts[3])
     tid = int(parts[4])
     update_task(tid, callback.from_user.id, priority=priority)
-    await callback.message.edit_text(f"Приоритет: {PRIORITY_LABELS[priority]}",
+    await callback.message.edit_text(
+        f"Приоритет: {PRIORITY_LABELS[priority]}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
     await callback.answer("Готово")
+
 
 # ============================================================
 # ЗАМЕТКИ
@@ -2695,11 +3926,13 @@ async def notes_menu(message: Message):
             text = text[:4000] + "\n..."
     await message.answer(text, reply_markup=get_notes_keyboard())
 
+
 @dp.callback_query(F.data == "note_add")
 async def note_add_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text("Напиши название предмета.\n\n/cancel")
     await state.set_state(NoteState.waiting_subject)
     await callback.answer()
+
 
 @dp.message(NoteState.waiting_subject)
 async def note_subject(message: Message, state: FSMContext):
@@ -2717,6 +3950,7 @@ async def note_subject(message: Message, state: FSMContext):
     else:
         await message.answer(f"Напиши текст заметки к «{subj}».")
     await state.set_state(NoteState.waiting_text)
+
 
 @dp.message(NoteState.waiting_text)
 async def note_text(message: Message, state: FSMContext):
@@ -2737,6 +3971,7 @@ async def note_text(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"Заметка к «{subj}» сохранена.", reply_markup=get_main_keyboard())
 
+
 @dp.callback_query(F.data == "note_list")
 async def note_list(callback: CallbackQuery):
     notes = get_user_notes(callback.from_user.id)
@@ -2752,10 +3987,12 @@ async def note_list(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_notes_list_keyboard(notes))
     await callback.answer()
 
+
 @dp.callback_query(F.data == "note_back")
 async def note_back(callback: CallbackQuery):
     await callback.message.edit_text("Заметки", reply_markup=get_notes_keyboard())
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("note_del_"))
 async def note_delete(callback: CallbackQuery):
@@ -2773,6 +4010,7 @@ async def note_delete(callback: CallbackQuery):
     if len(text) > 4000:
         text = text[:4000] + "\n..."
     await callback.message.edit_text(text, reply_markup=get_notes_list_keyboard(notes))
+
 
 @dp.callback_query(F.data.startswith("note_edit_"))
 async def note_edit(callback: CallbackQuery, state: FSMContext):
@@ -2792,6 +4030,7 @@ async def note_edit(callback: CallbackQuery, state: FSMContext):
     await state.set_state(NoteState.waiting_text)
     await callback.answer()
 
+
 # ============================================================
 # VIP
 # ============================================================
@@ -2802,23 +4041,36 @@ async def vip_menu(message: Message):
         expiry, tier = info
         exp_local = expiry + timedelta(hours=8)
         days_left = (expiry - datetime.now(timezone.utc)).days
-        await message.answer(f"VIP активен\n\nДо: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
-                             reply_markup=get_vip_keyboard(is_active=True))
+        await message.answer(
+            f"VIP активен\n\nДо: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
+            reply_markup=get_vip_keyboard(is_active=True))
     else:
-        await message.answer("VIP-подписка\n\nЧто даёт:\n- Расширенная статистика по расписанию\n"
-                             "- Раздел «Стипендия»\n- AI Помощник\n- AI по фото (конспект и решение заданий)\n\n"
-                             "Тарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб\n\n"
-                             "А также: +3 дня VIP за каждого приглашённого друга по ссылке.",
-                             reply_markup=get_vip_keyboard(is_active=False))
+        await message.answer(
+            "VIP-подписка\n\nЧто даёт:\n"
+            "- Расширенная статистика по расписанию\n"
+            "- Раздел «Стипендия»\n"
+            "- AI Помощник\n"
+            "- AI по фото (конспект и решение заданий)\n\n"
+            "Тарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб\n\n"
+            "А также: +3 дня VIP за каждого приглашённого друга по ссылке.",
+            reply_markup=get_vip_keyboard(is_active=False))
+
 
 @dp.callback_query(F.data == "vip_buy")
 async def vip_buy(callback: CallbackQuery):
-    text = ("Как купить VIP\n\n1. Напиши администратору: @{username}\n2. Укажи тариф (30 / 90 / навсегда).\n"
-            "3. Оплати (СБП, карта).\n4. Администратор активирует.\n\nИли приглашай друзей — за каждого +3 дня VIP.").format(username=ADMIN_USERNAME)
+    text = (
+        "Как купить VIP\n\n"
+        "1. Напиши администратору: @{username}\n"
+        "2. Укажи тариф (30 / 90 / навсегда).\n"
+        "3. Оплати (СБП, карта).\n"
+        "4. Администратор активирует.\n\n"
+        "Или приглашай друзей — за каждого +3 дня VIP."
+    ).format(username=ADMIN_USERNAME)
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Написать администратору", url=f"https://t.me/{ADMIN_USERNAME}")],
         [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
     await callback.answer()
+
 
 @dp.callback_query(F.data == "vip_stats")
 async def vip_stats(callback: CallbackQuery):
@@ -2872,6 +4124,7 @@ async def vip_stats(callback: CallbackQuery):
         [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
     await callback.answer()
 
+
 @dp.callback_query(F.data == "vip_back")
 async def vip_back(callback: CallbackQuery):
     info = get_vip_info(callback.from_user.id)
@@ -2879,12 +4132,15 @@ async def vip_back(callback: CallbackQuery):
         expiry, tier = info
         exp_local = expiry + timedelta(hours=8)
         days_left = (expiry - datetime.now(timezone.utc)).days
-        await callback.message.edit_text(f"VIP активен\n\nДо: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
+        await callback.message.edit_text(
+            f"VIP активен\n\nДо: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
             reply_markup=get_vip_keyboard(is_active=True))
     else:
-        await callback.message.edit_text("VIP-подписка\n\nТарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб",
+        await callback.message.edit_text(
+            "VIP-подписка\n\nТарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб",
             reply_markup=get_vip_keyboard(is_active=False))
     await callback.answer()
+
 
 # ============================================================
 # ОБРАТНАЯ СВЯЗЬ
@@ -2893,6 +4149,7 @@ async def vip_back(callback: CallbackQuery):
 async def feedback_start(message: Message, state: FSMContext):
     await message.answer("Напиши сообщение администратору.\n\n/cancel")
     await state.set_state(FeedbackState.waiting_message)
+
 
 @dp.message(FeedbackState.waiting_message)
 async def feedback_receive(message: Message, state: FSMContext):
@@ -2918,6 +4175,7 @@ async def feedback_receive(message: Message, state: FSMContext):
         await message.answer("Не удалось отправить.")
     await state.clear()
 
+
 @dp.message(F.reply_to_message)
 async def admin_reply_to_feedback(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -2933,6 +4191,7 @@ async def admin_reply_to_feedback(message: Message):
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
+
 # ============================================================
 # ПОМОЩЬ
 # ============================================================
@@ -2940,14 +4199,19 @@ async def admin_reply_to_feedback(message: Message):
 async def help_cmd(message: Message):
     vip_status = "VIP активен" if is_vip(message.from_user.id) else "Бесплатный"
     daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
-    webapp_line = "\nОткрыть веб-версию — кнопка в меню" if WEBAPP_URL else ""
     await message.answer(
-        f"Что я умею:\n\nРасписание ИРНИТУ\nМоя группа (с подгруппой)\n"
-        f"Уведомления, задачи, заметки\nЦитата дня (статус: {daily_status})\n"
-        f"Стипендия (только для VIP)\nAI Помощник и AI по фото\n"
-        f"Пригласить друга — +3 дня VIP\nОбратная связь\n{webapp_line}\n\n"
+        f"Что я умею:\n\n"
+        f"Расписание ИРНИТУ\nМоя группа (с подгруппой)\n"
+        f"Уведомления, задачи, заметки\n"
+        f"Цитата дня (статус: {daily_status})\n"
+        f"Стипендия (только для VIP)\n"
+        f"AI Помощник и AI по фото\n"
+        f"Пригласить друга — +3 дня VIP\n"
+        f"Обратная связь\n\n"
+        f"Кнопка Mini App — слева от поля ввода.\n\n"
         f"Твой статус: {vip_status}",
         reply_markup=get_main_keyboard())
+
 
 # ============================================================
 # ФОНОВЫЕ ЗАДАЧИ
@@ -2977,6 +4241,7 @@ async def notification_loop():
             logging.exception(f"[NOTIFY] {e}")
         await asyncio.sleep(30)
 
+
 async def task_reminder_loop():
     sent_keys = set()
     hour_sent_keys = set()
@@ -3002,8 +4267,8 @@ async def task_reminder_loop():
                         try:
                             time_str = f" {due_time}" if due_time else ""
                             await bot.send_message(user_id,
-                                f"Напоминание о задаче\n\n#{task_id} {text}\nПриоритет: {p_label}\n"
-                                f"Срок: {due_date}{time_str} ({label})")
+                                f"Напоминание о задаче\n\n#{task_id} {text}\n"
+                                f"Приоритет: {p_label}\nСрок: {due_date}{time_str} ({label})")
                             sent_keys.add(key)
                         except Exception as e:
                             logging.error(f"[TASK] {user_id}: {e}")
@@ -3015,8 +4280,8 @@ async def task_reminder_loop():
                             key = f"{user_id}:{task_id}:{due_date} {due_time}:hour"
                             if key not in hour_sent_keys:
                                 await bot.send_message(user_id,
-                                    f"Через час срок\n\n#{task_id} {text}\nПриоритет: {p_label}\n"
-                                    f"Срок: {due_date} {due_time}")
+                                    f"Через час срок\n\n#{task_id} {text}\n"
+                                    f"Приоритет: {p_label}\nСрок: {due_date} {due_time}")
                                 hour_sent_keys.add(key)
                     except Exception as e:
                         logging.error(f"[TASK-HOUR] {user_id}: {e}")
@@ -3024,13 +4289,15 @@ async def task_reminder_loop():
             logging.exception(f"[TASK] {e}")
         await asyncio.sleep(300)
 
+
 async def daily_quote_loop():
     last_sent_date = None
     while True:
         try:
             now = _now_irkutsk()
             current_date = now.strftime("%Y-%m-%d")
-            if (now.hour == DAILY_QUOTE_HOUR and now.minute < 10 and current_date != last_sent_date):
+            if (now.hour == DAILY_QUOTE_HOUR and now.minute < 10
+                    and current_date != last_sent_date):
                 subscribers = daily_get_all_subscribers()
                 if subscribers:
                     quote = random.choice(DAILY_QUOTES)
@@ -3045,6 +4312,7 @@ async def daily_quote_loop():
             logging.exception(f"[QUOTE] {e}")
         await asyncio.sleep(60)
 
+
 async def cache_cleanup_loop():
     while True:
         try:
@@ -3053,6 +4321,7 @@ async def cache_cleanup_loop():
         except Exception as e:
             logging.error(f"[CACHE] {e}")
         await asyncio.sleep(24 * 60 * 60)
+
 
 async def check_schedule_changes():
     subscribers = get_changes_subscribers()
@@ -3099,6 +4368,7 @@ async def check_schedule_changes():
             logging.error(f"[CHANGES] {group_id}: {e}")
         await asyncio.sleep(1)
 
+
 async def changes_loop():
     await asyncio.sleep(120)
     while True:
@@ -3107,6 +4377,7 @@ async def changes_loop():
         except Exception as e:
             logging.exception(f"[CHANGES] {e}")
         await asyncio.sleep(CHANGES_CHECK_INTERVAL_MIN * 60)
+
 
 async def monitor_loop():
     failures = 0
@@ -3143,98 +4414,10 @@ async def monitor_loop():
             logging.exception(f"[MONITOR] {e}")
         await asyncio.sleep(5 * 60)
 
+
 # ============================================================
-# ВЕБ-СЕРВЕР (API + статика webapp)
+# ВЕБ-СЕРВЕР: СТАТИКА И ЗАПУСК
 # ============================================================
-async def api_schedule(request: web.Request):
-    init_data = request.query.get("initData", "")
-    user_id = None
-    try:
-        data = safe_parse_webapp_init_data(token=TOKEN, init_data=init_data)
-        if data and data.user:
-            user_id = data.user.id
-    except Exception as e:
-        logging.warning(f"[WEB] initData verify error: {e}")
-    
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    saved = get_user_group(user_id)
-    if not saved:
-        return web.json_response({
-            "error": "no_group",
-            "message": "Сначала выбери группу в боте",
-        }, status=200)
-
-    group_id, group_name = saved
-    subgroup = get_user_subgroup(user_id)
-
-    today = _now_irkutsk()
-    monday = _monday_of_week(today)
-    html = await fetch_week_html(group_id, monday, use_cache=True)
-    if not html:
-        return web.json_response({
-            "error": "no_data",
-            "message": "Не удалось загрузить расписание",
-        }, status=200)
-
-    _, days = parse_schedule(html)
-    today_str = today.strftime("%d.%m.%Y")
-    day = next((d for d in days if d["date"] == today_str), None)
-
-    if day is None:
-        return web.json_response({
-            "date": today_str, "dayName": "", "group": group_name,
-            "subgroup": subgroup, "lessons": [],
-        })
-
-    filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
-    lessons_out = []
-    for les in filtered:
-        time_end = LESSON_TIMES.get(les["time"], "")
-        lessons_out.append({
-            "time": les["time"], "timeEnd": time_end,
-            "subject": les["subject"], "type": les["type"],
-            "teacher": les["teacher"], "auditorium": les["auditorium"],
-            "subgroup": les["subgroup"],
-        })
-
-    return web.json_response({
-        "date": day["date"], "dayName": day["name"],
-        "group": group_name, "subgroup": subgroup,
-        "lessons": lessons_out,
-    })
-
-async def api_me(request: web.Request):
-    init_data = request.query.get("initData", "")
-    user_id = None
-    try:
-        data = safe_parse_webapp_init_data(token=TOKEN, init_data=init_data)
-        if data and data.user:
-            user_id = data.user.id
-    except Exception as e:
-        logging.warning(f"[WEB] initData verify error: {e}")
-
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    saved = get_user_group(user_id)
-    vip = is_vip(user_id)
-    vip_info = get_vip_info(user_id)
-    active, done = count_user_tasks(user_id)
-    notes = get_user_notes(user_id)
-
-    return web.json_response({
-        "user_id": user_id,
-        "group": saved[1] if saved else None,
-        "subgroup": get_user_subgroup(user_id),
-        "is_vip": vip,
-        "vip_until": vip_info[0].isoformat() if vip_info else None,
-        "tasks_active": active,
-        "tasks_done": done,
-        "notes_count": len(notes),
-    })
-
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3252,14 +4435,45 @@ async def start_webapp():
 
     app = web.Application()
 
-    # API-эндпоинты
+    # --- API ---
     app.router.add_get("/api/schedule", api_schedule)
+    app.router.add_get("/api/week", api_week)
     app.router.add_get("/api/me", api_me)
+    app.router.add_get("/api/groups", api_groups)
+    app.router.add_post("/api/set-group", api_set_group)
+    app.router.add_post("/api/set-subgroup", api_set_subgroup)
 
+    app.router.add_get("/api/tasks", api_tasks)
+    app.router.add_post("/api/task-add", api_task_add)
+    app.router.add_post("/api/task-update", api_task_update)
+    app.router.add_post("/api/task-delete", api_task_delete)
+    app.router.add_post("/api/task-clear", api_task_clear)
+
+    app.router.add_get("/api/notes", api_notes)
+    app.router.add_post("/api/note-save", api_note_save)
+    app.router.add_post("/api/note-delete", api_note_delete)
+
+    app.router.add_post("/api/notify-set", api_notify_set)
+
+    app.router.add_get("/api/quote", api_quote)
+    app.router.add_post("/api/quote-subscribe", api_quote_subscribe)
+
+    app.router.add_get("/api/referral", api_referral)
+
+    app.router.add_get("/api/scholarship", api_scholarship)
+    app.router.add_post("/api/scholarship-set-amount", api_scholarship_set_amount)
+    app.router.add_post("/api/scholarship-add-grade", api_scholarship_add_grade)
+    app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
+    app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
+
+    app.router.add_post("/api/ai", api_ai)
+    app.router.add_post("/api/feedback", api_feedback)
+    app.router.add_get("/api/vip", api_vip)
+
+    # --- Статика ---
     if webapp_dir:
         logging.info(f"[WEB] отдаю статику из {webapp_dir}")
 
-        # Явные обработчики для каждого файла
         async def index_handler(request):
             index_path = os.path.join(webapp_dir, "index.html")
             if os.path.isfile(index_path):
@@ -3298,6 +4512,7 @@ async def start_webapp():
     await site.start()
     logging.info(f"[WEB] сервер запущен на 0.0.0.0:{port}")
 
+
 # ============================================================
 # ЗАПУСК
 # ============================================================
@@ -3319,6 +4534,7 @@ async def main():
     asyncio.create_task(start_webapp())
 
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
