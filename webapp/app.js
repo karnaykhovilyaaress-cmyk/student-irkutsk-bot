@@ -22,9 +22,11 @@ const state = {
     schedule: null,
     week: null,
     weekOffset: 0,
+    scheduleViewMode: 'today', // 'today' | 'week'
+    weekDays: null,
     tasks: [],
     tasksStats: { active: 0, done: 0 },
-    tasksView: 'active', // active | done
+    tasksView: 'active',
     notes: [],
     profile: null,
     vip: null,
@@ -32,7 +34,7 @@ const state = {
     quote: null,
     referral: null,
     groups: null,
-    aiMessages: [], // [{role, text}]
+    aiMessages: [],
     aiPending: false,
 };
 
@@ -141,14 +143,77 @@ function render() {
         btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
 
-    // Подключаем обработчики, которые рендерятся динамически
     attachHandlers();
 }
 
 // ============================================================
 // РАСПИСАНИЕ
 // ============================================================
+function renderLesson(les) {
+    const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
+    const details = [];
+    if (les.teacher) details.push(escapeHtml(les.teacher));
+    if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
+
+    return `
+        <div class="lesson">
+            <div class="lesson-time">${escapeHtml(timeRange)}</div>
+            <div class="lesson-body">
+                <div class="lesson-subject">${escapeHtml(les.subject)}${
+                    les.type ? ` <span style="color:var(--text-secondary);font-weight:400">(${escapeHtml(les.type)})</span>` : ''
+                }</div>
+                ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
+                ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function renderWeekView() {
+    const wd = state.weekDays;
+    if (!wd || !wd.days || wd.days.length === 0) {
+        return renderEmpty('Не удалось загрузить расписание на неделю');
+    }
+
+    let title;
+    if (state.weekOffset === 0) title = 'Текущая неделя';
+    else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
+    else title = `Неделя ${state.weekOffset}`;
+
+    let html = `<div class="day-header">${escapeHtml(title)}</div>`;
+    if (wd.group) {
+        html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(wd.group)}${
+            wd.subgroup ? ` · подгруппа ${escapeHtml(wd.subgroup)}` : ''
+        }</div>`;
+    }
+
+    for (const day of wd.days) {
+        html += `<div class="day-header" style="margin-top:16px">${escapeHtml(day.name || day.date)}</div>`;
+        if (!day.lessons || day.lessons.length === 0) {
+            html += `<div class="card-subtitle" style="padding:8px 0">Занятий нет</div>`;
+        } else {
+            for (const les of day.lessons) {
+                html += renderLesson(les);
+            }
+        }
+    }
+
+    html += `
+        <div class="actions-row" style="margin-top:16px">
+            <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+            <button class="btn btn-secondary" data-action="week-today">Сегодня</button>
+            <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
+        </div>
+    `;
+
+    return html;
+}
+
 function renderSchedule() {
+    if (state.scheduleViewMode === 'week' && state.weekDays) {
+        return renderWeekView();
+    }
+
     const s = state.schedule;
     if (!s) return renderEmpty('Нет данных о расписании');
     if (s.error) return renderEmpty(s.message || 'Выбери группу в разделе «Профиль»');
@@ -166,30 +231,14 @@ function renderSchedule() {
         html += renderEmpty('Занятий нет');
     } else {
         for (const les of s.lessons) {
-            const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
-            const details = [];
-            if (les.teacher) details.push(escapeHtml(les.teacher));
-            if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
-
-            html += `
-                <div class="lesson">
-                    <div class="lesson-time">${escapeHtml(timeRange)}</div>
-                    <div class="lesson-body">
-                        <div class="lesson-subject">${escapeHtml(les.subject)}${
-                            les.type ? ` <span style="color:var(--text-secondary);font-weight:400">(${escapeHtml(les.type)})</span>` : ''
-                        }</div>
-                        ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
-                        ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
-                    </div>
-                </div>
-            `;
+            html += renderLesson(les);
         }
     }
 
     html += `
         <div class="actions-row">
             <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
-            <button class="btn btn-secondary" data-action="week-today">Сегодня</button>
+            <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
             <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
         </div>
     `;
@@ -212,9 +261,7 @@ function renderTasks() {
     `;
 
     if (state.tasksView === 'active') {
-        html += `
-            <button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>
-        `;
+        html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
     }
 
     if (!tasks || tasks.length === 0) {
@@ -254,9 +301,7 @@ function renderTasks() {
 // ЗАМЕТКИ
 // ============================================================
 function renderNotes() {
-    let html = `
-        <button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>
-    `;
+    let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
 
     if (!state.notes || state.notes.length === 0) {
         html += renderEmpty('Нет заметок');
@@ -269,7 +314,7 @@ function renderNotes() {
                 <div class="card-title">${escapeHtml(n.subject)}</div>
                 <div class="card-subtitle">${escapeHtml(n.text)}</div>
                 <div class="actions-row">
-                    <button class="btn btn-secondary" data-action="note-edit-open" data-id="${n.id}" data-subject="${escapeHtml(n.subject)}" data-text="${escapeHtml(n.text)}">Изменить</button>
+                    <button class="btn btn-secondary" data-action="note-edit-open" data-id="${n.id}">Изменить</button>
                     <button class="btn btn-secondary" data-action="note-delete" data-id="${n.id}">Удалить</button>
                 </div>
             </div>
@@ -299,9 +344,7 @@ function renderAI() {
             }
         }
     }
-    if (state.aiPending) {
-        html += renderLoading();
-    }
+    if (state.aiPending) html += renderLoading();
     html += `
         <div style="margin-top:12px">
             <textarea class="input" id="ai-input" placeholder="Напиши вопрос..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
@@ -344,7 +387,6 @@ function renderVIP() {
         `;
     }
 
-    // Стипендия (только для VIP)
     if (v && v.is_vip && state.scholarship) {
         const s = state.scholarship;
         html += `
@@ -379,11 +421,7 @@ function renderVIP() {
         `;
     }
 
-    html += `
-        <div class="actions-row">
-            <button class="btn" data-action="vip-buy">Купить / продлить</button>
-        </div>
-    `;
+    html += `<div class="actions-row"><button class="btn" data-action="vip-buy">Купить / продлить</button></div>`;
 
     return html;
 }
@@ -433,7 +471,6 @@ function renderProfile() {
         </div>
     `;
 
-    // Подгруппа
     html += `
         <div class="card">
             <div class="card-title">Подгруппа</div>
@@ -446,7 +483,6 @@ function renderProfile() {
         </div>
     `;
 
-    // Уведомления
     html += `
         <div class="card">
             <div class="card-title">Уведомления</div>
@@ -465,7 +501,6 @@ function renderProfile() {
         </div>
     `;
 
-    // Цитата дня
     html += `
         <div class="card">
             <div class="card-title">Цитата дня</div>
@@ -477,7 +512,6 @@ function renderProfile() {
         </div>
     `;
 
-    // Рефералка
     if (state.referral) {
         const r = state.referral;
         html += `
@@ -495,7 +529,6 @@ function renderProfile() {
         `;
     }
 
-    // Обратная связь
     html += `
         <div class="card">
             <div class="card-title">Обратная связь</div>
@@ -591,6 +624,10 @@ async function loadTabData(tab) {
 
     try {
         if (tab === 'schedule') {
+            // при переходе на вкладку всегда показываем «сегодня»
+            state.scheduleViewMode = 'today';
+            state.weekOffset = 0;
+            state.weekDays = null;
             await loadProfile();
             await loadSchedule();
         } else if (tab === 'tasks') {
@@ -619,26 +656,41 @@ async function loadTabData(tab) {
 // ============================================================
 // ДЕЙСТВИЯ
 // ============================================================
-async function actionSetSubgroup(value) {
+async function loadWeekAndRender() {
     try {
-        await apiPost('/api/set-subgroup', { subgroup: value });
-        state.profile.subgroup = value;
-        haptic('success');
+        const r = await apiGet('/api/week', { offset: state.weekOffset });
+        state.weekDays = r;
+        state.scheduleViewMode = 'week';
         render();
     } catch (e) {
         alert('Ошибка: ' + e.message);
     }
 }
 
+async function loadTodayAndRender() {
+    state.scheduleViewMode = 'today';
+    state.weekOffset = 0;
+    state.weekDays = null;
+    await loadSchedule();
+    render();
+}
+
+async function actionSetSubgroup(value) {
+    try {
+        await apiPost('/api/set-subgroup', { subgroup: value });
+        if (state.profile) state.profile.subgroup = value;
+        haptic('success');
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
 async function actionNotifySet(hour) {
     try {
         await apiPost('/api/notify-set', { hour: hour, minute: 0, changes: state.profile?.notify_changes });
-        state.profile.notify_time = hour >= 0 ? `${String(hour).padStart(2, '0')}:00` : null;
+        if (state.profile) state.profile.notify_time = hour >= 0 ? `${String(hour).padStart(2, '0')}:00` : null;
         haptic('success');
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionNotifyChangesToggle() {
@@ -652,9 +704,7 @@ async function actionNotifyChangesToggle() {
         });
         if (state.profile) state.profile.notify_changes = cb.checked;
         haptic('success');
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionQuoteSubscribe(value) {
@@ -663,9 +713,7 @@ async function actionQuoteSubscribe(value) {
         if (state.profile) state.profile.daily_subscribed = value === 1;
         haptic('success');
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionFeedbackSend() {
@@ -678,9 +726,7 @@ async function actionFeedbackSend() {
         el.value = '';
         haptic('success');
         alert('Отправлено');
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionTaskDone(id) {
@@ -689,9 +735,7 @@ async function actionTaskDone(id) {
         haptic('success');
         await loadTasks();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionTaskDelete(id) {
@@ -701,9 +745,7 @@ async function actionTaskDelete(id) {
         haptic('success');
         await loadTasks();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionTasksClear() {
@@ -713,9 +755,7 @@ async function actionTasksClear() {
         haptic('success');
         await loadTasks();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionTaskAdd() {
@@ -731,15 +771,11 @@ async function actionTaskAdd() {
     const priorityStr = prompt('Приоритет (0=низкий, 1=средний, 2=высокий):', '1');
     const priority = parseInt(priorityStr) || 1;
     try {
-        await apiPost('/api/task-add', {
-            text: text, due_date: due_date, due_time: due_time, priority: priority,
-        });
+        await apiPost('/api/task-add', { text: text, due_date: due_date, due_time: due_time, priority: priority });
         haptic('success');
         await loadTasks();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionTaskEdit(id) {
@@ -750,9 +786,7 @@ async function actionTaskEdit(id) {
         haptic('success');
         await loadTasks();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionNoteDelete(id) {
@@ -762,9 +796,7 @@ async function actionNoteDelete(id) {
         haptic('success');
         await loadNotes();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionNoteAdd() {
@@ -777,15 +809,12 @@ async function actionNoteAdd() {
         haptic('success');
         await loadNotes();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionNoteEdit(id) {
     const text = prompt('Новый текст заметки:');
     if (!text) return;
-    // Нам нужен subject — найдём в state.notes
     const note = state.notes.find(n => n.id === id);
     if (!note) return;
     try {
@@ -793,9 +822,7 @@ async function actionNoteEdit(id) {
         haptic('success');
         await loadNotes();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionScholarshipSetAmount() {
@@ -806,9 +833,7 @@ async function actionScholarshipSetAmount() {
         haptic('success');
         await loadScholarship();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionScholarshipAddGrade() {
@@ -816,18 +841,13 @@ async function actionScholarshipAddGrade() {
     if (!subject) return;
     const gradeStr = prompt('Оценка (2, 3, 4 или 5):');
     const grade = parseInt(gradeStr);
-    if (![2, 3, 4, 5].includes(grade)) {
-        alert('Нужно 2, 3, 4 или 5');
-        return;
-    }
+    if (![2, 3, 4, 5].includes(grade)) { alert('Нужно 2, 3, 4 или 5'); return; }
     try {
         await apiPost('/api/scholarship-add-grade', { subject: subject, grade: grade });
         haptic('success');
         await loadScholarship();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionScholarshipClear() {
@@ -837,9 +857,7 @@ async function actionScholarshipClear() {
         haptic('success');
         await loadScholarship();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionAISend() {
@@ -888,14 +906,10 @@ async function actionChooseGroup() {
     let selected = null;
     for (const g of groups) {
         if (groupStr.includes(g.id) || groupStr.includes(g.name)) {
-            selected = g;
-            break;
+            selected = g; break;
         }
     }
-    if (!selected) {
-        alert('Группа не найдена');
-        return;
-    }
+    if (!selected) { alert('Группа не найдена'); return; }
     try {
         await apiPost('/api/set-group', {
             group_id: selected.id,
@@ -906,24 +920,18 @@ async function actionChooseGroup() {
         await loadProfile();
         await loadSchedule();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionForgetGroup() {
     if (!confirm('Забыть группу?')) return;
     try {
         await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
-        // очищаем группу
-        state.profile.group = null;
-        state.profile.group_id = null;
+        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
         haptic('success');
         await loadProfile();
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 function actionCopyReferral() {
@@ -932,9 +940,7 @@ function actionCopyReferral() {
         navigator.clipboard.writeText(state.referral.link);
         haptic('success');
         alert('Ссылка скопирована');
-    } catch (e) {
-        alert('Не удалось скопировать');
-    }
+    } catch (e) { alert('Не удалось скопировать'); }
 }
 
 function actionVipBuy() {
@@ -950,9 +956,7 @@ function attachHandlers() {
     });
 
     const notifyCb = document.getElementById('notify-changes');
-    if (notifyCb) {
-        notifyCb.addEventListener('change', actionNotifyChangesToggle);
-    }
+    if (notifyCb) notifyCb.addEventListener('change', actionNotifyChangesToggle);
 }
 
 function handleAction(el) {
@@ -982,28 +986,8 @@ function handleAction(el) {
     else if (a === 'vip-buy') actionVipBuy();
     else if (a === 'week-prev') { state.weekOffset -= 1; loadWeekAndRender(); }
     else if (a === 'week-next') { state.weekOffset += 1; loadWeekAndRender(); }
-    else if (a === 'week-today') { state.weekOffset = 0; loadWeekAndRender(); }
-}
-
-async function loadWeekAndRender() {
-    try {
-        const r = await apiGet('/api/week', { offset: state.weekOffset });
-        if (r.days && r.days.length > 0) {
-            // Показываем первый день недели как «сегодня» — или все дни
-            // Для простоты: соберём расписание на первый день с занятиями
-            const day = r.days[0];
-            state.schedule = {
-                date: day.date,
-                dayName: day.name,
-                group: r.group,
-                subgroup: r.subgroup,
-                lessons: day.lessons,
-            };
-        }
-        render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    else if (a === 'week-current') { state.weekOffset = 0; loadWeekAndRender(); }
+    else if (a === 'week-today') { loadTodayAndRender(); }
 }
 
 // ============================================================
@@ -1021,7 +1005,11 @@ document.querySelectorAll('.nav-btn').forEach((btn) => {
 
 document.getElementById('refresh-btn').addEventListener('click', async () => {
     haptic('light');
-    await loadTabData(state.tab);
+    if (state.tab === 'schedule' && state.scheduleViewMode === 'week') {
+        await loadWeekAndRender();
+    } else {
+        await loadTabData(state.tab);
+    }
 });
 
 // ============================================================
