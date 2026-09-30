@@ -39,13 +39,11 @@
     --r-lg: 20px;
     --r-xl: 26px;
 
-    /* Отступы под системную шапку Telegram и safe-area */
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --header-offset: 56px;
 }
 
-/* Светлая тема */
 @media (prefers-color-scheme: light) {
     :root {
         --bg: #F2F6FF;
@@ -151,7 +149,7 @@ html, body {
 }
 
 /* ============================================================
-   HEADER — сдвинут вниз под системную шапку Telegram
+   HEADER
    ============================================================ */
 .header {
     position: sticky;
@@ -453,6 +451,38 @@ html, body {
     text-transform: uppercase;
     letter-spacing: 1.4px;
     padding: 14px 2px 8px;
+}
+
+/* ============================================================
+   DAY SWITCH — Сегодня / Завтра
+   ============================================================ */
+.day-switch {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 14px;
+    background: var(--bg-2);
+    border: 1px solid var(--divider);
+    border-radius: var(--r-md);
+    padding: 4px;
+}
+.day-switch button {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 9px 8px;
+    border-radius: var(--r-sm);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-2);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.18s ease;
+}
+.day-switch button.active {
+    background: var(--neon);
+    color: #070B14;
+    font-weight: 800;
+    box-shadow: 0 0 18px var(--neon-glow);
 }
 
 /* ============================================================
