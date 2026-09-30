@@ -82,6 +82,15 @@ html, body {
     padding-bottom: calc(84px + var(--safe-bottom));
 }
 
+/* Если открыт пикер — скрываем шапку и нижнюю навигацию */
+#app.picker-open .header,
+#app.picker-open .bottom-nav {
+    display: none;
+}
+#app.picker-open {
+    padding-bottom: var(--safe-bottom);
+}
+
 /* ============================================================
    СПЛЭШ
    ============================================================ */
@@ -98,11 +107,7 @@ html, body {
     transition: opacity 0.5s ease;
     padding-top: var(--safe-top);
 }
-#splash.hide {
-    opacity: 0;
-    pointer-events: none;
-}
-
+#splash.hide { opacity: 0; pointer-events: none; }
 .splash-logo {
     animation: splashPulse 1.6s ease-in-out infinite;
     filter: drop-shadow(0 0 24px var(--neon-glow));
@@ -111,11 +116,8 @@ html, body {
     0%, 100% { transform: scale(1) rotate(0deg); }
     50%      { transform: scale(1.08) rotate(3deg); }
 }
-
 .splash-text {
-    font-size: 14px;
-    font-weight: 800;
-    letter-spacing: 6px;
+    font-size: 14px; font-weight: 800; letter-spacing: 6px;
     text-transform: uppercase;
     background: var(--grad-neon);
     -webkit-background-clip: text;
@@ -127,22 +129,15 @@ html, body {
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
 }
-
-.splash-dots {
-    display: flex;
-    gap: 8px;
-}
+.splash-dots { display: flex; gap: 8px; }
 .splash-dots span {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
+    width: 6px; height: 6px; border-radius: 50%;
     background: var(--neon);
     box-shadow: 0 0 10px var(--neon-glow);
     animation: dotBounce 1.2s ease-in-out infinite;
 }
 .splash-dots span:nth-child(2) { animation-delay: 0.15s; }
 .splash-dots span:nth-child(3) { animation-delay: 0.30s; }
-
 @keyframes dotBounce {
     0%, 100% { transform: translateY(0); opacity: 0.5; }
     50%      { transform: translateY(-8px); opacity: 1; }
@@ -152,12 +147,8 @@ html, body {
    HEADER
    ============================================================ */
 .header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
     padding: 14px 18px 12px;
     margin-top: calc(var(--safe-top) + var(--header-offset));
     background: var(--bg);
@@ -165,75 +156,49 @@ html, body {
     backdrop-filter: saturate(180%) blur(14px);
     -webkit-backdrop-filter: saturate(180%) blur(14px);
 }
-
 .header h1 {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 900;
-    letter-spacing: -0.5px;
+    margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -0.5px;
     background: var(--grad-neon);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
     text-transform: uppercase;
 }
-
 .header-btn {
     background: var(--bg-2);
     border: 1px solid var(--divider);
     color: var(--text);
-    padding: 9px;
-    border-radius: var(--r-sm);
+    padding: 9px; border-radius: var(--r-sm);
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
     transition: transform 0.15s ease, box-shadow 0.2s ease;
     margin-right: 4px;
 }
-.header-btn:active {
-    transform: scale(0.92);
-    box-shadow: var(--shadow-neon);
-}
+.header-btn:active { transform: scale(0.92); box-shadow: var(--shadow-neon); }
 
 /* ============================================================
    CONTENT
    ============================================================ */
 .content {
-    flex: 1;
-    padding: 14px 16px;
+    flex: 1; padding: 14px 16px;
     animation: fadeIn 0.3s ease;
 }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
 }
-
-.loading {
-    text-align: center;
-    color: var(--text-2);
-    padding: 48px 0;
-    font-size: 15px;
-    font-weight: 600;
-}
-.empty {
-    text-align: center;
-    color: var(--text-2);
-    padding: 48px 24px;
-    font-size: 15px;
-    font-weight: 600;
-}
+.loading { text-align: center; color: var(--text-2); padding: 48px 0; font-size: 15px; font-weight: 600; }
+.empty { text-align: center; color: var(--text-2); padding: 48px 24px; font-size: 15px; font-weight: 600; }
 
 .skeleton-card {
-    height: 88px;
-    border-radius: var(--r-lg);
+    height: 88px; border-radius: var(--r-lg);
     background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     margin-bottom: 12px;
 }
 @keyframes shimmer {
-    0%   { background-position: 200% 0; }
+    0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
 
@@ -250,73 +215,52 @@ html, body {
     transition: transform 0.15s ease, box-shadow 0.2s ease;
     animation: cardIn 0.35s ease backwards;
 }
-.card:active {
-    transform: scale(0.995);
-    box-shadow: var(--shadow-md);
-}
+.card:active { transform: scale(0.995); box-shadow: var(--shadow-md); }
 @keyframes cardIn {
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
+}
+.card-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.2px; }
+.card-subtitle { font-size: 14px; color: var(--text-2); margin-bottom: 4px; font-weight: 500; }
+.card-meta {
+    font-size: 13px; color: var(--text-2);
+    display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; align-items: center;
 }
 
 .banner {
     position: relative;
     border-radius: var(--r-xl);
-    padding: 20px;
-    margin-bottom: 14px;
+    padding: 20px; margin-bottom: 14px;
     overflow: hidden;
     background: var(--grad-neon-soft);
     border: 1px solid rgba(0,229,208,0.22);
     box-shadow: 0 8px 32px rgba(0,229,208,0.10);
     min-height: 96px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    display: flex; flex-direction: column; justify-content: space-between;
     animation: cardIn 0.4s ease backwards;
 }
 .banner::before {
-    content: '';
-    position: absolute;
-    top: -40%;
-    right: -20%;
-    width: 200px;
-    height: 200px;
+    content: ''; position: absolute; top: -40%; right: -20%;
+    width: 200px; height: 200px;
     background: radial-gradient(circle, var(--neon-glow) 0%, transparent 70%);
-    opacity: 0.6;
-    pointer-events: none;
+    opacity: 0.6; pointer-events: none;
 }
 .banner-title {
-    font-size: 22px;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: -0.5px;
-    line-height: 1.1;
-    position: relative;
-    z-index: 1;
+    font-size: 22px; font-weight: 900;
+    text-transform: uppercase; letter-spacing: -0.5px; line-height: 1.1;
+    position: relative; z-index: 1;
 }
 .banner-sub {
-    font-size: 13px;
-    color: var(--text-2);
-    margin-top: 6px;
-    position: relative;
-    z-index: 1;
-    font-weight: 500;
+    font-size: 13px; color: var(--text-2);
+    margin-top: 6px; position: relative; z-index: 1; font-weight: 500;
 }
 .banner-btn {
-    align-self: flex-start;
-    margin-top: 14px;
-    background: var(--neon);
-    color: #070B14;
-    border: none;
-    border-radius: 8px;
-    padding: 9px 16px;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
+    align-self: flex-start; margin-top: 14px;
+    background: var(--neon); color: #070B14;
+    border: none; border-radius: 8px;
+    padding: 9px 16px; font-size: 12px; font-weight: 800;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+    position: relative; z-index: 1;
     box-shadow: 0 0 18px var(--neon-glow);
     font-family: inherit;
 }
@@ -326,9 +270,7 @@ html, body {
    USER BAR
    ============================================================ */
 .user-bar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    display: flex; align-items: center; gap: 12px;
     padding: 14px 16px;
     background: var(--bg-2);
     border: 1px solid var(--divider);
@@ -340,49 +282,27 @@ html, body {
 }
 .user-bar:active { transform: scale(0.99); }
 .user-bar-avatar {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--grad-neon);
-    color: #070B14;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    font-weight: 900;
+    width: 48px; height: 48px; border-radius: 50%;
+    background: var(--grad-neon); color: #070B14;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 900;
     box-shadow: 0 0 20px var(--neon-glow);
     flex-shrink: 0;
 }
 .user-bar-info { flex: 1; min-width: 0; }
 .user-bar-name {
-    font-size: 15px;
-    font-weight: 800;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 15px; font-weight: 800;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     letter-spacing: -0.2px;
 }
 .user-bar-meta {
-    font-size: 12px;
-    color: var(--text-2);
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 12px; color: var(--text-2); font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.user-bar-badges {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-shrink: 0;
-}
+.user-bar-badges { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .user-badge {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 13px;
-    font-weight: 800;
-    color: var(--neon);
+    display: flex; align-items: center; gap: 4px;
+    font-size: 13px; font-weight: 800; color: var(--neon);
 }
 .user-badge svg { filter: drop-shadow(0 0 6px var(--neon-glow)); }
 
@@ -390,51 +310,29 @@ html, body {
    LESSON
    ============================================================ */
 .lesson {
-    display: flex;
-    gap: 14px;
-    align-items: flex-start;
+    display: flex; gap: 14px; align-items: flex-start;
     padding: 14px 0;
     border-bottom: 1px solid var(--divider);
 }
 .lesson:last-child { border-bottom: none; }
 .lesson-time {
-    min-width: 72px;
-    font-weight: 800;
-    font-size: 14px;
-    color: var(--neon);
-    letter-spacing: -0.2px;
+    min-width: 72px; font-weight: 800; font-size: 14px;
+    color: var(--neon); letter-spacing: -0.2px;
     text-shadow: 0 0 12px var(--neon-glow);
 }
 .lesson-body { flex: 1; }
-.lesson-subject {
-    font-size: 15px;
-    font-weight: 700;
-    margin-bottom: 4px;
-    letter-spacing: -0.1px;
-}
-.lesson-details {
-    font-size: 13px;
-    color: var(--text-2);
-    font-weight: 500;
-}
-.lesson-group {
-    font-size: 12px;
-    color: var(--neon);
-    margin-top: 4px;
-    font-weight: 700;
-}
+.lesson-subject { font-size: 15px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.1px; }
+.lesson-details { font-size: 13px; color: var(--text-2); font-weight: 500; }
+.lesson-group { font-size: 12px; color: var(--neon); margin-top: 4px; font-weight: 700; }
 
 /* ============================================================
    PRIORITY
    ============================================================ */
 .priority {
     display: inline-block;
-    font-size: 11px;
-    font-weight: 800;
-    padding: 3px 10px;
-    border-radius: 999px;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
+    font-size: 11px; font-weight: 800;
+    padding: 3px 10px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.4px;
 }
 .priority-high { background: rgba(255,77,79,0.16); color: var(--accent-red); }
 .priority-medium { background: rgba(255,176,32,0.16); color: var(--accent-yellow); }
@@ -445,43 +343,31 @@ html, body {
    DAY HEADER
    ============================================================ */
 .day-header {
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 11px; font-weight: 800;
     color: var(--text-2);
-    text-transform: uppercase;
-    letter-spacing: 1.4px;
+    text-transform: uppercase; letter-spacing: 1.4px;
     padding: 14px 2px 8px;
 }
 
 /* ============================================================
-   DAY SWITCH — Сегодня / Завтра
+   DAY SWITCH
    ============================================================ */
 .day-switch {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 14px;
+    display: flex; gap: 4px; margin-bottom: 14px;
     background: var(--bg-2);
     border: 1px solid var(--divider);
     border-radius: var(--r-md);
     padding: 4px;
 }
 .day-switch button {
-    flex: 1;
-    background: none;
-    border: none;
-    padding: 9px 8px;
-    border-radius: var(--r-sm);
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text-2);
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 0.18s ease;
+    flex: 1; background: none; border: none;
+    padding: 9px 8px; border-radius: var(--r-sm);
+    font-size: 14px; font-weight: 700;
+    color: var(--text-2); cursor: pointer;
+    font-family: inherit; transition: all 0.18s ease;
 }
 .day-switch button.active {
-    background: var(--neon);
-    color: #070B14;
-    font-weight: 800;
+    background: var(--neon); color: #070B14; font-weight: 800;
     box-shadow: 0 0 18px var(--neon-glow);
 }
 
@@ -489,11 +375,7 @@ html, body {
    BOTTOM NAV
    ============================================================ */
 .bottom-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
     display: flex;
     background: var(--bg);
     border-top: 1px solid var(--divider);
@@ -502,35 +384,21 @@ html, body {
     -webkit-backdrop-filter: saturate(180%) blur(18px);
 }
 .nav-btn {
-    flex: 1;
-    background: none;
-    border: none;
+    flex: 1; background: none; border: none;
     color: var(--text-2);
     padding: 8px 4px 6px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    font-size: 10px;
-    font-weight: 700;
-    cursor: pointer;
-    font-family: inherit;
-    border-radius: var(--r-sm);
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 700; cursor: pointer;
+    font-family: inherit; border-radius: var(--r-sm);
     transition: color 0.18s ease, background 0.18s ease, transform 0.15s ease;
-    position: relative;
-    letter-spacing: 0.2px;
+    position: relative; letter-spacing: 0.2px;
 }
 .nav-btn:active { transform: scale(0.92); }
 .nav-btn.active { color: var(--neon); }
 .nav-btn.active::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 50%;
+    content: ''; position: absolute; top: 0; left: 50%;
     transform: translateX(-50%);
-    width: 32px;
-    height: 3px;
-    border-radius: 999px;
+    width: 32px; height: 3px; border-radius: 999px;
     background: var(--neon);
     box-shadow: 0 0 14px var(--neon-glow);
 }
@@ -540,50 +408,32 @@ html, body {
    PROFILE
    ============================================================ */
 .profile-header {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 22px 0 18px;
-    text-align: center;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 22px 0 18px; text-align: center;
 }
 .profile-avatar {
-    width: 88px;
-    height: 88px;
-    border-radius: 50%;
-    background: var(--grad-neon);
-    color: #070B14;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
-    font-weight: 900;
+    width: 88px; height: 88px; border-radius: 50%;
+    background: var(--grad-neon); color: #070B14;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; font-weight: 900;
     margin-bottom: 14px;
     box-shadow: 0 0 32px var(--neon-glow), 0 0 0 4px var(--bg), 0 0 0 6px rgba(0,229,208,0.25);
     letter-spacing: -1px;
 }
 .profile-name {
-    font-size: 20px;
-    font-weight: 900;
-    margin-bottom: 4px;
-    letter-spacing: -0.3px;
+    font-size: 20px; font-weight: 900;
+    margin-bottom: 4px; letter-spacing: -0.3px;
     text-transform: uppercase;
 }
-.profile-meta {
-    font-size: 14px;
-    color: var(--text-2);
-    font-weight: 500;
-}
+.profile-meta { font-size: 14px; color: var(--text-2); font-weight: 500; }
 .badge {
     display: inline-block;
     background: var(--grad-vip);
     color: #070B14;
-    font-size: 11px;
-    font-weight: 900;
-    padding: 4px 12px;
-    border-radius: 999px;
+    font-size: 11px; font-weight: 900;
+    padding: 4px 12px; border-radius: 999px;
     margin-top: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
+    text-transform: uppercase; letter-spacing: 0.6px;
     box-shadow: 0 4px 14px rgba(255,176,32,0.4);
 }
 
@@ -591,41 +441,26 @@ html, body {
    BUTTONS
    ============================================================ */
 .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-flex; align-items: center; justify-content: center;
     gap: 6px;
-    background: var(--neon);
-    color: #070B14;
-    border: none;
-    border-radius: var(--r-md);
+    background: var(--neon); color: #070B14;
+    border: none; border-radius: var(--r-md);
     padding: 12px 18px;
-    font-size: 14px;
-    font-weight: 800;
-    cursor: pointer;
-    font-family: inherit;
+    font-size: 14px; font-weight: 800;
+    cursor: pointer; font-family: inherit;
     transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.15s ease;
     margin-top: 8px;
     box-shadow: 0 0 18px var(--neon-glow);
-    letter-spacing: 0.2px;
-    text-transform: uppercase;
+    letter-spacing: 0.2px; text-transform: uppercase;
 }
-.btn:active {
-    transform: scale(0.96);
-    box-shadow: 0 0 28px var(--neon-glow);
-}
+.btn:active { transform: scale(0.96); box-shadow: 0 0 28px var(--neon-glow); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
-    background: var(--bg-3);
-    color: var(--text);
-    border: 1px solid var(--divider);
-    box-shadow: none;
+    background: var(--bg-3); color: var(--text);
+    border: 1px solid var(--divider); box-shadow: none;
 }
-.btn-secondary:active {
-    background: var(--bg-2);
-    box-shadow: var(--shadow-sm);
-}
+.btn-secondary:active { background: var(--bg-2); box-shadow: var(--shadow-sm); }
 
 /* ============================================================
    INPUTS
@@ -637,9 +472,7 @@ html, body {
     border: 1.5px solid var(--divider);
     background: var(--bg-2);
     color: var(--text);
-    font-size: 15px;
-    font-family: inherit;
-    font-weight: 500;
+    font-size: 15px; font-family: inherit; font-weight: 500;
     margin-bottom: 8px;
     outline: none;
     transition: border-color 0.18s ease, box-shadow 0.18s ease;
@@ -654,29 +487,17 @@ textarea.input { resize: vertical; min-height: 88px; }
 /* ============================================================
    FORM ROW / CHECKBOX
    ============================================================ */
-.form-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 8px;
-}
+.form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .form-row label { flex: 1; font-size: 14px; font-weight: 500; }
 .form-row select {
-    padding: 8px 12px;
-    border-radius: var(--r-md);
+    padding: 8px 12px; border-radius: var(--r-md);
     border: 1.5px solid var(--divider);
-    background: var(--bg-2);
-    color: var(--text);
-    font-size: 14px;
-    font-family: inherit;
+    background: var(--bg-2); color: var(--text);
+    font-size: 14px; font-family: inherit;
 }
 .checkbox-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 0;
-    cursor: pointer;
-    font-weight: 500;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; cursor: pointer; font-weight: 500;
 }
 .checkbox-row input[type="checkbox"] {
     width: 20px; height: 20px; cursor: pointer;
@@ -684,49 +505,24 @@ textarea.input { resize: vertical; min-height: 88px; }
 }
 
 /* ============================================================
-   QUOTE
-   ============================================================ */
-.quote-box {
-    background: var(--grad-neon-soft);
-    border: 1px solid rgba(0,229,208,0.22);
-    border-radius: var(--r-lg);
-    padding: 22px;
-    text-align: center;
-    font-style: italic;
-    font-size: 16px;
-    line-height: 1.55;
-    font-weight: 500;
-    margin-bottom: 16px;
-}
-
-/* ============================================================
    ACTIONS ROW
    ============================================================ */
-.actions-row {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 10px;
-}
+.actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .actions-row .btn { margin-top: 0; }
 
 /* ============================================================
    GRADE ROW
    ============================================================ */
 .grade-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between;
     padding: 12px 0;
     border-bottom: 1px solid var(--divider);
     gap: 10px;
 }
 .grade-row:last-child { border-bottom: none; }
 .grade-row .grade-value {
-    font-weight: 900;
-    font-size: 17px;
-    color: var(--neon);
-    letter-spacing: -0.3px;
+    font-weight: 900; font-size: 17px;
+    color: var(--neon); letter-spacing: -0.3px;
     text-shadow: 0 0 12px var(--neon-glow);
 }
 
@@ -734,32 +530,141 @@ textarea.input { resize: vertical; min-height: 88px; }
    TAB BUTTONS
    ============================================================ */
 .tab-buttons {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 14px;
+    display: flex; gap: 4px; margin-bottom: 14px;
     background: var(--bg-2);
     border: 1px solid var(--divider);
     border-radius: var(--r-md);
     padding: 4px;
 }
 .tab-buttons button {
-    flex: 1;
-    background: none;
-    border: none;
-    padding: 9px 8px;
-    border-radius: var(--r-sm);
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text-2);
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 0.18s ease;
+    flex: 1; background: none; border: none;
+    padding: 9px 8px; border-radius: var(--r-sm);
+    font-size: 14px; font-weight: 700;
+    color: var(--text-2); cursor: pointer;
+    font-family: inherit; transition: all 0.18s ease;
 }
 .tab-buttons button.active {
-    background: var(--neon);
-    color: #070B14;
-    font-weight: 800;
+    background: var(--neon); color: #070B14; font-weight: 800;
     box-shadow: 0 0 18px var(--neon-glow);
+}
+
+/* ============================================================
+   GROUP PICKER
+   ============================================================ */
+.picker-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0 14px;
+    border-bottom: 1px solid var(--divider);
+    margin-bottom: 12px;
+}
+.picker-back {
+    background: var(--bg-3);
+    border: 1px solid var(--divider);
+    color: var(--text);
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-family: inherit;
+    transition: transform 0.15s ease;
+}
+.picker-back:active { transform: scale(0.92); }
+.picker-title {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+}
+
+.picker-search {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: var(--r-md);
+    border: 1.5px solid var(--divider);
+    background: var(--bg-2);
+    color: var(--text);
+    font-size: 15px;
+    font-family: inherit;
+    font-weight: 500;
+    margin-bottom: 12px;
+    outline: none;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.picker-search:focus {
+    border-color: var(--neon);
+    box-shadow: 0 0 0 4px rgba(0,229,208,0.16);
+}
+.picker-search::placeholder { color: var(--text-2); font-weight: 500; }
+
+.picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px;
+    background: var(--bg-2);
+    border: 1px solid var(--divider);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    text-align: left;
+    font-family: inherit;
+    width: 100%;
+}
+.picker-item:active {
+    transform: scale(0.985);
+    background: var(--bg-3);
+    border-color: var(--neon);
+    box-shadow: 0 0 18px rgba(0,229,208,0.20);
+}
+.picker-item-arrow {
+    color: var(--neon);
+    font-size: 18px;
+    font-weight: 900;
+    opacity: 0.7;
+}
+
+.picker-item-sub {
+    font-size: 12px;
+    color: var(--text-2);
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.picker-group-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.picker-empty {
+    text-align: center;
+    color: var(--text-2);
+    padding: 40px 20px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.picker-item.selected {
+    border-color: var(--neon);
+    background: var(--grad-neon-soft);
+    box-shadow: 0 0 18px rgba(0,229,208,0.20);
 }
 
 /* ============================================================
