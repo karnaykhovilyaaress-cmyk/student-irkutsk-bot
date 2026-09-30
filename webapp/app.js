@@ -5,7 +5,6 @@ const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
-// Fullscreen + фиксация портрета + отключение свайпов
 try { if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } catch (e) {}
 try { if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait'); } catch (e) {}
 try { if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes(); } catch (e) {}
