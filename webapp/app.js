@@ -40,7 +40,7 @@ const state = {
     weekDays: null,
     weekOffset: 0,
     scheduleViewMode: 'today',
-    scheduleDay: 'today', // 'today' | 'tomorrow'
+    scheduleDay: 'today',
 
     tasks: [],
     tasksStats: { active: 0, done: 0 },
@@ -53,6 +53,11 @@ const state = {
     scholarship: null,
     referral: null,
     groups: null,
+
+    // Пикер группы
+    pickerMode: null,      // null | 'institute' | 'group'
+    pickerInstitute: null,
+    pickerSearch: '',
 
     aiMessages: [],
     aiPending: false,
@@ -140,6 +145,8 @@ function haptic(type = 'light') {
 function render() {
     const content = document.getElementById('content');
     const title = document.getElementById('page-title');
+    const appEl = document.getElementById('app');
+    const navEl = document.getElementById('bottom-nav');
 
     const titles = {
         schedule: 'Расписание',
@@ -150,6 +157,31 @@ function render() {
         admin: 'Админ',
         profile: 'Профиль',
     };
+
+    // Пикер — на весь экран
+    if (state.pickerMode) {
+        appEl?.classList.add('picker-open');
+        if (title) title.textContent = state.pickerMode === 'institute' ? 'Институт' : 'Группа';
+        if (navEl) navEl.style.display = 'none';
+
+        let html = '';
+        if (state.pickerMode === 'institute') {
+            html = renderInstitutePicker();
+        } else {
+            html = renderGroupPicker();
+        }
+        content.innerHTML = html;
+        attachHandlers();
+
+        if (state.pickerMode === 'group') {
+            pickerAttachSearch();
+        }
+        return;
+    }
+
+    appEl?.classList.remove('picker-open');
+    if (navEl) navEl.style.display = '';
+
     title.textContent = titles[state.tab] || 'Студент';
 
     let html = '';
@@ -251,13 +283,11 @@ function getTomorrowData() {
     if (!wd || !wd.days || wd.days.length === 0) return null;
 
     const today = new Date();
-    const jsDay = today.getDay(); // 0=Вс, 1=Пн...
-    const todayIdx = jsDay === 0 ? 6 : jsDay - 1; // 0=Пн
+    const jsDay = today.getDay();
+    const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
     const tomorrowIdx = (todayIdx + 1) % 7;
 
-    if (wd.days.length >= 7) {
-        return wd.days[tomorrowIdx] || null;
-    }
+    if (wd.days.length >= 7) return wd.days[tomorrowIdx] || null;
 
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
@@ -273,16 +303,12 @@ function getTomorrowData() {
 }
 
 async function ensureWeekLoaded() {
-    if (state.weekDays && state.weekDays.days && state.weekDays.days.length > 0) {
-        return true;
-    }
+    if (state.weekDays && state.weekDays.days && state.weekDays.days.length > 0) return true;
     try {
         const r = await apiGet('/api/week', { offset: 0 });
         state.weekDays = r;
         return true;
-    } catch (e) {
-        return false;
-    }
+    } catch (e) { return false; }
 }
 
 function renderWeekView() {
@@ -309,9 +335,7 @@ function renderWeekView() {
         if (!day.lessons || day.lessons.length === 0) {
             html += `<div class="card-subtitle" style="padding:8px 0">Занятий нет</div>`;
         } else {
-            for (const les of day.lessons) {
-                html += renderLesson(les);
-            }
+            for (const les of day.lessons) html += renderLesson(les);
         }
     }
 
@@ -339,9 +363,7 @@ function renderDayCard(day, label) {
     if (!day.lessons || day.lessons.length === 0) {
         html += renderEmpty('Занятий нет');
     } else {
-        for (const les of day.lessons) {
-            html += renderLesson(les);
-        }
+        for (const les of day.lessons) html += renderLesson(les);
     }
 
     html += `
@@ -356,9 +378,7 @@ function renderDayCard(day, label) {
 }
 
 function renderSchedule() {
-    if (state.scheduleViewMode === 'week' && state.weekDays) {
-        return renderWeekView();
-    }
+    if (state.scheduleViewMode === 'week' && state.weekDays) return renderWeekView();
 
     const s = state.schedule;
 
@@ -375,13 +395,9 @@ function renderSchedule() {
     let html = renderUserBar() + renderDaySwitch();
 
     if (state.scheduleDay === 'tomorrow') {
-        if (!state.weekDays) {
-            return html + renderLoading();
-        }
+        if (!state.weekDays) return html + renderLoading();
         const tomorrow = getTomorrowData();
-        if (!tomorrow) {
-            return html + renderEmpty('Не удалось загрузить расписание на завтра');
-        }
+        if (!tomorrow) return html + renderEmpty('Не удалось загрузить расписание на завтра');
         return html + renderDayCard(tomorrow, 'Завтра');
     }
 
@@ -400,9 +416,7 @@ function renderSchedule() {
     if (!s.lessons || s.lessons.length === 0) {
         html += renderEmpty('Занятий нет');
     } else {
-        for (const les of s.lessons) {
-            html += renderLesson(les);
-        }
+        for (const les of s.lessons) html += renderLesson(les);
     }
 
     html += `
@@ -414,6 +428,122 @@ function renderSchedule() {
     `;
 
     return html;
+}
+
+// ============================================================
+// GROUP PICKER
+// ============================================================
+function renderInstitutePicker() {
+    const groups = state.groups || {};
+    const institutes = Object.keys(groups);
+
+    let html = `
+        <div class="picker-header">
+            <button class="picker-back" data-action="picker-back">←</button>
+            <div class="picker-title">Выбери институт</div>
+        </div>
+    `;
+
+    if (institutes.length === 0) {
+        html += `<div class="picker-empty">Список институтов не загружен</div>`;
+        return html;
+    }
+
+    html += `<div class="picker-list">`;
+    for (const inst of institutes) {
+        const count = groups[inst]?.length || 0;
+        const selected = state.profile?.group && groups[inst]?.some(g => g.name === state.profile.group);
+        html += `
+            <button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-institute" data-value="${escapeHtml(inst)}">
+                <div class="picker-group-item">
+                    <span>${escapeHtml(inst)}</span>
+                    <span class="picker-item-sub">${count} групп</span>
+                </div>
+                <span class="picker-item-arrow">›</span>
+            </button>
+        `;
+    }
+    html += `</div>`;
+
+    return html;
+}
+
+function renderGroupPicker() {
+    const inst = state.pickerInstitute;
+    const groups = (state.groups && state.groups[inst]) || [];
+
+    let html = `
+        <div class="picker-header">
+            <button class="picker-back" data-action="picker-back">←</button>
+            <div class="picker-title">${escapeHtml(inst)}</div>
+        </div>
+        <input class="picker-search" id="picker-search" placeholder="Поиск группы..." value="${escapeHtml(state.pickerSearch)}" autocomplete="off">
+        <div class="picker-list" id="picker-list">
+    `;
+
+    const q = (state.pickerSearch || '').trim().toLowerCase();
+    const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+
+    if (filtered.length === 0) {
+        html += `<div class="picker-empty">Ничего не найдено</div>`;
+    } else {
+        for (const g of filtered) {
+            const selected = state.profile?.group === g.name;
+            html += `
+                <button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+                    <div class="picker-group-item">
+                        <span>${escapeHtml(g.name)}</span>
+                    </div>
+                    ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+                </button>
+            `;
+        }
+    }
+    html += `</div>`;
+
+    return html;
+}
+
+function pickerAttachSearch() {
+    const input = document.getElementById('picker-search');
+    if (!input) return;
+
+    input.focus();
+    try {
+        input.setSelectionRange(input.value.length, input.value.length);
+    } catch (e) {}
+
+    input.addEventListener('input', (e) => {
+        state.pickerSearch = e.target.value;
+        const inst = state.pickerInstitute;
+        const groups = (state.groups && state.groups[inst]) || [];
+        const q = (state.pickerSearch || '').trim().toLowerCase();
+        const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+
+        const list = document.getElementById('picker-list');
+        if (!list) return;
+
+        let html = '';
+        if (filtered.length === 0) {
+            html = `<div class="picker-empty">Ничего не найдено</div>`;
+        } else {
+            for (const g of filtered) {
+                const selected = state.profile?.group === g.name;
+                html += `
+                    <button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+                        <div class="picker-group-item">
+                            <span>${escapeHtml(g.name)}</span>
+                        </div>
+                        ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+                    </button>
+                `;
+            }
+        }
+        list.innerHTML = html;
+        document.querySelectorAll('#picker-list [data-action]').forEach((el) => {
+            el.addEventListener('click', () => handleAction(el));
+        });
+    });
 }
 
 // ============================================================
@@ -455,10 +585,7 @@ function renderTasks() {
         html += `
             <div class="card">
                 <div class="card-title">${escapeHtml(t.text)}</div>
-                <div class="card-meta">
-                    ${priorityLabel(t.priority)}
-                    ${dueStr}
-                </div>
+                <div class="card-meta">${priorityLabel(t.priority)} ${dueStr}</div>
                 <div class="actions-row">
                     ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">Готово</button>` : ''}
                     <button class="btn btn-secondary" data-action="task-edit-open" data-id="${t.id}">Изменить</button>
@@ -620,9 +747,7 @@ function renderVIP() {
 // АДМИН
 // ============================================================
 function renderAdmin() {
-    if (!state.isAdmin) {
-        return renderEmpty('Доступ только для администратора');
-    }
+    if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
 
     let html = '';
 
@@ -844,7 +969,6 @@ async function loadSchedule() {
     try { state.schedule = await apiGet('/api/schedule'); }
     catch (e) { state.schedule = { error: 'load_error', message: e.message }; }
 }
-
 async function loadTasks() {
     try {
         const doneParam = state.tasksView === 'done' ? '1' : '0';
@@ -853,57 +977,48 @@ async function loadTasks() {
         state.tasksStats = { active: r.active || 0, done: r.done || 0 };
     } catch (e) { state.tasks = []; }
 }
-
 async function loadNotes() {
     try {
         const r = await apiGet('/api/notes');
         state.notes = r.notes || [];
     } catch (e) { state.notes = []; }
 }
-
 async function loadProfile() {
     try {
         state.profile = await apiGet('/api/me');
         state.isAdmin = !!state.profile.is_admin;
     } catch (e) { state.profile = { error: e.message }; }
 }
-
 async function loadVIP() {
     try { state.vip = await apiGet('/api/vip'); }
     catch (e) { state.vip = { is_vip: false }; }
 }
-
 async function loadScholarship() {
     if (!state.vip?.is_vip) { state.scholarship = null; return; }
     try { state.scholarship = await apiGet('/api/scholarship'); }
     catch (e) { state.scholarship = null; }
 }
-
 async function loadReferral() {
     try { state.referral = await apiGet('/api/referral'); }
     catch (e) { state.referral = null; }
 }
-
-async function loadGroups() {
-    if (state.groups) return;
+async function loadGroups(force = false) {
+    if (state.groups && !force) return;
     try {
         const r = await apiGet('/api/groups');
         state.groups = r.groups;
     } catch (e) { state.groups = {}; }
 }
-
 async function loadAdminStats() {
     try { state.adminStats = await apiGet('/api/admin/stats'); }
     catch (e) { state.adminStats = null; }
 }
-
 async function loadAdminFeedback() {
     try {
         const r = await apiGet('/api/admin/feedback-list');
         state.adminFeedback = r.items || [];
     } catch (e) { state.adminFeedback = []; }
 }
-
 async function loadAdminVips() {
     try {
         const r = await apiGet('/api/admin/vip-list');
@@ -967,7 +1082,6 @@ async function loadWeekAndRender() {
         render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function loadTodayAndRender() {
     state.scheduleViewMode = 'today';
     state.weekOffset = 0;
@@ -976,26 +1090,78 @@ async function loadTodayAndRender() {
     await loadSchedule();
     render();
 }
-
 async function actionDayToday() {
     state.scheduleDay = 'today';
     state.scheduleViewMode = 'today';
-    haptic('light');
-    render();
+    haptic('light'); render();
 }
-
 async function actionDayTomorrow() {
     state.scheduleDay = 'tomorrow';
     state.scheduleViewMode = 'today';
     haptic('light');
-
-    if (!state.weekDays) {
-        render();
-        await ensureWeekLoaded();
-    }
+    if (!state.weekDays) { render(); await ensureWeekLoaded(); }
     render();
 }
 
+// ----- ПИКЕР -----
+async function actionChooseGroup() {
+    haptic('light');
+    await loadGroups();
+    if (!state.groups || Object.keys(state.groups).length === 0) {
+        alert('Не удалось загрузить список групп');
+        return;
+    }
+    state.pickerMode = 'institute';
+    state.pickerInstitute = null;
+    state.pickerSearch = '';
+    render();
+}
+
+function actionPickerBack() {
+    haptic('light');
+    if (state.pickerMode === 'group') {
+        state.pickerMode = 'institute';
+        state.pickerInstitute = null;
+        state.pickerSearch = '';
+        render();
+    } else {
+        state.pickerMode = null;
+        state.pickerInstitute = null;
+        state.pickerSearch = '';
+        render();
+    }
+}
+
+function actionPickerChooseInstitute(inst) {
+    haptic('light');
+    state.pickerInstitute = inst;
+    state.pickerMode = 'group';
+    state.pickerSearch = '';
+    render();
+}
+
+async function actionPickerChooseGroup(groupId, groupName) {
+    haptic('success');
+    try {
+        await apiPost('/api/set-group', {
+            group_id: groupId,
+            group_name: groupName,
+            subgroup: state.profile?.subgroup || 0,
+        });
+        if (state.profile) state.profile.group = groupName;
+        state.pickerMode = null;
+        state.pickerInstitute = null;
+        state.pickerSearch = '';
+        await loadProfile();
+        await loadSchedule();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// ----- ОСТАЛЬНЫЕ ДЕЙСТВИЯ -----
 async function actionSetSubgroup(value) {
     try {
         await apiPost('/api/set-subgroup', { subgroup: value });
@@ -1003,7 +1169,6 @@ async function actionSetSubgroup(value) {
         haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionNotifySet(hour) {
     try {
         await apiPost('/api/notify-set', { hour, minute: 0, changes: state.profile?.notify_changes });
@@ -1011,7 +1176,6 @@ async function actionNotifySet(hour) {
         haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionNotifyChangesToggle() {
     const cb = document.getElementById('notify-changes');
     if (!cb) return;
@@ -1025,7 +1189,6 @@ async function actionNotifyChangesToggle() {
         haptic('success');
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionQuoteSubscribe(value) {
     try {
         await apiPost('/api/quote-subscribe', { subscribe: value === 1 });
@@ -1033,7 +1196,6 @@ async function actionQuoteSubscribe(value) {
         haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionFeedbackSend() {
     const el = document.getElementById('feedback-text');
     if (!el) return;
@@ -1045,7 +1207,6 @@ async function actionFeedbackSend() {
         haptic('success'); alert('Отправлено');
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionTaskDone(id) {
     try {
         await apiPost('/api/task-update', { id, done: true });
@@ -1054,7 +1215,6 @@ async function actionTaskDone(id) {
         await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 function popEmoji(char) {
     const el = document.createElement('div');
     el.textContent = char;
@@ -1062,7 +1222,6 @@ function popEmoji(char) {
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 600);
 }
-
 async function actionTaskDelete(id) {
     if (!confirm('Удалить задачу?')) return;
     try {
@@ -1070,7 +1229,6 @@ async function actionTaskDelete(id) {
         haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionTasksClear() {
     if (!confirm('Очистить все выполненные?')) return;
     try {
@@ -1078,7 +1236,6 @@ async function actionTasksClear() {
         haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionTaskAdd() {
     const text = prompt('Текст задачи:');
     if (!text) return;
@@ -1096,7 +1253,6 @@ async function actionTaskAdd() {
         haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionTaskEdit(id) {
     const newText = prompt('Новый текст задачи:');
     if (!newText) return;
@@ -1105,7 +1261,6 @@ async function actionTaskEdit(id) {
         haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionNoteDelete(id) {
     if (!confirm('Удалить заметку?')) return;
     try {
@@ -1113,7 +1268,6 @@ async function actionNoteDelete(id) {
         haptic('success'); await loadNotes(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionNoteAdd() {
     const subject = prompt('Название предмета:');
     if (!subject) return;
@@ -1124,7 +1278,6 @@ async function actionNoteAdd() {
         haptic('success'); await loadNotes(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionNoteEdit(id) {
     const text = prompt('Новый текст заметки:');
     if (!text) return;
@@ -1135,7 +1288,6 @@ async function actionNoteEdit(id) {
         haptic('success'); await loadNotes(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionScholarshipSetAmount() {
     const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
     if (amount === null) return;
@@ -1144,7 +1296,6 @@ async function actionScholarshipSetAmount() {
         haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionScholarshipAddGrade() {
     const subject = prompt('Название предмета:');
     if (!subject) return;
@@ -1156,7 +1307,6 @@ async function actionScholarshipAddGrade() {
         haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionScholarshipClear() {
     if (!confirm('Очистить все оценки?')) return;
     try {
@@ -1164,7 +1314,6 @@ async function actionScholarshipClear() {
         haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionAISend() {
     const el = document.getElementById('ai-input');
     if (!el) return;
@@ -1186,41 +1335,7 @@ async function actionAISend() {
         render();
     }
 }
-
-function actionAIClear() {
-    state.aiMessages = [];
-    render();
-}
-
-async function actionChooseGroup() {
-    await loadGroups();
-    if (!state.groups || Object.keys(state.groups).length === 0) {
-        alert('Не удалось загрузить список групп');
-        return;
-    }
-    const institutes = Object.keys(state.groups);
-    const instStr = prompt('Институт (одно из):\n' + institutes.join('\n'));
-    if (!instStr || !state.groups[instStr]) { alert('Институт не найден'); return; }
-    const groups = state.groups[instStr];
-    const groupList = groups.map(g => `${g.name}`).join('\n');
-    const groupStr = prompt('Группа (одно из):\n' + groupList);
-    if (!groupStr) return;
-    let selected = null;
-    for (const g of groups) {
-        if (groupStr.includes(g.name)) { selected = g; break; }
-    }
-    if (!selected) { alert('Группа не найдена'); return; }
-    try {
-        await apiPost('/api/set-group', {
-            group_id: selected.id,
-            group_name: selected.name,
-            subgroup: state.profile?.subgroup || 0,
-        });
-        haptic('success');
-        await loadProfile(); await loadSchedule(); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-
+function actionAIClear() { state.aiMessages = []; render(); }
 async function actionForgetGroup() {
     if (!confirm('Забыть группу?')) return;
     try {
@@ -1229,7 +1344,6 @@ async function actionForgetGroup() {
         haptic('success'); await loadProfile(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 function actionCopyReferral() {
     if (!state.referral) return;
     try {
@@ -1237,7 +1351,6 @@ function actionCopyReferral() {
         haptic('success'); alert('Ссылка скопирована');
     } catch (e) { alert('Не удалось скопировать'); }
 }
-
 function actionCopyMyId() {
     const id = String(state.user?.id || '');
     if (!id) return;
@@ -1245,14 +1358,9 @@ function actionCopyMyId() {
         navigator.clipboard.writeText(id);
         haptic('success');
         alert('ID скопирован: ' + id);
-    } catch (e) {
-        alert('Твой ID: ' + id);
-    }
+    } catch (e) { alert('Твой ID: ' + id); }
 }
-
-function actionVipBuy() {
-    tg.openTelegramLink('https://t.me/ilyaech');
-}
+function actionVipBuy() { tg.openTelegramLink('https://t.me/ilyaech'); }
 
 // ============================================================
 // АДМИН-ДЕЙСТВИЯ
@@ -1264,7 +1372,6 @@ async function actionAdminMonitor() {
     state.adminBusy = false;
     render();
 }
-
 async function actionAdminBroadcast() {
     const el = document.getElementById('admin-broadcast-text');
     if (!el) return;
@@ -1277,7 +1384,6 @@ async function actionAdminBroadcast() {
         haptic('success'); alert('Рассылка запущена');
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionAdminGiveVip() {
     const uidEl = document.getElementById('admin-vip-uid');
     const daysEl = document.getElementById('admin-vip-days');
@@ -1293,7 +1399,6 @@ async function actionAdminGiveVip() {
         render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionAdminRevokeVip(uid) {
     if (!confirm(`Снять VIP с ${uid}?`)) return;
     try {
@@ -1302,7 +1407,6 @@ async function actionAdminRevokeVip(uid) {
         await loadAdminVips(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionAdminFbReply(fid) {
     const reply = prompt('Текст ответа:');
     if (!reply) return;
@@ -1314,7 +1418,6 @@ async function actionAdminFbReply(fid) {
         render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionAdminFbPostpone(fid) {
     try {
         await apiPost('/api/admin/feedback-postpone', { id: fid });
@@ -1363,6 +1466,9 @@ function handleAction(el) {
     else if (a === 'copy-referral') actionCopyReferral();
     else if (a === 'copy-my-id') actionCopyMyId();
     else if (a === 'vip-buy') actionVipBuy();
+    else if (a === 'picker-back') actionPickerBack();
+    else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
+    else if (a === 'picker-choose-group') actionPickerChooseGroup(el.dataset.id, el.dataset.name);
     else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
     else if (a === 'go-vip') { state.tab = 'vip'; loadTabData('vip'); }
     else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
