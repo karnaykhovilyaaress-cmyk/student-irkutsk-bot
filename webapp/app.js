@@ -494,7 +494,6 @@ function renderAdmin() {
 
     let html = '';
 
-    // Статистика
     if (state.adminStats) {
         const s = state.adminStats;
         html += `
@@ -509,7 +508,6 @@ function renderAdmin() {
         html += renderLoading();
     }
 
-    // Monitor
     html += `
         <div class="card">
             <div class="card-title">Мониторинг сайта ИРНИТУ</div>
@@ -524,7 +522,6 @@ function renderAdmin() {
         </div>
     `;
 
-    // Рассылка
     html += `
         <div class="card">
             <div class="card-title">Рассылка</div>
@@ -534,7 +531,6 @@ function renderAdmin() {
         </div>
     `;
 
-    // Выдача VIP
     html += `
         <div class="card">
             <div class="card-title">Выдать VIP</div>
@@ -547,7 +543,6 @@ function renderAdmin() {
         </div>
     `;
 
-    // Активные VIP
     if (state.adminVips && state.adminVips.length > 0) {
         html += `<div class="card"><div class="card-title">Активные VIP</div>`;
         for (const v of state.adminVips) {
@@ -562,7 +557,6 @@ function renderAdmin() {
         html += `</div>`;
     }
 
-    // Обращения
     if (state.adminFeedback && state.adminFeedback.length > 0) {
         html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
         for (const f of state.adminFeedback) {
