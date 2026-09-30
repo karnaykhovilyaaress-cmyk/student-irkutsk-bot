@@ -19,23 +19,34 @@ const state = {
     loading: false,
     error: null,
     user: tgUser,
+    isAdmin: false,
+
     schedule: null,
-    week: null,
+    weekDays: null,
     weekOffset: 0,
     scheduleViewMode: 'today', // 'today' | 'week'
-    weekDays: null,
+
     tasks: [],
     tasksStats: { active: 0, done: 0 },
     tasksView: 'active',
+
     notes: [],
+
     profile: null,
     vip: null,
     scholarship: null,
-    quote: null,
     referral: null,
     groups: null,
+
     aiMessages: [],
     aiPending: false,
+
+    // Админ
+    adminStats: null,
+    adminFeedback: [],
+    adminVips: [],
+    adminMonitor: null,
+    adminBusy: false,
 };
 
 // ============================================================
@@ -117,6 +128,7 @@ function render() {
         notes: 'Заметки',
         ai: 'AI Помощник',
         vip: 'VIP',
+        admin: 'Админ-панель',
         profile: 'Профиль',
     };
     title.textContent = titles[state.tab] || 'Студент';
@@ -133,6 +145,7 @@ function render() {
             case 'notes': html = renderNotes(); break;
             case 'ai': html = renderAI(); break;
             case 'vip': html = renderVIP(); break;
+            case 'admin': html = renderAdmin(); break;
             case 'profile': html = renderProfile(); break;
         }
     }
@@ -140,6 +153,8 @@ function render() {
     content.innerHTML = html;
 
     document.querySelectorAll('.nav-btn').forEach((btn) => {
+        const isAdmin = btn.dataset.tab === 'admin';
+        btn.style.display = (isAdmin && !state.isAdmin) ? 'none' : '';
         btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
 
@@ -273,7 +288,6 @@ function renderTasks() {
         const dueStr = t.due_date
             ? `<span class="${t.overdue ? 'overdue' : ''}">до ${escapeHtml(t.due_date)}${t.due_time ? ' ' + escapeHtml(t.due_time) : ''}${t.overdue ? ' — просрочено' : ''}</span>`
             : '';
-
         html += `
             <div class="card">
                 <div class="card-title">${escapeHtml(t.text)}</div>
@@ -324,7 +338,7 @@ function renderNotes() {
 }
 
 // ============================================================
-// AI ПОМОЩНИК
+// AI
 // ============================================================
 function renderAI() {
     const p = state.profile;
@@ -378,7 +392,6 @@ function renderVIP() {
                 <div class="card-subtitle">— Расширенная статистика по расписанию</div>
                 <div class="card-subtitle">— Раздел «Стипендия»</div>
                 <div class="card-subtitle">— AI Помощник</div>
-                <div class="card-subtitle">— AI по фото</div>
                 <div class="card-subtitle" style="margin-top:8px">Тарифы:</div>
                 <div class="card-subtitle">— 30 дней — 149 руб</div>
                 <div class="card-subtitle">— 90 дней — 349 руб</div>
@@ -422,6 +435,104 @@ function renderVIP() {
     }
 
     html += `<div class="actions-row"><button class="btn" data-action="vip-buy">Купить / продлить</button></div>`;
+    return html;
+}
+
+// ============================================================
+// АДМИН
+// ============================================================
+function renderAdmin() {
+    if (!state.isAdmin) {
+        return renderEmpty('Доступ только для администратора');
+    }
+
+    let html = '';
+
+    // Статистика
+    if (state.adminStats) {
+        const s = state.adminStats;
+        html += `
+            <div class="card">
+                <div class="card-title">Статистика</div>
+                <div class="card-subtitle">Пользователей: ${s.total_users}</div>
+                <div class="card-subtitle">Активных VIP: ${s.vip_count}</div>
+                <div class="card-subtitle">Обращений в ожидании: ${s.pending_feedback}</div>
+            </div>
+        `;
+    } else {
+        html += `<button class="btn" data-action="admin-load-stats" style="width:100%;margin-bottom:12px">Загрузить статистику</button>`;
+    }
+
+    // Monitor
+    html += `
+        <div class="card">
+            <div class="card-title">Мониторинг сайта ИРНИТУ</div>
+            ${state.adminMonitor
+                ? (state.adminMonitor.ok
+                    ? `<div class="card-subtitle" style="color:var(--accent-green)">Сайт отвечает (HTTP ${state.adminMonitor.status})</div>`
+                    : `<div class="card-subtitle overdue">Сайт не отвечает${state.adminMonitor.error ? ': ' + escapeHtml(state.adminMonitor.error) : ''}</div>`)
+                : `<div class="card-subtitle">Не проверено</div>`}
+            <div class="actions-row">
+                <button class="btn btn-secondary" data-action="admin-monitor">Проверить</button>
+            </div>
+        </div>
+    `;
+
+    // Рассылка
+    html += `
+        <div class="card">
+            <div class="card-title">Рассылка</div>
+            <textarea class="input" id="admin-broadcast-text" placeholder="Текст рассылки..." rows="3"></textarea>
+            <button class="btn" data-action="admin-broadcast">Отправить всем</button>
+        </div>
+    `;
+
+    // Выдача VIP
+    html += `
+        <div class="card">
+            <div class="card-title">Выдать VIP</div>
+            <input class="input" id="admin-vip-uid" placeholder="user_id" type="number">
+            <input class="input" id="admin-vip-days" placeholder="дней (30 / 90 / 365)" type="number" value="30">
+            <div class="actions-row">
+                <button class="btn" data-action="admin-give-vip">Выдать</button>
+                <button class="btn btn-secondary" data-action="admin-vip-list">Список VIP</button>
+            </div>
+        </div>
+    `;
+
+    if (state.adminVips && state.adminVips.length > 0) {
+        html += `<div class="card"><div class="card-title">Активные VIP</div>`;
+        for (const v of state.adminVips) {
+            html += `
+                <div class="grade-row">
+                    <span>${v.user_id}</span>
+                    <span class="card-subtitle">до ${escapeHtml(v.expiry)} (${v.days} дн.)</span>
+                    <button class="btn btn-secondary" data-action="admin-revoke-vip" data-id="${v.user_id}">Снять</button>
+                </div>
+            `;
+        }
+        html += `</div>`;
+    }
+
+    // Обращения
+    if (state.adminFeedback && state.adminFeedback.length > 0) {
+        html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
+        for (const f of state.adminFeedback) {
+            html += `
+                <div style="border-bottom:1px solid var(--divider);padding:10px 0">
+                    <div class="card-subtitle">#${f.id} | ${escapeHtml(f.username || f.user_id)}${f.status === 'postponed' ? ' [отложено]' : ''}</div>
+                    <div style="white-space:pre-wrap;margin-top:4px">${escapeHtml(f.text)}</div>
+                    <div class="actions-row">
+                        <button class="btn btn-secondary" data-action="admin-fb-reply" data-id="${f.id}">Ответить</button>
+                        <button class="btn btn-secondary" data-action="admin-fb-postpone" data-id="${f.id}">Отложить</button>
+                    </div>
+                </div>
+            `;
+        }
+        html += `</div>`;
+    } else {
+        html += `<button class="btn" data-action="admin-load-feedback" style="width:100%;margin-top:8px">Загрузить обращения</button>`;
+    }
 
     return html;
 }
@@ -445,6 +556,7 @@ function renderProfile() {
             <div class="profile-name">${escapeHtml(fullName)}</div>
             ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
             ${p?.is_vip ? '<div class="badge">VIP</div>' : ''}
+            ${p?.is_admin ? '<div class="badge" style="background:linear-gradient(135deg,#e53935,#b71c1c);color:#fff">ADMIN</div>' : ''}
         </div>
     `;
 
@@ -541,14 +653,11 @@ function renderProfile() {
 }
 
 // ============================================================
-// ЗАГРУЗКА ДАННЫХ
+// ЗАГРУЗКА
 // ============================================================
 async function loadSchedule() {
-    try {
-        state.schedule = await apiGet('/api/schedule');
-    } catch (e) {
-        state.schedule = { error: 'load_error', message: e.message };
-    }
+    try { state.schedule = await apiGet('/api/schedule'); }
+    catch (e) { state.schedule = { error: 'load_error', message: e.message }; }
 }
 
 async function loadTasks() {
@@ -557,54 +666,37 @@ async function loadTasks() {
         const r = await apiGet('/api/tasks', { done: doneParam });
         state.tasks = r.tasks || [];
         state.tasksStats = { active: r.active || 0, done: r.done || 0 };
-    } catch (e) {
-        state.tasks = [];
-    }
+    } catch (e) { state.tasks = []; }
 }
 
 async function loadNotes() {
     try {
         const r = await apiGet('/api/notes');
         state.notes = r.notes || [];
-    } catch (e) {
-        state.notes = [];
-    }
+    } catch (e) { state.notes = []; }
 }
 
 async function loadProfile() {
     try {
         state.profile = await apiGet('/api/me');
-    } catch (e) {
-        state.profile = { error: e.message };
-    }
+        state.isAdmin = !!state.profile.is_admin;
+    } catch (e) { state.profile = { error: e.message }; }
 }
 
 async function loadVIP() {
-    try {
-        state.vip = await apiGet('/api/vip');
-    } catch (e) {
-        state.vip = { is_vip: false };
-    }
+    try { state.vip = await apiGet('/api/vip'); }
+    catch (e) { state.vip = { is_vip: false }; }
 }
 
 async function loadScholarship() {
-    if (!state.vip?.is_vip) {
-        state.scholarship = null;
-        return;
-    }
-    try {
-        state.scholarship = await apiGet('/api/scholarship');
-    } catch (e) {
-        state.scholarship = null;
-    }
+    if (!state.vip?.is_vip) { state.scholarship = null; return; }
+    try { state.scholarship = await apiGet('/api/scholarship'); }
+    catch (e) { state.scholarship = null; }
 }
 
 async function loadReferral() {
-    try {
-        state.referral = await apiGet('/api/referral');
-    } catch (e) {
-        state.referral = null;
-    }
+    try { state.referral = await apiGet('/api/referral'); }
+    catch (e) { state.referral = null; }
 }
 
 async function loadGroups() {
@@ -612,9 +704,26 @@ async function loadGroups() {
     try {
         const r = await apiGet('/api/groups');
         state.groups = r.groups;
-    } catch (e) {
-        state.groups = {};
-    }
+    } catch (e) { state.groups = {}; }
+}
+
+async function loadAdminStats() {
+    try { state.adminStats = await apiGet('/api/admin/stats'); }
+    catch (e) { state.adminStats = null; alert('Ошибка: ' + e.message); }
+}
+
+async function loadAdminFeedback() {
+    try {
+        const r = await apiGet('/api/admin/feedback-list');
+        state.adminFeedback = r.items || [];
+    } catch (e) { state.adminFeedback = []; }
+}
+
+async function loadAdminVips() {
+    try {
+        const r = await apiGet('/api/admin/vip-list');
+        state.adminVips = r.items || [];
+    } catch (e) { state.adminVips = []; }
 }
 
 async function loadTabData(tab) {
@@ -624,7 +733,6 @@ async function loadTabData(tab) {
 
     try {
         if (tab === 'schedule') {
-            // при переходе на вкладку всегда показываем «сегодня»
             state.scheduleViewMode = 'today';
             state.weekOffset = 0;
             state.weekDays = null;
@@ -640,6 +748,12 @@ async function loadTabData(tab) {
             await loadProfile();
             await loadVIP();
             await loadScholarship();
+        } else if (tab === 'admin') {
+            await loadProfile();
+            if (state.isAdmin) {
+                await loadAdminStats();
+                await loadAdminFeedback();
+            }
         } else if (tab === 'profile') {
             await loadProfile();
             await loadReferral();
@@ -648,7 +762,6 @@ async function loadTabData(tab) {
         console.error(e);
         state.error = e.message;
     }
-
     state.loading = false;
     render();
 }
@@ -662,9 +775,7 @@ async function loadWeekAndRender() {
         state.weekDays = r;
         state.scheduleViewMode = 'week';
         render();
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function loadTodayAndRender() {
@@ -679,17 +790,15 @@ async function actionSetSubgroup(value) {
     try {
         await apiPost('/api/set-subgroup', { subgroup: value });
         if (state.profile) state.profile.subgroup = value;
-        haptic('success');
-        render();
+        haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionNotifySet(hour) {
     try {
-        await apiPost('/api/notify-set', { hour: hour, minute: 0, changes: state.profile?.notify_changes });
+        await apiPost('/api/notify-set', { hour, minute: 0, changes: state.profile?.notify_changes });
         if (state.profile) state.profile.notify_time = hour >= 0 ? `${String(hour).padStart(2, '0')}:00` : null;
-        haptic('success');
-        render();
+        haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -711,8 +820,7 @@ async function actionQuoteSubscribe(value) {
     try {
         await apiPost('/api/quote-subscribe', { subscribe: value === 1 });
         if (state.profile) state.profile.daily_subscribed = value === 1;
-        haptic('success');
-        render();
+        haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -722,29 +830,24 @@ async function actionFeedbackSend() {
     const text = (el.value || '').trim();
     if (!text) return;
     try {
-        await apiPost('/api/feedback', { text: text });
+        await apiPost('/api/feedback', { text });
         el.value = '';
-        haptic('success');
-        alert('Отправлено');
+        haptic('success'); alert('Отправлено');
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionTaskDone(id) {
     try {
-        await apiPost('/api/task-update', { id: id, done: true });
-        haptic('success');
-        await loadTasks();
-        render();
+        await apiPost('/api/task-update', { id, done: true });
+        haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionTaskDelete(id) {
     if (!confirm('Удалить задачу?')) return;
     try {
-        await apiPost('/api/task-delete', { id: id });
-        haptic('success');
-        await loadTasks();
-        render();
+        await apiPost('/api/task-delete', { id });
+        haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -752,9 +855,7 @@ async function actionTasksClear() {
     if (!confirm('Очистить все выполненные?')) return;
     try {
         await apiPost('/api/task-clear');
-        haptic('success');
-        await loadTasks();
-        render();
+        haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -771,10 +872,8 @@ async function actionTaskAdd() {
     const priorityStr = prompt('Приоритет (0=низкий, 1=средний, 2=высокий):', '1');
     const priority = parseInt(priorityStr) || 1;
     try {
-        await apiPost('/api/task-add', { text: text, due_date: due_date, due_time: due_time, priority: priority });
-        haptic('success');
-        await loadTasks();
-        render();
+        await apiPost('/api/task-add', { text, due_date, due_time, priority });
+        haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -782,20 +881,16 @@ async function actionTaskEdit(id) {
     const newText = prompt('Новый текст задачи:');
     if (!newText) return;
     try {
-        await apiPost('/api/task-update', { id: id, text: newText });
-        haptic('success');
-        await loadTasks();
-        render();
+        await apiPost('/api/task-update', { id, text: newText });
+        haptic('success'); await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 async function actionNoteDelete(id) {
     if (!confirm('Удалить заметку?')) return;
     try {
-        await apiPost('/api/note-delete', { id: id });
-        haptic('success');
-        await loadNotes();
-        render();
+        await apiPost('/api/note-delete', { id });
+        haptic('success'); await loadNotes(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -805,10 +900,8 @@ async function actionNoteAdd() {
     const text = prompt('Текст заметки:');
     if (!text) return;
     try {
-        await apiPost('/api/note-save', { subject: subject, text: text });
-        haptic('success');
-        await loadNotes();
-        render();
+        await apiPost('/api/note-save', { subject, text });
+        haptic('success'); await loadNotes(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -818,10 +911,8 @@ async function actionNoteEdit(id) {
     const note = state.notes.find(n => n.id === id);
     if (!note) return;
     try {
-        await apiPost('/api/note-save', { subject: note.subject, text: text });
-        haptic('success');
-        await loadNotes();
-        render();
+        await apiPost('/api/note-save', { subject: note.subject, text });
+        haptic('success'); await loadNotes(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -830,9 +921,7 @@ async function actionScholarshipSetAmount() {
     if (amount === null) return;
     try {
         await apiPost('/api/scholarship-set-amount', { amount: parseInt(amount) || 0 });
-        haptic('success');
-        await loadScholarship();
-        render();
+        haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -843,10 +932,8 @@ async function actionScholarshipAddGrade() {
     const grade = parseInt(gradeStr);
     if (![2, 3, 4, 5].includes(grade)) { alert('Нужно 2, 3, 4 или 5'); return; }
     try {
-        await apiPost('/api/scholarship-add-grade', { subject: subject, grade: grade });
-        haptic('success');
-        await loadScholarship();
-        render();
+        await apiPost('/api/scholarship-add-grade', { subject, grade });
+        haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -854,9 +941,7 @@ async function actionScholarshipClear() {
     if (!confirm('Очистить все оценки?')) return;
     try {
         await apiPost('/api/scholarship-clear');
-        haptic('success');
-        await loadScholarship();
-        render();
+        haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -870,7 +955,7 @@ async function actionAISend() {
     el.value = '';
     render();
     try {
-        const r = await apiPost('/api/ai', { question: question });
+        const r = await apiPost('/api/ai', { question });
         state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
         haptic('success');
     } catch (e) {
@@ -895,19 +980,14 @@ async function actionChooseGroup() {
     }
     const institutes = Object.keys(state.groups);
     const instStr = prompt('Институт (одно из):\n' + institutes.join('\n'));
-    if (!instStr || !state.groups[instStr]) {
-        alert('Институт не найден');
-        return;
-    }
+    if (!instStr || !state.groups[instStr]) { alert('Институт не найден'); return; }
     const groups = state.groups[instStr];
-    const groupList = groups.map(g => `${g.name} (id ${g.id})`).join('\n');
+    const groupList = groups.map(g => `${g.name}`).join('\n');
     const groupStr = prompt('Группа (одно из):\n' + groupList);
     if (!groupStr) return;
     let selected = null;
     for (const g of groups) {
-        if (groupStr.includes(g.id) || groupStr.includes(g.name)) {
-            selected = g; break;
-        }
+        if (groupStr.includes(g.name)) { selected = g; break; }
     }
     if (!selected) { alert('Группа не найдена'); return; }
     try {
@@ -917,9 +997,7 @@ async function actionChooseGroup() {
             subgroup: state.profile?.subgroup || 0,
         });
         haptic('success');
-        await loadProfile();
-        await loadSchedule();
-        render();
+        await loadProfile(); await loadSchedule(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -928,9 +1006,7 @@ async function actionForgetGroup() {
     try {
         await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
         if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
-        haptic('success');
-        await loadProfile();
-        render();
+        haptic('success'); await loadProfile(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
@@ -938,8 +1014,7 @@ function actionCopyReferral() {
     if (!state.referral) return;
     try {
         navigator.clipboard.writeText(state.referral.link);
-        haptic('success');
-        alert('Ссылка скопирована');
+        haptic('success'); alert('Ссылка скопирована');
     } catch (e) { alert('Не удалось скопировать'); }
 }
 
@@ -948,7 +1023,97 @@ function actionVipBuy() {
 }
 
 // ============================================================
-// ПОДКЛЮЧЕНИЕ ОБРАБОТЧИКОВ
+// АДМИН-ДЕЙСТВИЯ
+// ============================================================
+async function actionAdminLoadStats() {
+    state.adminBusy = true;
+    await loadAdminStats();
+    state.adminBusy = false;
+    render();
+}
+
+async function actionAdminLoadFeedback() {
+    state.adminBusy = true;
+    await loadAdminFeedback();
+    state.adminBusy = false;
+    render();
+}
+
+async function actionAdminMonitor() {
+    state.adminBusy = true;
+    try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
+    catch (e) { state.adminMonitor = { ok: false, status: 0, error: e.message }; }
+    state.adminBusy = false;
+    render();
+}
+
+async function actionAdminBroadcast() {
+    const el = document.getElementById('admin-broadcast-text');
+    if (!el) return;
+    const text = (el.value || '').trim();
+    if (!text) { alert('Пустое сообщение'); return; }
+    if (!confirm('Отправить всем пользователям?')) return;
+    try {
+        await apiPost('/api/admin/broadcast', { text });
+        el.value = '';
+        haptic('success'); alert('Рассылка запущена');
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function actionAdminGiveVip() {
+    const uidEl = document.getElementById('admin-vip-uid');
+    const daysEl = document.getElementById('admin-vip-days');
+    if (!uidEl || !daysEl) return;
+    const user_id = parseInt(uidEl.value);
+    const days = parseInt(daysEl.value);
+    if (!user_id || !days || days <= 0) { alert('Заполни user_id и дни'); return; }
+    try {
+        const r = await apiPost('/api/admin/give-vip', { user_id, days });
+        haptic('success'); alert(`VIP выдан до ${r.expiry}`);
+        uidEl.value = '';
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function actionAdminVipList() {
+    state.adminBusy = true;
+    await loadAdminVips();
+    state.adminBusy = false;
+    render();
+}
+
+async function actionAdminRevokeVip(uid) {
+    if (!confirm(`Снять VIP с ${uid}?`)) return;
+    try {
+        await apiPost('/api/admin/revoke-vip', { user_id: uid });
+        haptic('success');
+        await loadAdminVips(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function actionAdminFbReply(fid) {
+    const reply = prompt('Текст ответа:');
+    if (!reply) return;
+    try {
+        await apiPost('/api/admin/feedback-reply', { id: fid, text: reply });
+        haptic('success');
+        await loadAdminFeedback();
+        await loadAdminStats();
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function actionAdminFbPostpone(fid) {
+    try {
+        await apiPost('/api/admin/feedback-postpone', { id: fid });
+        haptic('success');
+        await loadAdminFeedback();
+        await loadAdminStats();
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+// ============================================================
+// ОБРАБОТЧИКИ
 // ============================================================
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
@@ -988,6 +1153,15 @@ function handleAction(el) {
     else if (a === 'week-next') { state.weekOffset += 1; loadWeekAndRender(); }
     else if (a === 'week-current') { state.weekOffset = 0; loadWeekAndRender(); }
     else if (a === 'week-today') { loadTodayAndRender(); }
+    else if (a === 'admin-load-stats') actionAdminLoadStats();
+    else if (a === 'admin-load-feedback') actionAdminLoadFeedback();
+    else if (a === 'admin-monitor') actionAdminMonitor();
+    else if (a === 'admin-broadcast') actionAdminBroadcast();
+    else if (a === 'admin-give-vip') actionAdminGiveVip();
+    else if (a === 'admin-vip-list') actionAdminVipList();
+    else if (a === 'admin-revoke-vip') actionAdminRevokeVip(parseInt(el.dataset.id));
+    else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
+    else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
 }
 
 // ============================================================
