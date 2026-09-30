@@ -12,6 +12,17 @@ const tgUser = tg.initDataUnsafe?.user || {
 const INIT_DATA = tg.initData || '';
 
 // ============================================================
+// СПЛЭШ — скрываем через 1.2 сек после старта
+// ============================================================
+setTimeout(() => {
+    const sp = document.getElementById('splash');
+    const app = document.getElementById('app');
+    if (sp) sp.classList.add('hide');
+    if (app) app.style.display = '';
+    setTimeout(() => { if (sp) sp.remove(); }, 600);
+}, 1200);
+
+// ============================================================
 // СОСТОЯНИЕ
 // ============================================================
 const state = {
@@ -24,7 +35,7 @@ const state = {
     schedule: null,
     weekDays: null,
     weekOffset: 0,
-    scheduleViewMode: 'today', // 'today' | 'week'
+    scheduleViewMode: 'today',
 
     tasks: [],
     tasksStats: { active: 0, done: 0 },
@@ -41,7 +52,6 @@ const state = {
     aiMessages: [],
     aiPending: false,
 
-    // Админ
     adminStats: null,
     adminFeedback: [],
     adminVips: [],
@@ -97,7 +107,11 @@ function renderEmpty(text) {
 }
 
 function renderLoading() {
-    return '<div class="loading">Загрузка...</div>';
+    return `
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+    `;
 }
 
 function priorityLabel(p) {
@@ -126,9 +140,9 @@ function render() {
         schedule: 'Расписание',
         tasks: 'Задачи',
         notes: 'Заметки',
-        ai: 'AI Помощник',
+        ai: 'AI',
         vip: 'VIP',
-        admin: 'Админ-панель',
+        admin: 'Админ',
         profile: 'Профиль',
     };
     title.textContent = titles[state.tab] || 'Студент';
@@ -162,6 +176,41 @@ function render() {
 }
 
 // ============================================================
+// USER BAR (компактный профиль сверху)
+// ============================================================
+function renderUserBar() {
+    const u = state.user;
+    const p = state.profile;
+    const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
+    const name = u.first_name || 'Гость';
+    const metaParts = [];
+    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
+    if (u.username) metaParts.push('@' + u.username);
+    const meta = metaParts.join(' · ') || 'профиль не заполнен';
+
+    const tasks = p?.tasks_active ?? 0;
+
+    return `
+        <div class="user-bar" data-action="go-profile">
+            <div class="user-bar-avatar">${escapeHtml(initials)}</div>
+            <div class="user-bar-info">
+                <div class="user-bar-name">${escapeHtml(name)}</div>
+                <div class="user-bar-meta">${escapeHtml(meta)}</div>
+            </div>
+            <div class="user-bar-badges">
+                <div class="user-badge">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 11 12 14 22 4"></polyline>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    <span>${tasks}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// ============================================================
 // РАСПИСАНИЕ
 // ============================================================
 function renderLesson(les) {
@@ -175,7 +224,7 @@ function renderLesson(les) {
             <div class="lesson-time">${escapeHtml(timeRange)}</div>
             <div class="lesson-body">
                 <div class="lesson-subject">${escapeHtml(les.subject)}${
-                    les.type ? ` <span style="color:var(--text-secondary);font-weight:400">(${escapeHtml(les.type)})</span>` : ''
+                    les.type ? ` <span style="color:var(--text-2);font-weight:400">(${escapeHtml(les.type)})</span>` : ''
                 }</div>
                 ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
                 ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
@@ -195,7 +244,8 @@ function renderWeekView() {
     else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
     else title = `Неделя ${state.weekOffset}`;
 
-    let html = `<div class="day-header">${escapeHtml(title)}</div>`;
+    let html = renderUserBar();
+    html += `<div class="day-header">${escapeHtml(title)}</div>`;
     if (wd.group) {
         html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(wd.group)}${
             wd.subgroup ? ` · подгруппа ${escapeHtml(wd.subgroup)}` : ''
@@ -230,28 +280,26 @@ function renderSchedule() {
     }
 
     const s = state.schedule;
-    if (!s) return renderEmpty('Нет данных о расписании');
+    let html = renderUserBar();
+
+    if (!s) return html + renderEmpty('Нет данных о расписании');
 
     // Онбординг: группа не выбрана
     if (s.error === 'no_group' || (state.profile && !state.profile.group)) {
-        return `
-            <div class="card">
-                <div class="card-title">Как начать</div>
-                <div class="card-subtitle">1. Открой вкладку <b>Профиль</b> внизу</div>
-                <div class="card-subtitle">2. Нажми <b>«Выбрать группу»</b></div>
-                <div class="card-subtitle">3. Укажи институт и свою группу</div>
-                <div class="card-subtitle">4. Вернись сюда — расписание появится</div>
-                <div class="actions-row">
-                    <button class="btn" data-action="go-profile">Перейти в профиль</button>
-                </div>
+        html += `
+            <div class="banner">
+                <div class="banner-title">Как начать</div>
+                <div class="banner-sub">1. Профиль → «Выбрать группу»<br>2. Укажи институт и группу<br>3. Вернись — расписание появится</div>
+                <button class="banner-btn" data-action="go-profile">Выбрать группу</button>
             </div>
         `;
+        return html;
     }
 
-    if (s.error) return renderEmpty(s.message || 'Ошибка загрузки');
+    if (s.error) return html + renderEmpty(s.message || 'Ошибка загрузки');
 
     const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
-    let html = `<div class="day-header">${escapeHtml(header)}</div>`;
+    html += `<div class="day-header">${escapeHtml(header)}</div>`;
 
     if (s.group) {
         html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${
@@ -299,11 +347,9 @@ function renderTasks() {
     if (!tasks || tasks.length === 0) {
         if (state.tasksView === 'active') {
             html += `
-                <div class="card">
-                    <div class="card-title">Задач пока нет</div>
-                    <div class="card-subtitle">Нажми «+ Добавить задачу».</div>
-                    <div class="card-subtitle">Срок можно указать так: <b>25.12.2025</b> или <b>25.12.2025 14:30</b>. Можно оставить пустым.</div>
-                    <div class="card-subtitle">Приоритет: 0 — низкий, 1 — средний, 2 — высокий.</div>
+                <div class="banner">
+                    <div class="banner-title">Задач нет</div>
+                    <div class="banner-sub">Нажми «+ Добавить задачу». Срок: 25.12.2025 или 25.12.2025 14:30. Приоритет: 0 / 1 / 2.</div>
                 </div>
             `;
         } else {
@@ -347,8 +393,9 @@ function renderNotes() {
 
     if (!state.notes || state.notes.length === 0) {
         html += `
-            <div class="card">
-                <div class="card-subtitle">Заметки — это короткие записи по предметам. Название предмета = ключ: если сохранишь заметку с тем же предметом, старая перезапишется.</div>
+            <div class="banner">
+                <div class="banner-title">Заметки</div>
+                <div class="banner-sub">Короткие записи по предметам. Название предмета — ключ: одинаковые названия перезаписываются.</div>
             </div>
         `;
         return html;
@@ -376,13 +423,10 @@ function renderAI() {
     const p = state.profile;
     if (!p || !p.is_vip) {
         return `
-            <div class="card">
-                <div class="card-title">AI Помощник</div>
-                <div class="card-subtitle">Доступен только VIP-пользователям.</div>
-                <div class="card-subtitle">Что умеет: отвечает на вопросы по учёбе, помогает с формулами и конспектами.</div>
-                <div class="actions-row">
-                    <button class="btn" data-action="go-vip">Что такое VIP?</button>
-                </div>
+            <div class="banner">
+                <div class="banner-title">AI Помощник</div>
+                <div class="banner-sub">Доступен VIP. Отвечает на вопросы по учёбе, помогает с формулами и конспектами.</div>
+                <button class="banner-btn" data-action="go-vip">Что такое VIP?</button>
             </div>
         `;
     }
@@ -390,14 +434,15 @@ function renderAI() {
     let html = '';
     if (state.aiMessages.length === 0) {
         html += `
-            <div class="card">
-                <div class="card-subtitle">Задай любой вопрос по учёбе — AI ответит. Например: «Объясни интеграл по частям».</div>
+            <div class="banner">
+                <div class="banner-title">Задай вопрос</div>
+                <div class="banner-sub">Например: «Объясни интеграл по частям»</div>
             </div>
         `;
     } else {
         for (const m of state.aiMessages) {
             if (m.role === 'user') {
-                html += `<div class="card" style="background:var(--button);color:var(--button-text)"><div>${escapeHtml(m.text)}</div></div>`;
+                html += `<div class="card" style="background:var(--neon);color:#070B14"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
             } else {
                 html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(m.text)}</div></div>`;
             }
@@ -423,25 +468,22 @@ function renderVIP() {
 
     if (v && v.is_vip) {
         html += `
-            <div class="card">
-                <div class="card-title">VIP активен</div>
-                <div class="card-subtitle">До: ${escapeHtml(v.expiry ? v.expiry.slice(0, 10) : '')}</div>
-                <div class="card-subtitle">Осталось: ${v.days_left} дней</div>
+            <div class="banner">
+                <div class="banner-title">VIP активен</div>
+                <div class="banner-sub">До: ${escapeHtml(v.expiry ? v.expiry.slice(0, 10) : '')}<br>Осталось: ${v.days_left} дней</div>
             </div>
         `;
     } else {
         html += `
-            <div class="card">
-                <div class="card-title">VIP-подписка</div>
-                <div class="card-subtitle">Что даёт:</div>
-                <div class="card-subtitle">• Расширенная статистика</div>
-                <div class="card-subtitle">• Раздел «Стипендия»</div>
-                <div class="card-subtitle">• AI Помощник</div>
-                <div class="card-subtitle" style="margin-top:8px">Тарифы:</div>
-                <div class="card-subtitle">• 30 дней — 149 руб</div>
-                <div class="card-subtitle">• 90 дней — 349 руб</div>
-                <div class="card-subtitle">• Навсегда — 599 руб</div>
-                <div class="card-subtitle" style="margin-top:8px">Для покупки напиши админу: @ilyaech</div>
+            <div class="banner">
+                <div class="banner-title">VIP-подписка</div>
+                <div class="banner-sub">
+                    • Расширенная статистика<br>
+                    • Раздел «Стипендия»<br>
+                    • AI Помощник<br><br>
+                    30 дней — 149 ₽ · 90 дней — 349 ₽ · Навсегда — 599 ₽<br><br>
+                    Для покупки: @ilyaech
+                </div>
             </div>
         `;
     }
@@ -451,7 +493,7 @@ function renderVIP() {
         html += `
             <div class="card">
                 <div class="card-title">Стипендия</div>
-                <div class="card-subtitle">Текущая: ${s.amount !== null ? escapeHtml(s.amount) + ' руб/мес' : 'не указана'}</div>
+                <div class="card-subtitle">Текущая: ${s.amount !== null ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>
                 <div class="card-subtitle">Оценок: ${s.grades.length}</div>
                 ${s.grades.length ? `<div class="card-subtitle">Средний балл: ${s.avg}</div>` : ''}
             </div>
@@ -473,9 +515,9 @@ function renderVIP() {
         }
         html += `
             <div class="actions-row">
-                <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма стипендии</button>
-                <button class="btn btn-secondary" data-action="sch-add-grade-open">Добавить оценку</button>
-                <button class="btn btn-secondary" data-action="sch-clear">Очистить оценки</button>
+                <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
+                <button class="btn btn-secondary" data-action="sch-add-grade-open">Оценка</button>
+                <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
             </div>
         `;
     }
@@ -497,11 +539,13 @@ function renderAdmin() {
     if (state.adminStats) {
         const s = state.adminStats;
         html += `
-            <div class="card">
-                <div class="card-title">Статистика</div>
-                <div class="card-subtitle">Пользователей: ${s.total_users}</div>
-                <div class="card-subtitle">Активных VIP: ${s.vip_count}</div>
-                <div class="card-subtitle">Обращений в ожидании: ${s.pending_feedback}</div>
+            <div class="banner">
+                <div class="banner-title">Статистика</div>
+                <div class="banner-sub">
+                    Пользователей: ${s.total_users}<br>
+                    Активных VIP: ${s.vip_count}<br>
+                    Обращений в ожидании: ${s.pending_feedback}
+                </div>
             </div>
         `;
     } else {
@@ -510,7 +554,7 @@ function renderAdmin() {
 
     html += `
         <div class="card">
-            <div class="card-title">Мониторинг сайта ИРНИТУ</div>
+            <div class="card-title">Мониторинг ИРНИТУ</div>
             ${state.adminMonitor
                 ? (state.adminMonitor.ok
                     ? `<div class="card-subtitle" style="color:var(--accent-green)">Сайт отвечает (HTTP ${state.adminMonitor.status})</div>`
@@ -526,7 +570,7 @@ function renderAdmin() {
         <div class="card">
             <div class="card-title">Рассылка</div>
             <div class="card-subtitle">Уйдёт всем пользователям бота.</div>
-            <textarea class="input" id="admin-broadcast-text" placeholder="Текст рассылки..." rows="3"></textarea>
+            <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
             <button class="btn" data-action="admin-broadcast">Отправить всем</button>
         </div>
     `;
@@ -534,7 +578,7 @@ function renderAdmin() {
     html += `
         <div class="card">
             <div class="card-title">Выдать VIP</div>
-            <div class="card-subtitle">user_id пользователя и срок в днях (30 / 90 / 365).</div>
+            <div class="card-subtitle">user_id и срок в днях (30 / 90 / 365).</div>
             <input class="input" id="admin-vip-uid" placeholder="user_id" type="number">
             <input class="input" id="admin-vip-days" placeholder="дней" type="number" value="30">
             <div class="actions-row">
@@ -618,7 +662,7 @@ function renderProfile() {
         <div class="card">
             <div class="card-title">Мой ID</div>
             <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
-            <div class="card-subtitle">Нужен для выдачи VIP — сообщи его админу.</div>
+            <div class="card-subtitle">Нужен для выдачи VIP — сообщи админу.</div>
             <div class="actions-row">
                 <button class="btn btn-secondary" data-action="copy-my-id">Скопировать ID</button>
             </div>
@@ -641,7 +685,7 @@ function renderProfile() {
             <div class="card-title">Подгруппа</div>
             <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
             <div class="actions-row">
-                <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">Не выбрана</button>
+                <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">—</button>
                 <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
                 <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
             </div>
@@ -682,11 +726,9 @@ function renderProfile() {
         html += `
             <div class="card">
                 <div class="card-title">Пригласи друга</div>
-                <div class="card-subtitle">За каждого друга: +${r.referral_days} дней VIP</div>
-                <div class="card-subtitle">Пришло по ссылке: ${r.total}</div>
-                <div class="card-subtitle">Засчитано: ${r.rewarded}</div>
-                <div class="card-subtitle">Заработано дней: ${r.days}</div>
-                <div style="margin-top:8px;word-break:break-all;font-size:13px;color:var(--text-secondary)">${escapeHtml(r.link)}</div>
+                <div class="card-subtitle">+${r.referral_days} дней VIP за друга</div>
+                <div class="card-subtitle">Пришло: ${r.total} · Засчитано: ${r.rewarded} · Дней: ${r.days}</div>
+                <div style="margin-top:8px;word-break:break-all;font-size:13px;color:var(--text-2)">${escapeHtml(r.link)}</div>
                 <div class="actions-row">
                     <button class="btn btn-secondary" data-action="copy-referral">Скопировать ссылку</button>
                 </div>
@@ -697,7 +739,7 @@ function renderProfile() {
     html += `
         <div class="card">
             <div class="card-title">Обратная связь</div>
-            <textarea class="input" id="feedback-text" placeholder="Напиши сообщение админу..." rows="3"></textarea>
+            <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
             <button class="btn" data-action="feedback-send">Отправить</button>
         </div>
     `;
@@ -895,8 +937,18 @@ async function actionFeedbackSend() {
 async function actionTaskDone(id) {
     try {
         await apiPost('/api/task-update', { id, done: true });
-        haptic('success'); await loadTasks(); render();
+        haptic('success');
+        popEmoji('✅');
+        await loadTasks(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+function popEmoji(char) {
+    const el = document.createElement('div');
+    el.textContent = char;
+    el.style.cssText = 'position:fixed;top:50%;left:50%;font-size:56px;transform:translate(-50%,-50%);animation:pop 0.6s ease-out;z-index:99999;pointer-events:none';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 600);
 }
 
 async function actionTaskDelete(id) {
@@ -973,7 +1025,7 @@ async function actionNoteEdit(id) {
 }
 
 async function actionScholarshipSetAmount() {
-    const amount = prompt('Сумма стипендии (руб/мес, 0 если не получаешь):');
+    const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
     if (amount === null) return;
     try {
         await apiPost('/api/scholarship-set-amount', { amount: parseInt(amount) || 0 });
