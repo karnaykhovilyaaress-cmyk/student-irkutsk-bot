@@ -231,7 +231,24 @@ function renderSchedule() {
 
     const s = state.schedule;
     if (!s) return renderEmpty('Нет данных о расписании');
-    if (s.error) return renderEmpty(s.message || 'Выбери группу в разделе «Профиль»');
+
+    // Онбординг: группа не выбрана
+    if (s.error === 'no_group' || (state.profile && !state.profile.group)) {
+        return `
+            <div class="card">
+                <div class="card-title">Как начать</div>
+                <div class="card-subtitle">1. Открой вкладку <b>Профиль</b> внизу</div>
+                <div class="card-subtitle">2. Нажми <b>«Выбрать группу»</b></div>
+                <div class="card-subtitle">3. Укажи институт и свою группу</div>
+                <div class="card-subtitle">4. Вернись сюда — расписание появится</div>
+                <div class="actions-row">
+                    <button class="btn" data-action="go-profile">Перейти в профиль</button>
+                </div>
+            </div>
+        `;
+    }
+
+    if (s.error) return renderEmpty(s.message || 'Ошибка загрузки');
 
     const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
     let html = `<div class="day-header">${escapeHtml(header)}</div>`;
@@ -255,6 +272,9 @@ function renderSchedule() {
             <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
             <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
             <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
+        </div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="week-view-all" style="width:100%">Показать всю неделю</button>
         </div>
     `;
 
@@ -280,7 +300,18 @@ function renderTasks() {
     }
 
     if (!tasks || tasks.length === 0) {
-        html += renderEmpty(state.tasksView === 'active' ? 'Нет активных задач' : 'Нет выполненных задач');
+        if (state.tasksView === 'active') {
+            html += `
+                <div class="card">
+                    <div class="card-title">Задач пока нет</div>
+                    <div class="card-subtitle">Нажми «+ Добавить задачу».</div>
+                    <div class="card-subtitle">Срок можно указать так: <b>25.12.2025</b> или <b>25.12.2025 14:30</b>. Можно оставить пустым.</div>
+                    <div class="card-subtitle">Приоритет: 0 — низкий, 1 — средний, 2 — высокий.</div>
+                </div>
+            `;
+        } else {
+            html += renderEmpty('Нет выполненных задач');
+        }
         return html;
     }
 
@@ -318,7 +349,11 @@ function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
 
     if (!state.notes || state.notes.length === 0) {
-        html += renderEmpty('Нет заметок');
+        html += `
+            <div class="card">
+                <div class="card-subtitle">Заметки — это короткие записи по предметам. Название предмета = ключ: если сохранишь заметку с тем же предметом, старая перезапишется.</div>
+            </div>
+        `;
         return html;
     }
 
@@ -343,12 +378,25 @@ function renderNotes() {
 function renderAI() {
     const p = state.profile;
     if (!p || !p.is_vip) {
-        return renderEmpty('AI Помощник доступен только VIP-пользователям');
+        return `
+            <div class="card">
+                <div class="card-title">AI Помощник</div>
+                <div class="card-subtitle">Доступен только VIP-пользователям.</div>
+                <div class="card-subtitle">Что умеет: отвечает на вопросы по учёбе, помогает с формулами и конспектами.</div>
+                <div class="actions-row">
+                    <button class="btn" data-action="go-vip">Что такое VIP?</button>
+                </div>
+            </div>
+        `;
     }
 
     let html = '';
     if (state.aiMessages.length === 0) {
-        html += renderEmpty('Задай вопрос — AI ответит');
+        html += `
+            <div class="card">
+                <div class="card-subtitle">Задай любой вопрос по учёбе — AI ответит. Например: «Объясни интеграл по частям».</div>
+            </div>
+        `;
     } else {
         for (const m of state.aiMessages) {
             if (m.role === 'user') {
@@ -389,13 +437,14 @@ function renderVIP() {
             <div class="card">
                 <div class="card-title">VIP-подписка</div>
                 <div class="card-subtitle">Что даёт:</div>
-                <div class="card-subtitle">— Расширенная статистика по расписанию</div>
-                <div class="card-subtitle">— Раздел «Стипендия»</div>
-                <div class="card-subtitle">— AI Помощник</div>
+                <div class="card-subtitle">• Расширенная статистика</div>
+                <div class="card-subtitle">• Раздел «Стипендия»</div>
+                <div class="card-subtitle">• AI Помощник</div>
                 <div class="card-subtitle" style="margin-top:8px">Тарифы:</div>
-                <div class="card-subtitle">— 30 дней — 149 руб</div>
-                <div class="card-subtitle">— 90 дней — 349 руб</div>
-                <div class="card-subtitle">— Навсегда — 599 руб</div>
+                <div class="card-subtitle">• 30 дней — 149 руб</div>
+                <div class="card-subtitle">• 90 дней — 349 руб</div>
+                <div class="card-subtitle">• Навсегда — 599 руб</div>
+                <div class="card-subtitle" style="margin-top:8px">Для покупки напиши админу: @ilyaech</div>
             </div>
         `;
     }
@@ -434,7 +483,7 @@ function renderVIP() {
         `;
     }
 
-    html += `<div class="actions-row"><button class="btn" data-action="vip-buy">Купить / продлить</button></div>`;
+    html += `<div class="actions-row"><button class="btn" data-action="vip-buy">Написать админу</button></div>`;
     return html;
 }
 
@@ -460,7 +509,7 @@ function renderAdmin() {
             </div>
         `;
     } else {
-        html += `<button class="btn" data-action="admin-load-stats" style="width:100%;margin-bottom:12px">Загрузить статистику</button>`;
+        html += renderLoading();
     }
 
     // Monitor
@@ -482,6 +531,7 @@ function renderAdmin() {
     html += `
         <div class="card">
             <div class="card-title">Рассылка</div>
+            <div class="card-subtitle">Уйдёт всем пользователям бота.</div>
             <textarea class="input" id="admin-broadcast-text" placeholder="Текст рассылки..." rows="3"></textarea>
             <button class="btn" data-action="admin-broadcast">Отправить всем</button>
         </div>
@@ -491,15 +541,16 @@ function renderAdmin() {
     html += `
         <div class="card">
             <div class="card-title">Выдать VIP</div>
+            <div class="card-subtitle">user_id пользователя и срок в днях (30 / 90 / 365).</div>
             <input class="input" id="admin-vip-uid" placeholder="user_id" type="number">
-            <input class="input" id="admin-vip-days" placeholder="дней (30 / 90 / 365)" type="number" value="30">
+            <input class="input" id="admin-vip-days" placeholder="дней" type="number" value="30">
             <div class="actions-row">
                 <button class="btn" data-action="admin-give-vip">Выдать</button>
-                <button class="btn btn-secondary" data-action="admin-vip-list">Список VIP</button>
             </div>
         </div>
     `;
 
+    // Активные VIP
     if (state.adminVips && state.adminVips.length > 0) {
         html += `<div class="card"><div class="card-title">Активные VIP</div>`;
         for (const v of state.adminVips) {
@@ -531,7 +582,7 @@ function renderAdmin() {
         }
         html += `</div>`;
     } else {
-        html += `<button class="btn" data-action="admin-load-feedback" style="width:100%;margin-top:8px">Загрузить обращения</button>`;
+        html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
     }
 
     return html;
@@ -571,6 +622,17 @@ function renderProfile() {
             </div>
         `;
     }
+
+    html += `
+        <div class="card">
+            <div class="card-title">Мой ID</div>
+            <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
+            <div class="card-subtitle">Нужен для выдачи VIP — сообщи его админу.</div>
+            <div class="actions-row">
+                <button class="btn btn-secondary" data-action="copy-my-id">Скопировать ID</button>
+            </div>
+        </div>
+    `;
 
     html += `
         <div class="card">
@@ -709,7 +771,7 @@ async function loadGroups() {
 
 async function loadAdminStats() {
     try { state.adminStats = await apiGet('/api/admin/stats'); }
-    catch (e) { state.adminStats = null; alert('Ошибка: ' + e.message); }
+    catch (e) { state.adminStats = null; }
 }
 
 async function loadAdminFeedback() {
@@ -751,8 +813,11 @@ async function loadTabData(tab) {
         } else if (tab === 'admin') {
             await loadProfile();
             if (state.isAdmin) {
-                await loadAdminStats();
-                await loadAdminFeedback();
+                await Promise.all([
+                    loadAdminStats(),
+                    loadAdminFeedback(),
+                    loadAdminVips(),
+                ]);
             }
         } else if (tab === 'profile') {
             await loadProfile();
@@ -1018,6 +1083,18 @@ function actionCopyReferral() {
     } catch (e) { alert('Не удалось скопировать'); }
 }
 
+function actionCopyMyId() {
+    const id = String(state.user?.id || '');
+    if (!id) return;
+    try {
+        navigator.clipboard.writeText(id);
+        haptic('success');
+        alert('ID скопирован: ' + id);
+    } catch (e) {
+        alert('Твой ID: ' + id);
+    }
+}
+
 function actionVipBuy() {
     tg.openTelegramLink('https://t.me/ilyaech');
 }
@@ -1025,20 +1102,6 @@ function actionVipBuy() {
 // ============================================================
 // АДМИН-ДЕЙСТВИЯ
 // ============================================================
-async function actionAdminLoadStats() {
-    state.adminBusy = true;
-    await loadAdminStats();
-    state.adminBusy = false;
-    render();
-}
-
-async function actionAdminLoadFeedback() {
-    state.adminBusy = true;
-    await loadAdminFeedback();
-    state.adminBusy = false;
-    render();
-}
-
 async function actionAdminMonitor() {
     state.adminBusy = true;
     try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
@@ -1071,14 +1134,9 @@ async function actionAdminGiveVip() {
         const r = await apiPost('/api/admin/give-vip', { user_id, days });
         haptic('success'); alert(`VIP выдан до ${r.expiry}`);
         uidEl.value = '';
+        await loadAdminVips();
+        render();
     } catch (e) { alert('Ошибка: ' + e.message); }
-}
-
-async function actionAdminVipList() {
-    state.adminBusy = true;
-    await loadAdminVips();
-    state.adminBusy = false;
-    render();
 }
 
 async function actionAdminRevokeVip(uid) {
@@ -1148,17 +1206,18 @@ function handleAction(el) {
     else if (a === 'choose-group') actionChooseGroup();
     else if (a === 'forget-group') actionForgetGroup();
     else if (a === 'copy-referral') actionCopyReferral();
+    else if (a === 'copy-my-id') actionCopyMyId();
     else if (a === 'vip-buy') actionVipBuy();
+    else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
+    else if (a === 'go-vip') { state.tab = 'vip'; loadTabData('vip'); }
     else if (a === 'week-prev') { state.weekOffset -= 1; loadWeekAndRender(); }
     else if (a === 'week-next') { state.weekOffset += 1; loadWeekAndRender(); }
     else if (a === 'week-current') { state.weekOffset = 0; loadWeekAndRender(); }
     else if (a === 'week-today') { loadTodayAndRender(); }
-    else if (a === 'admin-load-stats') actionAdminLoadStats();
-    else if (a === 'admin-load-feedback') actionAdminLoadFeedback();
+    else if (a === 'week-view-all') { state.weekOffset = 0; loadWeekAndRender(); }
     else if (a === 'admin-monitor') actionAdminMonitor();
     else if (a === 'admin-broadcast') actionAdminBroadcast();
     else if (a === 'admin-give-vip') actionAdminGiveVip();
-    else if (a === 'admin-vip-list') actionAdminVipList();
     else if (a === 'admin-revoke-vip') actionAdminRevokeVip(parseInt(el.dataset.id));
     else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
     else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
