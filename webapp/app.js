@@ -1,9 +1,14 @@
 // ============================================================
-// TELEGRAM WEB APP SDK
+// TELEGRAM WEB APP SDK — ПОЛНОЭКРАННЫЙ РЕЖИМ
 // ============================================================
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
+
+// Fullscreen + фиксация портрета + отключение свайпов
+try { if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } catch (e) {}
+try { if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait'); } catch (e) {}
+try { if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes(); } catch (e) {}
 
 const tgUser = tg.initDataUnsafe?.user || {
     first_name: 'Гость', last_name: '', username: '', id: 0,
@@ -12,7 +17,7 @@ const tgUser = tg.initDataUnsafe?.user || {
 const INIT_DATA = tg.initData || '';
 
 // ============================================================
-// СПЛЭШ — скрываем через 1.2 сек после старта
+// СПЛЭШ
 // ============================================================
 setTimeout(() => {
     const sp = document.getElementById('splash');
@@ -176,7 +181,7 @@ function render() {
 }
 
 // ============================================================
-// USER BAR (компактный профиль сверху)
+// USER BAR
 // ============================================================
 function renderUserBar() {
     const u = state.user;
@@ -187,7 +192,6 @@ function renderUserBar() {
     if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
     if (u.username) metaParts.push('@' + u.username);
     const meta = metaParts.join(' · ') || 'профиль не заполнен';
-
     const tasks = p?.tasks_active ?? 0;
 
     return `
@@ -284,7 +288,6 @@ function renderSchedule() {
 
     if (!s) return html + renderEmpty('Нет данных о расписании');
 
-    // Онбординг: группа не выбрана
     if (s.error === 'no_group' || (state.profile && !state.profile.group)) {
         html += `
             <div class="banner">
