@@ -6,31 +6,25 @@ import asyncio
 import re
 import sys
 import json
-import hmac
 import base64
 import random
-import hashlib
 import sqlite3
 import logging
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qsl
 import aiohttp
 from aiohttp import web
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command, StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import CommandStart, Command
 from aiogram.types import (
-    Message, ReplyKeyboardMarkup, KeyboardButton,
-    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
-    FSInputFile
+    Message, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery, FSInputFile, WebAppInfo
 )
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 
 # ============================================================
-# ОЧИСТКА LATEX
+# ОЧИСТКА LATEX / MARKDOWN
 # ============================================================
 def clean_latex(text: str) -> str:
     if not text:
@@ -127,6 +121,7 @@ YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 REFERRAL_DAYS = 3
 
@@ -155,28 +150,9 @@ if GIGACHAT_CREDENTIALS:
 
 DB_PATH = os.getenv("DB_PATH", "users.db")
 CACHE_TTL_HOURS = 2
-CHANGES_CHECK_INTERVAL_MIN = 60
-DAILY_QUOTE_HOUR = 10
-
-NOTIFY_PRESETS = [
-    ("7:00", 7, 0), ("8:00", 8, 0),
-    ("19:00", 19, 0), ("20:00", 20, 0),
-    ("21:00", 21, 0), ("22:00", 22, 0),
-]
-
-MENU_BUTTONS = {
-    "Моя группа", "Расписание", "Уведомления", "Задачи",
-    "Заметки", "VIP", "AI Помощник", "AI по фото",
-    "Стипендия", "Пригласить друга", "Цитата дня",
-    "Обратная связь", "Помощь",
-}
 
 PRIORITY_LABELS = {0: "низкий", 1: "средний", 2: "высокий"}
-PRIORITY_MARK = {0: "[ ]", 1: "[~]", 2: "[!]"}
 
-# ============================================================
-# ЦИТАТЫ ДНЯ
-# ============================================================
 DAILY_QUOTES = [
     "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
     "Сессия сдаётся не за неделю, а за семестр.",
@@ -209,39 +185,6 @@ DAILY_QUOTES = [
     "Если не понимаешь — это нормально. Если не спрашиваешь — нет.",
     "Универ не учит думать. Универ даёт материал. Думать — твоя работа.",
 ]
-
-
-# ============================================================
-# FSM
-# ============================================================
-class FeedbackState(StatesGroup):
-    waiting_message = State()
-
-class FeedbackReplyState(StatesGroup):
-    waiting_reply = State()
-
-class TaskState(StatesGroup):
-    waiting_text = State()
-    waiting_due = State()
-    waiting_edit_text = State()
-    waiting_edit_due = State()
-
-class NoteState(StatesGroup):
-    waiting_subject = State()
-    waiting_text = State()
-
-class AIState(StatesGroup):
-    waiting_question = State()
-    waiting_photo = State()
-    waiting_photo_mode = State()
-
-class ScholarshipState(StatesGroup):
-    waiting_current_amount = State()
-    waiting_subject = State()
-    waiting_grade = State()
-
-class WebGroupState(StatesGroup):
-    waiting_group = State()
 
 
 # ============================================================
@@ -346,8 +289,7 @@ def add_referral(new_user_id, referrer_id):
     row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?",
                        (new_user_id,)).fetchone()
     if row:
-        conn.close()
-        return False
+        conn.close(); return False
     conn.execute(
         "INSERT INTO referrals (user_id, referrer_id, created_at, rewarded) VALUES (?, ?, ?, 0)",
         (new_user_id, referrer_id, datetime.now(timezone.utc).isoformat()))
@@ -515,28 +457,6 @@ def get_notify_changes(user_id):
     return bool(row and row[0])
 
 
-def get_users_to_notify(hour, minute):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT user_id, group_id, group_name FROM users "
-        "WHERE notify_hour=? AND notify_minute=? AND group_id IS NOT NULL",
-        (hour, minute)).fetchall()
-    conn.close()
-    return rows
-
-
-def get_changes_subscribers():
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT user_id, group_id, group_name FROM users "
-        "WHERE notify_changes=1 AND group_id IS NOT NULL").fetchall()
-    conn.close()
-    result = {}
-    for uid, gid, gname in rows:
-        result.setdefault(gid, []).append((uid, gname))
-    return result
-
-
 def get_total_users():
     conn = sqlite3.connect(DB_PATH)
     n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -641,37 +561,6 @@ def save_cached_schedule(group_id, week_start, html):
     conn.commit(); conn.close()
 
 
-def clear_old_cache():
-    conn = sqlite3.connect(DB_PATH)
-    threshold = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    conn.execute("DELETE FROM schedule_cache WHERE cached_at < ?", (threshold,))
-    conn.commit(); conn.close()
-
-
-def get_snapshot(group_id, week_start):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?",
-                       (group_id, week_start)).fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
-def save_snapshot(group_id, week_start, snapshot):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT OR REPLACE INTO schedule_snapshots VALUES (?, ?, ?, ?)",
-                 (group_id, week_start, snapshot, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-
-def build_snapshot(days):
-    parts = []
-    for d in days:
-        for les in d["lessons"]:
-            parts.append(f"{d['date']}|{les['time']}|{les['subject']}|{les['type']}|"
-                         f"{les['teacher']}|{les['auditorium']}|{les['subgroup']}")
-    return "\n".join(sorted(parts))
-
-
 def save_feedback(user_id, username, text, admin_msg_id=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
@@ -687,29 +576,12 @@ def update_feedback_admin_msg(feedback_id, admin_msg_id):
     conn.commit(); conn.close()
 
 
-def get_feedback_by_admin_msg(admin_msg_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT id, user_id FROM feedback WHERE admin_msg_id=?",
-                       (admin_msg_id,)).fetchone()
-    conn.close()
-    return row
-
-
 def get_pending_feedback():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT id, user_id, username, text, created_at, COALESCE(status,'new') "
         "FROM feedback WHERE COALESCE(status,'new') IN ('new', 'postponed') "
         "ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC").fetchall()
-    conn.close()
-    return rows
-
-
-def get_answered_feedback(limit=10):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT id, user_id, username, text, created_at, answered_at "
-                       "FROM feedback WHERE status='answered' ORDER BY id DESC LIMIT ?",
-                       (limit,)).fetchall()
     conn.close()
     return rows
 
@@ -826,15 +698,6 @@ def clear_done_tasks(user_id):
     conn.commit(); conn.close()
 
 
-def get_tasks_with_due():
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT user_id, id, text, due_date, priority, due_time "
-        "FROM tasks WHERE done=0 AND due_date IS NOT NULL").fetchall()
-    conn.close()
-    return rows
-
-
 def count_user_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
@@ -869,14 +732,6 @@ def get_user_notes(user_id):
     return rows
 
 
-def get_note(user_id, subject):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT text FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
-                       (user_id, subject)).fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
 def delete_note_by_id(note_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
@@ -884,7 +739,7 @@ def delete_note_by_id(note_id, user_id):
 
 
 # ============================================================
-# ГРУППЫ (полный список — как в твоём коде)
+# ГРУППЫ
 # ============================================================
 GROUPS = {
     "ИАМиТ": [
@@ -1041,16 +896,6 @@ def _monday_of_week(d):
     return d - timedelta(days=d.weekday())
 
 
-def _time_sort_key(t):
-    m = re.match(r"(\d+):(\d+)", t)
-    return (int(m.group(1)), int(m.group(2))) if m else (99, 99)
-
-
-def _time_range(t):
-    end = LESSON_TIMES.get(t)
-    return f"{t} - {end}" if end else t
-
-
 def _filter_lessons_by_subgroup(lessons, subgroup):
     if not subgroup:
         return lessons
@@ -1160,261 +1005,10 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
         return ""
 
 
-def format_day(day, user_id=None):
-    subgroup = get_user_subgroup(user_id) if user_id else 0
-    filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
-    lines = [day["name"], ""]
-    if not filtered:
-        lines.append("Занятий нет.")
-        lines.append("")
-        return "\n".join(lines)
-    by_time = {}
-    for les in filtered:
-        by_time.setdefault(les["time"], []).append(les)
-    subjects_today = set()
-    for time_str in sorted(by_time.keys(), key=_time_sort_key):
-        lessons = by_time[time_str]
-        for i, les in enumerate(lessons):
-            subj = les["subject"] or "—"
-            if les["type"]:
-                subj += f" ({les['type']})"
-            prefix = "!! " if ("перенос" in subj.lower() or "перенес" in subj.lower()) else ""
-            if i == 0:
-                lines.append(f"{prefix}{_time_range(time_str)}")
-                lines.append(f"  {subj}")
-            else:
-                if les["subgroup"]:
-                    lines.append(f"  подгр. {les['subgroup']}: {subj}")
-                else:
-                    lines.append(f"  {subj}")
-            details = []
-            if les["teacher"]:
-                details.append(les["teacher"])
-            if les["auditorium"]:
-                details.append(f"ауд. {les['auditorium']}")
-            if les["subgroup"] and i == 0 and len(lessons) == 1 and not subgroup:
-                details.append(f"подгр. {les['subgroup']}")
-            if details:
-                lines.append(f"  {', '.join(details)}")
-            if les["subject"]:
-                subjects_today.add(les["subject"])
-        lines.append("")
-    if user_id and subjects_today:
-        notes_lines = []
-        for subj in sorted(subjects_today):
-            note = get_note(user_id, subj)
-            if note:
-                notes_lines.append(f"{subj}: {note}")
-        if notes_lines:
-            lines.append("---")
-            lines.append("Заметки:")
-            lines.extend(notes_lines)
-    return "\n".join(lines).rstrip() + "\n"
-
-
-async def send_schedule_for_date(user_id, group_id, group_name, target_date, title):
-    monday = _monday_of_week(target_date)
-    html = await fetch_week_html(group_id, monday, use_cache=True)
-    if not html:
-        return
-    _, days = parse_schedule(html)
-    date_str = target_date.strftime("%d.%m.%Y")
-    day = next((d for d in days if d["date"] == date_str), None)
-    if day is None:
-        text = f"{title}\n\nЗанятий нет."
-    else:
-        text = f"{title}\n\n" + format_day(day, user_id=user_id).strip()
-    if len(text) > 4000:
-        text = text[:4000] + "\n... (обрезано)"
-    try:
-        await bot.send_message(user_id, text)
-    except Exception as e:
-        logging.error(f"[NOTIFY] {user_id}: {e}")
-
-
 # ============================================================
-# КЛАВИАТУРЫ
-# ============================================================
-def get_main_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Моя группа"), KeyboardButton(text="Расписание")],
-            [KeyboardButton(text="Уведомления"), KeyboardButton(text="Задачи")],
-            [KeyboardButton(text="Заметки"), KeyboardButton(text="VIP")],
-            [KeyboardButton(text="AI Помощник"), KeyboardButton(text="AI по фото")],
-            [KeyboardButton(text="Стипендия"), KeyboardButton(text="Пригласить друга")],
-            [KeyboardButton(text="Цитата дня"), KeyboardButton(text="Обратная связь")],
-            [KeyboardButton(text="Помощь")],
-        ], resize_keyboard=True)
-
-
-def get_institutes_keyboard():
-    keys = list(GROUPS.keys())
-    kb = []
-    for i in range(0, len(keys), 2):
-        row = [InlineKeyboardButton(text=keys[i], callback_data=f"institute_{keys[i]}")]
-        if i + 1 < len(keys):
-            row.append(InlineKeyboardButton(text=keys[i+1], callback_data=f"institute_{keys[i+1]}"))
-        kb.append(row)
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-def get_groups_keyboard(institute_name, page=0):
-    groups = GROUPS.get(institute_name, [])
-    per_page = 20
-    total_pages = max(1, (len(groups) + per_page - 1) // per_page)
-    page = max(0, min(page, total_pages - 1))
-    chunk = groups[page * per_page: (page + 1) * per_page]
-    kb = []
-    for i in range(0, len(chunk), 2):
-        row = [InlineKeyboardButton(text=chunk[i]["name"], callback_data=f"group_{chunk[i]['id']}")]
-        if i + 1 < len(chunk):
-            row.append(InlineKeyboardButton(text=chunk[i+1]["name"], callback_data=f"group_{chunk[i+1]['id']}"))
-        kb.append(row)
-    if total_pages > 1:
-        nav = []
-        if page > 0:
-            nav.append(InlineKeyboardButton(text="<<", callback_data=f"instpage_{institute_name}_{page-1}"))
-        nav.append(InlineKeyboardButton(text=f"{page+1}/{total_pages}", callback_data="noop"))
-        if page < total_pages - 1:
-            nav.append(InlineKeyboardButton(text=">>", callback_data=f"instpage_{institute_name}_{page+1}"))
-        kb.append(nav)
-    kb.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-def get_schedule_actions_keyboard(group_id, is_my_group=False, subgroup=0):
-    buttons = [
-        [InlineKeyboardButton(text="Сегодня", callback_data=f"today_{group_id}")],
-        [InlineKeyboardButton(text="Текущая неделя", callback_data=f"week_0_{group_id}")],
-        [InlineKeyboardButton(text="Следующая неделя", callback_data=f"week_1_{group_id}")],
-        [InlineKeyboardButton(text="Обновить (без кэша)", callback_data=f"refresh_{group_id}")],
-    ]
-    if is_my_group:
-        sub_label = "не выбрана" if subgroup == 0 else f"{subgroup}"
-        buttons.append([InlineKeyboardButton(text=f"Подгруппа: {sub_label}", callback_data="choose_subgroup")])
-        buttons.append([InlineKeyboardButton(text="Забыть группу", callback_data="forget_my")])
-    else:
-        buttons.append([InlineKeyboardButton(text="Сделать моей группой", callback_data=f"save_my_{group_id}")])
-    buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_institutes")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def get_notify_keyboard(current=None, changes_on=False):
-    buttons = []
-    for label, h, m in NOTIFY_PRESETS:
-        mark = " +" if current and current[0] == h and current[1] == m else ""
-        buttons.append([InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"notify_{h}_{m}")])
-    buttons.append([InlineKeyboardButton(text="Выключить", callback_data="notify_off")])
-    changes_mark = " вкл" if changes_on else " выкл"
-    buttons.append([InlineKeyboardButton(text=f"Следить за изменениями:{changes_mark}", callback_data="changes_toggle")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def get_tasks_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Добавить задачу", callback_data="task_add")],
-        [InlineKeyboardButton(text="Мои задачи", callback_data="task_list")],
-        [InlineKeyboardButton(text="Выполненные", callback_data="task_done_list")],
-        [InlineKeyboardButton(text="Статистика", callback_data="task_stats")],
-        [InlineKeyboardButton(text="Очистить выполненные", callback_data="task_clear")],
-    ])
-
-
-def get_task_priority_keyboard(action: str, task_id: int = 0, current: int = -1):
-    prefix = "task_prio_add_" if action == "add" else "task_prio_edit_"
-    buttons = []
-    for p in (2, 1, 0):
-        mark = " +" if p == current else ""
-        buttons.append([InlineKeyboardButton(
-            text=f"{PRIORITY_LABELS[p]}{mark}",
-            callback_data=f"{prefix}{p}" + (f"_{task_id}" if action == "edit" else ""))])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def get_task_due_keyboard(task_id: int = 0, edit: bool = False):
-    prefix = "task_due_edit_" if edit else "task_due_add_"
-    suffix = f"_{task_id}" if edit else ""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Сегодня", callback_data=f"{prefix}today{suffix}")],
-        [InlineKeyboardButton(text="Завтра", callback_data=f"{prefix}tomorrow{suffix}")],
-        [InlineKeyboardButton(text="+1 неделя", callback_data=f"{prefix}week{suffix}")],
-        [InlineKeyboardButton(text="Без срока", callback_data=f"{prefix}none{suffix}")],
-        [InlineKeyboardButton(text="Своя дата", callback_data=f"{prefix}custom{suffix}")],
-    ])
-
-
-def get_task_edit_keyboard(task_id: int):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Изменить текст", callback_data=f"task_edit_text_{task_id}")],
-        [InlineKeyboardButton(text="Изменить срок", callback_data=f"task_edit_due_{task_id}")],
-        [InlineKeyboardButton(text="Изменить приоритет", callback_data=f"task_edit_prio_{task_id}")],
-        [InlineKeyboardButton(text="Назад", callback_data="task_list")],
-    ])
-
-
-def get_notes_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Добавить заметку", callback_data="note_add")],
-        [InlineKeyboardButton(text="Мои заметки", callback_data="note_list")],
-    ])
-
-
-def get_notes_list_keyboard(notes):
-    kb = []
-    for nid, subj, _text in notes:
-        label = subj[:25] + "..." if len(subj) > 25 else subj
-        kb.append([
-            InlineKeyboardButton(text=f"Изм. {label}", callback_data=f"note_edit_{nid}"),
-            InlineKeyboardButton(text=f"Удал. {label}", callback_data=f"note_del_{nid}"),
-        ])
-    kb.append([InlineKeyboardButton(text="Добавить заметку", callback_data="note_add")])
-    kb.append([InlineKeyboardButton(text="Назад", callback_data="note_back")])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-def get_vip_keyboard(is_active=False):
-    if is_active:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Моя статистика", callback_data="vip_stats")],
-            [InlineKeyboardButton(text="Продлить подписку", callback_data="vip_buy")],
-        ])
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Купить VIP", callback_data="vip_buy")],
-    ])
-
-
-def get_ai_photo_mode_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Краткий конспект", callback_data="ai_photo_conspect")],
-        [InlineKeyboardButton(text="Решить задание", callback_data="ai_photo_solve")],
-        [InlineKeyboardButton(text="Отмена", callback_data="ai_photo_cancel")],
-    ])
-
-
-def get_daily_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Цитата дня", callback_data="daily_quote_now")],
-        [InlineKeyboardButton(text="Подписаться на 10:00", callback_data="daily_on")],
-        [InlineKeyboardButton(text="Отписаться", callback_data="daily_off")],
-    ])
-
-
-def get_scholarship_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
-        [InlineKeyboardButton(text="Мои оценки", callback_data="sch_list")],
-        [InlineKeyboardButton(text="Итог", callback_data="sch_result")],
-        [InlineKeyboardButton(text="Изменить сумму стипендии", callback_data="sch_set_amount")],
-        [InlineKeyboardButton(text="Очистить оценки", callback_data="sch_clear")],
-    ])
-
-
-# ============================================================
-# ВЕБ-СЕРВЕР: ПРОВЕРКА initData
+# initData
 # ============================================================
 def _verify_webapp_init(init_data: str):
-    """Возвращает user_id или None."""
     if not init_data:
         return None
     try:
@@ -1427,10 +1021,9 @@ def _verify_webapp_init(init_data: str):
 
 
 # ============================================================
-# ВЕБ-СЕРВЕР: API-ЭНДПОИНТЫ
+# API — ПОЛЬЗОВАТЕЛЬСКИЕ
 # ============================================================
 async def api_schedule(request: web.Request):
-    """GET /api/schedule?initData=...&offset=0 — расписание на сегодня/день"""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
@@ -1438,57 +1031,36 @@ async def api_schedule(request: web.Request):
 
     saved = get_user_group(user_id)
     if not saved:
-        return web.json_response({
-            "error": "no_group",
-            "message": "Сначала выбери группу",
-        }, status=200)
+        return web.json_response({"error": "no_group", "message": "Сначала выбери группу"}, status=200)
 
     group_id, group_name = saved
     subgroup = get_user_subgroup(user_id)
-
     today = _now_irkutsk()
     monday = _monday_of_week(today)
     html = await fetch_week_html(group_id, monday, use_cache=True)
     if not html:
-        return web.json_response({
-            "error": "no_data",
-            "message": "Не удалось загрузить расписание",
-        }, status=200)
+        return web.json_response({"error": "no_data", "message": "Не удалось загрузить"}, status=200)
 
     _, days = parse_schedule(html)
     today_str = today.strftime("%d.%m.%Y")
     day = next((d for d in days if d["date"] == today_str), None)
-
     if day is None:
-        return web.json_response({
-            "date": today_str, "dayName": "", "group": group_name,
-            "subgroup": subgroup, "lessons": [],
-        })
-
+        return web.json_response({"date": today_str, "dayName": "", "group": group_name,
+                                   "subgroup": subgroup, "lessons": []})
     filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
-    lessons_out = []
-    for les in filtered:
-        lessons_out.append({
-            "time": les["time"],
-            "timeEnd": LESSON_TIMES.get(les["time"], ""),
-            "subject": les["subject"],
-            "type": les["type"],
-            "teacher": les["teacher"],
-            "auditorium": les["auditorium"],
-            "subgroup": les["subgroup"],
-        })
-
+    lessons_out = [{
+        "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
+        "subject": les["subject"], "type": les["type"],
+        "teacher": les["teacher"], "auditorium": les["auditorium"],
+        "subgroup": les["subgroup"],
+    } for les in filtered]
     return web.json_response({
-        "date": day["date"],
-        "dayName": day["name"],
-        "group": group_name,
-        "subgroup": subgroup,
-        "lessons": lessons_out,
+        "date": day["date"], "dayName": day["name"], "group": group_name,
+        "subgroup": subgroup, "lessons": lessons_out,
     })
 
 
 async def api_week(request: web.Request):
-    """GET /api/week?initData=...&offset=0 — вся неделя"""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
@@ -1501,7 +1073,6 @@ async def api_week(request: web.Request):
 
     group_id, group_name = saved
     subgroup = get_user_subgroup(user_id)
-
     today = _now_irkutsk()
     target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
     html = await fetch_week_html(group_id, target_monday, use_cache=True)
@@ -1512,32 +1083,17 @@ async def api_week(request: web.Request):
     days_out = []
     for d in days:
         filtered = _filter_lessons_by_subgroup(d["lessons"], subgroup)
-        lessons_out = []
-        for les in filtered:
-            lessons_out.append({
-                "time": les["time"],
-                "timeEnd": LESSON_TIMES.get(les["time"], ""),
-                "subject": les["subject"],
-                "type": les["type"],
-                "teacher": les["teacher"],
-                "auditorium": les["auditorium"],
-                "subgroup": les["subgroup"],
-            })
-        days_out.append({
-            "date": d["date"],
-            "name": d["name"],
-            "lessons": lessons_out,
-        })
-
-    return web.json_response({
-        "group": group_name,
-        "subgroup": subgroup,
-        "days": days_out,
-    })
+        lessons_out = [{
+            "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
+            "subject": les["subject"], "type": les["type"],
+            "teacher": les["teacher"], "auditorium": les["auditorium"],
+            "subgroup": les["subgroup"],
+        } for les in filtered]
+        days_out.append({"date": d["date"], "name": d["name"], "lessons": lessons_out})
+    return web.json_response({"group": group_name, "subgroup": subgroup, "days": days_out})
 
 
 async def api_me(request: web.Request):
-    """GET /api/me?initData=... — профиль пользователя"""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
@@ -1555,26 +1111,23 @@ async def api_me(request: web.Request):
     notif = get_notify_time(user_id)
     changes = get_notify_changes(user_id)
 
-    avg = 0
-    if grades:
-        avg = sum(g[2] for g in grades) / len(grades)
+    avg = sum(g[2] for g in grades) / len(grades) if grades else 0
 
     return web.json_response({
         "user_id": user_id,
+        "is_admin": user_id == ADMIN_ID,
         "group": saved[1] if saved else None,
         "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id),
         "is_vip": is_vip(user_id),
         "vip_until": vip_info[0].isoformat() if vip_info else None,
         "vip_days_left": (vip_info[0] - datetime.now(timezone.utc)).days if vip_info else 0,
-        "tasks_active": active,
-        "tasks_done": done,
+        "tasks_active": active, "tasks_done": done,
         "notes_count": len(notes),
         "scholarship_amount": amount,
         "grades_count": len(grades),
         "grades_avg": round(avg, 2),
-        "referral_total": total,
-        "referral_rewarded": rewarded,
+        "referral_total": total, "referral_rewarded": rewarded,
         "referral_days": rewarded * REFERRAL_DAYS,
         "daily_subscribed": daily,
         "notify_time": f"{notif[0]:02d}:{notif[1]:02d}" if notif else None,
@@ -1583,53 +1136,41 @@ async def api_me(request: web.Request):
 
 
 async def api_groups(request: web.Request):
-    """GET /api/groups — список институтов и групп"""
     return web.json_response({"groups": GROUPS})
 
 
 async def api_set_group(request: web.Request):
-    """POST /api/set-group {initData, group_id, group_name, subgroup}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     group_id = str(body.get("group_id", ""))
     group_name = str(body.get("group_name", ""))
     subgroup = int(body.get("subgroup", 0))
-
     if not group_id or not group_name:
-        return web.json_response({"error": "no_group"}, status=400)
-
+        delete_user_group(user_id)
+        return web.json_response({"ok": True})
     save_user_group(user_id, group_id, group_name)
     set_user_subgroup(user_id, subgroup)
-
-    return web.json_response({"ok": True, "group": group_name, "subgroup": subgroup})
+    return web.json_response({"ok": True})
 
 
 async def api_set_subgroup(request: web.Request):
-    """POST /api/set-subgroup {initData, subgroup}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     subgroup = int(body.get("subgroup", 0))
     set_user_subgroup(user_id, subgroup)
-    return web.json_response({"ok": True, "subgroup": subgroup})
+    return web.json_response({"ok": True})
 
 
-# ---------- ЗАДАЧИ ----------
 def _task_to_dict(row):
     tid, text, due_date, done, created_at, priority, due_time = row
     overdue = False
@@ -1642,108 +1183,76 @@ def _task_to_dict(row):
             overdue = dt < _now_irkutsk()
         except Exception:
             pass
-    return {
-        "id": tid,
-        "text": text,
-        "due_date": due_date,
-        "due_time": due_time,
-        "priority": priority or 1,
-        "done": bool(done),
-        "overdue": overdue,
-    }
+    return {"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
+            "priority": priority or 1, "done": bool(done), "overdue": overdue}
 
 
 async def api_tasks(request: web.Request):
-    """GET /api/tasks?initData=...&done=0|1"""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     show_done = request.query.get("done", "0") == "1"
     if show_done:
         rows = get_done_tasks(user_id, days=7)
         tasks = []
         for r in rows:
             tid, text, due_date, done, created_at, priority, due_time, done_at = r
-            tasks.append({
-                "id": tid, "text": text, "due_date": due_date,
-                "due_time": due_time, "priority": priority or 1,
-                "done": True, "done_at": done_at, "overdue": False,
-            })
+            tasks.append({"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
+                          "priority": priority or 1, "done": True, "done_at": done_at, "overdue": False})
     else:
         rows = get_user_tasks(user_id, only_active=True)
         tasks = [_task_to_dict(r) for r in rows]
-
     active, done_count = count_user_tasks(user_id)
-    return web.json_response({
-        "tasks": tasks,
-        "active": active,
-        "done": done_count,
-    })
+    return web.json_response({"tasks": tasks, "active": active, "done": done_count})
 
 
 async def api_task_add(request: web.Request):
-    """POST /api/task-add {initData, text, due_date, due_time, priority}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     text = (body.get("text") or "").strip()
     if not text:
         return web.json_response({"error": "empty_text"}, status=400)
     if len(text) > 500:
         text = text[:500]
-
     due_date = body.get("due_date") or None
     due_time = body.get("due_time") or None
     priority = int(body.get("priority", 1))
     if priority not in (0, 1, 2):
         priority = 1
-
     tid = add_task(user_id, text, due_date, priority, due_time)
     return web.json_response({"ok": True, "id": tid})
 
 
 async def api_task_update(request: web.Request):
-    """POST /api/task-update {initData, id, text?, due_date?, due_time?, priority?, done?}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     tid = int(body.get("id", 0))
     if not tid:
         return web.json_response({"error": "no_id"}, status=400)
-
     row = get_task(tid, user_id)
     if not row:
         return web.json_response({"error": "not_found"}, status=404)
-
     if body.get("done") is True:
         mark_task_done(tid, user_id)
         return web.json_response({"ok": True, "done": True})
-
     text = body.get("text")
     due_date = body.get("due_date")
     due_time = body.get("due_time")
     priority = body.get("priority")
     reset_due = body.get("reset_due", False)
-
     if priority is not None:
         priority = int(priority)
-
     update_task(tid, user_id,
                 text=text if text is not None else None,
                 due_date=due_date if due_date else None,
@@ -1754,66 +1263,49 @@ async def api_task_update(request: web.Request):
 
 
 async def api_task_delete(request: web.Request):
-    """POST /api/task-delete {initData, id}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     tid = int(body.get("id", 0))
     if not tid:
         return web.json_response({"error": "no_id"}, status=400)
-
     delete_task(tid, user_id)
     return web.json_response({"ok": True})
 
 
 async def api_task_clear(request: web.Request):
-    """POST /api/task-clear {initData}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     clear_done_tasks(user_id)
     return web.json_response({"ok": True})
 
 
-# ---------- ЗАМЕТКИ ----------
 async def api_notes(request: web.Request):
-    """GET /api/notes?initData=..."""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     rows = get_user_notes(user_id)
-    notes = [{"id": nid, "subject": subj, "text": txt} for nid, subj, txt in rows]
-    return web.json_response({"notes": notes})
+    return web.json_response({"notes": [{"id": nid, "subject": subj, "text": txt} for nid, subj, txt in rows]})
 
 
 async def api_note_save(request: web.Request):
-    """POST /api/note-save {initData, subject, text}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     subject = (body.get("subject") or "").strip()
     text = (body.get("text") or "").strip()
     if not subject or not text:
@@ -1822,81 +1314,60 @@ async def api_note_save(request: web.Request):
         subject = subject[:100]
     if len(text) > 500:
         text = text[:500]
-
     add_or_update_note(user_id, subject, text)
     return web.json_response({"ok": True})
 
 
 async def api_note_delete(request: web.Request):
-    """POST /api/note-delete {initData, id}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     nid = int(body.get("id", 0))
     if not nid:
         return web.json_response({"error": "no_id"}, status=400)
-
     delete_note_by_id(nid, user_id)
     return web.json_response({"ok": True})
 
 
-# ---------- УВЕДОМЛЕНИЯ ----------
 async def api_notify_set(request: web.Request):
-    """POST /api/notify-set {initData, hour, minute, changes}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     hour = int(body.get("hour", -1))
     minute = int(body.get("minute", 0))
     changes = bool(body.get("changes", False))
-
     set_notify_time(user_id, hour, minute)
     set_notify_changes(user_id, changes)
     return web.json_response({"ok": True})
 
 
-# ---------- ЦИТАТА ДНЯ ----------
 async def api_quote(request: web.Request):
-    """GET /api/quote?initData=..."""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
-    subscribed = daily_is_subscribed(user_id)
     return web.json_response({
         "quote": random.choice(DAILY_QUOTES),
-        "subscribed": subscribed,
-        "hour": DAILY_QUOTE_HOUR,
+        "subscribed": daily_is_subscribed(user_id),
     })
 
 
 async def api_quote_subscribe(request: web.Request):
-    """POST /api/quote-subscribe {initData, subscribe: true|false}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     sub = bool(body.get("subscribe", False))
     if sub:
         daily_subscribe(user_id)
@@ -1905,50 +1376,35 @@ async def api_quote_subscribe(request: web.Request):
     return web.json_response({"ok": True, "subscribed": sub})
 
 
-# ---------- РЕФЕРАЛКА ----------
 async def api_referral(request: web.Request):
-    """GET /api/referral?initData=..."""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     total, rewarded = get_referral_stats(user_id)
     bot_username = BOT_USERNAME.replace("@", "")
     link = f"https://t.me/{bot_username}?start=ref_{user_id}"
     return web.json_response({
-        "link": link,
-        "total": total,
-        "rewarded": rewarded,
-        "days": rewarded * REFERRAL_DAYS,
-        "referral_days": REFERRAL_DAYS,
+        "link": link, "total": total, "rewarded": rewarded,
+        "days": rewarded * REFERRAL_DAYS, "referral_days": REFERRAL_DAYS,
     })
 
 
-# ---------- СТИПЕНДИЯ ----------
 async def api_scholarship(request: web.Request):
-    """GET /api/scholarship?initData=..."""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     if not is_vip(user_id):
         return web.json_response({"error": "vip_only"}, status=403)
-
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
     grades_out = [{"id": gid, "subject": subj, "grade": grade} for gid, subj, grade in grades]
-
-    avg = 0
-    count5 = count4 = count3 = count2 = 0
-    if grades:
-        avg = sum(g[2] for g in grades) / len(grades)
-        count5 = sum(1 for g in grades if g[2] == 5)
-        count4 = sum(1 for g in grades if g[2] == 4)
-        count3 = sum(1 for g in grades if g[2] == 3)
-        count2 = sum(1 for g in grades if g[2] == 2)
-
+    avg = sum(g[2] for g in grades) / len(grades) if grades else 0
+    count5 = sum(1 for g in grades if g[2] == 5)
+    count4 = sum(1 for g in grades if g[2] == 4)
+    count3 = sum(1 for g in grades if g[2] == 3)
+    count2 = sum(1 for g in grades if g[2] == 2)
     forecast = ""
     if count2 > 0 or count3 > 0:
         forecast = "На академическую не проходишь: есть тройки/двойки."
@@ -1958,144 +1414,107 @@ async def api_scholarship(request: web.Request):
         forecast = f"Проходишь на академическую. До повышенной не хватает {4.5 - avg:.2f}."
     elif grades:
         forecast = "На академическую не проходишь: средний балл ниже 4.0."
-
     return web.json_response({
-        "amount": amount,
-        "grades": grades_out,
-        "avg": round(avg, 2),
-        "count5": count5,
-        "count4": count4,
-        "count3": count3,
-        "count2": count2,
+        "amount": amount, "grades": grades_out, "avg": round(avg, 2),
+        "count5": count5, "count4": count4, "count3": count3, "count2": count2,
         "forecast": forecast,
     })
 
 
 async def api_scholarship_set_amount(request: web.Request):
-    """POST /api/scholarship-set-amount {initData, amount}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     if not is_vip(user_id):
         return web.json_response({"error": "vip_only"}, status=403)
-
     amount = int(body.get("amount", 0))
     if amount < 0 or amount > 100000:
-        return web.json_response({"error": "invalid_amount"}, status=400)
-
+        return web.json_response({"error": "invalid"}, status=400)
     set_scholarship_amount(user_id, amount)
     return web.json_response({"ok": True})
 
 
 async def api_scholarship_add_grade(request: web.Request):
-    """POST /api/scholarship-add-grade {initData, subject, grade}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     if not is_vip(user_id):
         return web.json_response({"error": "vip_only"}, status=403)
-
     subject = (body.get("subject") or "").strip()
     grade = int(body.get("grade", 0))
     if not subject or grade not in (2, 3, 4, 5):
         return web.json_response({"error": "invalid"}, status=400)
     if len(subject) > 100:
         subject = subject[:100]
-
     add_grade(user_id, subject, grade)
     return web.json_response({"ok": True})
 
 
 async def api_scholarship_delete_grade(request: web.Request):
-    """POST /api/scholarship-delete-grade {initData, id}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     if not is_vip(user_id):
         return web.json_response({"error": "vip_only"}, status=403)
-
     gid = int(body.get("id", 0))
     if not gid:
         return web.json_response({"error": "no_id"}, status=400)
-
     delete_grade(gid, user_id)
     return web.json_response({"ok": True})
 
 
 async def api_scholarship_clear(request: web.Request):
-    """POST /api/scholarship-clear {initData}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     if not is_vip(user_id):
         return web.json_response({"error": "vip_only"}, status=403)
-
     clear_grades(user_id)
     return web.json_response({"ok": True})
 
 
-# ---------- AI ----------
 async def api_ai(request: web.Request):
-    """POST /api/ai {initData, question}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     if not is_vip(user_id):
         return web.json_response({"error": "vip_only"}, status=403)
-
     if giga_client is None:
         return web.json_response({"error": "ai_unavailable"}, status=503)
-
     question = (body.get("question") or "").strip()
     if not question:
         return web.json_response({"error": "empty"}, status=400)
     if len(question) > 2000:
         question = question[:2000]
-
     try:
         prompt = (
             "Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
             "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
             "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-            "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
+            "- НЕ используй LaTeX-команды.\n"
             "- Формулы пиши обычным текстом.\n"
-            "- Структурируй текст простыми списками через «- » или нумерацией.\n"
-            "- Пиши без воды, только по делу.\n\n"
+            "- Структурируй текст простыми списками.\n"
+            "- Пиши без воды.\n\n"
             f"Вопрос: {question}"
         )
         response = await giga_client.achat(prompt)
@@ -2113,2310 +1532,212 @@ async def api_ai(request: web.Request):
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
 
-# ---------- ОБРАТНАЯ СВЯЗЬ ----------
 async def api_feedback(request: web.Request):
-    """POST /api/feedback {initData, text}"""
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
-    init_data = body.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
+    user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     text = (body.get("text") or "").strip()
     if not text:
         return web.json_response({"error": "empty"}, status=400)
     if len(text) > 2000:
         text = text[:2000]
-
     uname = f"user_{user_id}"
     fid = save_feedback(user_id, uname, text)
     try:
         vip_mark = "[VIP] " if is_vip(user_id) else ""
         admin_msg = await bot.send_message(
             ADMIN_ID,
-            f"{vip_mark}Обращение #{fid} (из веба)\nОт: user_{user_id}\n\n{text}\n\n"
-            f"Ответь reply-ом или через /feedback_list")
+            f"{vip_mark}Обращение #{fid} (из веба)\nОт: user_{user_id}\n\n{text}")
         update_feedback_admin_msg(fid, admin_msg.message_id)
     except Exception as e:
         logging.error(f"[FEEDBACK-WEB] {e}")
-
     return web.json_response({"ok": True, "id": fid})
 
 
-# ---------- VIP ----------
 async def api_vip(request: web.Request):
-    """GET /api/vip?initData=..."""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-
     info = get_vip_info(user_id)
     if info:
         expiry, tier = info
         days_left = (expiry - datetime.now(timezone.utc)).days
-        return web.json_response({
-            "is_vip": True,
-            "expiry": expiry.isoformat(),
-            "days_left": days_left,
-            "tier": tier,
-        })
+        return web.json_response({"is_vip": True, "expiry": expiry.isoformat(),
+                                   "days_left": days_left, "tier": tier})
     return web.json_response({"is_vip": False})
 
 
 # ============================================================
-# ГЛОБАЛЬНЫЙ ХЕНДЛЕР (без отступа — это комментарий верхнего уровня)
+# API — АДМИНСКИЕ (только ADMIN_ID)
 # ============================================================
-@dp.message(StateFilter("*"), F.text.in_(MENU_BUTTONS))
-async def menu_button_global(message: Message, state: FSMContext):
-    await state.clear()
-    text = message.text
-    if text == "Моя группа":
-        await show_my_group(message)
-    elif text == "Расписание":
-        await show_institutes(message)
-    elif text == "Уведомления":
-        await notifications_menu(message)
-    elif text == "Задачи":
-        await tasks_menu(message)
-    elif text == "Заметки":
-        await notes_menu(message)
-    elif text == "VIP":
-        await vip_menu(message)
-    elif text == "AI Помощник":
-        await ai_menu(message, state)
-    elif text == "AI по фото":
-        await ai_photo_menu(message, state)
-    elif text == "Стипендия":
-        await scholarship_menu(message, state)
-    elif text == "Пригласить друга":
-        await referral_menu(message)
-    elif text == "Цитата дня":
-        await daily_quote_menu(message)
-    elif text == "Обратная связь":
-        await feedback_start(message, state)
-    elif text == "Помощь":
-        await help_cmd(message)
+def _admin_only(init_data):
+    user_id = _verify_webapp_init(init_data)
+    if not user_id or user_id != ADMIN_ID:
+        return None
+    return user_id
 
 
-@dp.message(CommandStart())
-async def start(message: Message, state: FSMContext):
-    await state.clear()
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-    ref_payload = args[1].strip() if len(args) > 1 else ""
-
-    was_known = user_exists(user_id)
-    _ensure_user(user_id)
-
-    referral_msg = ""
-    if ref_payload.startswith("ref_") and not was_known:
-        try:
-            referrer_id = int(ref_payload[4:])
-        except ValueError:
-            referrer_id = None
-        if referrer_id and referrer_id != user_id and user_exists(referrer_id):
-            ok = add_referral(user_id, referrer_id)
-            if ok:
-                set_vip(referrer_id, REFERRAL_DAYS)
-                set_vip(user_id, REFERRAL_DAYS)
-                mark_referral_rewarded(user_id)
-                referral_msg = f"\n\nТебе начислено {REFERRAL_DAYS} дней VIP за приглашение от друга!"
-                try:
-                    await bot.send_message(
-                        referrer_id,
-                        f"По твоей ссылке зашёл новый пользователь.\n"
-                        f"Тебе начислено {REFERRAL_DAYS} дней VIP."
-                    )
-                except Exception as e:
-                    logging.error(f"[REFERRAL] не уведомил {referrer_id}: {e}")
-
-    saved = get_user_group(user_id)
-    vip_mark = " [VIP]" if is_vip(user_id) else ""
-    sub_mark = ""
-    if saved:
-        sub = get_user_subgroup(user_id)
-        if sub:
-            sub_mark = f" (подгр. {sub})"
-    hint = f"\n\nТвоя группа: {saved[1]}{sub_mark}{vip_mark}" if saved else \
-           "\n\nСовет: выбери группу через «Расписание»."
-    await message.answer(
-        f"Привет, {message.from_user.full_name}!\n\nЯ бот для студентов ИРНИТУ."
-        f"{hint}{referral_msg}\n\n"
-        f"Кнопка Mini App — слева от поля ввода. Там расписание, задачи, заметки и AI.",
-        reply_markup=get_main_keyboard())
-
-
-@dp.message(Command("myid"))
-async def cmd_myid(message: Message):
-    await message.answer(f"Твой Telegram ID: {message.from_user.id}")
-
-
-@dp.message(Command("cancel"))
-async def cmd_cancel(message: Message, state: FSMContext):
-    current = await state.get_state()
-    if current is None:
-        await message.answer("Нечего отменять.", reply_markup=get_main_keyboard())
-        return
-    await state.clear()
-    await message.answer("Отменено.", reply_markup=get_main_keyboard())
-
-
-@dp.message(Command("quote"))
-async def cmd_quote(message: Message):
-    await daily_quote_menu(message)
-
-
-# ============================================================
-# ЦИТАТА ДНЯ — МЕНЮ
-# ============================================================
-async def daily_quote_menu(message: Message):
-    subscribed = daily_is_subscribed(message.from_user.id)
-    status = "подписан на 10:00" if subscribed else "не подписан"
-    await message.answer(
-        f"{random.choice(DAILY_QUOTES)}\n\nСтатус подписки: {status}",
-        reply_markup=get_daily_keyboard())
-
-
-# ============================================================
-# РЕФЕРАЛЬНАЯ СИСТЕМА
-# ============================================================
-async def referral_menu(message: Message):
-    user_id = message.from_user.id
-    link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
-    total, rewarded = get_referral_stats(user_id)
-    vip_days_earned = rewarded * REFERRAL_DAYS
-
-    text = (
-        "Приглашай друзей и получай VIP\n\n"
-        f"За каждого нового пользователя по твоей ссылке:\n"
-        f"- тебе +{REFERRAL_DAYS} дней VIP\n"
-        f"- ему +{REFERRAL_DAYS} дней VIP\n\n"
-        f"Твоя ссылка:\n{link}\n\n"
-        f"Пришло по ссылке: {total}\n"
-        f"Засчитано (награда выдана): {rewarded}\n"
-        f"Заработано VIP-дней: {vip_days_earned}"
-    )
-    await message.answer(text, reply_markup=get_main_keyboard())
-
-
-# ============================================================
-# АДМИН
-# ============================================================
-ADMIN_HELP_TEXT = """АДМИН-КОМАНДЫ
-
-СТАТИСТИКА
-/stats — общее число пользователей в боте
-/vip_list — список активных VIP-подписок
-
-ОБРАТНАЯ СВЯЗЬ
-/feedback_list — актуальные обращения
-/feedback_answered — последние 10 отвеченных
-
-РАССЫЛКА
-/broadcast Текст — отправить сообщение всем пользователям
-
-VIP-ПОДПИСКИ
-/give_vip user_id дней — выдать VIP на N дней
-/revoke_vip user_id — снять VIP досрочно
-/vip_list — список активных VIP
-
-БАЗА ДАННЫХ
-/backup — прислать файл users.db
-/restore — восстановить базу из файла .db
-
-РАСПИСАНИЕ И СЕТЬ
-/clearcache — очистить кэш расписаний
-/checknow — вручную запустить проверку изменений
-/monitor — проверить, отвечает ли сайт ИРНИТУ
-
-ПРОЧЕЕ
-/myid — узнать свой Telegram ID
-/admin — показать это сообщение
-"""
-
-
-@dp.message(Command("admin"))
-async def cmd_admin(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа.")
-        return
-    await message.answer(ADMIN_HELP_TEXT)
-
-
-@dp.message(Command("stats"))
-async def cmd_stats(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа.")
-        return
+async def api_admin_stats(request: web.Request):
+    init_data = request.query.get("initData", "")
+    if not _admin_only(init_data):
+        return web.json_response({"error": "forbidden"}, status=403)
     total = get_total_users()
-    await message.answer(f"Пользователей в боте: {total}")
+    vips = get_all_vips()
+    pending = get_pending_feedback()
+    return web.json_response({
+        "total_users": total,
+        "vip_count": len(vips),
+        "pending_feedback": len(pending),
+    })
 
 
-@dp.message(Command("broadcast"))
-async def cmd_broadcast(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    text = message.text.replace("/broadcast", "", 1).strip()
-    if not text:
-        await message.answer("Использование: /broadcast Текст")
-        return
-    user_ids = get_all_user_ids()
-    if not user_ids:
-        await message.answer("Нет пользователей.")
-        return
-    status = await message.answer(f"Отправляю {len(user_ids)}...")
-    sent = failed = 0
-    for uid in user_ids:
-        try:
-            await bot.send_message(uid, text)
-            sent += 1
-        except Exception:
-            failed += 1
-        await asyncio.sleep(0.05)
-    await status.edit_text(f"Отправлено: {sent}\nНе доставлено: {failed}")
-
-
-@dp.message(Command("backup"))
-async def cmd_backup(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    try:
-        total = get_total_users()
-        doc = FSInputFile(DB_PATH, filename="users_backup.db")
-        await message.answer_document(doc, caption=f"Резервная копия. Всего пользователей: {total}")
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
-
-
-@dp.message(Command("restore"))
-async def cmd_restore(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if not message.document:
-        await message.answer("Пришли файл .db с командой /restore в подписи.")
-        return
-    try:
-        file = await bot.get_file(message.document.file_id)
-        await bot.download_file(file.file_path, DB_PATH)
-        init_db()
-        await message.answer(f"База восстановлена. Всего: {get_total_users()}")
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
-
-
-@dp.message(Command("feedback_list"))
-async def cmd_feedback_list(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    await show_pending_feedback(message)
-
-
-@dp.message(Command("feedback_answered"))
-async def cmd_feedback_answered(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    rows = get_answered_feedback(10)
-    if not rows:
-        await message.answer("Отвеченных нет.")
-        return
-    lines = ["Последние отвеченные:\n"]
-    for fid, uid, uname, text, created, answered in rows:
-        lines.append(f"#{fid} | {uname or uid}\n{text[:150]}\n")
-    await message.answer("\n".join(lines)[:4000])
-
-
-async def show_pending_feedback(target):
+async def api_admin_feedback_list(request: web.Request):
+    init_data = request.query.get("initData", "")
+    if not _admin_only(init_data):
+        return web.json_response({"error": "forbidden"}, status=403)
     rows = get_pending_feedback()
-    if not rows:
-        text = "Актуальных обращений нет.\n\nОтвеченные — /feedback_answered"
-        if hasattr(target, "edit_text"):
-            try:
-                await target.edit_text(text)
-            except Exception:
-                await target.answer(text)
-        else:
-            await target.answer(text)
-        return
-    lines = [f"Актуальных обращений: {len(rows)}\n"]
-    buttons = []
+    items = []
     for fid, uid, uname, text, created, status in rows:
-        status_mark = "[отложено] " if status == "postponed" else ""
-        vip_mark = "[VIP] " if is_vip(uid) else ""
-        lines.append(f"{status_mark}{vip_mark}#{fid} | {uname or uid}\n{text[:180]}\n")
-        buttons.append([
-            InlineKeyboardButton(text=f"Ответить #{fid}", callback_data=f"fb_reply_{fid}"),
-            InlineKeyboardButton(text=f"Отложить #{fid}", callback_data=f"fb_postpone_{fid}"),
-        ])
-    buttons.append([InlineKeyboardButton(text="Обновить", callback_data="fb_refresh")])
-    text = "\n".join(lines)
-    if len(text) > 3500:
-        text = text[:3500] + "\n..."
-    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    if hasattr(target, "edit_text"):
-        try:
-            await target.edit_text(text, reply_markup=kb)
-        except Exception:
-            await target.answer(text, reply_markup=kb)
-    else:
-        await target.answer(text, reply_markup=kb)
+        items.append({"id": fid, "user_id": uid, "username": uname,
+                      "text": text, "created": created, "status": status})
+    return web.json_response({"items": items})
 
 
-@dp.callback_query(F.data == "fb_refresh")
-async def fb_refresh(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer()
-        return
-    await show_pending_feedback(callback.message)
-    await callback.answer("Обновлено")
-
-
-@dp.callback_query(F.data.startswith("fb_postpone_"))
-async def fb_postpone(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer()
-        return
-    fid = int(callback.data.split("_")[-1])
-    set_feedback_status(fid, "postponed")
-    await callback.answer(f"#{fid} отложено")
-    await show_pending_feedback(callback.message)
-
-
-@dp.callback_query(F.data.startswith("fb_reply_"))
-async def fb_reply_start(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer()
-        return
-    fid = int(callback.data.split("_")[-1])
+async def api_admin_feedback_reply(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")):
+        return web.json_response({"error": "forbidden"}, status=403)
+    fid = int(body.get("id", 0))
+    reply = (body.get("text") or "").strip()
+    if not fid or not reply:
+        return web.json_response({"error": "empty"}, status=400)
     row = get_feedback_by_id(fid)
     if not row:
-        await callback.answer("Не найдено")
-        return
-    _, uid, uname, text = row
-    await state.update_data(feedback_id=fid, target_user=uid)
-    await callback.message.edit_text(f"Ответ на #{fid}\nОт: {uname or uid}\n\n{text[:300]}\n\nНапиши ответ.\n\n/cancel")
-    await state.set_state(FeedbackReplyState.waiting_reply)
-    await callback.answer()
-
-
-@dp.message(FeedbackReplyState.waiting_reply)
-async def fb_reply_send(message: Message, state: FSMContext):
-    data = await state.get_data()
-    fid = data.get("feedback_id")
-    uid = data.get("target_user")
-    if not fid or not uid:
-        await state.clear()
-        await message.answer("Начни заново.")
-        return
-    text = (message.text or "").strip()
-    if not text:
-        await message.answer("Пусто.")
-        return
+        return web.json_response({"error": "not_found"}, status=404)
+    _, target_uid, _, _ = row
     try:
-        await bot.send_message(uid, f"Ответ администратора на обращение #{fid}:\n\n{text}")
+        await bot.send_message(target_uid, f"Ответ администратора на обращение #{fid}:\n\n{reply}")
         mark_feedback_answered(fid)
-        await state.clear()
-        await message.answer(f"Отправлено. #{fid} отвечено.")
+        return web.json_response({"ok": True})
     except Exception as e:
-        await message.answer(f"Не удалось: {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
 
-@dp.message(Command("clearcache"))
-async def cmd_clearcache(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM schedule_cache")
-    conn.commit(); conn.close()
-    await message.answer("Кэш расписаний очищен.")
+async def api_admin_feedback_postpone(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")):
+        return web.json_response({"error": "forbidden"}, status=403)
+    fid = int(body.get("id", 0))
+    if not fid:
+        return web.json_response({"error": "no_id"}, status=400)
+    set_feedback_status(fid, "postponed")
+    return web.json_response({"ok": True})
 
 
-@dp.message(Command("checknow"))
-async def cmd_checknow(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    await message.answer("Проверяю изменения в расписании...")
-    await check_schedule_changes()
-    await message.answer("Готово.")
+async def api_admin_broadcast(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")):
+        return web.json_response({"error": "forbidden"}, status=403)
+    text = (body.get("text") or "").strip()
+    if not text:
+        return web.json_response({"error": "empty"}, status=400)
+
+    async def _run():
+        user_ids = get_all_user_ids()
+        sent = failed = 0
+        for uid in user_ids:
+            try:
+                await bot.send_message(uid, text)
+                sent += 1
+            except Exception:
+                failed += 1
+            await asyncio.sleep(0.05)
+        logging.info(f"[BROADCAST] отправлено {sent}, не доставлено {failed}")
+
+    asyncio.create_task(_run())
+    return web.json_response({"ok": True, "started": True})
 
 
-@dp.message(Command("monitor"))
-async def cmd_monitor(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
+async def api_admin_give_vip(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")):
+        return web.json_response({"error": "forbidden"}, status=403)
+    uid = int(body.get("user_id", 0))
+    days = int(body.get("days", 0))
+    if not uid or days <= 0:
+        return web.json_response({"error": "invalid"}, status=400)
+    expiry = set_vip(uid, days)
+    exp_local = expiry + timedelta(hours=8)
+    try:
+        await bot.send_message(uid, f"Тебе активирован VIP на {days} дней!")
+    except Exception:
+        pass
+    return web.json_response({"ok": True, "expiry": exp_local.strftime("%d.%m.%Y")})
+
+
+async def api_admin_revoke_vip(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")):
+        return web.json_response({"error": "forbidden"}, status=403)
+    uid = int(body.get("user_id", 0))
+    if not uid:
+        return web.json_response({"error": "no_id"}, status=400)
+    revoke_vip(uid)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_vip_list(request: web.Request):
+    init_data = request.query.get("initData", "")
+    if not _admin_only(init_data):
+        return web.json_response({"error": "forbidden"}, status=403)
+    vips = get_all_vips()
+    items = []
+    for uid, exp, tier in vips[:100]:
+        try:
+            exp_local = datetime.fromisoformat(exp) + timedelta(hours=8)
+            days = (datetime.fromisoformat(exp) - datetime.now(timezone.utc)).days
+            items.append({"user_id": uid, "expiry": exp_local.strftime("%d.%m.%Y"), "days": days})
+        except Exception:
+            items.append({"user_id": uid, "expiry": exp, "days": 0})
+    return web.json_response({"items": items})
+
+
+async def api_admin_monitor(request: web.Request):
+    init_data = request.query.get("initData", "")
+    if not _admin_only(init_data):
+        return web.json_response({"error": "forbidden"}, status=403)
     check_url = "https://www.istu.edu/raspisanie/"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(check_url, timeout=aiohttp.ClientTimeout(total=15),
                                    headers={"User-Agent": "Mozilla/5.0"}) as response:
-                if response.status == 200:
-                    await message.answer(f"Сайт ИРНИТУ: отвечает (HTTP {response.status})")
-                else:
-                    await message.answer(f"Сайт ИРНИТУ: HTTP {response.status}")
+                return web.json_response({"status": response.status, "ok": response.status == 200})
     except Exception as e:
-        await message.answer(f"Сайт ИРНИТУ: не отвечает.\n\n{e}")
-
-
-@dp.message(Command("give_vip"))
-async def cmd_give_vip(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    parts = message.text.split()
-    if len(parts) != 3:
-        await message.answer("/give_vip user_id дней")
-        return
-    try:
-        uid = int(parts[1]); days = int(parts[2])
-    except ValueError:
-        await message.answer("Числа.")
-        return
-    if days <= 0:
-        await message.answer("Дней > 0.")
-        return
-    expiry = set_vip(uid, days)
-    exp_local = expiry + timedelta(hours=8)
-    await message.answer(f"VIP выдан {uid} на {days} дн.\nДо: {exp_local.strftime('%d.%m.%Y')}")
-    try:
-        await bot.send_message(uid, f"Тебе активирован VIP на {days} дней!\n\nОткрой «VIP».",
-                               reply_markup=get_main_keyboard())
-    except Exception as e:
-        await message.answer(f"Не уведомил: {e}")
-
-
-@dp.message(Command("revoke_vip"))
-async def cmd_revoke_vip(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    parts = message.text.split()
-    if len(parts) != 2:
-        await message.answer("/revoke_vip user_id")
-        return
-    try:
-        uid = int(parts[1])
-    except ValueError:
-        await message.answer("Число.")
-        return
-    revoke_vip(uid)
-    await message.answer(f"VIP снят с {uid}.")
-
-
-@dp.message(Command("vip_list"))
-async def cmd_vip_list(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    vips = get_all_vips()
-    if not vips:
-        await message.answer("Активных VIP нет.")
-        return
-    lines = [f"Активных VIP: {len(vips)}\n"]
-    for uid, exp, tier in vips[:50]:
-        try:
-            exp_local = datetime.fromisoformat(exp) + timedelta(hours=8)
-            days = (datetime.fromisoformat(exp) - datetime.now(timezone.utc)).days
-            lines.append(f"- {uid} — до {exp_local.strftime('%d.%m.%Y')} ({days} дн.)")
-        except Exception:
-            lines.append(f"- {uid} — {exp}")
-    text = "\n".join(lines)
-    if len(text) > 4000:
-        text = text[:4000] + "\n..."
-    await message.answer(text)
+        return web.json_response({"status": 0, "ok": False, "error": str(e)})
 
 
 # ============================================================
-# AI ТЕКСТ (GigaChat)
-# ============================================================
-@dp.message(F.text == "AI Помощник")
-async def ai_menu(message: Message, state: FSMContext):
-    if not is_vip(message.from_user.id):
-        await message.answer("AI Помощник только для VIP.", reply_markup=get_main_keyboard())
-        return
-    if giga_client is None:
-        await message.answer("AI недоступен.")
-        return
-    await message.answer("Привет! Я AI-помощник на GigaChat.\n\nЗадай вопрос.\n\n/cancel — выйти.")
-    await state.set_state(AIState.waiting_question)
-
-
-@dp.message(AIState.waiting_question)
-async def ai_process(message: Message, state: FSMContext):
-    if message.text == "/cancel":
-        await state.clear()
-        await message.answer("Диалог завершён.", reply_markup=get_main_keyboard())
-        return
-    if giga_client is None:
-        await message.answer("AI недоступен.")
-        return
-    thinking_msg = await message.answer("Думаю...")
-    try:
-        prompt = (
-            "Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
-            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
-            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-            "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
-            "- Формулы пиши обычным текстом: дроби через /, степени через ^, "
-            "корни через √(), индексы через _.\n"
-            "  Пример: (a+b)/2, x^2, √(x+1), F_тяж = m·g\n"
-            "- Структурируй текст простыми списками через «- » или нумерацией.\n"
-            "- Пиши без воды, только по делу.\n\n"
-            f"Вопрос: {message.text}"
-        )
-        response = await giga_client.achat(prompt)
-        try:
-            answer = response.choices[0].message.content
-        except AttributeError:
-            answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
-        try:
-            answer = clean_latex(answer)
-            answer = clean_markdown(answer)
-        except Exception as e:
-            logging.error(f"[clean_text] {e}")
-        if len(answer) > 4000:
-            answer = answer[:4000] + "\n... (обрезано)"
-        await thinking_msg.edit_text(answer)
-    except Exception as e:
-        logging.error(f"[AI] Ошибка: {e}")
-        await thinking_msg.edit_text("Не удалось получить ответ.")
-
-
-# ============================================================
-# AI ПО ФОТО
-# ============================================================
-@dp.message(F.text == "AI по фото")
-async def ai_photo_menu(message: Message, state: FSMContext):
-    if not is_vip(message.from_user.id):
-        await message.answer("AI по фото только для VIP.", reply_markup=get_main_keyboard())
-        return
-    if not YANDEX_VISION_API_KEY:
-        await message.answer("Yandex Vision не настроен. Обратись к администратору.")
-        return
-    await message.answer(
-        "Отправь фото с текстом или заданием.\n\n"
-        "После отправки выберешь режим:\n"
-        "- Краткий конспект\n"
-        "- Решить задание\n\n"
-        "/cancel — выйти."
-    )
-    await state.set_state(AIState.waiting_photo)
-
-
-@dp.message(AIState.waiting_photo, F.photo)
-async def ai_photo_receive(message: Message, state: FSMContext):
-    photo = message.photo[-1]
-    await state.update_data(photo_file_id=photo.file_id)
-    await message.answer("Что сделать с фото?", reply_markup=get_ai_photo_mode_keyboard())
-    await state.set_state(AIState.waiting_photo_mode)
-
-
-@dp.callback_query(AIState.waiting_photo_mode, F.data == "ai_photo_cancel")
-async def ai_photo_cancel(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text("Отменено.")
-    await callback.answer()
-
-
-@dp.callback_query(AIState.waiting_photo_mode, F.data.in_({"ai_photo_conspect", "ai_photo_solve"}))
-async def ai_photo_process(callback: CallbackQuery, state: FSMContext):
-    mode = callback.data
-    data = await state.get_data()
-    file_id = data.get("photo_file_id")
-    if not file_id:
-        await callback.message.edit_text("Фото потерялось. Отправь заново.")
-        await state.clear()
-        await callback.answer()
-        return
-
-    if mode == "ai_photo_conspect":
-        await callback.message.edit_text("Распознаю текст с изображения...")
-    else:
-        await callback.message.edit_text("Распознаю задание с изображения...")
-    await callback.answer()
-
-    thinking_msg = callback.message
-    try:
-        file = await bot.get_file(file_id)
-        file_in_memory = await bot.download_file(file.file_path)
-        image_bytes = file_in_memory.getvalue()
-        if not image_bytes:
-            await thinking_msg.edit_text("Не удалось прочитать файл. Попробуй ещё раз.")
-            return
-
-        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-        logging.info(f"[VISION] base64 length: {len(image_base64)}")
-
-        headers = {
-            "Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "mimeType": "image/jpeg",
-            "languageCodes": ["ru", "en"],
-            "model": "page",
-            "content": image_base64,
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText",
-                headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as response:
-                body = await response.text()
-                if response.status != 200:
-                    logging.error(f"[VISION] HTTP {response.status}: {body}")
-                    await thinking_msg.edit_text(
-                        f"Не удалось распознать текст (HTTP {response.status}). Попробуй другое фото."
-                    )
-                    return
-                result = json.loads(body)
-
-        full_text = (
-            result.get("result", {})
-                  .get("textAnnotation", {})
-                  .get("fullText", "")
-        )
-        if not full_text.strip():
-            await thinking_msg.edit_text("Текст на изображении не найден.")
-            return
-
-        logging.info(f"[VISION] Распознано {len(full_text)} символов")
-
-        if giga_client is None:
-            out = f"Распознанный текст:\n\n{full_text}"
-            if len(out) > 4000:
-                out = out[:4000] + "\n... (обрезано)"
-            await thinking_msg.edit_text(out)
-            return
-
-        if mode == "ai_photo_conspect":
-            await thinking_msg.edit_text("Составляю конспект...")
-            prompt = (
-                "Ты — студенческий помощник. Составь краткий конспект по этому тексту.\n\n"
-                "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
-                "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-                "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
-                "- Формулы пиши обычным текстом.\n"
-                "- Структурируй текст простыми списками через «- » или нумерацией.\n"
-                "- Выдели главные определения, формулы и тезисы.\n"
-                "- Пиши без воды, только по делу.\n\n"
-                f"Текст:\n{full_text}"
-            )
-        else:
-            await thinking_msg.edit_text("Решаю задание...")
-            prompt = (
-                "Ты — студенческий помощник. На фото задание.\n"
-                "Реши его подробно и понятно, как для студента.\n\n"
-                "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
-                "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-                "- НЕ используй LaTeX-команды (\\frac, \\sqrt, \\sum и т.п.).\n"
-                "- Формулы пиши обычным текстом.\n"
-                "- Структура ответа:\n"
-                "  1. Что дано.\n"
-                "  2. Что нужно найти.\n"
-                "  3. Решение по шагам с пояснениями.\n"
-                "  4. Ответ.\n"
-                "- Не пропускай шаги, объясняй переходы.\n"
-                "- Пиши без воды.\n\n"
-                f"Задание:\n{full_text}"
-            )
-
-        try:
-            resp = await giga_client.achat(prompt)
-            try:
-                answer = resp.choices[0].message.content
-            except AttributeError:
-                answer = resp.messages[0].content[0].text
-        except Exception as e:
-            logging.exception("[GIGACHAT] FAILED")
-            answer = f"Распознанный текст:\n\n{full_text}"
-
-        try:
-            answer = clean_latex(answer)
-            answer = clean_markdown(answer)
-        except Exception as e:
-            logging.error(f"[clean_text] {e}")
-
-        if len(answer) > 4000:
-            answer = answer[:4000] + "\n... (обрезано)"
-
-        await thinking_msg.edit_text(answer)
-
-    except Exception as e:
-        logging.exception("[AI PHOTO]")
-        try:
-            await thinking_msg.edit_text("Не удалось обработать фото. Попробуй ещё раз.")
-        except Exception:
-            pass
-    finally:
-        await state.clear()
-
-
-# ============================================================
-# РАСПИСАНИЕ
-# ============================================================
-@dp.message(F.text == "Расписание")
-async def show_institutes(message: Message):
-    await message.answer("Выбери институт:", reply_markup=get_institutes_keyboard())
-
-
-@dp.message(F.text == "Моя группа")
-async def show_my_group(message: Message):
-    saved = get_user_group(message.from_user.id)
-    if not saved:
-        await message.answer("Нет сохранённой группы.", reply_markup=get_main_keyboard())
-        return
-    group_id, group_name = saved
-    subgroup = get_user_subgroup(message.from_user.id)
-    sub_line = f"\nПодгруппа: {subgroup}" if subgroup else "\nПодгруппа не выбрана"
-    await message.answer(f"Моя группа: {group_name}{sub_line}\n\nЧто показать?",
-                         reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True, subgroup=subgroup))
-
-
-@dp.callback_query(F.data.startswith("institute_"))
-async def process_institute(callback: CallbackQuery):
-    name = callback.data.split("_", 1)[1]
-    await callback.message.edit_text(f"Институт: {name}\n\nВыбери группу:",
-                                     reply_markup=get_groups_keyboard(name, 0))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("instpage_"))
-async def process_page(callback: CallbackQuery):
-    parts = callback.data.split("_", 2)
-    await callback.message.edit_text(f"Институт: {parts[1]}\n\nВыбери группу:",
-                                     reply_markup=get_groups_keyboard(parts[1], int(parts[2])))
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "noop")
-async def noop(callback: CallbackQuery):
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("group_"))
-async def process_group(callback: CallbackQuery):
-    gid = callback.data.split("_", 1)[1]
-    gname = _group_name_by_id(gid)
-    saved = get_user_group(callback.from_user.id)
-    is_my = saved is not None and saved[0] == gid
-    subgroup = get_user_subgroup(callback.from_user.id) if is_my else 0
-    await callback.message.edit_text(f"Группа: {gname}\n\nЧто показать?",
-                                     reply_markup=get_schedule_actions_keyboard(gid, is_my_group=is_my, subgroup=subgroup))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("save_my_"))
-async def save_my_group(callback: CallbackQuery):
-    gid = callback.data.split("_", 2)[2]
-    gname = _group_name_by_id(gid)
-    save_user_group(callback.from_user.id, gid, gname)
-    subgroup = get_user_subgroup(callback.from_user.id)
-    await callback.message.edit_text(f"Группа {gname} сохранена.",
-        reply_markup=get_schedule_actions_keyboard(gid, is_my_group=True, subgroup=subgroup))
-    await callback.answer("Сохранено")
-
-
-@dp.callback_query(F.data == "forget_my")
-async def forget_my_group(callback: CallbackQuery):
-    delete_user_group(callback.from_user.id)
-    await callback.message.edit_text("Группа удалена.")
-    await callback.answer("Удалено")
-
-
-@dp.callback_query(F.data == "choose_subgroup")
-async def choose_subgroup(callback: CallbackQuery):
-    current = get_user_subgroup(callback.from_user.id)
-    buttons = []
-    for val, label in [(0, "Не выбрана"), (1, "Подгруппа 1"), (2, "Подгруппа 2")]:
-        mark = " +" if current == val else ""
-        buttons.append([InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"set_sub_{val}")])
-    buttons.append([InlineKeyboardButton(text="Назад", callback_data="my_group_back")])
-    await callback.message.edit_text("Выбери подгруппу.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("set_sub_"))
-async def set_subgroup(callback: CallbackQuery):
-    val = int(callback.data.split("_")[-1])
-    set_user_subgroup(callback.from_user.id, val)
-    await callback.answer("Сохранено")
-    saved = get_user_group(callback.from_user.id)
-    if saved:
-        group_id, group_name = saved
-        subgroup = get_user_subgroup(callback.from_user.id)
-        sub_line = f"\nПодгруппа: {subgroup}" if subgroup else "\nПодгруппа не выбрана"
-        await callback.message.edit_text(f"Моя группа: {group_name}{sub_line}\n\nЧто показать?",
-            reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True, subgroup=subgroup))
-
-
-@dp.callback_query(F.data == "my_group_back")
-async def my_group_back(callback: CallbackQuery):
-    saved = get_user_group(callback.from_user.id)
-    if not saved:
-        await callback.answer("Не выбрана")
-        return
-    group_id, group_name = saved
-    subgroup = get_user_subgroup(callback.from_user.id)
-    sub_line = f"\nПодгруппа: {subgroup}" if subgroup else "\nПодгруппа не выбрана"
-    await callback.message.edit_text(f"Моя группа: {group_name}{sub_line}\n\nЧто показать?",
-        reply_markup=get_schedule_actions_keyboard(group_id, is_my_group=True, subgroup=subgroup))
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "back_to_institutes")
-async def back_to_institutes(callback: CallbackQuery):
-    await callback.message.edit_text("Выбери институт:", reply_markup=get_institutes_keyboard())
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("today_"))
-async def show_today(callback: CallbackQuery):
-    gid = callback.data.split("_", 1)[1]
-    await callback.message.edit_text("Загружаю...")
-    today = _now_irkutsk()
-    monday = _monday_of_week(today)
-    try:
-        html = await fetch_week_html(gid, monday)
-        soup = BeautifulSoup(html, "html.parser")
-        start, end = parse_week_range(soup)
-        _, days = parse_schedule(html)
-    except Exception as e:
-        await callback.message.edit_text(f"Ошибка: {e}")
-        await callback.answer(); return
-    today_str = today.strftime("%d.%m.%Y")
-    day = next((d for d in days if d["date"] == today_str), None)
-    header = f"Сегодня {today_str}"
-    if start and end:
-        header += f"\nнеделя {start} - {end}"
-    text = f"{header}\n\n" + (format_day(day, user_id=callback.from_user.id).strip() if day else "Занятий нет.")
-    if len(text) > 4000:
-        text = text[:4000] + "\n... (обрезано)"
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("refresh_"))
-async def refresh_schedule(callback: CallbackQuery):
-    gid = callback.data.split("_", 1)[1]
-    await callback.message.edit_text("Обновляю...")
-    today = _now_irkutsk()
-    monday = _monday_of_week(today)
-    html = await fetch_week_html(gid, monday, use_cache=False)
-    if not html:
-        await callback.message.edit_text("Не удалось.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
-        await callback.answer(); return
-    _, days = parse_schedule(html)
-    save_snapshot(gid, monday.strftime("%Y-%m-%d"), build_snapshot(days))
-    soup = BeautifulSoup(html, "html.parser")
-    start, end = parse_week_range(soup)
-    today_str = today.strftime("%d.%m.%Y")
-    day = next((d for d in days if d["date"] == today_str), None)
-    header = f"Сегодня {today_str}"
-    if start and end:
-        header += f"\nнеделя {start} - {end}"
-    text = f"{header}\n\n" + (format_day(day, user_id=callback.from_user.id).strip() if day else "Занятий нет.")
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
-    await callback.answer("Обновлено")
-
-
-@dp.callback_query(F.data.startswith("week_"))
-async def show_week(callback: CallbackQuery):
-    parts = callback.data.split("_", 2)
-    offset = int(parts[1]); gid = parts[2]
-    gname = _group_name_by_id(gid)
-    await callback.message.edit_text("Загружаю...")
-    today = _now_irkutsk()
-    target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
-    try:
-        html = await fetch_week_html(gid, target_monday)
-        soup = BeautifulSoup(html, "html.parser")
-        start, end = parse_week_range(soup)
-        _, days = parse_schedule(html)
-    except Exception as e:
-        await callback.message.edit_text(f"Ошибка: {e}")
-        await callback.answer(); return
-    title = "Текущая неделя" if offset == 0 else "Следующая неделя"
-    header = f"{title}\nГруппа: {gname}"
-    if start and end:
-        header += f"\n{start} - {end}"
-    text = header + "\n\n" + ("\n".join(format_day(d, user_id=callback.from_user.id) for d in days) if days else "Не найдено.")
-    if len(text) > 4000:
-        text = text[:4000] + "\n... (обрезано)"
-    await callback.message.edit_text(text.strip(), reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад", callback_data=f"group_{gid}")]]))
-    await callback.answer()
-
-
-# ============================================================
-# УВЕДОМЛЕНИЯ
-# ============================================================
-@dp.message(F.text == "Уведомления")
-async def notifications_menu(message: Message):
-    saved = get_user_group(message.from_user.id)
-    if not saved:
-        await message.answer("Сначала группу.", reply_markup=get_main_keyboard())
-        return
-    current = get_notify_time(message.from_user.id)
-    changes = get_notify_changes(message.from_user.id)
-    subgroup = get_user_subgroup(message.from_user.id)
-    sub_line = f"\nПодгруппа: {subgroup}" if subgroup else "\nПодгруппа не выбрана"
-    if current:
-        h, m = current
-        when = "на сегодня" if h < 12 else "на завтра"
-        status = f"Расписание в {h:02d}:{m:02d} ({when})."
-    else:
-        status = "Уведомления выключены."
-    ch_status = "Слежение вкл." if changes else "Слежение выкл."
-    daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
-    await message.answer(
-        f"{status}\n{ch_status}{sub_line}\n"
-        f"Цитата дня: {daily_status}\n\n"
-        f"Утро — на СЕГОДНЯ. Вечер — на ЗАВТРА.",
-        reply_markup=get_notify_keyboard(current, changes))
-
-
-@dp.callback_query(F.data.startswith("notify_"))
-async def process_notify(callback: CallbackQuery):
-    if callback.data == "notify_off":
-        set_notify_time(callback.from_user.id, -1, 0)
-        current = get_notify_time(callback.from_user.id)
-        changes = get_notify_changes(callback.from_user.id)
-        await callback.message.edit_text("Уведомления выключены.",
-            reply_markup=get_notify_keyboard(current, changes))
-        await callback.answer("Выкл")
-        return
-    parts = callback.data.split("_")
-    h, m = int(parts[1]), int(parts[2])
-    set_notify_time(callback.from_user.id, h, m)
-    current = get_notify_time(callback.from_user.id)
-    changes = get_notify_changes(callback.from_user.id)
-    if h < 12:
-        text = f"Расписание в {h:02d}:{m:02d} — на СЕГОДНЯ."
-    else:
-        text = f"Расписание в {h:02d}:{m:02d} — на ЗАВТРА."
-    await callback.message.edit_text(text, reply_markup=get_notify_keyboard(current, changes))
-    await callback.answer("Сохранено")
-
-
-@dp.callback_query(F.data == "changes_toggle")
-async def toggle_changes(callback: CallbackQuery):
-    current = get_notify_changes(callback.from_user.id)
-    set_notify_changes(callback.from_user.id, not current)
-    current_time = get_notify_time(callback.from_user.id)
-    new_state = not current
-    text = "Слежение ВКЛЮЧЕНО." if new_state else "Слежение выключено."
-    await callback.message.edit_text(text, reply_markup=get_notify_keyboard(current_time, new_state))
-    await callback.answer("Ок")
-
-
-# ============================================================
-# ЦИТАТА ДНЯ — CALLBACKS
-# ============================================================
-@dp.callback_query(F.data == "daily_quote_now")
-async def daily_quote_now(callback: CallbackQuery):
-    subscribed = daily_is_subscribed(callback.from_user.id)
-    status = "подписан на 10:00" if subscribed else "не подписан"
-    await callback.message.edit_text(
-        f"{random.choice(DAILY_QUOTES)}\n\nСтатус подписки: {status}",
-        reply_markup=get_daily_keyboard())
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "daily_on")
-async def daily_on(callback: CallbackQuery):
-    daily_subscribe(callback.from_user.id)
-    await callback.message.edit_text(
-        f"Ты подписан на цитату дня.\n\nБудет приходить каждый день в {DAILY_QUOTE_HOUR}:00 по Иркутску.",
-        reply_markup=get_daily_keyboard())
-    await callback.answer("Подписан")
-
-
-@dp.callback_query(F.data == "daily_off")
-async def daily_off(callback: CallbackQuery):
-    daily_unsubscribe(callback.from_user.id)
-    await callback.message.edit_text(
-        "Ты отписан от цитаты дня.",
-        reply_markup=get_daily_keyboard())
-    await callback.answer("Отписан")
-
-
-# ============================================================
-# СТИПЕНДИЯ
-# ============================================================
-async def scholarship_menu(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    if not is_vip(user_id):
-        await message.answer(
-            "Раздел «Стипендия» доступен только VIP-пользователям.\n\n"
-            "Оформить VIP можно в разделе «VIP».",
-            reply_markup=get_main_keyboard())
-        return
-
-    amount = get_scholarship_amount(user_id)
-    if amount is None:
-        await message.answer(
-            "Раздел «Стипендия»\n\n"
-            "Сначала укажи свою текущую стипендию (в рублях).\n"
-            "Если не получаешь — напиши 0.\n\n"
-            "Напиши сумму одним числом, например: 2000\n\n"
-            "/cancel — отменить"
-        )
-        await state.set_state(ScholarshipState.waiting_current_amount)
-        return
-
-    grades = get_grades(user_id)
-    avg = sum(g[2] for g in grades) / len(grades) if grades else 0
-    count5 = sum(1 for g in grades if g[2] == 5)
-    count4 = sum(1 for g in grades if g[2] == 4)
-    count3 = sum(1 for g in grades if g[2] == 3)
-    count2 = sum(1 for g in grades if g[2] == 2)
-
-    lines = [
-        "Раздел «Стипендия»\n",
-        f"Текущая стипендия: {amount} руб/мес",
-        f"Оценок внесено: {len(grades)}",
-    ]
-    if grades:
-        lines.append(f"Средний балл: {avg:.2f}")
-        lines.append(f"  пятёрок: {count5}")
-        lines.append(f"  четвёрок: {count4}")
-        lines.append(f"  троек: {count3}")
-        if count2:
-            lines.append(f"  двоек: {count2}")
-    else:
-        lines.append("Оценок пока нет — добавь первую.")
-    lines.append("")
-    lines.append("Выбери действие:")
-
-    await message.answer("\n".join(lines), reply_markup=get_scholarship_keyboard())
-
-
-@dp.callback_query(F.data == "sch_set_amount")
-async def sch_set_amount(callback: CallbackQuery, state: FSMContext):
-    if not is_vip(callback.from_user.id):
-        await callback.answer("Только для VIP", show_alert=True)
-        return
-    await callback.message.edit_text(
-        "Напиши свою текущую стипендию в рублях.\n"
-        "Если не получаешь — напиши 0.\n\n"
-        "Например: 2000\n\n/cancel"
-    )
-    await state.set_state(ScholarshipState.waiting_current_amount)
-    await callback.answer()
-
-
-@dp.message(ScholarshipState.waiting_current_amount)
-async def sch_amount_save(message: Message, state: FSMContext):
-    raw = (message.text or "").strip().replace(" ", "")
-    if not raw.isdigit():
-        await message.answer("Нужно целое число, например 2000 или 0.")
-        return
-    amount = int(raw)
-    if amount > 100000:
-        await message.answer("Слишком большая сумма. Попробуй ещё раз.")
-        return
-    set_scholarship_amount(message.from_user.id, amount)
-    await state.clear()
-    await message.answer(
-        f"Сохранено: {amount} руб/мес.\n\nОткрой «Стипендия» → «Итог», чтобы увидеть прогноз.",
-        reply_markup=get_main_keyboard())
-
-
-@dp.callback_query(F.data == "sch_add_grade")
-async def sch_add_grade_start(callback: CallbackQuery, state: FSMContext):
-    if not is_vip(callback.from_user.id):
-        await callback.answer("Только для VIP", show_alert=True)
-        return
-    await callback.message.edit_text(
-        "Напиши название предмета (например: Математический анализ).\n\n/cancel"
-    )
-    await state.set_state(ScholarshipState.waiting_subject)
-    await callback.answer()
-
-
-@dp.message(ScholarshipState.waiting_subject)
-async def sch_subject(message: Message, state: FSMContext):
-    subj = (message.text or "").strip()
-    if not subj:
-        await message.answer("Пусто.")
-        return
-    if len(subj) > 100:
-        await message.answer("Макс. 100 символов.")
-        return
-    await state.update_data(subject=subj)
-    await message.answer(
-        f"Предмет: {subj}\n\nТеперь напиши оценку числом: 5, 4, 3 или 2.\n\n/cancel"
-    )
-    await state.set_state(ScholarshipState.waiting_grade)
-
-
-@dp.message(ScholarshipState.waiting_grade)
-async def sch_grade(message: Message, state: FSMContext):
-    raw = (message.text or "").strip()
-    if raw not in ("2", "3", "4", "5"):
-        await message.answer("Нужна оценка: 5, 4, 3 или 2.")
-        return
-    grade = int(raw)
-    data = await state.get_data()
-    subj = data.get("subject", "")
-    if not subj:
-        await state.clear()
-        await message.answer("Начни заново.", reply_markup=get_main_keyboard())
-        return
-    add_grade(message.from_user.id, subj, grade)
-    await state.clear()
-    await message.answer(
-        f"Оценка {grade} по предмету «{subj}» сохранена.\n\n"
-        f"Открой «Стипендия» → «Итог», чтобы увидеть прогноз.",
-        reply_markup=get_main_keyboard())
-
-
-@dp.callback_query(F.data == "sch_list")
-async def sch_list(callback: CallbackQuery):
-    if not is_vip(callback.from_user.id):
-        await callback.answer("Только для VIP", show_alert=True)
-        return
-    grades = get_grades(callback.from_user.id)
-    if not grades:
-        await callback.message.edit_text(
-            "Оценок пока нет.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
-                [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
-        await callback.answer()
-        return
-    lines = ["Твои оценки:\n"]
-    kb = []
-    for gid, subj, grade in grades:
-        lines.append(f"  {subj}: {grade}")
-        label = subj[:20] + "..." if len(subj) > 20 else subj
-        kb.append([InlineKeyboardButton(
-            text=f"Удалить: {label} ({grade})",
-            callback_data=f"sch_del_{gid}")])
-    kb.append([InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")])
-    kb.append([InlineKeyboardButton(text="Назад", callback_data="sch_back")])
-    text = "\n".join(lines)
-    if len(text) > 3500:
-        text = text[:3500] + "\n..."
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("sch_del_"))
-async def sch_del(callback: CallbackQuery):
-    if not is_vip(callback.from_user.id):
-        await callback.answer("Только для VIP", show_alert=True)
-        return
-    try:
-        gid = int(callback.data.split("_")[-1])
-    except ValueError:
-        await callback.answer("Ошибка")
-        return
-    delete_grade(gid, callback.from_user.id)
-    await callback.answer("Удалено")
-    await sch_list(callback)
-
-
-@dp.callback_query(F.data == "sch_clear")
-async def sch_clear(callback: CallbackQuery):
-    if not is_vip(callback.from_user.id):
-        await callback.answer("Только для VIP", show_alert=True)
-        return
-    clear_grades(callback.from_user.id)
-    await callback.message.edit_text(
-        "Оценки очищены.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
-    await callback.answer("Очищено")
-
-
-@dp.callback_query(F.data == "sch_result")
-async def sch_result(callback: CallbackQuery):
-    if not is_vip(callback.from_user.id):
-        await callback.answer("Только для VIP", show_alert=True)
-        return
-    user_id = callback.from_user.id
-    amount = get_scholarship_amount(user_id)
-    grades = get_grades(user_id)
-
-    if amount is None:
-        await callback.message.edit_text(
-            "Сначала укажи свою текущую стипендию.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Указать сумму", callback_data="sch_set_amount")],
-                [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
-        await callback.answer()
-        return
-
-    if not grades:
-        await callback.message.edit_text(
-            "Оценок пока нет — добавь хотя бы одну, чтобы увидеть итог.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Добавить оценку", callback_data="sch_add_grade")],
-                [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
-        await callback.answer()
-        return
-
-    total = len(grades)
-    sum_grades = sum(g[2] for g in grades)
-    avg = sum_grades / total
-    count5 = sum(1 for g in grades if g[2] == 5)
-    count4 = sum(1 for g in grades if g[2] == 4)
-    count3 = sum(1 for g in grades if g[2] == 3)
-    count2 = sum(1 for g in grades if g[2] == 2)
-
-    lines = [
-        "Итог по стипендии\n",
-        f"Текущая стипендия: {amount} руб/мес",
-        f"Оценок: {total}",
-        f"Средний балл: {avg:.2f}",
-        f"  пятёрок: {count5}",
-        f"  четвёрок: {count4}",
-        f"  троек: {count3}",
-    ]
-    if count2:
-        lines.append(f"  двоек: {count2}")
-    lines.append("")
-
-    if count2 > 0 or count3 > 0:
-        lines.append("Прогноз: на академическую не проходишь.")
-        lines.append("Есть тройки/двойки — нужно закрыть их на 4 или 5.")
-    elif avg >= 4.5:
-        lines.append("Прогноз: проходишь на академическую.")
-        lines.append("Прогноз: можешь претендовать на повышенную.")
-        lines.append("Потенциально стипендия может быть примерно в 2 раза выше текущей.")
-    elif avg >= 4.0:
-        lines.append("Прогноз: проходишь на академическую.")
-        lines.append("До повышенной не хватает среднего 4.5.")
-        diff = 4.5 - avg
-        lines.append(f"Не хватает: {diff:.2f} балла в среднем.")
-    else:
-        lines.append("Прогноз: на академическую не проходишь.")
-        lines.append("Средний балл ниже 4.0.")
-
-    if avg >= 4.5 and count2 == 0 and count3 == 0:
-        lines.append("")
-        lines.append(f"Текущая: {amount} руб → потенциально: около {amount * 2} руб")
-
-    text = "\n".join(lines)
-    await callback.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data="sch_back")]]))
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "sch_back")
-async def sch_back(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    amount = get_scholarship_amount(user_id)
-    grades = get_grades(user_id)
-    avg = sum(g[2] for g in grades) / len(grades) if grades else 0
-
-    lines = [
-        "Раздел «Стипендия»\n",
-        f"Текущая стипендия: {amount if amount is not None else 'не указана'} руб/мес",
-        f"Оценок внесено: {len(grades)}",
-    ]
-    if grades:
-        lines.append(f"Средний балл: {avg:.2f}")
-    lines.append("")
-    lines.append("Выбери действие:")
-    await callback.message.edit_text(
-        "\n".join(lines),
-        reply_markup=get_scholarship_keyboard())
-    await callback.answer()
-
-
-# ============================================================
-# ЗАДАЧИ
-# ============================================================
-def _format_due(due_date, due_time):
-    if not due_date:
-        return "без срока"
-    result = due_date
-    if due_time:
-        result += f" {due_time}"
-    now = _now_irkutsk()
-    today_str = now.strftime("%d.%m.%Y")
-    tomorrow_str = (now + timedelta(days=1)).strftime("%d.%m.%Y")
-    if due_date == today_str:
-        result += " (сегодня)"
-    elif due_date == tomorrow_str:
-        result += " (завтра)"
-    return result
-
-
-def _is_overdue(due_date, due_time):
-    if not due_date:
-        return False
-    now = _now_irkutsk()
-    try:
-        if due_time:
-            dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
-        else:
-            dt = datetime.strptime(due_date, "%d.%m.%Y").replace(hour=23, minute=59)
-        return dt < now
-    except Exception:
-        return False
-
-
-def _sort_tasks(tasks):
-    def key(t):
-        tid, text, due_date, done, created_at, priority, due_time = t
-        overdue = 1 if _is_overdue(due_date, due_time) else 0
-        if due_date:
-            try:
-                if due_time:
-                    dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
-                else:
-                    dt = datetime.strptime(due_date, "%d.%m.%Y")
-                date_key = dt.timestamp()
-            except Exception:
-                date_key = float("inf")
-        else:
-            date_key = float("inf")
-        return (-overdue, date_key, -(priority or 0), tid)
-    return sorted(tasks, key=key)
-
-
-def _tasks_view(user_id):
-    tasks = get_user_tasks(user_id, only_active=True)
-    if not tasks:
-        return "Нет активных задач.\n\nДобавь первую кнопкой ниже.", get_tasks_keyboard()
-
-    tasks = _sort_tasks(tasks)
-    overdue = [t for t in tasks if _is_overdue(t[2], t[6])]
-    normal = [t for t in tasks if not _is_overdue(t[2], t[6])]
-
-    lines = []
-    if overdue:
-        lines.append("ПРОСРОЧЕНО:")
-        for t in overdue:
-            tid, text, due_date, done, created_at, priority, due_time = t
-            p = PRIORITY_MARK.get(priority or 1, "[~]")
-            lines.append(f"  {p} #{tid} {text}")
-            lines.append(f"      срок: {_format_due(due_date, due_time)}")
-        lines.append("")
-
-    if normal:
-        lines.append("Активные:")
-        for t in normal:
-            tid, text, due_date, done, created_at, priority, due_time = t
-            p = PRIORITY_MARK.get(priority or 1, "[~]")
-            lines.append(f"  {p} #{tid} {text}")
-            if due_date:
-                lines.append(f"      срок: {_format_due(due_date, due_time)}")
-        lines.append("")
-
-    kb = []
-    for t in (overdue + normal)[:10]:
-        tid = t[0]
-        kb.append([
-            InlineKeyboardButton(text=f"Готово #{tid}", callback_data=f"task_done_{tid}"),
-            InlineKeyboardButton(text=f"Изменить #{tid}", callback_data=f"task_edit_{tid}"),
-            InlineKeyboardButton(text=f"Удалить #{tid}", callback_data=f"task_del_{tid}"),
-        ])
-    kb.append([InlineKeyboardButton(text="Добавить задачу", callback_data="task_add")])
-    kb.append([InlineKeyboardButton(text="Статистика", callback_data="task_stats")])
-    kb.append([InlineKeyboardButton(text="Назад", callback_data="task_back")])
-
-    text = "\n".join(lines).rstrip()
-    if len(text) > 3500:
-        text = text[:3500] + "\n..."
-    return text, InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-@dp.message(F.text == "Задачи")
-async def tasks_menu(message: Message):
-    active, done = count_user_tasks(message.from_user.id)
-    await message.answer(
-        f"Личные задачи\n\n"
-        f"Активных: {active}\nВыполнено: {done}\n\n"
-        f"Что сделать?",
-        reply_markup=get_tasks_keyboard())
-
-
-@dp.callback_query(F.data == "task_back")
-async def task_back(callback: CallbackQuery):
-    active, done = count_user_tasks(callback.from_user.id)
-    await callback.message.edit_text(
-        f"Личные задачи\n\nАктивных: {active}\nВыполнено: {done}",
-        reply_markup=get_tasks_keyboard())
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "task_add")
-async def task_add_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "Напиши текст задачи.\n\n"
-        "Можно сразу со сроком одной строкой:\n"
-        "  Сдать лабу по физике | 25.10.2026\n"
-        "  Подготовиться к коллоквиуму | 26.10.2026 18:00\n\n"
-        "/cancel — отменить"
-    )
-    await state.set_state(TaskState.waiting_text)
-    await callback.answer()
-
-
-def _parse_task_input(raw: str):
-    due_date = None
-    due_time = None
-    text = raw
-    if "|" in raw:
-        parts = [p.strip() for p in raw.split("|", 1)]
-        text = parts[0]
-        due_str = parts[1] if len(parts) > 1 else ""
-        if due_str:
-            for fmt, has_time in (("%d.%m.%Y %H:%M", True), ("%d.%m.%Y", False)):
-                try:
-                    dt = datetime.strptime(due_str, fmt)
-                    due_date = dt.strftime("%d.%m.%Y")
-                    if has_time:
-                        due_time = dt.strftime("%H:%M")
-                    break
-                except ValueError:
-                    continue
-            else:
-                return None
-    return text, due_date, due_time
-
-
-@dp.message(TaskState.waiting_text)
-async def task_add_text(message: Message, state: FSMContext):
-    raw = (message.text or "").strip()
-    if not raw:
-        await message.answer("Пусто.")
-        return
-    parsed = _parse_task_input(raw)
-    if parsed is None:
-        await message.answer("Неверный формат даты. Используй ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ.")
-        return
-    text, due_date, due_time = parsed
-    await state.update_data(task_text=text, task_due_date=due_date, task_due_time=due_time)
-    await message.answer("Выбери приоритет:", reply_markup=get_task_priority_keyboard("add"))
-    await state.set_state(TaskState.waiting_due)
-
-
-@dp.callback_query(F.data.startswith("task_prio_add_"))
-async def task_add_priority(callback: CallbackQuery, state: FSMContext):
-    try:
-        priority = int(callback.data.split("_")[-1])
-    except ValueError:
-        await callback.answer("Ошибка")
-        return
-    data = await state.get_data()
-    text = data.get("task_text", "")
-    due_date = data.get("task_due_date")
-    due_time = data.get("task_due_time")
-    tid = add_task(callback.from_user.id, text, due_date, priority, due_time)
-    await state.clear()
-    due_info = f"\nСрок: {_format_due(due_date, due_time)}" if due_date else ""
-    p_label = PRIORITY_LABELS.get(priority, "средний")
-    await callback.message.edit_text(
-        f"Задача #{tid} добавлена\n\n"
-        f"Приоритет: {p_label}\n{text}{due_info}")
-    await callback.answer("Добавлено")
-
-
-@dp.callback_query(F.data == "task_list")
-async def task_list(callback: CallbackQuery):
-    text, kb = _tasks_view(callback.from_user.id)
-    await callback.message.edit_text(text, reply_markup=kb)
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("task_done_"))
-async def task_done(callback: CallbackQuery):
-    data = callback.data
-    if data == "task_done_list":
-        return
-    try:
-        tid = int(data.split("_")[-1])
-    except ValueError:
-        await callback.answer("Ошибка")
-        return
-    mark_task_done(tid, callback.from_user.id)
-    await callback.answer("Готово")
-    text, kb = _tasks_view(callback.from_user.id)
-    try:
-        await callback.message.edit_text(text, reply_markup=kb)
-    except Exception:
-        pass
-
-
-@dp.callback_query(F.data == "task_done_list")
-async def task_done_list(callback: CallbackQuery):
-    rows = get_done_tasks(callback.from_user.id, days=7)
-    if not rows:
-        await callback.message.edit_text(
-            "За последние 7 дней ничего не выполнено.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
-        await callback.answer()
-        return
-    lines = [f"Выполнено за 7 дней: {len(rows)}\n"]
-    for row in rows[:30]:
-        tid, text, due_date, done, created_at, priority, due_time, done_at = row
-        try:
-            done_local = datetime.fromisoformat(done_at) + timedelta(hours=8)
-            done_str = done_local.strftime("%d.%m %H:%M")
-        except Exception:
-            done_str = ""
-        lines.append(f"  #{tid} {text}  ({done_str})")
-    text = "\n".join(lines)
-    if len(text) > 3500:
-        text = text[:3500] + "\n..."
-    await callback.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Очистить", callback_data="task_clear")],
-            [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "task_clear")
-async def task_clear(callback: CallbackQuery):
-    clear_done_tasks(callback.from_user.id)
-    await callback.message.edit_text("Выполненные задачи удалены.",
-        reply_markup=get_tasks_keyboard())
-    await callback.answer("Очищено")
-
-
-@dp.callback_query(F.data.startswith("task_del_"))
-async def task_del(callback: CallbackQuery):
-    try:
-        tid = int(callback.data.split("_")[-1])
-    except ValueError:
-        await callback.answer("Ошибка")
-        return
-    delete_task(tid, callback.from_user.id)
-    await callback.answer("Удалено")
-    text, kb = _tasks_view(callback.from_user.id)
-    try:
-        await callback.message.edit_text(text, reply_markup=kb)
-    except Exception:
-        pass
-
-
-@dp.callback_query(F.data == "task_stats")
-async def task_stats(callback: CallbackQuery):
-    active, done = count_user_tasks(callback.from_user.id)
-    tasks = get_user_tasks(callback.from_user.id, only_active=True)
-    overdue_count = sum(1 for t in tasks if _is_overdue(t[2], t[6]))
-    by_prio = {0: 0, 1: 0, 2: 0}
-    for t in tasks:
-        by_prio[t[5] or 1] = by_prio.get(t[5] or 1, 0) + 1
-    lines = [
-        "Статистика\n",
-        f"Активных: {active}",
-        f"  из них просрочено: {overdue_count}",
-        "",
-        "По приоритету:",
-        f"  высокий: {by_prio.get(2, 0)}",
-        f"  средний: {by_prio.get(1, 0)}",
-        f"  низкий: {by_prio.get(0, 0)}",
-        "",
-        f"Всего выполнено: {done}",
-    ]
-    await callback.message.edit_text(
-        "\n".join(lines),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data="task_back")]]))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("task_edit_"))
-async def task_edit(callback: CallbackQuery, state: FSMContext):
-    parts = callback.data.split("_")
-    if len(parts) != 3:
-        return
-    try:
-        tid = int(parts[2])
-    except ValueError:
-        await callback.answer("Ошибка")
-        return
-    row = get_task(tid, callback.from_user.id)
-    if not row:
-        await callback.answer("Не найдено")
-        return
-    _, text, due_date, done, created_at, priority, due_time, done_at = row
-    p_label = PRIORITY_LABELS.get(priority or 1, "средний")
-    due_str = _format_due(due_date, due_time) if due_date else "без срока"
-    await callback.message.edit_text(
-        f"Задача #{tid}\n\n"
-        f"Текст: {text}\n"
-        f"Приоритет: {p_label}\n"
-        f"Срок: {due_str}\n\n"
-        f"Что изменить?",
-        reply_markup=get_task_edit_keyboard(tid))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("task_edit_text_"))
-async def task_edit_text_start(callback: CallbackQuery, state: FSMContext):
-    tid = int(callback.data.split("_")[-1])
-    row = get_task(tid, callback.from_user.id)
-    if not row:
-        await callback.answer("Не найдено")
-        return
-    await state.update_data(edit_task_id=tid)
-    await callback.message.edit_text(
-        f"Текущий текст: {row[1]}\n\nНапиши новый текст.\n\n/cancel",
-    )
-    await state.set_state(TaskState.waiting_edit_text)
-    await callback.answer()
-
-
-@dp.message(TaskState.waiting_edit_text)
-async def task_edit_text_save(message: Message, state: FSMContext):
-    text = (message.text or "").strip()
-    if not text:
-        await message.answer("Пусто.")
-        return
-    data = await state.get_data()
-    tid = data.get("edit_task_id")
-    if not tid:
-        await state.clear()
-        await message.answer("Начни заново.")
-        return
-    update_task(tid, message.from_user.id, text=text)
-    await state.clear()
-    await message.answer(f"Текст задачи #{tid} обновлён.", reply_markup=get_main_keyboard())
-
-
-@dp.callback_query(F.data.startswith("task_edit_due_"))
-async def task_edit_due_start(callback: CallbackQuery, state: FSMContext):
-    tid = int(callback.data.split("_")[-1])
-    row = get_task(tid, callback.from_user.id)
-    if not row:
-        await callback.answer("Не найдено")
-        return
-    await state.update_data(edit_task_id=tid)
-    await callback.message.edit_text(
-        "Новый срок:",
-        reply_markup=get_task_due_keyboard(tid, edit=True))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("task_due_edit_"))
-async def task_edit_due_choice(callback: CallbackQuery, state: FSMContext):
-    data = callback.data
-    parts = data.split("_")
-    choice = parts[3]
-    tid = int(parts[4])
-    now = _now_irkutsk()
-    if choice == "today":
-        new_due = now.strftime("%d.%m.%Y")
-        new_time = None
-    elif choice == "tomorrow":
-        new_due = (now + timedelta(days=1)).strftime("%d.%m.%Y")
-        new_time = None
-    elif choice == "week":
-        new_due = (now + timedelta(days=7)).strftime("%d.%m.%Y")
-        new_time = None
-    elif choice == "none":
-        update_task(tid, callback.from_user.id, reset_due=True)
-        await callback.message.edit_text("Срок убран.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
-        await callback.answer("Готово")
-        return
-    elif choice == "custom":
-        await state.update_data(edit_task_id=tid)
-        await callback.message.edit_text(
-            "Напиши дату в формате ДД.ММ.ГГГГ\n"
-            "Можно с временем: ДД.ММ.ГГГГ ЧЧ:ММ\n\n/cancel")
-        await state.set_state(TaskState.waiting_edit_due)
-        await callback.answer()
-        return
-    else:
-        await callback.answer("Неизвестно")
-        return
-    update_task(tid, callback.from_user.id, due_date=new_due, due_time=new_time or "")
-    await callback.message.edit_text(
-        f"Новый срок: {_format_due(new_due, new_time)}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
-    await callback.answer("Готово")
-
-
-@dp.message(TaskState.waiting_edit_due)
-async def task_edit_due_save(message: Message, state: FSMContext):
-    raw = (message.text or "").strip()
-    if not raw:
-        await message.answer("Пусто.")
-        return
-    due_date = None
-    due_time = None
-    for fmt, has_time in (("%d.%m.%Y %H:%M", True), ("%d.%m.%Y", False)):
-        try:
-            dt = datetime.strptime(raw, fmt)
-            due_date = dt.strftime("%d.%m.%Y")
-            if has_time:
-                due_time = dt.strftime("%H:%M")
-            break
-        except ValueError:
-            continue
-    if due_date is None:
-        await message.answer("Неверный формат. Используй ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ.")
-        return
-    data = await state.get_data()
-    tid = data.get("edit_task_id")
-    if not tid:
-        await state.clear()
-        await message.answer("Начни заново.")
-        return
-    update_task(tid, message.from_user.id, due_date=due_date, due_time=due_time or "")
-    await state.clear()
-    await message.answer(f"Срок задачи #{tid} обновлён: {_format_due(due_date, due_time)}",
-                         reply_markup=get_main_keyboard())
-
-
-@dp.callback_query(F.data.startswith("task_edit_prio_"))
-async def task_edit_prio_start(callback: CallbackQuery):
-    tid = int(callback.data.split("_")[-1])
-    row = get_task(tid, callback.from_user.id)
-    if not row:
-        await callback.answer("Не найдено")
-        return
-    current = row[5] or 1
-    await callback.message.edit_text(
-        "Выбери новый приоритет:",
-        reply_markup=get_task_priority_keyboard("edit", task_id=tid, current=current))
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("task_prio_edit_"))
-async def task_edit_prio_save(callback: CallbackQuery):
-    parts = callback.data.split("_")
-    priority = int(parts[3])
-    tid = int(parts[4])
-    update_task(tid, callback.from_user.id, priority=priority)
-    await callback.message.edit_text(
-        f"Приоритет: {PRIORITY_LABELS[priority]}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="К задаче", callback_data=f"task_edit_{tid}")]]))
-    await callback.answer("Готово")
-
-
-# ============================================================
-# ЗАМЕТКИ
-# ============================================================
-@dp.message(F.text == "Заметки")
-async def notes_menu(message: Message):
-    notes = get_user_notes(message.from_user.id)
-    if not notes:
-        text = "Заметки к предметам. Показываются под расписанием дня.\n\nПока нет заметок."
-    else:
-        lines = ["Твои заметки:\n"]
-        for i, (nid, subj, text_note) in enumerate(notes, 1):
-            lines.append(f"{i}. {subj}\n   {text_note}")
-        text = "\n".join(lines)
-        if len(text) > 4000:
-            text = text[:4000] + "\n..."
-    await message.answer(text, reply_markup=get_notes_keyboard())
-
-
-@dp.callback_query(F.data == "note_add")
-async def note_add_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Напиши название предмета.\n\n/cancel")
-    await state.set_state(NoteState.waiting_subject)
-    await callback.answer()
-
-
-@dp.message(NoteState.waiting_subject)
-async def note_subject(message: Message, state: FSMContext):
-    subj = (message.text or "").strip()
-    if not subj:
-        await message.answer("Пусто.")
-        return
-    if len(subj) > 100:
-        await message.answer("Макс. 100 символов.")
-        return
-    await state.update_data(subject=subj)
-    existing = get_note(message.from_user.id, subj)
-    if existing:
-        await message.answer(f"Уже есть заметка к «{subj}»:\n\n{existing}\n\nНапиши новый текст.")
-    else:
-        await message.answer(f"Напиши текст заметки к «{subj}».")
-    await state.set_state(NoteState.waiting_text)
-
-
-@dp.message(NoteState.waiting_text)
-async def note_text(message: Message, state: FSMContext):
-    text = (message.text or "").strip()
-    if not text:
-        await message.answer("Пусто.")
-        return
-    if len(text) > 500:
-        await message.answer("Макс. 500 символов.")
-        return
-    data = await state.get_data()
-    subj = data.get("subject", "")
-    if not subj:
-        await state.clear()
-        await message.answer("Начни заново.", reply_markup=get_main_keyboard())
-        return
-    add_or_update_note(message.from_user.id, subj, text)
-    await state.clear()
-    await message.answer(f"Заметка к «{subj}» сохранена.", reply_markup=get_main_keyboard())
-
-
-@dp.callback_query(F.data == "note_list")
-async def note_list(callback: CallbackQuery):
-    notes = get_user_notes(callback.from_user.id)
-    if not notes:
-        await callback.message.edit_text("Нет заметок.", reply_markup=get_notes_keyboard())
-        await callback.answer(); return
-    lines = ["Твои заметки:\n"]
-    for i, (nid, subj, text_note) in enumerate(notes, 1):
-        lines.append(f"{i}. {subj}\n   {text_note}")
-    text = "\n".join(lines)
-    if len(text) > 4000:
-        text = text[:4000] + "\n..."
-    await callback.message.edit_text(text, reply_markup=get_notes_list_keyboard(notes))
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "note_back")
-async def note_back(callback: CallbackQuery):
-    await callback.message.edit_text("Заметки", reply_markup=get_notes_keyboard())
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("note_del_"))
-async def note_delete(callback: CallbackQuery):
-    nid = int(callback.data.split("_", 2)[2])
-    delete_note_by_id(nid, callback.from_user.id)
-    await callback.answer("Удалено")
-    notes = get_user_notes(callback.from_user.id)
-    if not notes:
-        await callback.message.edit_text("Нет заметок.", reply_markup=get_notes_keyboard())
-        return
-    lines = ["Твои заметки:\n"]
-    for i, (nid2, subj, text_note) in enumerate(notes, 1):
-        lines.append(f"{i}. {subj}\n   {text_note}")
-    text = "\n".join(lines)
-    if len(text) > 4000:
-        text = text[:4000] + "\n..."
-    await callback.message.edit_text(text, reply_markup=get_notes_list_keyboard(notes))
-
-
-@dp.callback_query(F.data.startswith("note_edit_"))
-async def note_edit(callback: CallbackQuery, state: FSMContext):
-    nid = int(callback.data.split("_", 2)[2])
-    notes = get_user_notes(callback.from_user.id)
-    target = None
-    for n in notes:
-        if n[0] == nid:
-            target = n
-            break
-    if not target:
-        await callback.answer("Не найдено")
-        return
-    _, subj, old_text = target
-    await state.update_data(subject=subj, edit_id=nid)
-    await callback.message.edit_text(f"Редактирование «{subj}»\n\nСтарый текст:\n{old_text}\n\nНапиши новый.\n\n/cancel")
-    await state.set_state(NoteState.waiting_text)
-    await callback.answer()
-
-
-# ============================================================
-# VIP
-# ============================================================
-@dp.message(F.text == "VIP")
-async def vip_menu(message: Message):
-    info = get_vip_info(message.from_user.id)
-    if info:
-        expiry, tier = info
-        exp_local = expiry + timedelta(hours=8)
-        days_left = (expiry - datetime.now(timezone.utc)).days
-        await message.answer(
-            f"VIP активен\n\nДо: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
-            reply_markup=get_vip_keyboard(is_active=True))
-    else:
-        await message.answer(
-            "VIP-подписка\n\nЧто даёт:\n"
-            "- Расширенная статистика по расписанию\n"
-            "- Раздел «Стипендия»\n"
-            "- AI Помощник\n"
-            "- AI по фото (конспект и решение заданий)\n\n"
-            "Тарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб\n\n"
-            "А также: +3 дня VIP за каждого приглашённого друга по ссылке.",
-            reply_markup=get_vip_keyboard(is_active=False))
-
-
-@dp.callback_query(F.data == "vip_buy")
-async def vip_buy(callback: CallbackQuery):
-    text = (
-        "Как купить VIP\n\n"
-        "1. Напиши администратору: @{username}\n"
-        "2. Укажи тариф (30 / 90 / навсегда).\n"
-        "3. Оплати (СБП, карта).\n"
-        "4. Администратор активирует.\n\n"
-        "Или приглашай друзей — за каждого +3 дня VIP."
-    ).format(username=ADMIN_USERNAME)
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Написать администратору", url=f"https://t.me/{ADMIN_USERNAME}")],
-        [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "vip_stats")
-async def vip_stats(callback: CallbackQuery):
-    if not is_vip(callback.from_user.id):
-        await callback.answer("VIP не активен", show_alert=True)
-        return
-    saved = get_user_group(callback.from_user.id)
-    if not saved:
-        await callback.answer("Сохрани группу", show_alert=True)
-        return
-    group_id, group_name = saved
-    await callback.message.edit_text("Считаю...")
-    today = _now_irkutsk()
-    monday = _monday_of_week(today)
-    html = await fetch_week_html(group_id, monday)
-    if not html:
-        await callback.message.edit_text("Не загрузилось.")
-        await callback.answer(); return
-    _, days = parse_schedule(html)
-    subgroup = get_user_subgroup(callback.from_user.id)
-    total_lessons = 0; total_minutes = 0
-    per_day = {}; subjects = {}
-    for d in days:
-        filtered = _filter_lessons_by_subgroup(d["lessons"], subgroup)
-        day_lessons = len(filtered)
-        per_day[d["name"]] = day_lessons
-        total_lessons += day_lessons
-        for les in filtered:
-            total_minutes += 90
-            subj = les["subject"] or "—"
-            subjects[subj] = subjects.get(subj, 0) + 1
-    hours = total_minutes // 60
-    minutes = total_minutes % 60
-    sub_info = f"Подгруппа: {subgroup}" if subgroup else "Подгруппа не выбрана"
-    lines = ["Статистика на неделю", f"Группа: {group_name}", sub_info,
-             f"{monday.strftime('%d.%m.%Y')} - {(monday + timedelta(days=6)).strftime('%d.%m.%Y')}",
-             "", f"Всего пар: {total_lessons}", f"Всего времени: {hours} ч {minutes} мин", "", "По дням:"]
-    for d_name, count in per_day.items():
-        lines.append(f"  - {d_name.split(',')[0]}: {count}")
-    lines.append(""); lines.append("Топ предметов:")
-    top = sorted(subjects.items(), key=lambda x: -x[1])[:5]
-    for subj, count in top:
-        lines.append(f"  - {subj}: {count}")
-    if per_day:
-        busiest = max(per_day.items(), key=lambda x: x[1])
-        lines.append(""); lines.append(f"Самый загруженный: {busiest[0].split(',')[0]} ({busiest[1]} пар)")
-    text = "\n".join(lines)
-    if len(text) > 4000:
-        text = text[:4000] + "\n..."
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад", callback_data="vip_back")]]))
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "vip_back")
-async def vip_back(callback: CallbackQuery):
-    info = get_vip_info(callback.from_user.id)
-    if info:
-        expiry, tier = info
-        exp_local = expiry + timedelta(hours=8)
-        days_left = (expiry - datetime.now(timezone.utc)).days
-        await callback.message.edit_text(
-            f"VIP активен\n\nДо: {exp_local.strftime('%d.%m.%Y')}\nОсталось: {days_left} дней",
-            reply_markup=get_vip_keyboard(is_active=True))
-    else:
-        await callback.message.edit_text(
-            "VIP-подписка\n\nТарифы:\n- 30 дней — 149 руб\n- 90 дней — 349 руб\n- Навсегда — 599 руб",
-            reply_markup=get_vip_keyboard(is_active=False))
-    await callback.answer()
-
-
-# ============================================================
-# ОБРАТНАЯ СВЯЗЬ
-# ============================================================
-@dp.message(F.text == "Обратная связь")
-async def feedback_start(message: Message, state: FSMContext):
-    await message.answer("Напиши сообщение администратору.\n\n/cancel")
-    await state.set_state(FeedbackState.waiting_message)
-
-
-@dp.message(FeedbackState.waiting_message)
-async def feedback_receive(message: Message, state: FSMContext):
-    text = (message.text or "").strip()
-    if not text:
-        await message.answer("Пустое не отправлю.")
-        return
-    if len(text) > 2000:
-        text = text[:2000] + "..."
-    user = message.from_user
-    uname = f"@{user.username}" if user.username else user.full_name
-    feedback_id = save_feedback(user.id, uname, text)
-    try:
-        vip_mark = "[VIP] " if is_vip(user.id) else ""
-        admin_msg = await bot.send_message(
-            ADMIN_ID,
-            f"{vip_mark}Обращение #{feedback_id}\nОт: {uname} (ID: {user.id})\n\n{text}\n\n"
-            f"Ответь reply-ом.\nВсе обращения — /feedback_list")
-        update_feedback_admin_msg(feedback_id, admin_msg.message_id)
-        await message.answer("Спасибо! Отправлено.", reply_markup=get_main_keyboard())
-    except Exception as e:
-        logging.error(f"[FEEDBACK] {e}")
-        await message.answer("Не удалось отправить.")
-    await state.clear()
-
-
-@dp.message(F.reply_to_message)
-async def admin_reply_to_feedback(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    row = get_feedback_by_admin_msg(message.reply_to_message.message_id)
-    if not row:
-        return
-    fid, user_id = row
-    try:
-        await bot.send_message(user_id, f"Ответ администратора на обращение #{fid}:\n\n{message.text}")
-        mark_feedback_answered(fid)
-        await message.answer("Отправлено.")
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
-
-
-# ============================================================
-# ПОМОЩЬ
-# ============================================================
-@dp.message(F.text == "Помощь")
-async def help_cmd(message: Message):
-    vip_status = "VIP активен" if is_vip(message.from_user.id) else "Бесплатный"
-    daily_status = "подписан" if daily_is_subscribed(message.from_user.id) else "не подписан"
-    await message.answer(
-        f"Что я умею:\n\n"
-        f"Расписание ИРНИТУ\nМоя группа (с подгруппой)\n"
-        f"Уведомления, задачи, заметки\n"
-        f"Цитата дня (статус: {daily_status})\n"
-        f"Стипендия (только для VIP)\n"
-        f"AI Помощник и AI по фото\n"
-        f"Пригласить друга — +3 дня VIP\n"
-        f"Обратная связь\n\n"
-        f"Кнопка Mini App — слева от поля ввода.\n\n"
-        f"Твой статус: {vip_status}",
-        reply_markup=get_main_keyboard())
-
-
-# ============================================================
-# ФОНОВЫЕ ЗАДАЧИ
-# ============================================================
-async def notification_loop():
-    last_sent_key = None
-    while True:
-        try:
-            now = _now_irkutsk()
-            current_key = now.strftime("%Y-%m-%d %H:%M")
-            if current_key != last_sent_key:
-                users = get_users_to_notify(now.hour, now.minute)
-                if users:
-                    logging.info(f"[NOTIFY] {now.hour:02d}:{now.minute:02d}, {len(users)}")
-                    if now.hour < 12:
-                        target = now; title_tpl = "Расписание на сегодня\nГруппа: {}"
-                    else:
-                        target = now + timedelta(days=1); title_tpl = "Расписание на завтра\nГруппа: {}"
-                    for user_id, group_id, group_name in users:
-                        try:
-                            await send_schedule_for_date(user_id, group_id, group_name, target,
-                                                          title_tpl.format(group_name))
-                        except Exception as e:
-                            logging.error(f"[NOTIFY] {user_id}: {e}")
-                last_sent_key = current_key
-        except Exception as e:
-            logging.exception(f"[NOTIFY] {e}")
-        await asyncio.sleep(30)
-
-
-async def task_reminder_loop():
-    sent_keys = set()
-    hour_sent_keys = set()
-    while True:
-        try:
-            now = _now_irkutsk()
-            today = now.strftime("%d.%m.%Y")
-            tomorrow = (now + timedelta(days=1)).strftime("%d.%m.%Y")
-            rows = get_tasks_with_due()
-            for user_id, task_id, text, due_date, priority, due_time in rows:
-                if due_date is None:
-                    continue
-                p_label = PRIORITY_LABELS.get(priority or 1, "средний")
-                for target_date, label in ((tomorrow, "завтра"), (today, "сегодня")):
-                    if due_date == target_date:
-                        key = f"{user_id}:{task_id}:{due_date}:{label}"
-                        if key in sent_keys:
-                            continue
-                        if label == "завтра" and not (now.hour == 20 and now.minute < 10):
-                            continue
-                        if label == "сегодня" and not (now.hour == 8 and now.minute < 10):
-                            continue
-                        try:
-                            time_str = f" {due_time}" if due_time else ""
-                            await bot.send_message(user_id,
-                                f"Напоминание о задаче\n\n#{task_id} {text}\n"
-                                f"Приоритет: {p_label}\nСрок: {due_date}{time_str} ({label})")
-                            sent_keys.add(key)
-                        except Exception as e:
-                            logging.error(f"[TASK] {user_id}: {e}")
-                if due_time:
-                    try:
-                        due_dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
-                        delta_min = (due_dt - now).total_seconds() / 60
-                        if 55 <= delta_min <= 65:
-                            key = f"{user_id}:{task_id}:{due_date} {due_time}:hour"
-                            if key not in hour_sent_keys:
-                                await bot.send_message(user_id,
-                                    f"Через час срок\n\n#{task_id} {text}\n"
-                                    f"Приоритет: {p_label}\nСрок: {due_date} {due_time}")
-                                hour_sent_keys.add(key)
-                    except Exception as e:
-                        logging.error(f"[TASK-HOUR] {user_id}: {e}")
-        except Exception as e:
-            logging.exception(f"[TASK] {e}")
-        await asyncio.sleep(300)
-
-
-async def daily_quote_loop():
-    last_sent_date = None
-    while True:
-        try:
-            now = _now_irkutsk()
-            current_date = now.strftime("%Y-%m-%d")
-            if (now.hour == DAILY_QUOTE_HOUR and now.minute < 10
-                    and current_date != last_sent_date):
-                subscribers = daily_get_all_subscribers()
-                if subscribers:
-                    quote = random.choice(DAILY_QUOTES)
-                    logging.info(f"[QUOTE] Отправляю {len(subscribers)} подписчикам")
-                    for uid in subscribers:
-                        try:
-                            await bot.send_message(uid, quote)
-                        except Exception as e:
-                            logging.error(f"[QUOTE] {uid}: {e}")
-                last_sent_date = current_date
-        except Exception as e:
-            logging.exception(f"[QUOTE] {e}")
-        await asyncio.sleep(60)
-
-
-async def cache_cleanup_loop():
-    while True:
-        try:
-            clear_old_cache()
-            logging.info("[CACHE] Очистка выполнена")
-        except Exception as e:
-            logging.error(f"[CACHE] {e}")
-        await asyncio.sleep(24 * 60 * 60)
-
-
-async def check_schedule_changes():
-    subscribers = get_changes_subscribers()
-    if not subscribers:
-        return
-    now = _now_irkutsk()
-    monday = _monday_of_week(now)
-    week_start = monday.strftime("%Y-%m-%d")
-    for group_id, users in subscribers.items():
-        try:
-            html = await fetch_week_html(group_id, monday, use_cache=False)
-            if not html:
-                continue
-            _, days = parse_schedule(html)
-            new_snapshot = build_snapshot(days)
-            old_snapshot = get_snapshot(group_id, week_start)
-            if old_snapshot is None:
-                save_snapshot(group_id, week_start, new_snapshot)
-                continue
-            if new_snapshot != old_snapshot:
-                old_lines = set(old_snapshot.split("\n"))
-                new_lines = set(new_snapshot.split("\n"))
-                added = new_lines - old_lines
-                removed = old_lines - new_lines
-                diff_lines = []
-                for line in list(added)[:5]:
-                    parts = line.split("|")
-                    if len(parts) >= 3:
-                        diff_lines.append(f"+ {parts[0]} {parts[1]}: {parts[2]}")
-                for line in list(removed)[:5]:
-                    parts = line.split("|")
-                    if len(parts) >= 3:
-                        diff_lines.append(f"- {parts[0]} {parts[1]}: {parts[2]}")
-                diff_text = "\n".join(diff_lines) if diff_lines else "Изменения в расписании."
-                for user_id, group_name in users:
-                    try:
-                        await bot.send_message(user_id,
-                            f"Изменения в расписании!\nГруппа: {group_name}\n"
-                            f"Неделя с {monday.strftime('%d.%m.%Y')}\n\n{diff_text}")
-                    except Exception as e:
-                        logging.error(f"[CHANGES] {user_id}: {e}")
-                save_snapshot(group_id, week_start, new_snapshot)
-        except Exception as e:
-            logging.error(f"[CHANGES] {group_id}: {e}")
-        await asyncio.sleep(1)
-
-
-async def changes_loop():
-    await asyncio.sleep(120)
-    while True:
-        try:
-            await check_schedule_changes()
-        except Exception as e:
-            logging.exception(f"[CHANGES] {e}")
-        await asyncio.sleep(CHANGES_CHECK_INTERVAL_MIN * 60)
-
-
-async def monitor_loop():
-    failures = 0
-    alerted = False
-    check_url = "https://www.istu.edu/raspisanie/"
-    while True:
-        try:
-            ok = False
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(check_url, timeout=aiohttp.ClientTimeout(total=15),
-                                           headers={"User-Agent": "Mozilla/5.0"}) as response:
-                        ok = (response.status == 200)
-            except Exception as e:
-                logging.warning(f"[MONITOR] {e}")
-                ok = False
-            if ok:
-                if alerted:
-                    try:
-                        await bot.send_message(ADMIN_ID, "Сайт ИРНИТУ снова отвечает.")
-                    except Exception:
-                        pass
-                    alerted = False
-                failures = 0
-            else:
-                failures += 1
-                if failures >= 3 and not alerted:
-                    try:
-                        await bot.send_message(ADMIN_ID, "Сайт ИРНИТУ не отвечает 3 проверки.\n\n" + check_url)
-                        alerted = True
-                    except Exception as e:
-                        logging.error(f"[MONITOR] {e}")
-        except Exception as e:
-            logging.exception(f"[MONITOR] {e}")
-        await asyncio.sleep(5 * 60)
-
-
-# ============================================================
-# ВЕБ-СЕРВЕР: СТАТИКА И ЗАПУСК
+# ВЕБ-СЕРВЕР
 # ============================================================
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
@@ -4435,42 +1756,43 @@ async def start_webapp():
 
     app = web.Application()
 
-    # --- API ---
     app.router.add_get("/api/schedule", api_schedule)
     app.router.add_get("/api/week", api_week)
     app.router.add_get("/api/me", api_me)
     app.router.add_get("/api/groups", api_groups)
     app.router.add_post("/api/set-group", api_set_group)
     app.router.add_post("/api/set-subgroup", api_set_subgroup)
-
     app.router.add_get("/api/tasks", api_tasks)
     app.router.add_post("/api/task-add", api_task_add)
     app.router.add_post("/api/task-update", api_task_update)
     app.router.add_post("/api/task-delete", api_task_delete)
     app.router.add_post("/api/task-clear", api_task_clear)
-
     app.router.add_get("/api/notes", api_notes)
     app.router.add_post("/api/note-save", api_note_save)
     app.router.add_post("/api/note-delete", api_note_delete)
-
     app.router.add_post("/api/notify-set", api_notify_set)
-
     app.router.add_get("/api/quote", api_quote)
     app.router.add_post("/api/quote-subscribe", api_quote_subscribe)
-
     app.router.add_get("/api/referral", api_referral)
-
     app.router.add_get("/api/scholarship", api_scholarship)
     app.router.add_post("/api/scholarship-set-amount", api_scholarship_set_amount)
     app.router.add_post("/api/scholarship-add-grade", api_scholarship_add_grade)
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
-
     app.router.add_post("/api/ai", api_ai)
     app.router.add_post("/api/feedback", api_feedback)
     app.router.add_get("/api/vip", api_vip)
 
-    # --- Статика ---
+    app.router.add_get("/api/admin/stats", api_admin_stats)
+    app.router.add_get("/api/admin/feedback-list", api_admin_feedback_list)
+    app.router.add_post("/api/admin/feedback-reply", api_admin_feedback_reply)
+    app.router.add_post("/api/admin/feedback-postpone", api_admin_feedback_postpone)
+    app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
+    app.router.add_post("/api/admin/give-vip", api_admin_give_vip)
+    app.router.add_post("/api/admin/revoke-vip", api_admin_revoke_vip)
+    app.router.add_get("/api/admin/vip-list", api_admin_vip_list)
+    app.router.add_get("/api/admin/monitor", api_admin_monitor)
+
     if webapp_dir:
         logging.info(f"[WEB] отдаю статику из {webapp_dir}")
 
@@ -4501,7 +1823,7 @@ async def start_webapp():
         app.router.add_get("/app.js", appjs_handler)
         app.router.add_get("/favicon.ico", favicon_handler)
     else:
-        logging.warning("[WEB] папка webapp не найдена, статика недоступна")
+        logging.warning("[WEB] папка webapp не найдена")
         async def root(request):
             return web.Response(text="webapp not found", status=404)
         app.router.add_get("/", root)
@@ -4511,6 +1833,64 @@ async def start_webapp():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     logging.info(f"[WEB] сервер запущен на 0.0.0.0:{port}")
+
+
+# ============================================================
+# ХЕНДЛЕРЫ БОТА (минимум)
+# ============================================================
+@dp.message(CommandStart())
+async def cmd_start(message: Message):
+    _ensure_user(message.from_user.id)
+    if not WEBAPP_URL:
+        await message.answer("Приложение ещё не настроено. Обратись к администратору.")
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]
+    ])
+    await message.answer(
+        "Привет! Открой приложение — там расписание, задачи, заметки и многое другое.",
+        reply_markup=kb)
+
+
+@dp.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа.")
+        return
+    await message.answer(
+        "АДМИН-КОМАНДЫ (всё остальное — в Mini App, вкладка «Админ»):\n\n"
+        "/backup — прислать файл users.db\n"
+        "/restore — восстановить базу (пришли .db с подписью /restore)\n"
+        "/admin — эта справка"
+    )
+
+
+@dp.message(Command("backup"))
+async def cmd_backup(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        total = get_total_users()
+        doc = FSInputFile(DB_PATH, filename="users_backup.db")
+        await message.answer_document(doc, caption=f"Резервная копия. Всего пользователей: {total}")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("restore"))
+async def cmd_restore(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    if not message.document:
+        await message.answer("Пришли файл .db с командой /restore в подписи.")
+        return
+    try:
+        file = await bot.get_file(message.document.file_id)
+        await bot.download_file(file.file_path, DB_PATH)
+        init_db()
+        await message.answer(f"База восстановлена. Всего: {get_total_users()}")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
 
 
 # ============================================================
@@ -4525,14 +1905,7 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, polling")
 
-    asyncio.create_task(notification_loop())
-    asyncio.create_task(task_reminder_loop())
-    asyncio.create_task(daily_quote_loop())
-    asyncio.create_task(cache_cleanup_loop())
-    asyncio.create_task(changes_loop())
-    asyncio.create_task(monitor_loop())
     asyncio.create_task(start_webapp())
-
     await dp.start_polling(bot)
 
 
