@@ -1,5 +1,5 @@
 // ============================================================
-// TELEGRAM WEB APP SDK — ПОЛНОЭКРАННЫЙ РЕЖИМ
+// TELEGRAM WEB APP SDK
 // ============================================================
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -40,6 +40,7 @@ const state = {
     weekDays: null,
     weekOffset: 0,
     scheduleViewMode: 'today',
+    scheduleDay: 'today', // 'today' | 'tomorrow'
 
     tasks: [],
     tasksStats: { active: 0, done: 0 },
@@ -236,6 +237,54 @@ function renderLesson(les) {
     `;
 }
 
+function renderDaySwitch() {
+    return `
+        <div class="day-switch">
+            <button data-action="day-today" class="${state.scheduleDay === 'today' ? 'active' : ''}">Сегодня</button>
+            <button data-action="day-tomorrow" class="${state.scheduleDay === 'tomorrow' ? 'active' : ''}">Завтра</button>
+        </div>
+    `;
+}
+
+function getTomorrowData() {
+    const wd = state.weekDays;
+    if (!wd || !wd.days || wd.days.length === 0) return null;
+
+    const today = new Date();
+    const jsDay = today.getDay(); // 0=Вс, 1=Пн...
+    const todayIdx = jsDay === 0 ? 6 : jsDay - 1; // 0=Пн
+    const tomorrowIdx = (todayIdx + 1) % 7;
+
+    if (wd.days.length >= 7) {
+        return wd.days[tomorrowIdx] || null;
+    }
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const dd = String(tomorrow.getDate()).padStart(2, '0');
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const yyyy = tomorrow.getFullYear();
+    const tomorrowStr = `${dd}.${mm}.${yyyy}`;
+
+    for (const d of wd.days) {
+        if (d.date === tomorrowStr) return d;
+    }
+    return null;
+}
+
+async function ensureWeekLoaded() {
+    if (state.weekDays && state.weekDays.days && state.weekDays.days.length > 0) {
+        return true;
+    }
+    try {
+        const r = await apiGet('/api/week', { offset: 0 });
+        state.weekDays = r;
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 function renderWeekView() {
     const wd = state.weekDays;
     if (!wd || !wd.days || wd.days.length === 0) {
@@ -277,27 +326,66 @@ function renderWeekView() {
     return html;
 }
 
+function renderDayCard(day, label) {
+    let html = `<div class="day-header">${escapeHtml(label)}${day.name ? ' · ' + escapeHtml(day.name) : ''}${day.date ? ', ' + escapeHtml(day.date) : ''}</div>`;
+
+    const p = state.profile;
+    if (p?.group) {
+        html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(p.group)}${
+            p.subgroup ? ` · подгруппа ${escapeHtml(p.subgroup)}` : ''
+        }</div>`;
+    }
+
+    if (!day.lessons || day.lessons.length === 0) {
+        html += renderEmpty('Занятий нет');
+    } else {
+        for (const les of day.lessons) {
+            html += renderLesson(les);
+        }
+    }
+
+    html += `
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+            <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
+            <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
+        </div>
+    `;
+
+    return html;
+}
+
 function renderSchedule() {
     if (state.scheduleViewMode === 'week' && state.weekDays) {
         return renderWeekView();
     }
 
     const s = state.schedule;
-    let html = renderUserBar();
 
-    if (!s) return html + renderEmpty('Нет данных о расписании');
-
-    if (s.error === 'no_group' || (state.profile && !state.profile.group)) {
-        html += `
+    if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
+        return renderUserBar() + `
             <div class="banner">
                 <div class="banner-title">Как начать</div>
                 <div class="banner-sub">1. Профиль → «Выбрать группу»<br>2. Укажи институт и группу<br>3. Вернись — расписание появится</div>
                 <button class="banner-btn" data-action="go-profile">Выбрать группу</button>
             </div>
         `;
-        return html;
     }
 
+    let html = renderUserBar() + renderDaySwitch();
+
+    if (state.scheduleDay === 'tomorrow') {
+        if (!state.weekDays) {
+            return html + renderLoading();
+        }
+        const tomorrow = getTomorrowData();
+        if (!tomorrow) {
+            return html + renderEmpty('Не удалось загрузить расписание на завтра');
+        }
+        return html + renderDayCard(tomorrow, 'Завтра');
+    }
+
+    if (!s) return html + renderEmpty('Нет данных о расписании');
     if (s.error) return html + renderEmpty(s.message || 'Ошибка загрузки');
 
     const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
@@ -832,9 +920,11 @@ async function loadTabData(tab) {
         if (tab === 'schedule') {
             state.scheduleViewMode = 'today';
             state.weekOffset = 0;
+            state.scheduleDay = 'today';
             state.weekDays = null;
             await loadProfile();
             await loadSchedule();
+            ensureWeekLoaded().catch(() => {});
         } else if (tab === 'tasks') {
             await loadTasks();
         } else if (tab === 'notes') {
@@ -882,7 +972,27 @@ async function loadTodayAndRender() {
     state.scheduleViewMode = 'today';
     state.weekOffset = 0;
     state.weekDays = null;
+    state.scheduleDay = 'today';
     await loadSchedule();
+    render();
+}
+
+async function actionDayToday() {
+    state.scheduleDay = 'today';
+    state.scheduleViewMode = 'today';
+    haptic('light');
+    render();
+}
+
+async function actionDayTomorrow() {
+    state.scheduleDay = 'tomorrow';
+    state.scheduleViewMode = 'today';
+    haptic('light');
+
+    if (!state.weekDays) {
+        render();
+        await ensureWeekLoaded();
+    }
     render();
 }
 
@@ -1255,10 +1365,12 @@ function handleAction(el) {
     else if (a === 'vip-buy') actionVipBuy();
     else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
     else if (a === 'go-vip') { state.tab = 'vip'; loadTabData('vip'); }
-    else if (a === 'week-prev') { state.weekOffset -= 1; loadWeekAndRender(); }
-    else if (a === 'week-next') { state.weekOffset += 1; loadWeekAndRender(); }
-    else if (a === 'week-current') { state.weekOffset = 0; loadWeekAndRender(); }
+    else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-current') { state.weekOffset = 0; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
     else if (a === 'week-today') { loadTodayAndRender(); }
+    else if (a === 'day-today') actionDayToday();
+    else if (a === 'day-tomorrow') actionDayTomorrow();
     else if (a === 'admin-monitor') actionAdminMonitor();
     else if (a === 'admin-broadcast') actionAdminBroadcast();
     else if (a === 'admin-give-vip') actionAdminGiveVip();
