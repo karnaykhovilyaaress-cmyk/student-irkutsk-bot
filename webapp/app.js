@@ -273,9 +273,6 @@ function renderSchedule() {
             <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
             <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
         </div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="week-view-all" style="width:100%">Показать всю неделю</button>
-        </div>
     `;
 
     return html;
@@ -1214,7 +1211,6 @@ function handleAction(el) {
     else if (a === 'week-next') { state.weekOffset += 1; loadWeekAndRender(); }
     else if (a === 'week-current') { state.weekOffset = 0; loadWeekAndRender(); }
     else if (a === 'week-today') { loadTodayAndRender(); }
-    else if (a === 'week-view-all') { state.weekOffset = 0; loadWeekAndRender(); }
     else if (a === 'admin-monitor') actionAdminMonitor();
     else if (a === 'admin-broadcast') actionAdminBroadcast();
     else if (a === 'admin-give-vip') actionAdminGiveVip();
