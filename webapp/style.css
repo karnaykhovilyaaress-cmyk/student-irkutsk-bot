@@ -7,17 +7,14 @@
    ПЕРЕМЕННЫЕ — LIT-STYLE
    ============================================================ */
 :root {
-    /* Бирюзовый неон (акцент) */
     --neon: #00E5D0;
     --neon-dim: #00B8A8;
     --neon-glow: rgba(0, 229, 208, 0.45);
 
-    /* Синий (вторичный, из аватарки) */
     --brand-500: #1E88E5;
     --brand-400: #00B4FF;
     --brand-100: #E6F3FF;
 
-    /* Фон — тёмный по умолчанию */
     --bg: #070B14;
     --bg-2: #0E1424;
     --bg-3: #151C30;
@@ -41,6 +38,10 @@
     --r-md: 14px;
     --r-lg: 20px;
     --r-xl: 26px;
+
+    /* Отступы под safe-area (полноэкранный режим) */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Светлая тема (если Telegram светлый) */
@@ -77,7 +78,8 @@ html, body {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    padding-bottom: 80px;
+    min-height: 100dvh;
+    padding-bottom: calc(84px + var(--safe-bottom));
 }
 
 /* ============================================================
@@ -94,6 +96,7 @@ html, body {
     justify-content: center;
     gap: 24px;
     transition: opacity 0.5s ease;
+    padding-top: var(--safe-top);
 }
 #splash.hide {
     opacity: 0;
@@ -219,7 +222,6 @@ html, body {
     font-weight: 600;
 }
 
-/* Скелетон */
 .skeleton-card {
     height: 88px;
     border-radius: var(--r-lg);
@@ -234,7 +236,7 @@ html, body {
 }
 
 /* ============================================================
-   CARDS — LIT-STYLE
+   CARDS
    ============================================================ */
 .card {
     background: var(--bg-2);
@@ -255,7 +257,7 @@ html, body {
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Баннерная карточка (как у Lit) */
+/* Баннер (Lit-style) */
 .banner {
     position: relative;
     border-radius: var(--r-xl);
@@ -320,7 +322,7 @@ html, body {
 .banner-btn:active { transform: scale(0.96); }
 
 /* ============================================================
-   ПРОФИЛЬ-ХЕДЕР (компактный, как у Lit)
+   USER BAR
    ============================================================ */
 .user-bar {
     display: flex;
@@ -332,7 +334,10 @@ html, body {
     border-radius: var(--r-lg);
     margin-bottom: 14px;
     box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    transition: transform 0.15s ease;
 }
+.user-bar:active { transform: scale(0.99); }
 .user-bar-avatar {
     width: 48px;
     height: 48px;
@@ -347,10 +352,7 @@ html, body {
     box-shadow: 0 0 20px var(--neon-glow);
     flex-shrink: 0;
 }
-.user-bar-info {
-    flex: 1;
-    min-width: 0;
-}
+.user-bar-info { flex: 1; min-width: 0; }
 .user-bar-name {
     font-size: 15px;
     font-weight: 800;
@@ -381,9 +383,7 @@ html, body {
     font-weight: 800;
     color: var(--neon);
 }
-.user-badge svg {
-    filter: drop-shadow(0 0 6px var(--neon-glow));
-}
+.user-badge svg { filter: drop-shadow(0 0 6px var(--neon-glow)); }
 
 /* ============================================================
    LESSON
@@ -396,7 +396,6 @@ html, body {
     border-bottom: 1px solid var(--divider);
 }
 .lesson:last-child { border-bottom: none; }
-
 .lesson-time {
     min-width: 72px;
     font-weight: 800;
@@ -454,7 +453,7 @@ html, body {
 }
 
 /* ============================================================
-   BOTTOM NAV — LIT-STYLE
+   BOTTOM NAV
    ============================================================ */
 .bottom-nav {
     position: fixed;
@@ -465,11 +464,10 @@ html, body {
     display: flex;
     background: var(--bg);
     border-top: 1px solid var(--divider);
-    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0));
+    padding: 6px 6px calc(6px + var(--safe-bottom));
     backdrop-filter: saturate(180%) blur(18px);
     -webkit-backdrop-filter: saturate(180%) blur(18px);
 }
-
 .nav-btn {
     flex: 1;
     background: none;
@@ -490,10 +488,7 @@ html, body {
     letter-spacing: 0.2px;
 }
 .nav-btn:active { transform: scale(0.92); }
-
-.nav-btn.active {
-    color: var(--neon);
-}
+.nav-btn.active { color: var(--neon); }
 .nav-btn.active::before {
     content: '';
     position: absolute;
@@ -506,9 +501,7 @@ html, body {
     background: var(--neon);
     box-shadow: 0 0 14px var(--neon-glow);
 }
-.nav-btn.active svg {
-    filter: drop-shadow(0 0 8px var(--neon-glow));
-}
+.nav-btn.active svg { filter: drop-shadow(0 0 8px var(--neon-glow)); }
 
 /* ============================================================
    PROFILE
@@ -562,7 +555,7 @@ html, body {
 }
 
 /* ============================================================
-   BUTTONS — LIT-STYLE
+   BUTTONS
    ============================================================ */
 .btn {
     display: inline-flex;
@@ -623,7 +616,6 @@ html, body {
     box-shadow: 0 0 0 4px rgba(0,229,208,0.16);
 }
 .input::placeholder { color: var(--text-2); font-weight: 500; }
-
 textarea.input { resize: vertical; min-height: 88px; }
 
 /* ============================================================
@@ -645,7 +637,6 @@ textarea.input { resize: vertical; min-height: 88px; }
     font-size: 14px;
     font-family: inherit;
 }
-
 .checkbox-row {
     display: flex;
     align-items: center;
