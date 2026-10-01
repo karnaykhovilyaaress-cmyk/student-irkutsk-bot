@@ -199,6 +199,8 @@ def init_db():
     for alter in [
         "ALTER TABLE users ADD COLUMN notify_changes INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN subgroup INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN notify_type TEXT DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN last_notified_at TEXT DEFAULT NULL",
     ]:
         try:
             conn.execute(alter)
@@ -406,7 +408,7 @@ def get_user_group(user_id):
 
 def delete_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0 WHERE user_id=?",
+    conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL WHERE user_id=?",
                  (user_id,))
     conn.commit(); conn.close()
 
@@ -457,6 +459,41 @@ def get_notify_changes(user_id):
     return bool(row and row[0])
 
 
+def set_notify_settings(user_id, ntype, hour, minute):
+    _ensure_user(user_id)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?",
+        (ntype, hour, minute, user_id))
+    conn.commit(); conn.close()
+
+
+def get_notify_settings(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?",
+        (user_id,)).fetchone()
+    conn.close()
+    if row and row[0]:
+        return {
+            "type": row[0],
+            "hour": row[1] if row[1] is not None else 0,
+            "minute": row[2] if row[2] is not None else 0,
+        }
+    return None
+
+
+def get_users_for_notification():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute "
+        "FROM users WHERE notify_type IS NOT NULL AND notify_type != '' "
+        "AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 def get_total_users():
     conn = sqlite3.connect(DB_PATH)
     n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -491,29 +528,10 @@ def set_vip(user_id, days, tier="premium"):
 
 
 def is_vip(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT expiry FROM vip WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    if not row or not row[0]:
-        return False
-    try:
-        return datetime.fromisoformat(row[0]) > datetime.now(timezone.utc)
-    except Exception:
-        return False
+    return True  # VIP убран — все функции бесплатны
 
 
 def get_vip_info(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT expiry, tier FROM vip WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    if not row or not row[0]:
-        return None
-    try:
-        expiry = datetime.fromisoformat(row[0])
-        if expiry > datetime.now(timezone.utc):
-            return expiry, row[1] or "premium"
-    except Exception:
-        pass
     return None
 
 
@@ -524,18 +542,7 @@ def revoke_vip(user_id):
 
 
 def get_all_vips():
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT user_id, expiry, tier FROM vip").fetchall()
-    conn.close()
-    now = datetime.now(timezone.utc)
-    result = []
-    for uid, exp, tier in rows:
-        try:
-            if datetime.fromisoformat(exp) > now:
-                result.append((uid, exp, tier))
-        except Exception:
-            pass
-    return result
+    return []
 
 
 def get_cached_schedule(group_id, week_start):
@@ -743,7 +750,6 @@ def delete_note_by_id(note_id, user_id):
 # ============================================================
 GROUPS = {
     "ИАМиТ": [
-        # 1 курс
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
         {"name": "ЛИМб-26-1", "id": "478284"}, {"name": "МИРб-26-1", "id": "478310"},
         {"name": "ММб-26-1", "id": "478314"}, {"name": "МТб-26-1", "id": "478318"},
@@ -752,7 +758,6 @@ GROUPS = {
         {"name": "СМ-26-3", "id": "479896"}, {"name": "ТЭАм-26-1", "id": "478548"},
         {"name": "УКб-26-1", "id": "478551"}, {"name": "ЦПКм-26-1", "id": "478601"},
         {"name": "ЭЛб-26-1", "id": "478640"},
-        # 2 курс
         {"name": "АСПм-25-1", "id": "478011"}, {"name": "АТПРб-25-1", "id": "478048"},
         {"name": "ЛИМб-25-1", "id": "478283"}, {"name": "ЛМБм-25-1", "id": "478290"},
         {"name": "МИРб-25-1", "id": "478309"}, {"name": "ММб-25-1", "id": "478313"},
@@ -761,24 +766,20 @@ GROUPS = {
         {"name": "СМ-25-2", "id": "478492"}, {"name": "ТЭАм-25-1", "id": "478547"},
         {"name": "УКб-25-1", "id": "478550"}, {"name": "УПКм-25-1", "id": "478558"},
         {"name": "ЦПКм-25-1", "id": "478600"}, {"name": "ЭЛб-25-1", "id": "478639"},
-        # 3 курс
         {"name": "АТПРб-24-1", "id": "478047"}, {"name": "ЛИМб-24-1", "id": "478282"},
         {"name": "МИРб-24-1", "id": "478308"}, {"name": "ММб-24-1", "id": "478312"},
         {"name": "МТб-24-1", "id": "478316"}, {"name": "СМ-24-1", "id": "478489"},
         {"name": "СМ-24-2", "id": "478490"}, {"name": "ТСЧс-24-1", "id": "478541"},
         {"name": "ЭЛб-24-1", "id": "478638"},
-        # 4 курс
         {"name": "АСб-23-1", "id": "478008"}, {"name": "АТПРб-23-1", "id": "478046"},
         {"name": "ЛИМб-23-1", "id": "478281"}, {"name": "МИРб-23-1", "id": "478307"},
         {"name": "ММб-23-1", "id": "478311"}, {"name": "МТб-23-1", "id": "478315"},
         {"name": "СМ-23-1", "id": "478487"}, {"name": "СМ-23-2", "id": "478488"},
         {"name": "ТСЧс-23-1", "id": "478540"}, {"name": "УКб-23-1", "id": "478549"},
         {"name": "ЭЛб-23-1", "id": "478637"},
-        # 5 курс
         {"name": "СМ-22-1", "id": "478485"}, {"name": "СМ-22-2", "id": "478486"},
     ],
     "Аспирантура": [
-        # 1 курс
         {"name": "аАУП-26-1", "id": "477932"}, {"name": "аБЗТ-26-1", "id": "477934"},
         {"name": "аБПП-26-1", "id": "477936"}, {"name": "аБТХ-26-1", "id": "477937"},
         {"name": "аВДС-26-1", "id": "477939"}, {"name": "аГГ-26-1", "id": "477940"},
@@ -801,7 +802,6 @@ GROUPS = {
         {"name": "аЭКС-26-1", "id": "478070"}, {"name": "аЭНК-26-1", "id": "478072"},
         {"name": "аЭТРд-26-1", "id": "478073"}, {"name": "аЭТРоп-26-1", "id": "478075"},
         {"name": "аЭЭН-26-1", "id": "478077"},
-        # 3 курс
         {"name": "аАУП-24-1", "id": "477931"}, {"name": "аБЭТ-24-1", "id": "477933"},
         {"name": "аБПП-24-1", "id": "477935"}, {"name": "аВДС-24-1", "id": "477938"},
         {"name": "аГКЛ-24-1", "id": "477945"}, {"name": "аГКгис-24-1", "id": "477943"},
@@ -823,7 +823,6 @@ GROUPS = {
         {"name": "аЭЭН-24-1", "id": "478076"}, {"name": "аЗКМ-24-1", "id": "477958"},
     ],
     "БРИКС": [
-        # 1 курс
         {"name": "ВЗАм-26-1", "id": "478105"}, {"name": "ИИКб-26-1", "id": "478215"},
         {"name": "ИИКб-26-2", "id": "479891"}, {"name": "КБКб-26-1", "id": "478251"},
         {"name": "ЛБКб-26-1", "id": "478279"}, {"name": "ЛБКб-26-2", "id": "478280"},
@@ -832,7 +831,6 @@ GROUPS = {
         {"name": "УЛм-26-1", "id": "479898"}, {"name": "ФНб-26-1", "id": "478580"},
         {"name": "ЦТм-26-1", "id": "478605"}, {"name": "ЭПАб-26-1", "id": "478654"},
         {"name": "ЭЗТм-26-1", "id": "478632"},
-        # 2 курс
         {"name": "ИИКб-25-1", "id": "478213"}, {"name": "ИИКб-25-2", "id": "478214"},
         {"name": "КБКб-25-1", "id": "478250"}, {"name": "ЛБКб-25-1", "id": "478277"},
         {"name": "ЛБКб-25-2", "id": "478278"}, {"name": "МДБб-25-1", "id": "478305"},
@@ -840,46 +838,36 @@ GROUPS = {
         {"name": "РКИб-25-3", "id": "478453"}, {"name": "РКИб-25-4", "id": "478454"},
         {"name": "УЛм-25-1", "id": "478552"}, {"name": "ФНб-25-1", "id": "478579"},
         {"name": "ЦТм-25-1", "id": "478604"}, {"name": "ЭПАб-25-1", "id": "478653"},
-        # 3 курс
         {"name": "ЖКб-24-1", "id": "478195"}, {"name": "ИИКб-24-1", "id": "478212"},
         {"name": "КБКб-24-1", "id": "478249"}, {"name": "ЛБКб-24-1", "id": "478275"},
         {"name": "ЛБКб-24-2", "id": "478276"}, {"name": "МДБб-24-1", "id": "478304"},
         {"name": "ФНб-24-1", "id": "478578"}, {"name": "ЭПАб-24-1", "id": "478652"},
-        # 4 курс
         {"name": "ЖКб-23-1", "id": "478194"}, {"name": "ИИКб-23-1", "id": "478211"},
         {"name": "ЛБКб-23-1", "id": "478274"}, {"name": "МДБб-23-1", "id": "478303"},
         {"name": "ФНб-23-1", "id": "478577"}, {"name": "ЭПАб-23-1", "id": "478651"},
     ],
     "ДЛРЯ": [
-        # 1 курс
         {"name": "ИНС-26-1", "id": "479936"}, {"name": "ИНС-26-2", "id": "479937"},
         {"name": "ИНС-26-3", "id": "479938"}, {"name": "ИНС-26-4", "id": "479939"},
         {"name": "ИНС-26-5", "id": "479940"}, {"name": "ИНС-26-6", "id": "479941"},
         {"name": "ИНСм-26-1", "id": "479942"}, {"name": "ИНСм-26-2", "id": "479943"},
         {"name": "ИНСм-26-3", "id": "479944"},
-        # 2 курс
         {"name": "ИНС-25-3", "id": "479856"}, {"name": "ИНС-25-6", "id": "479859"},
         {"name": "ИНС-25-7", "id": "479860"}, {"name": "ИНСМ-25-2", "id": "479864"},
         {"name": "ИНСМ-25-3", "id": "479865"},
     ],
     "ССГ": [
-        # 1 курс
         {"name": "ГИИм-26-1", "id": "478127"}, {"name": "ИТГб-26-1", "id": "478243"},
         {"name": "РМ-26-1", "id": "478460"}, {"name": "РФ-26-1", "id": "478476"},
         {"name": "ЦГФм-26-1", "id": "478599"},
-        # 2 курс
         {"name": "ГИС-25-1", "id": "478129"}, {"name": "ИТТб-25-1", "id": "478242"},
         {"name": "РГ-25-1", "id": "478443"},
-        # 3 курс
         {"name": "РМ-24-1", "id": "478459"}, {"name": "РФ-24-1", "id": "478475"},
-        # 4 курс
         {"name": "ГИС-23-1", "id": "478128"}, {"name": "РГ-23-1", "id": "478442"},
         {"name": "РМ-23-1", "id": "478458"}, {"name": "РФ-23-1", "id": "478474"},
-        # 5 курс
         {"name": "РМ-22-1", "id": "478457"}, {"name": "РФ-22-1", "id": "478473"},
     ],
     "ИАСиД": [
-        # 1 курс
         {"name": "АД-26-1", "id": "477954"}, {"name": "АДм-26-1", "id": "477957"},
         {"name": "АРб-26-1", "id": "478002"}, {"name": "АРб-26-2", "id": "478003"},
         {"name": "ВВб-26-1", "id": "478101"}, {"name": "ВВм-26-1", "id": "478102"},
@@ -894,21 +882,19 @@ GROUPS = {
         {"name": "ТМПм-26-1", "id": "478536"}, {"name": "УСТб-26-1", "id": "478563"},
         {"name": "УСТм-26-1", "id": "478565"}, {"name": "УСТмз-26-1", "id": "479899"},
         {"name": "ЭУНб-26-1", "id": "478714"},
-        # 2 курс
         {"name": "АД-25-1", "id": "477953"}, {"name": "ГРм-25-1", "id": "478174"},
         {"name": "ДСб-25-2", "id": "478191"}, {"name": "РРб-25-1", "id": "478464"},
         {"name": "ТТВм-25-1", "id": "478522"}, {"name": "АДм-25-1", "id": "477956"},
         {"name": "ГСХм-25-1", "id": "478178"}, {"name": "КНб-25-1", "id": "478254"},
         {"name": "СНГб-25-1", "id": "478500"}, {"name": "ТГПм-25-1", "id": "478523"},
         {"name": "ЦУОКсм-25-1", "id": "478607"}, {"name": "АРб-25-1", "id": "478000"},
-        {"name": "ГСХм-25-1", "id": "478180"}, {"name": "ССЗм-25-1", "id": "478502"},
-        {"name": "ТМПм-25-1", "id": "478535"}, {"name": "ЭУНб-25-1", "id": "478713"},
-        {"name": "АРб-25-2", "id": "478001"}, {"name": "ДИб-25-1", "id": "478186"},
-        {"name": "ОТКм-25-1", "id": "478428"}, {"name": "СУЗ-25-1", "id": "478518"},
-        {"name": "УСТб-25-1", "id": "478562"}, {"name": "ГРб-25-1", "id": "478172"},
-        {"name": "ДСб-25-1", "id": "478190"}, {"name": "ПГСб-25-1", "id": "478435"},
-        {"name": "ТБб-25-1", "id": "478521"}, {"name": "УСТм-25-1", "id": "478564"},
-        # 3 курс
+        {"name": "ССЗм-25-1", "id": "478502"}, {"name": "ТМПм-25-1", "id": "478535"},
+        {"name": "ЭУНб-25-1", "id": "478713"}, {"name": "АРб-25-2", "id": "478001"},
+        {"name": "ДИб-25-1", "id": "478186"}, {"name": "ОТКм-25-1", "id": "478428"},
+        {"name": "СУЗ-25-1", "id": "478518"}, {"name": "УСТб-25-1", "id": "478562"},
+        {"name": "ГРб-25-1", "id": "478172"}, {"name": "ДСб-25-1", "id": "478190"},
+        {"name": "ПГСб-25-1", "id": "478435"}, {"name": "ТБб-25-1", "id": "478521"},
+        {"name": "УСТм-25-1", "id": "478564"},
         {"name": "АД-24-1", "id": "477952"}, {"name": "ГСХб-24-1", "id": "478177"},
         {"name": "МД-24-1", "id": "478302"}, {"name": "УСТб-24-1", "id": "478561"},
         {"name": "АРб-24-1", "id": "477998"}, {"name": "ДИб-24-1", "id": "478185"},
@@ -918,7 +904,6 @@ GROUPS = {
         {"name": "ДСб-24-1", "id": "478189"}, {"name": "СНГб-24-1", "id": "478499"},
         {"name": "ГРб-24-1", "id": "478171"}, {"name": "КНб-24-1", "id": "478253"},
         {"name": "СУЗ-24-1", "id": "478517"},
-        # 4 курс
         {"name": "АД-23-1", "id": "477951"}, {"name": "ДИб-23-1", "id": "478182"},
         {"name": "ПГСб-23-1", "id": "478433"}, {"name": "УСТб-23-1", "id": "478560"},
         {"name": "АРб-23-1", "id": "477996"}, {"name": "ДИб-23-2", "id": "478183"},
@@ -928,17 +913,14 @@ GROUPS = {
         {"name": "КНб-23-1", "id": "478252"}, {"name": "СУЗ-23-1", "id": "478516"},
         {"name": "ГСХб-23-1", "id": "478176"}, {"name": "МД-23-1", "id": "478301"},
         {"name": "ТБб-23-1", "id": "478520"},
-        # 5 курс
         {"name": "АД-22-1", "id": "477950"}, {"name": "ДСб-22-1", "id": "478187"},
         {"name": "АРб-22-1", "id": "477994"}, {"name": "МД-22-1", "id": "478300"},
         {"name": "АРб-22-2", "id": "477995"}, {"name": "РРб-22-1", "id": "478461"},
         {"name": "ГРб-22-1", "id": "478168"}, {"name": "СУЗ-22-1", "id": "478515"},
         {"name": "ГРб-22-2", "id": "478169"},
-        # 6 курс
         {"name": "МД-21-1", "id": "478299"}, {"name": "СУЗ-21-1", "id": "478514"},
     ],
     "ИВТ": [
-        # 1 курс
         {"name": "АМПб-26-1", "id": "477984"}, {"name": "АТПб-26-1", "id": "478040"},
         {"name": "АТПб-26-2", "id": "479886"}, {"name": "БТб-26-1", "id": "478096"},
         {"name": "БТб-26-2", "id": "478097"}, {"name": "ИНОм-26-1", "id": "478222"},
@@ -950,7 +932,6 @@ GROUPS = {
         {"name": "РТУм-26-1", "id": "478472"}, {"name": "ХПм-26-1", "id": "478582"},
         {"name": "ХТм-26-1", "id": "478590"}, {"name": "ХТОб-26-1", "id": "478594"},
         {"name": "ХТТб-26-1", "id": "478598"},
-        # 2 курс
         {"name": "ИФб-25-1", "id": "478246"}, {"name": "ПИм-25-1", "id": "478437"},
         {"name": "ХТТб-25-1", "id": "478597"}, {"name": "АТПб-25-1", "id": "478038"},
         {"name": "РДб-25-1", "id": "478446"}, {"name": "ХТм-25-1", "id": "478589"},
@@ -959,12 +940,10 @@ GROUPS = {
         {"name": "МЦм-25-1", "id": "478335"}, {"name": "ФХм-25-1", "id": "478581"},
         {"name": "ИРб-25-1", "id": "478225"}, {"name": "ОХПм-25-1", "id": "478430"},
         {"name": "ХТОб-25-1", "id": "478593"},
-        # 3 курс
         {"name": "АТПб-24-1", "id": "478037"}, {"name": "РДб-24-1", "id": "478445"},
         {"name": "БТб-24-1", "id": "478094"}, {"name": "ХТОб-24-1", "id": "478592"},
         {"name": "ИРб-24-1", "id": "478224"}, {"name": "ХТТб-24-1", "id": "478596"},
         {"name": "ИФб-24-1", "id": "478245"}, {"name": "МЦб-24-1", "id": "478325"},
-        # 4 курс
         {"name": "АТПб-23-1", "id": "478036"}, {"name": "НМб-23-1", "id": "478409"},
         {"name": "БТб-23-1", "id": "478093"}, {"name": "РДб-23-1", "id": "478444"},
         {"name": "ИРб-23-1", "id": "478223"}, {"name": "ТПб-23-1", "id": "478537"},
@@ -972,7 +951,6 @@ GROUPS = {
         {"name": "МЦТб-23-1", "id": "478337"}, {"name": "ХТТб-23-1", "id": "478595"},
     ],
     "ИИТиАД": [
-        # 1 курс
         {"name": "АСУб-26-1", "id": "478021"}, {"name": "АСУб-26-2", "id": "478022"},
         {"name": "БКСм-26-1", "id": "478092"}, {"name": "ИБб-26-1", "id": "478205"},
         {"name": "ИБб-26-2", "id": "479889"}, {"name": "ИСИб-26-1", "id": "478232"},
@@ -980,25 +958,21 @@ GROUPS = {
         {"name": "ИСТб-26-3", "id": "479892"}, {"name": "ИИТм-26-1", "id": "478219"},
         {"name": "КСм-26-1", "id": "478261"}, {"name": "ЦППм-26-1", "id": "478603"},
         {"name": "ЭВМб-26-1", "id": "478624"}, {"name": "ЭВМб-26-2", "id": "479900"},
-        # 2 курс
         {"name": "АСУб-25-1", "id": "478019"}, {"name": "ИИТм-25-1", "id": "478218"},
         {"name": "ЦППм-25-1", "id": "478602"}, {"name": "АСУб-25-2", "id": "478020"},
         {"name": "ИСИб-25-1", "id": "478231"}, {"name": "ЭВМб-25-1", "id": "478622"},
         {"name": "БКСм-25-1", "id": "478091"}, {"name": "ИСТб-25-1", "id": "478237"},
         {"name": "ИБб-25-1", "id": "478203"}, {"name": "ИСТб-25-2", "id": "478238"},
         {"name": "ИБб-25-2", "id": "478204"}, {"name": "КСм-25-1", "id": "478260"},
-        # 3 курс
         {"name": "АСУб-24-1", "id": "478018"}, {"name": "ЭВМб-24-1", "id": "478621"},
         {"name": "ИБб-24-1", "id": "478202"}, {"name": "ИСИб-24-1", "id": "478230"},
         {"name": "ИСТб-24-1", "id": "478235"}, {"name": "ИСТб-24-2", "id": "478236"},
-        # 4 курс
         {"name": "АСУб-23-1", "id": "478015"}, {"name": "ИСТб-23-2", "id": "478234"},
         {"name": "АСУб-23-2", "id": "478016"}, {"name": "ЭВМб-23-1", "id": "478620"},
         {"name": "ИБб-23-1", "id": "478201"}, {"name": "ИСИб-23-1", "id": "478229"},
         {"name": "ИСТб-23-1", "id": "478233"},
     ],
     "ИН": [
-        # 1 курс
         {"name": "БЖТм-26-1", "id": "478088"}, {"name": "ГА-26-1", "id": "478109"},
         {"name": "ГГ-26-1", "id": "478115"}, {"name": "ГМ-26-1", "id": "478134"},
         {"name": "ГО-26-1", "id": "478146"}, {"name": "ГП-26-1", "id": "478160"},
@@ -1009,7 +983,6 @@ GROUPS = {
         {"name": "ООСб-26-1", "id": "478415"}, {"name": "ОП-26-1", "id": "478421"},
         {"name": "ПБмз-26-1", "id": "479895"}, {"name": "ТХб-26-1", "id": "478545"},
         {"name": "ЭКОм-26-1", "id": "478634"},
-        # 2 курс
         {"name": "БЖТм-25-1", "id": "478087"}, {"name": "БТПб-25-1", "id": "478099"},
         {"name": "ГА-25-1", "id": "478108"}, {"name": "ГГ-25-1", "id": "478114"},
         {"name": "ГМ-25-1", "id": "478133"}, {"name": "ГО-25-1", "id": "478145"},
@@ -1019,27 +992,23 @@ GROUPS = {
         {"name": "НДб-25-2", "id": "478395"}, {"name": "НДм-25-1", "id": "478407"},
         {"name": "ОП-25-1", "id": "478420"}, {"name": "ПОм-25-1", "id": "478439"},
         {"name": "ТХб-25-1", "id": "478544"}, {"name": "ЭКОм-25-1", "id": "478633"},
-        # 3 курс
         {"name": "ГО-24-1", "id": "478144"}, {"name": "ГП-24-1", "id": "478158"},
         {"name": "ГГ-24-1", "id": "478113"}, {"name": "ГМ-24-1", "id": "478132"},
         {"name": "ИГ-24-1", "id": "478208"}, {"name": "НДДб-24-1", "id": "478400"},
         {"name": "НДДб-24-2", "id": "478401"}, {"name": "НДб-24-1", "id": "478393"},
         {"name": "ООСб-24-1", "id": "478414"}, {"name": "ОП-24-1", "id": "478419"},
         {"name": "ТХб-24-1", "id": "478543"},
-        # 4 курс
         {"name": "БТПб-23-1", "id": "478098"}, {"name": "ГА-23-1", "id": "478107"},
         {"name": "ГГ-23-1", "id": "478112"}, {"name": "ГП-23-1", "id": "478157"},
         {"name": "ИГ-23-1", "id": "478207"}, {"name": "НДДб-23-1", "id": "478398"},
         {"name": "НДДб-23-2", "id": "478399"}, {"name": "НДб-23-1", "id": "478392"},
         {"name": "ООСб-23-1", "id": "478413"}, {"name": "ОП-23-1", "id": "478418"},
         {"name": "ТХб-23-1", "id": "478542"},
-        # 5 курс
         {"name": "ГА-22-1", "id": "478106"}, {"name": "ГГ-22-1", "id": "478111"},
         {"name": "ГМ-22-1", "id": "478131"}, {"name": "ГО-22-1", "id": "478143"},
         {"name": "ОП-22-1", "id": "478417"},
     ],
     "ИЭУП": [
-        # 1 курс
         {"name": "ВДм-26-1", "id": "479887"}, {"name": "ЖРб-26-1", "id": "478200"},
         {"name": "ИИм-26-1", "id": "478217"}, {"name": "МБб-26-1", "id": "478297"},
         {"name": "МБб-26-2", "id": "478298"}, {"name": "МБб-26-3", "id": "479893"},
@@ -1051,7 +1020,6 @@ GROUPS = {
         {"name": "ЭПЭб-26-1", "id": "478680"}, {"name": "ЭПЭб-26-2", "id": "478679"},
         {"name": "ЭТЭКб-26-1", "id": "478706"}, {"name": "ЭТЭКб-26-2", "id": "478707"},
         {"name": "ЮРУб-26-1", "id": "478723"},
-        # 2 курс
         {"name": "ВДм-25-1", "id": "478103"}, {"name": "ЖРБ-25-1", "id": "478199"},
         {"name": "ИИм-25-1", "id": "478216"}, {"name": "МБб-25-1", "id": "478294"},
         {"name": "МБб-25-2", "id": "478295"}, {"name": "МБб-25-3", "id": "478296"},
@@ -1065,7 +1033,6 @@ GROUPS = {
         {"name": "ЭПЭб-25-3", "id": "478678"}, {"name": "ЭТЭКб-25-1", "id": "478704"},
         {"name": "ЭТЭКб-25-2", "id": "478705"}, {"name": "ЭУМм-25-1", "id": "478710"},
         {"name": "ЮРГб-25-1", "id": "478717"}, {"name": "ЮРУб-25-1", "id": "478722"},
-        # 3 курс
         {"name": "ЖРБ-24-1", "id": "478198"}, {"name": "МБб-24-1", "id": "478292"},
         {"name": "МБб-24-2", "id": "478293"}, {"name": "НБ-24-1", "id": "478344"},
         {"name": "НБ-24-2", "id": "478345"}, {"name": "ТД-24-1", "id": "478527"},
@@ -1074,7 +1041,6 @@ GROUPS = {
         {"name": "ЭПЭб-24-1", "id": "478674"}, {"name": "ЭПЭб-24-2", "id": "478675"},
         {"name": "ЭТЭКб-24-1", "id": "478703"}, {"name": "ЮРГб-24-1", "id": "478716"},
         {"name": "ЮРУб-24-1", "id": "478720"}, {"name": "ЮРУб-24-2", "id": "478721"},
-        # 4 курс
         {"name": "ЖРБ-23-1", "id": "478196"}, {"name": "ЖРБ-23-2", "id": "478197"},
         {"name": "МБб-23-1", "id": "478291"}, {"name": "НБ-23-1", "id": "478342"},
         {"name": "НБ-23-2", "id": "478343"}, {"name": "ТД-23-1", "id": "478525"},
@@ -1083,12 +1049,10 @@ GROUPS = {
         {"name": "ЭПЭб-23-1", "id": "478672"}, {"name": "ЭПЭб-23-2", "id": "478673"},
         {"name": "ЭТЭКб-23-1", "id": "478702"}, {"name": "ЮРГб-23-1", "id": "478715"},
         {"name": "ЮРУб-23-1", "id": "478718"}, {"name": "ЮРУб-23-2", "id": "478719"},
-        # 5 курс
         {"name": "НБ-22-1", "id": "478340"}, {"name": "НБ-22-2", "id": "478341"},
         {"name": "ЭПЭб-22-1", "id": "478670"}, {"name": "ЭПЭб-22-2", "id": "478671"},
     ],
     "ИЭ": [
-        # 1 курс
         {"name": "ЭАПЭб-26-1", "id": "478614"}, {"name": "КТЭм-26-1", "id": "478273"},
         {"name": "СТЭб-26-1", "id": "478508"}, {"name": "СТЭб-26-2", "id": "479897"},
         {"name": "УЭСм-26-1", "id": "478569"}, {"name": "ЦЭм-26-1", "id": "478609"},
@@ -1096,7 +1060,6 @@ GROUPS = {
         {"name": "ЭПб-26-2", "id": "478661"}, {"name": "ЭСб-26-1", "id": "478692"},
         {"name": "ЭСм-26-1", "id": "478699"}, {"name": "ЭСТм-26-1", "id": "478701"},
         {"name": "ЭУм-26-1", "id": "478709"},
-        # 2 курс
         {"name": "ИЭм-25-1", "id": "478248"}, {"name": "ЦЭм-25-1", "id": "478608"},
         {"name": "ЭСТм-25-1", "id": "478700"}, {"name": "КТЭм-25-1", "id": "478272"},
         {"name": "ЭАПб-25-1", "id": "478612"}, {"name": "ЭСб-25-1", "id": "478690"},
@@ -1105,17 +1068,14 @@ GROUPS = {
         {"name": "ЭПб-25-1", "id": "478658"}, {"name": "ЭСм-25-1", "id": "478698"},
         {"name": "ЭУм-25-1", "id": "478708"}, {"name": "ЭПб-25-2", "id": "478659"},
         {"name": "УЭСм-25-1", "id": "478568"},
-        # 3 курс
         {"name": "СТб-24-1", "id": "478505"}, {"name": "ЭСб-24-1", "id": "478689"},
         {"name": "ЭАПЭб-24-1", "id": "478611"}, {"name": "ЭПб-24-1", "id": "478656"},
         {"name": "ЭПб-24-2", "id": "478657"},
-        # 4 курс
         {"name": "СТб-23-1", "id": "478504"}, {"name": "ЭАПЭб-23-1", "id": "478610"},
         {"name": "ЭПб-23-1", "id": "478655"}, {"name": "ЭСб-23-1", "id": "478687"},
         {"name": "ЭСб-23-2", "id": "478688"},
     ],
 }
-
 
 LESSON_TIMES = {
     "8:15": "9:45", "8:30": "10:00", "10:00": "11:30", "10:10": "11:40",
@@ -1346,15 +1306,13 @@ async def api_me(request: web.Request):
 
     _ensure_user(user_id)
     saved = get_user_group(user_id)
-    vip_info = get_vip_info(user_id)
     active, done = count_user_tasks(user_id)
     notes = get_user_notes(user_id)
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
     total, rewarded = get_referral_stats(user_id)
     daily = daily_is_subscribed(user_id)
-    notif = get_notify_time(user_id)
-    changes = get_notify_changes(user_id)
+    notif_settings = get_notify_settings(user_id)
 
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
 
@@ -1364,9 +1322,7 @@ async def api_me(request: web.Request):
         "group": saved[1] if saved else None,
         "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id),
-        "is_vip": is_vip(user_id),
-        "vip_until": vip_info[0].isoformat() if vip_info else None,
-        "vip_days_left": (vip_info[0] - datetime.now(timezone.utc)).days if vip_info else 0,
+        "is_vip": True,
         "tasks_active": active, "tasks_done": done,
         "notes_count": len(notes),
         "scholarship_amount": amount,
@@ -1375,8 +1331,10 @@ async def api_me(request: web.Request):
         "referral_total": total, "referral_rewarded": rewarded,
         "referral_days": rewarded * REFERRAL_DAYS,
         "daily_subscribed": daily,
-        "notify_time": f"{notif[0]:02d}:{notif[1]:02d}" if notif else None,
-        "notify_changes": changes,
+        "notify_type": notif_settings["type"] if notif_settings else None,
+        "notify_hour": notif_settings["hour"] if notif_settings else -1,
+        "notify_minute": notif_settings["minute"] if notif_settings else 0,
+        "chat_unread": 0,
     })
 
 
@@ -1586,12 +1544,33 @@ async def api_notify_set(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    hour = int(body.get("hour", -1))
-    minute = int(body.get("minute", 0))
-    changes = bool(body.get("changes", False))
-    set_notify_time(user_id, hour, minute)
-    set_notify_changes(user_id, changes)
-    return web.json_response({"ok": True})
+
+    ntype = body.get("type", None)
+
+    if ntype is None or ntype == "":
+        set_notify_settings(user_id, None, -1, 0)
+        return web.json_response({"ok": True, "type": None})
+
+    if ntype not in ("today", "tomorrow"):
+        return web.json_response({"error": "bad_type"}, status=400)
+
+    try:
+        hour = int(body.get("hour", 8))
+        minute = int(body.get("minute", 0))
+    except Exception:
+        return web.json_response({"error": "bad_time"}, status=400)
+
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return web.json_response({"error": "bad_time"}, status=400)
+
+    if ntype == "today" and hour > 10:
+        return web.json_response({
+            "error": "today_limit",
+            "message": "Для «Сегодня» — не позже 10:00"
+        }, status=400)
+
+    set_notify_settings(user_id, ntype, hour, minute)
+    return web.json_response({"ok": True, "type": ntype, "hour": hour, "minute": minute})
 
 
 async def api_quote(request: web.Request):
@@ -1640,8 +1619,6 @@ async def api_scholarship(request: web.Request):
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    if not is_vip(user_id):
-        return web.json_response({"error": "vip_only"}, status=403)
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
     grades_out = [{"id": gid, "subject": subj, "grade": grade} for gid, subj, grade in grades]
@@ -1674,8 +1651,6 @@ async def api_scholarship_set_amount(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    if not is_vip(user_id):
-        return web.json_response({"error": "vip_only"}, status=403)
     amount = int(body.get("amount", 0))
     if amount < 0 or amount > 100000:
         return web.json_response({"error": "invalid"}, status=400)
@@ -1691,8 +1666,6 @@ async def api_scholarship_add_grade(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    if not is_vip(user_id):
-        return web.json_response({"error": "vip_only"}, status=403)
     subject = (body.get("subject") or "").strip()
     grade = int(body.get("grade", 0))
     if not subject or grade not in (2, 3, 4, 5):
@@ -1711,8 +1684,6 @@ async def api_scholarship_delete_grade(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    if not is_vip(user_id):
-        return web.json_response({"error": "vip_only"}, status=403)
     gid = int(body.get("id", 0))
     if not gid:
         return web.json_response({"error": "no_id"}, status=400)
@@ -1728,8 +1699,6 @@ async def api_scholarship_clear(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    if not is_vip(user_id):
-        return web.json_response({"error": "vip_only"}, status=403)
     clear_grades(user_id)
     return web.json_response({"ok": True})
 
@@ -1742,8 +1711,6 @@ async def api_ai(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    if not is_vip(user_id):
-        return web.json_response({"error": "vip_only"}, status=403)
     if giga_client is None:
         return web.json_response({"error": "ai_unavailable"}, status=503)
     question = (body.get("question") or "").strip()
@@ -1793,10 +1760,9 @@ async def api_feedback(request: web.Request):
     uname = f"user_{user_id}"
     fid = save_feedback(user_id, uname, text)
     try:
-        vip_mark = "[VIP] " if is_vip(user_id) else ""
         admin_msg = await bot.send_message(
             ADMIN_ID,
-            f"{vip_mark}Обращение #{fid} (из веба)\nОт: user_{user_id}\n\n{text}")
+            f"Обращение #{fid} (из веба)\nОт: user_{user_id}\n\n{text}")
         update_feedback_admin_msg(fid, admin_msg.message_id)
     except Exception as e:
         logging.error(f"[FEEDBACK-WEB] {e}")
@@ -1808,17 +1774,11 @@ async def api_vip(request: web.Request):
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    info = get_vip_info(user_id)
-    if info:
-        expiry, tier = info
-        days_left = (expiry - datetime.now(timezone.utc)).days
-        return web.json_response({"is_vip": True, "expiry": expiry.isoformat(),
-                                   "days_left": days_left, "tier": tier})
-    return web.json_response({"is_vip": False})
+    return web.json_response({"is_vip": True})
 
 
 # ============================================================
-# API — АДМИНСКИЕ (только ADMIN_ID)
+# API — АДМИНСКИЕ
 # ============================================================
 def _admin_only(init_data):
     user_id = _verify_webapp_init(init_data)
@@ -1832,11 +1792,10 @@ async def api_admin_stats(request: web.Request):
     if not _admin_only(init_data):
         return web.json_response({"error": "forbidden"}, status=403)
     total = get_total_users()
-    vips = get_all_vips()
     pending = get_pending_feedback()
     return web.json_response({
         "total_users": total,
-        "vip_count": len(vips),
+        "vip_count": 0,
         "pending_feedback": len(pending),
     })
 
@@ -1917,56 +1876,6 @@ async def api_admin_broadcast(request: web.Request):
     return web.json_response({"ok": True, "started": True})
 
 
-async def api_admin_give_vip(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    if not _admin_only(body.get("initData", "")):
-        return web.json_response({"error": "forbidden"}, status=403)
-    uid = int(body.get("user_id", 0))
-    days = int(body.get("days", 0))
-    if not uid or days <= 0:
-        return web.json_response({"error": "invalid"}, status=400)
-    expiry = set_vip(uid, days)
-    exp_local = expiry + timedelta(hours=8)
-    try:
-        await bot.send_message(uid, f"Тебе активирован VIP на {days} дней!")
-    except Exception:
-        pass
-    return web.json_response({"ok": True, "expiry": exp_local.strftime("%d.%m.%Y")})
-
-
-async def api_admin_revoke_vip(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    if not _admin_only(body.get("initData", "")):
-        return web.json_response({"error": "forbidden"}, status=403)
-    uid = int(body.get("user_id", 0))
-    if not uid:
-        return web.json_response({"error": "no_id"}, status=400)
-    revoke_vip(uid)
-    return web.json_response({"ok": True})
-
-
-async def api_admin_vip_list(request: web.Request):
-    init_data = request.query.get("initData", "")
-    if not _admin_only(init_data):
-        return web.json_response({"error": "forbidden"}, status=403)
-    vips = get_all_vips()
-    items = []
-    for uid, exp, tier in vips[:100]:
-        try:
-            exp_local = datetime.fromisoformat(exp) + timedelta(hours=8)
-            days = (datetime.fromisoformat(exp) - datetime.now(timezone.utc)).days
-            items.append({"user_id": uid, "expiry": exp_local.strftime("%d.%m.%Y"), "days": days})
-        except Exception:
-            items.append({"user_id": uid, "expiry": exp, "days": 0})
-    return web.json_response({"items": items})
-
-
 async def api_admin_monitor(request: web.Request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data):
@@ -2033,9 +1942,6 @@ async def start_webapp():
     app.router.add_post("/api/admin/feedback-reply", api_admin_feedback_reply)
     app.router.add_post("/api/admin/feedback-postpone", api_admin_feedback_postpone)
     app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
-    app.router.add_post("/api/admin/give-vip", api_admin_give_vip)
-    app.router.add_post("/api/admin/revoke-vip", api_admin_revoke_vip)
-    app.router.add_get("/api/admin/vip-list", api_admin_vip_list)
     app.router.add_get("/api/admin/monitor", api_admin_monitor)
 
     if webapp_dir:
@@ -2081,11 +1987,22 @@ async def start_webapp():
 
 
 # ============================================================
-# ХЕНДЛЕРЫ БОТА (минимум)
+# ХЕНДЛЕРЫ БОТА
 # ============================================================
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     _ensure_user(message.from_user.id)
+
+    # Обработка реферальной ссылки
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1 and args[1].startswith("ref_"):
+        try:
+            referrer_id = int(args[1].replace("ref_", ""))
+            if add_referral(message.from_user.id, referrer_id):
+                logging.info(f"[REF] {message.from_user.id} пришёл от {referrer_id}")
+        except Exception:
+            pass
+
     if not WEBAPP_URL:
         await message.answer("Приложение ещё не настроено. Обратись к администратору.")
         return
@@ -2139,6 +2056,94 @@ async def cmd_restore(message: Message):
 
 
 # ============================================================
+# ВОРКЕР УВЕДОМЛЕНИЙ
+# ============================================================
+async def send_schedule_notification(user_id, group_id, subgroup, ntype):
+    try:
+        today = _now_irkutsk()
+        target_date = today + timedelta(days=1) if ntype == "tomorrow" else today
+
+        monday = _monday_of_week(target_date)
+        html = await fetch_week_html(group_id, monday, use_cache=True)
+        if not html:
+            return
+        _, days = parse_schedule(html)
+        target_str = target_date.strftime("%d.%m.%Y")
+        day = next((d for d in days if d["date"] == target_str), None)
+
+        label = "Сегодня" if ntype == "today" else "Завтра"
+        header = f"📅 <b>{label}, {target_str}</b>"
+
+        if not day:
+            await bot.send_message(user_id, f"{header}\n\nНе удалось загрузить расписание.")
+            return
+
+        lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
+        if not lessons:
+            await bot.send_message(user_id, f"{header}\n\nЗанятий нет 🎉")
+            return
+
+        lines = [header, ""]
+        for les in lessons:
+            time_end = LESSON_TIMES.get(les["time"], "")
+            time_str = f"{les['time']}–{time_end}" if time_end else les["time"]
+            lines.append(f"🕐 <b>{time_str}</b>")
+            lines.append(f"📚 {les['subject']}")
+            details = []
+            if les.get("type"):
+                details.append(les["type"])
+            if les.get("auditorium"):
+                details.append(f"ауд. {les['auditorium']}")
+            if les.get("teacher"):
+                details.append(les["teacher"])
+            if details:
+                lines.append(f"   <i>{' · '.join(details)}</i>")
+            lines.append("")
+
+        await bot.send_message(user_id, "\n".join(lines))
+    except Exception as e:
+        logging.error(f"[NOTIFY] user={user_id} error: {e}")
+
+
+async def send_daily_quotes():
+    subs = daily_get_all_subscribers()
+    if not subs:
+        return
+    quote = random.choice(DAILY_QUOTES)
+    text = f"☀️ <b>Цитата дня</b>\n\n<i>{quote}</i>"
+    for uid in subs:
+        try:
+            await bot.send_message(uid, text)
+        except Exception as e:
+            logging.error(f"[QUOTE] user={uid}: {e}")
+        await asyncio.sleep(0.05)
+
+
+async def notification_worker():
+    logging.info("[NOTIFY] воркер запущен")
+    last_quote_date = None
+    while True:
+        try:
+            now = _now_irkutsk()
+            today_str = now.strftime("%Y-%m-%d")
+            hh = now.hour
+            mm = now.minute
+
+            users = get_users_for_notification()
+            for uid, gid, subgroup, ntype, nh, nm in users:
+                if nh == hh and nm == mm:
+                    await send_schedule_notification(uid, gid, subgroup, ntype)
+
+            if hh == 10 and mm == 0 and last_quote_date != today_str:
+                last_quote_date = today_str
+                await send_daily_quotes()
+        except Exception:
+            logging.exception("[NOTIFY WORKER]")
+
+        await asyncio.sleep(60 - datetime.now().second)
+
+
+# ============================================================
 # ЗАПУСК
 # ============================================================
 async def main():
@@ -2151,6 +2156,7 @@ async def main():
     logging.info("Webhook удалён, polling")
 
     asyncio.create_task(start_webapp())
+    asyncio.create_task(notification_worker())
     await dp.start_polling(bot)
 
 
