@@ -237,6 +237,11 @@ def init_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS vip (
         user_id INTEGER PRIMARY KEY, expiry TEXT,
         tier TEXT DEFAULT 'premium', granted_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS game_scores (
+        user_id INTEGER PRIMARY KEY,
+        best_score INTEGER DEFAULT 0,
+        plays_count INTEGER DEFAULT 0,
+        updated_at TEXT)""")
     conn.commit(); conn.close()
 
 
@@ -670,6 +675,55 @@ def delete_note_by_id(note_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
     conn.commit(); conn.close()
+
+
+# ============ GAME: До пары успеть ============
+
+def game_get_user_score(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT best_score, plays_count FROM game_scores WHERE user_id=?",
+        (user_id,)).fetchone()
+    conn.close()
+    if row:
+        return {"best": row[0] or 0, "plays": row[1] or 0}
+    return {"best": 0, "plays": 0}
+
+
+def game_save_score(user_id, score):
+    score = max(0, min(int(score), 99999))
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT best_score, plays_count FROM game_scores WHERE user_id=?",
+        (user_id,)).fetchone()
+    now = datetime.now(timezone.utc).isoformat()
+    if row:
+        old_best = row[0] or 0
+        plays = (row[1] or 0) + 1
+        new_best = max(old_best, score)
+        conn.execute(
+            "UPDATE game_scores SET best_score=?, plays_count=?, updated_at=? WHERE user_id=?",
+            (new_best, plays, now, user_id))
+        is_record = score > old_best
+    else:
+        new_best = score
+        plays = 1
+        conn.execute(
+            "INSERT INTO game_scores (user_id, best_score, plays_count, updated_at) VALUES (?, ?, ?, ?)",
+            (user_id, score, 1, now))
+        is_record = score > 0
+    conn.commit(); conn.close()
+    return {"best": new_best, "is_record": is_record, "plays": plays}
+
+
+def game_get_leaderboard(limit=10):
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT user_id, best_score FROM game_scores "
+        "WHERE best_score > 0 ORDER BY best_score DESC LIMIT ?",
+        (limit,)).fetchall()
+    conn.close()
+    return rows
 
 
 GROUPS = {
@@ -1658,6 +1712,49 @@ async def api_scholarship_clear(request: web.Request):
     return web.json_response({"ok": True})
 
 
+async def api_game_info(request: web.Request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    data = game_get_user_score(user_id)
+    rows = game_get_leaderboard(10)
+    items = []
+    for i, (uid, score) in enumerate(rows):
+        items.append({"rank": i + 1, "user_id": uid, "score": score, "is_me": uid == user_id})
+    return web.json_response({
+        "best": data["best"],
+        "plays": data["plays"],
+        "top": items,
+    })
+
+
+async def api_game_submit(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        score = int(body.get("score", 0))
+    except Exception:
+        score = 0
+    result = game_save_score(user_id, score)
+    rows = game_get_leaderboard(10)
+    items = []
+    for i, (uid, s) in enumerate(rows):
+        items.append({"rank": i + 1, "user_id": uid, "score": s, "is_me": uid == user_id})
+    return web.json_response({
+        "ok": True,
+        "best": result["best"],
+        "is_record": result["is_record"],
+        "plays": result["plays"],
+        "top": items,
+    })
+
+
 async def api_ai(request: web.Request):
     try:
         body = await request.json()
@@ -2000,6 +2097,8 @@ async def start_webapp():
     app.router.add_post("/api/scholarship-update-grade", api_scholarship_update_grade)
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
+    app.router.add_get("/api/game/info", api_game_info)
+    app.router.add_post("/api/game/submit", api_game_submit)
     app.router.add_post("/api/ai", api_ai)
     app.router.add_post("/api/ai-photo", api_ai_photo)
     app.router.add_post("/api/feedback", api_feedback)
