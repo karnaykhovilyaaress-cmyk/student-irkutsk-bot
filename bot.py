@@ -141,7 +141,7 @@ if GIGACHAT_CREDENTIALS:
 DB_PATH = os.getenv("DB_PATH", "users.db")
 CACHE_TTL_HOURS = 2
 
-PRIORITY_LABELS = {0: "низкий", 1: "средний", 2: "высокий"}
+PRIORITY_LABELS = {1: "низкий", 2: "средний", 3: "высокий"}
 
 DAILY_QUOTES = [
     "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
@@ -220,9 +220,9 @@ def init_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, text TEXT,
         due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT,
-        priority INTEGER DEFAULT 1, due_time TEXT, done_at TEXT)""")
+        priority INTEGER DEFAULT 2, due_time TEXT, done_at TEXT)""")
     for alter in [
-        "ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 1",
+        "ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 2",
         "ALTER TABLE tasks ADD COLUMN due_time TEXT",
         "ALTER TABLE tasks ADD COLUMN done_at TEXT",
     ]:
@@ -555,7 +555,7 @@ def get_feedback_by_id(feedback_id):
     return row
 
 
-def add_task(user_id, text, due_date=None, priority=1, due_time=None):
+def add_task(user_id, text, due_date=None, priority=2, due_time=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute(
         "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time) "
@@ -693,13 +693,13 @@ GROUPS = {
         {"name": "АТПРб-24-1", "id": "478047"}, {"name": "ЛИМб-24-1", "id": "478282"},
         {"name": "МИРб-24-1", "id": "478308"}, {"name": "ММб-24-1", "id": "478312"},
         {"name": "МТб-24-1", "id": "478316"}, {"name": "СМ-24-1", "id": "478489"},
-        {"name": "СМ-24-2", "id": "478490"}, {"name": "ТСЧС-24-1", "id": "478541"},
+        {"name": "СМ-24-2", "id": "478490"}, {"name": "ТСЧс-24-1", "id": "478541"},
         {"name": "ЭЛб-24-1", "id": "478638"},
         {"name": "АСб-23-1", "id": "478008"}, {"name": "АТПРб-23-1", "id": "478046"},
         {"name": "ЛИМб-23-1", "id": "478281"}, {"name": "МИРб-23-1", "id": "478307"},
         {"name": "ММб-23-1", "id": "478311"}, {"name": "МТб-23-1", "id": "478315"},
         {"name": "СМ-23-1", "id": "478487"}, {"name": "СМ-23-2", "id": "478488"},
-        {"name": "ТСЧС-23-1", "id": "478540"}, {"name": "УКб-23-1", "id": "478549"},
+        {"name": "ТСЧс-23-1", "id": "478540"}, {"name": "УКб-23-1", "id": "478549"},
         {"name": "ЭЛб-23-1", "id": "478637"},
         {"name": "СМ-22-1", "id": "478485"}, {"name": "СМ-22-2", "id": "478486"},
     ],
@@ -1278,8 +1278,11 @@ def _task_to_dict(row):
             overdue = dt < _now_irkutsk()
         except Exception:
             pass
+    p = priority if priority is not None else 2
+    if p not in (1, 2, 3):
+        p = 2
     return {"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
-            "priority": priority or 1, "done": bool(done), "overdue": overdue}
+            "priority": p, "done": bool(done), "overdue": overdue}
 
 
 async def api_tasks(request: web.Request):
@@ -1293,8 +1296,11 @@ async def api_tasks(request: web.Request):
         tasks = []
         for r in rows:
             tid, text, due_date, done, created_at, priority, due_time, done_at = r
+            p = priority if priority is not None else 2
+            if p not in (1, 2, 3):
+                p = 2
             tasks.append({"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
-                          "priority": priority or 1, "done": True, "done_at": done_at, "overdue": False})
+                          "priority": p, "done": True, "done_at": done_at, "overdue": False})
     else:
         rows = get_user_tasks(user_id, only_active=True)
         tasks = [_task_to_dict(r) for r in rows]
@@ -1317,9 +1323,9 @@ async def api_task_add(request: web.Request):
         text = text[:500]
     due_date = body.get("due_date") or None
     due_time = body.get("due_time") or None
-    priority = int(body.get("priority", 1))
-    if priority not in (0, 1, 2):
-        priority = 1
+    priority = int(body.get("priority", 2))
+    if priority not in (1, 2, 3):
+        priority = 2
     tid = add_task(user_id, text, due_date, priority, due_time)
     return web.json_response({"ok": True, "id": tid})
 
@@ -1348,6 +1354,8 @@ async def api_task_update(request: web.Request):
     reset_due = body.get("reset_due", False)
     if priority is not None:
         priority = int(priority)
+        if priority not in (1, 2, 3):
+            priority = 2
     update_task(tid, user_id,
                 text=text if text is not None else None,
                 due_date=due_date if due_date else None,
