@@ -1,11 +1,5 @@
-/* ============================================================
-   ШРИФТЫ
-   ============================================================ */
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap');
 
-/* ============================================================
-   ПЕРЕМЕННЫЕ — LIT-STYLE
-   ============================================================ */
 :root {
     --neon: #00E5D0;
     --neon-dim: #00B8A8;
@@ -32,6 +26,7 @@
 
     --grad-neon: linear-gradient(135deg, #00E5D0 0%, #1E88E5 100%);
     --grad-neon-soft: linear-gradient(135deg, rgba(0,229,208,0.16) 0%, rgba(30,136,229,0.08) 100%);
+    --grad-vip: linear-gradient(135deg, #FFD700 0%, #FF8C00 100%);
 
     --r-sm: 10px;
     --r-md: 14px;
@@ -56,9 +51,6 @@
     }
 }
 
-/* ============================================================
-   БАЗА
-   ============================================================ */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
@@ -82,16 +74,9 @@ html, body {
 }
 
 #app.picker-open .header,
-#app.picker-open .bottom-nav {
-    display: none;
-}
-#app.picker-open {
-    padding-bottom: var(--safe-bottom);
-}
+#app.picker-open .bottom-nav { display: none; }
+#app.picker-open { padding-bottom: var(--safe-bottom); }
 
-/* ============================================================
-   СПЛЭШ
-   ============================================================ */
 #splash {
     position: fixed;
     inset: 0;
@@ -141,9 +126,6 @@ html, body {
     50%      { transform: translateY(-8px); opacity: 1; }
 }
 
-/* ============================================================
-   HEADER
-   ============================================================ */
 .header {
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; justify-content: space-between;
@@ -174,9 +156,6 @@ html, body {
 }
 .header-btn:active { transform: scale(0.92); box-shadow: var(--shadow-neon); }
 
-/* ============================================================
-   CONTENT
-   ============================================================ */
 .content {
     flex: 1; padding: 14px 16px;
     animation: fadeIn 0.3s ease;
@@ -200,9 +179,6 @@ html, body {
     100% { background-position: -200% 0; }
 }
 
-/* ============================================================
-   CARDS
-   ============================================================ */
 .card {
     background: var(--bg-2);
     border: 1px solid var(--divider);
@@ -264,9 +240,6 @@ html, body {
 }
 .banner-btn:active { transform: scale(0.96); }
 
-/* ============================================================
-   USER BAR
-   ============================================================ */
 .user-bar {
     display: flex; align-items: center; gap: 12px;
     padding: 14px 16px;
@@ -304,9 +277,6 @@ html, body {
 }
 .user-badge svg { filter: drop-shadow(0 0 6px var(--neon-glow)); }
 
-/* ============================================================
-   LESSON
-   ============================================================ */
 .lesson {
     display: flex; gap: 14px; align-items: flex-start;
     padding: 14px 0;
@@ -323,9 +293,6 @@ html, body {
 .lesson-details { font-size: 13px; color: var(--text-2); font-weight: 500; }
 .lesson-group { font-size: 12px; color: var(--neon); margin-top: 4px; font-weight: 700; }
 
-/* ============================================================
-   PRIORITY
-   ============================================================ */
 .priority {
     display: inline-block;
     font-size: 11px; font-weight: 800;
@@ -337,9 +304,6 @@ html, body {
 .priority-low { background: rgba(0,229,160,0.16); color: var(--accent-green); }
 .overdue { color: var(--accent-red); font-weight: 700; }
 
-/* ============================================================
-   DAY HEADER
-   ============================================================ */
 .day-header {
     font-size: 11px; font-weight: 800;
     color: var(--text-2);
@@ -347,9 +311,6 @@ html, body {
     padding: 14px 2px 8px;
 }
 
-/* ============================================================
-   DAY SWITCH
-   ============================================================ */
 .day-switch {
     display: flex; gap: 4px; margin-bottom: 14px;
     background: var(--bg-2);
@@ -369,9 +330,6 @@ html, body {
     box-shadow: 0 0 18px var(--neon-glow);
 }
 
-/* ============================================================
-   BOTTOM NAV
-   ============================================================ */
 .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
     display: flex;
@@ -402,9 +360,6 @@ html, body {
 }
 .nav-btn.active svg { filter: drop-shadow(0 0 8px var(--neon-glow)); }
 
-/* ============================================================
-   PROFILE
-   ============================================================ */
 .profile-header {
     display: flex; flex-direction: column; align-items: center;
     padding: 22px 0 18px; text-align: center;
@@ -425,9 +380,17 @@ html, body {
 }
 .profile-meta { font-size: 14px; color: var(--text-2); font-weight: 500; }
 
-/* ============================================================
-   BUTTONS
-   ============================================================ */
+.badge {
+    display: inline-block;
+    background: var(--grad-vip);
+    color: #070B14;
+    font-size: 11px; font-weight: 900;
+    padding: 4px 12px; border-radius: 999px;
+    margin-top: 10px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    box-shadow: 0 4px 14px rgba(255,176,32,0.4);
+}
+
 .btn {
     display: inline-flex; align-items: center; justify-content: center;
     gap: 6px;
@@ -450,9 +413,6 @@ html, body {
 }
 .btn-secondary:active { background: var(--bg-2); box-shadow: var(--shadow-sm); }
 
-/* ============================================================
-   INPUTS
-   ============================================================ */
 .input {
     width: 100%;
     padding: 12px 14px;
@@ -473,23 +433,32 @@ html, body {
 textarea.input { resize: vertical; min-height: 88px; }
 
 input[type="time"].input {
-    font-size: 20px;
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 52px;
+    padding: 12px 14px;
+    font-size: 18px;
     font-weight: 700;
-    text-align: center;
-    letter-spacing: 1px;
+    text-align: left;
+    letter-spacing: 0.5px;
+    font-family: inherit;
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1.5px solid var(--divider);
+    border-radius: var(--r-md);
+}
+input[type="time"].input::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+    opacity: 0.8;
+    cursor: pointer;
 }
 
-/* ============================================================
-   FORM ROW / CHECKBOX
-   ============================================================ */
 .form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .form-row label { flex: 1; font-size: 14px; font-weight: 500; }
-.form-row select {
-    padding: 8px 12px; border-radius: var(--r-md);
-    border: 1.5px solid var(--divider);
-    background: var(--bg-2); color: var(--text);
-    font-size: 14px; font-family: inherit;
-}
+
 .checkbox-row {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 0; cursor: pointer; font-weight: 500;
@@ -499,15 +468,9 @@ input[type="time"].input {
     accent-color: var(--neon);
 }
 
-/* ============================================================
-   ACTIONS ROW
-   ============================================================ */
 .actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .actions-row .btn { margin-top: 0; }
 
-/* ============================================================
-   GRADE ROW
-   ============================================================ */
 .grade-row {
     display: flex; align-items: center; justify-content: space-between;
     padding: 12px 0;
@@ -521,9 +484,6 @@ input[type="time"].input {
     text-shadow: 0 0 12px var(--neon-glow);
 }
 
-/* ============================================================
-   TAB BUTTONS
-   ============================================================ */
 .tab-buttons {
     display: flex; gap: 4px; margin-bottom: 14px;
     background: var(--bg-2);
@@ -543,13 +503,8 @@ input[type="time"].input {
     box-shadow: 0 0 18px var(--neon-glow);
 }
 
-/* ============================================================
-   GROUP PICKER
-   ============================================================ */
 .picker-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    display: flex; align-items: center; gap: 10px;
     padding: 8px 0 14px;
     border-bottom: 1px solid var(--divider);
     margin-bottom: 12px;
@@ -558,25 +513,15 @@ input[type="time"].input {
     background: var(--bg-3);
     border: 1px solid var(--divider);
     color: var(--text);
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
+    width: 38px; height: 38px; border-radius: 50%;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    font-weight: 700;
-    flex-shrink: 0;
-    font-family: inherit;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700;
+    flex-shrink: 0; font-family: inherit;
     transition: transform 0.15s ease;
 }
 .picker-back:active { transform: scale(0.92); }
-.picker-title {
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: -0.2px;
-}
+.picker-title { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; }
 
 .picker-search {
     width: 100%;
@@ -585,9 +530,7 @@ input[type="time"].input {
     border: 1.5px solid var(--divider);
     background: var(--bg-2);
     color: var(--text);
-    font-size: 15px;
-    font-family: inherit;
-    font-weight: 500;
+    font-size: 15px; font-family: inherit; font-weight: 500;
     margin-bottom: 12px;
     outline: none;
     transition: border-color 0.18s ease, box-shadow 0.18s ease;
@@ -596,18 +539,11 @@ input[type="time"].input {
     border-color: var(--neon);
     box-shadow: 0 0 0 4px rgba(0,229,208,0.16);
 }
-.picker-search::placeholder { color: var(--text-2); font-weight: 500; }
 
-.picker-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
+.picker-list { display: flex; flex-direction: column; gap: 8px; }
 
 .picker-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between;
     gap: 10px;
     padding: 14px 16px;
     background: var(--bg-2);
@@ -615,12 +551,9 @@ input[type="time"].input {
     border-radius: var(--r-md);
     cursor: pointer;
     transition: all 0.15s ease;
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 15px; font-weight: 700;
     color: var(--text);
-    text-align: left;
-    font-family: inherit;
-    width: 100%;
+    text-align: left; font-family: inherit; width: 100%;
 }
 .picker-item:active {
     transform: scale(0.985);
@@ -628,43 +561,16 @@ input[type="time"].input {
     border-color: var(--neon);
     box-shadow: 0 0 18px rgba(0,229,208,0.20);
 }
-.picker-item-arrow {
-    color: var(--neon);
-    font-size: 18px;
-    font-weight: 900;
-    opacity: 0.7;
-}
-
-.picker-item-sub {
-    font-size: 12px;
-    color: var(--text-2);
-    font-weight: 500;
-    margin-top: 2px;
-}
-
-.picker-group-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.picker-empty {
-    text-align: center;
-    color: var(--text-2);
-    padding: 40px 20px;
-    font-size: 14px;
-    font-weight: 500;
-}
-
+.picker-item-arrow { color: var(--neon); font-size: 18px; font-weight: 900; opacity: 0.7; }
+.picker-item-sub { font-size: 12px; color: var(--text-2); font-weight: 500; margin-top: 2px; }
+.picker-group-item { display: flex; flex-direction: column; gap: 2px; }
+.picker-empty { text-align: center; color: var(--text-2); padding: 40px 20px; font-size: 14px; font-weight: 500; }
 .picker-item.selected {
     border-color: var(--neon);
     background: var(--grad-neon-soft);
     box-shadow: 0 0 18px rgba(0,229,208,0.20);
 }
 
-/* ============================================================
-   СКРОЛЛБАР
-   ============================================================ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: rgba(0,229,208,0.35); border-radius: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
