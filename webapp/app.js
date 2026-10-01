@@ -22,7 +22,7 @@ const state = {
     schedule: null, weekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
     tasks: [], tasksStats: { active: 0, done: 0 }, tasksView: 'active',
     notes: [],
-    profile: null, scholarship: null, referral: null, groups: null,
+    profile: null, scholarship: null, groups: null,
     pickerMode: null, pickerInstitute: null, pickerCourse: null, pickerSearch: '',
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
     aiMessages: [], aiPending: false,
@@ -698,17 +698,6 @@ function renderProfile() {
         <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
     </div></div>`;
 
-    if (state.referral) {
-        const r = state.referral;
-        html += `<div class="card">
-            <div class="card-title">Пригласи друга</div>
-            <div class="card-subtitle">+${r.referral_days} дней бонусов за друга</div>
-            <div class="card-subtitle">Пришло: ${r.total} · Засчитано: ${r.rewarded}</div>
-            <div style="margin-top:8px;word-break:break-all;font-size:13px;color:var(--text-2)">${escapeHtml(r.link)}</div>
-            <div class="actions-row"><button class="btn btn-secondary" data-action="copy-referral">Скопировать ссылку</button></div>
-        </div>`;
-    }
-
     html += `<div class="card">
         <div class="card-title">Обратная связь</div>
         <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
@@ -742,10 +731,6 @@ async function loadProfile() {
 async function loadScholarship() {
     try { state.scholarship = await apiGet('/api/scholarship'); }
     catch (e) { state.scholarship = null; }
-}
-async function loadReferral() {
-    try { state.referral = await apiGet('/api/referral'); }
-    catch (e) { state.referral = null; }
 }
 async function loadGroups(force = false) {
     if (state.groups && !force) return;
@@ -783,7 +768,6 @@ async function loadTabData(tab) {
             if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
         } else if (tab === 'profile') {
             await loadProfile();
-            await loadReferral();
             await loadScholarship();
         }
     } catch (e) { console.error(e); state.error = e.message; }
@@ -972,11 +956,6 @@ async function actionForgetGroup() {
         haptic('success'); await loadProfile(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-function actionCopyReferral() {
-    if (!state.referral) return;
-    try { navigator.clipboard.writeText(state.referral.link); haptic('success'); alert('Ссылка скопирована'); }
-    catch (e) { alert('Не удалось скопировать'); }
-}
 function actionCopyMyId() {
     const id = String(state.user?.id || '');
     if (!id) return;
@@ -1063,7 +1042,6 @@ function handleAction(el) {
     else if (a === 'ai-clear') actionAIClear();
     else if (a === 'choose-group') actionChooseGroup();
     else if (a === 'forget-group') actionForgetGroup();
-    else if (a === 'copy-referral') actionCopyReferral();
     else if (a === 'copy-my-id') actionCopyMyId();
     else if (a === 'picker-back') actionPickerBack();
     else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
