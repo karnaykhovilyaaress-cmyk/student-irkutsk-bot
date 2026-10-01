@@ -115,8 +115,6 @@ ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
-REFERRAL_DAYS = 3
-
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!")
     sys.exit(1)
@@ -186,10 +184,6 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-    conn.execute("""CREATE TABLE IF NOT EXISTS referrals (
-        user_id INTEGER PRIMARY KEY, referrer_id INTEGER,
-        created_at TEXT, rewarded INTEGER DEFAULT 0)""")
-
     conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (
         user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
 
@@ -253,29 +247,6 @@ def user_exists(user_id):
     row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row is not None
-
-
-def add_referral(new_user_id, referrer_id):
-    if new_user_id == referrer_id:
-        return False
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?", (new_user_id,)).fetchone()
-    if row:
-        conn.close(); return False
-    conn.execute("INSERT INTO referrals (user_id, referrer_id, created_at, rewarded) VALUES (?, ?, ?, 0)",
-                 (new_user_id, referrer_id, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-    return True
-
-
-def get_referral_stats(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT user_id, created_at, rewarded FROM referrals WHERE referrer_id=?",
-                        (user_id,)).fetchall()
-    conn.close()
-    total = len(rows)
-    rewarded = sum(1 for r in rows if r[2])
-    return total, rewarded
 
 
 def daily_subscribe(user_id):
@@ -1198,7 +1169,6 @@ async def api_me(request: web.Request):
     notes = get_user_notes(user_id)
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
-    total, rewarded = get_referral_stats(user_id)
     daily = daily_is_subscribed(user_id)
     notif_settings = get_notify_settings(user_id)
 
@@ -1216,8 +1186,6 @@ async def api_me(request: web.Request):
         "scholarship_amount": amount,
         "grades_count": len(grades),
         "grades_avg": round(avg, 2),
-        "referral_total": total, "referral_rewarded": rewarded,
-        "referral_days": rewarded * REFERRAL_DAYS,
         "daily_subscribed": daily,
         "notify_type": notif_settings["type"] if notif_settings else None,
         "notify_hour": notif_settings["hour"] if notif_settings else -1,
@@ -1434,7 +1402,6 @@ async def api_notify_set(request: web.Request):
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
 
-    # Обновление флага "следить за изменениями"
     if "changes" in body:
         set_notify_changes(user_id, bool(body.get("changes", False)))
         return web.json_response({"ok": True})
@@ -1492,20 +1459,6 @@ async def api_quote_subscribe(request: web.Request):
     else:
         daily_unsubscribe(user_id)
     return web.json_response({"ok": True, "subscribed": sub})
-
-
-async def api_referral(request: web.Request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    total, rewarded = get_referral_stats(user_id)
-    bot_username = BOT_USERNAME.replace("@", "")
-    link = f"https://t.me/{bot_username}?start=ref_{user_id}"
-    return web.json_response({
-        "link": link, "total": total, "rewarded": rewarded,
-        "days": rewarded * REFERRAL_DAYS, "referral_days": REFERRAL_DAYS,
-    })
 
 
 async def api_scholarship(request: web.Request):
@@ -1815,7 +1768,6 @@ async def start_webapp():
     app.router.add_post("/api/notify-set", api_notify_set)
     app.router.add_get("/api/quote", api_quote)
     app.router.add_post("/api/quote-subscribe", api_quote_subscribe)
-    app.router.add_get("/api/referral", api_referral)
     app.router.add_get("/api/scholarship", api_scholarship)
     app.router.add_post("/api/scholarship-set-amount", api_scholarship_set_amount)
     app.router.add_post("/api/scholarship-add-grade", api_scholarship_add_grade)
@@ -1877,15 +1829,6 @@ async def start_webapp():
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     _ensure_user(message.from_user.id)
-
-    args = message.text.split(maxsplit=1)
-    if len(args) > 1 and args[1].startswith("ref_"):
-        try:
-            referrer_id = int(args[1].replace("ref_", ""))
-            if add_referral(message.from_user.id, referrer_id):
-                logging.info(f"[REF] {message.from_user.id} пришёл от {referrer_id}")
-        except Exception:
-            pass
 
     if not WEBAPP_URL:
         await message.answer("Приложение ещё не настроено. Обратись к администратору.")
@@ -1953,7 +1896,7 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         day = next((d for d in days if d["date"] == target_str), None)
 
         label = "Сегодня" if ntype == "today" else "Завтра"
-        header = f"📅 <b>{label}, {target_str}</b>"
+        header = f"<b>{label}, {target_str}</b>"
 
         if not day:
             await bot.send_message(user_id, f"{header}\n\nНе удалось загрузить расписание.")
@@ -1961,15 +1904,15 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
 
         lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
         if not lessons:
-            await bot.send_message(user_id, f"{header}\n\nЗанятий нет 🎉")
+            await bot.send_message(user_id, f"{header}\n\nЗанятий нет.")
             return
 
         lines = [header, ""]
         for les in lessons:
             time_end = LESSON_TIMES.get(les["time"], "")
             time_str = f"{les['time']}–{time_end}" if time_end else les["time"]
-            lines.append(f"🕐 <b>{time_str}</b>")
-            lines.append(f"📚 {les['subject']}")
+            lines.append(f"<b>{time_str}</b>")
+            lines.append(les["subject"])
             details = []
             if les.get("type"):
                 details.append(les["type"])
@@ -1978,7 +1921,7 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
             if les.get("teacher"):
                 details.append(les["teacher"])
             if details:
-                lines.append(f"   <i>{' · '.join(details)}</i>")
+                lines.append(f"{' · '.join(details)}")
             lines.append("")
 
         await bot.send_message(user_id, "\n".join(lines))
@@ -1991,7 +1934,7 @@ async def send_daily_quotes():
     if not subs:
         return
     quote = random.choice(DAILY_QUOTES)
-    text = f"☀️ <b>Цитата дня</b>\n\n<i>{quote}</i>"
+    text = f"<b>Цитата дня</b>\n\n<i>{quote}</i>"
     for uid in subs:
         try:
             await bot.send_message(uid, text)
@@ -2062,7 +2005,7 @@ async def check_schedule_changes():
                     try:
                         await bot.send_message(
                             uid,
-                            f"⚠️ <b>Изменения в расписании</b>\n\n"
+                            f"<b>Изменения в расписании</b>\n\n"
                             f"Обнаружены правки в расписании на {label} неделе.\n"
                             f"Открой приложение, чтобы посмотреть актуальную версию.")
                     except Exception as e:
