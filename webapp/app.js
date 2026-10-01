@@ -23,6 +23,10 @@ const state = {
     tasks: [], tasksStats: { active: 0, done: 0 }, tasksView: 'active',
     notes: [],
     profile: null, scholarship: null, groups: null,
+    scholarshipEditor: false, scholarshipEditorId: null,
+    scholarshipEditorSubject: '', scholarshipEditorGrade: 0,
+    scholarshipEditorIsAuto: false,
+    scholarshipAvailable: [], scholarshipFilter: 'all',
     pickerMode: null, pickerInstitute: null, pickerCourse: null, pickerSearch: '',
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
     aiMessages: [], aiPending: false, aiPendingPhoto: null,
@@ -91,6 +95,15 @@ function render() {
         if (title) title.textContent = 'Уведомления';
         if (navEl) navEl.style.display = 'none';
         content.innerHTML = renderNotifyEditor();
+        attachHandlers();
+        return;
+    }
+
+    if (state.scholarshipEditor) {
+        appEl?.classList.add('picker-open');
+        if (title) title.textContent = state.scholarshipEditorId ? 'Изменить оценку' : 'Новая оценка';
+        if (navEl) navEl.style.display = 'none';
+        content.innerHTML = renderScholarshipEditor();
         attachHandlers();
         return;
     }
@@ -700,24 +713,7 @@ function renderProfile() {
         </div>
     </div>`;
 
-    html += `<div class="card"><div class="card-title">Стипендия</div>`;
-    if (state.scholarship) {
-        const s = state.scholarship;
-        html += `<div class="card-subtitle">Текущая: ${s.amount !== null ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
-        html += `<div class="card-subtitle">Оценок: ${s.grades.length}</div>`;
-        if (s.grades.length) html += `<div class="card-subtitle">Средний балл: ${s.avg}</div>`;
-        if (s.forecast) html += `<div class="card-subtitle">${escapeHtml(s.forecast)}</div>`;
-    }
-    if (state.scholarship && state.scholarship.grades.length > 0) {
-        for (const g of state.scholarship.grades) {
-            html += `<div class="grade-row"><span>${escapeHtml(g.subject)}</span><span class="grade-value">${g.grade}</span></div>`;
-        }
-    }
-    html += `<div class="actions-row">
-        <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
-        <button class="btn btn-secondary" data-action="sch-add-grade-open">Добавить оценку</button>
-        <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
-    </div></div>`;
+    html += renderScholarshipCard();
 
     html += `<div class="card">
         <div class="card-title">Обратная связь</div>
@@ -725,6 +721,254 @@ function renderProfile() {
         <button class="btn" data-action="feedback-send">Отправить</button>
     </div>`;
     return html;
+}
+
+function renderScholarshipCard() {
+    const s = state.scholarship;
+
+    let html = `<div class="card"><div class="card-title">Стипендия</div>`;
+
+    if (!s) {
+        html += `<div class="card-subtitle">Загрузка...</div></div>`;
+        return html;
+    }
+
+    html += `<div class="card-subtitle">Текущая сумма: ${s.amount !== null && s.amount !== undefined ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
+
+    if (s.grades.length === 0) {
+        html += `<div class="sch-empty">Оценок пока нет. Добавь первую — увидишь средний балл и прогноз по стипендии.</div>`;
+        html += `<div class="actions-row" style="margin-top:12px">
+            <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
+            <button class="btn" data-action="sch-add-new" style="flex:1">+ Добавить оценку</button>
+        </div></div>`;
+        return html;
+    }
+
+    html += `<div class="sch-avg-block">
+        <div class="sch-avg-value">${s.avg}</div>
+        <div class="sch-avg-label">средний балл · ${s.grades.length} ${pluralSubjects(s.grades.length)}${s.count_auto > 0 ? ` · автоматов: ${s.count_auto}` : ''}</div>
+    </div>`;
+
+    html += `<div class="sch-filters">
+        <button class="sch-filter ${state.scholarshipFilter === 'all' ? 'active' : ''}" data-action="sch-filter" data-value="all">Все · ${s.grades.length}</button>
+        ${s.count_auto > 0 ? `<button class="sch-filter sch-filter-auto ${state.scholarshipFilter === 'auto' ? 'active' : ''}" data-action="sch-filter" data-value="auto">Автоматы · ${s.count_auto}</button>` : ''}
+        ${s.count5 > 0 ? `<button class="sch-filter grade-5 ${state.scholarshipFilter === '5' ? 'active' : ''}" data-action="sch-filter" data-value="5">5 · ${s.count5}</button>` : ''}
+        ${s.count4 > 0 ? `<button class="sch-filter grade-4 ${state.scholarshipFilter === '4' ? 'active' : ''}" data-action="sch-filter" data-value="4">4 · ${s.count4}</button>` : ''}
+        ${s.count3 > 0 ? `<button class="sch-filter grade-3 ${state.scholarshipFilter === '3' ? 'active' : ''}" data-action="sch-filter" data-value="3">3 · ${s.count3}</button>` : ''}
+        ${s.count2 > 0 ? `<button class="sch-filter grade-2 ${state.scholarshipFilter === '2' ? 'active' : ''}" data-action="sch-filter" data-value="2">2 · ${s.count2}</button>` : ''}
+    </div>`;
+
+    if (s.forecast) {
+        const isBad = s.count2 > 0 || s.count3 > 0 || (s.grades.length && s.avg < 4.0);
+        html += `<div class="sch-forecast ${isBad ? 'bad' : 'good'}">${escapeHtml(s.forecast)}</div>`;
+    }
+
+    let filtered = s.grades;
+    if (state.scholarshipFilter === 'auto') {
+        filtered = s.grades.filter(g => g.is_auto);
+    } else if (state.scholarshipFilter !== 'all') {
+        filtered = s.grades.filter(g => String(g.grade) === state.scholarshipFilter);
+    }
+
+    html += `<div class="sch-list">`;
+    if (filtered.length === 0) {
+        html += `<div class="sch-empty">Нет оценок с таким фильтром</div>`;
+    } else {
+        for (const g of filtered) {
+            html += `<button class="sch-item" data-action="sch-edit" data-id="${g.id}">
+                <div class="sch-item-subject">
+                    <span class="sch-item-subject-text">${escapeHtml(g.subject)}</span>
+                    ${g.is_auto ? '<span class="sch-auto-badge">АВТО</span>' : ''}
+                </div>
+                <div class="sch-item-grade grade-${g.grade}">${g.grade}</div>
+                <div class="sch-item-arrow">›</div>
+            </button>`;
+        }
+    }
+    html += `</div>`;
+
+    html += `<div class="actions-row" style="margin-top:12px">
+        <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
+        <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
+        <button class="btn" data-action="sch-add-new" style="flex:1">+ Оценка</button>
+    </div>`;
+
+    html += `</div>`;
+    return html;
+}
+
+function pluralSubjects(n) {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'предмет';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'предмета';
+    return 'предметов';
+}
+
+function renderScholarshipEditor() {
+    const isEdit = state.scholarshipEditorId !== null;
+    const subject = state.scholarshipEditorSubject || '';
+    const grade = state.scholarshipEditorGrade;
+    const isAuto = state.scholarshipEditorIsAuto;
+
+    let html = `
+        <div class="picker-header">
+            <button class="picker-back" data-action="sch-editor-back">←</button>
+            <div class="picker-title">${isEdit ? 'Изменить оценку' : 'Новая оценка'}</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Предмет</div>
+            <input class="input" id="sch-subject-input" list="sch-subjects-list"
+                   placeholder="Название предмета" value="${escapeHtml(subject)}"
+                   autocomplete="off" autocapitalize="sentences">
+            <datalist id="sch-subjects-list">
+                ${state.scholarshipAvailable.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}
+            </datalist>
+    `;
+
+    if (state.scholarshipAvailable.length > 0) {
+        const preview = state.scholarshipAvailable.slice(0, 12);
+        html += `<div class="sch-hint">Из твоего расписания:</div>
+            <div class="sch-subject-chips">
+                ${preview.map(s => `<button class="sch-subject-chip" data-action="sch-pick-subject" data-value="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}
+            </div>`;
+    }
+
+    html += `</div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Оценка</div>
+        <div class="sch-grade-picker">
+            ${[2, 3, 4, 5].map(g => `
+                <button class="sch-grade-btn grade-${g} ${grade === g ? 'active' : ''}"
+                        data-action="sch-set-grade" data-value="${g}">${g}</button>
+            `).join('')}
+        </div>
+        <label class="sch-auto-toggle">
+            <input type="checkbox" id="sch-auto-input" ${isAuto ? 'checked' : ''}>
+            <span>Автомат — оценка выставлена без экзамена</span>
+        </label>
+    </div>`;
+
+    html += `<div class="actions-row" style="margin-top:16px">
+        <button class="btn" data-action="sch-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
+        ${isEdit ? `<button class="btn btn-secondary" data-action="sch-editor-delete" style="flex:1">Удалить</button>` : ''}
+    </div>`;
+
+    return html;
+}
+
+function actionScholarshipAdd() {
+    haptic('light');
+    state.scholarshipEditor = true;
+    state.scholarshipEditorId = null;
+    state.scholarshipEditorSubject = '';
+    state.scholarshipEditorGrade = 5;
+    state.scholarshipEditorIsAuto = false;
+    render();
+}
+
+function actionScholarshipEdit(id) {
+    haptic('light');
+    const g = state.scholarship?.grades.find(x => x.id === id);
+    if (!g) return;
+    state.scholarshipEditor = true;
+    state.scholarshipEditorId = g.id;
+    state.scholarshipEditorSubject = g.subject;
+    state.scholarshipEditorGrade = g.grade;
+    state.scholarshipEditorIsAuto = !!g.is_auto;
+    render();
+}
+
+function actionScholarshipBack() {
+    haptic('light');
+    state.scholarshipEditor = false;
+    state.scholarshipEditorId = null;
+    state.scholarshipEditorSubject = '';
+    state.scholarshipEditorGrade = 0;
+    state.scholarshipEditorIsAuto = false;
+    render();
+}
+
+function actionScholarshipSetGrade(g) {
+    haptic('light');
+    state.scholarshipEditorGrade = g;
+    document.querySelectorAll('.sch-grade-btn').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.value, 10) === g);
+    });
+}
+
+function actionScholarshipPickSubject(s) {
+    haptic('light');
+    state.scholarshipEditorSubject = s;
+    const input = document.getElementById('sch-subject-input');
+    if (input) input.value = s;
+}
+
+async function actionScholarshipSave() {
+    const input = document.getElementById('sch-subject-input');
+    const subject = input ? input.value.trim() : (state.scholarshipEditorSubject || '').trim();
+    const grade = state.scholarshipEditorGrade;
+    const isAuto = state.scholarshipEditorIsAuto;
+
+    if (!subject) {
+        alert('Введи название предмета');
+        return;
+    }
+    if (![2, 3, 4, 5].includes(grade)) {
+        alert('Выбери оценку');
+        return;
+    }
+
+    try {
+        if (state.scholarshipEditorId) {
+            await apiPost('/api/scholarship-update-grade', {
+                id: state.scholarshipEditorId,
+                subject,
+                grade,
+                is_auto: isAuto,
+            });
+        } else {
+            await apiPost('/api/scholarship-add-grade', { subject, grade, is_auto: isAuto });
+        }
+        haptic('success');
+        state.scholarshipEditor = false;
+        state.scholarshipEditorId = null;
+        state.scholarshipEditorSubject = '';
+        state.scholarshipEditorGrade = 0;
+        state.scholarshipEditorIsAuto = false;
+        await loadScholarship();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function actionScholarshipDeleteGrade() {
+    if (!state.scholarshipEditorId) return;
+    if (!confirm('Удалить эту оценку?')) return;
+    try {
+        await apiPost('/api/scholarship-delete-grade', { id: state.scholarshipEditorId });
+        haptic('success');
+        state.scholarshipEditor = false;
+        state.scholarshipEditorId = null;
+        state.scholarshipEditorSubject = '';
+        state.scholarshipEditorGrade = 0;
+        state.scholarshipEditorIsAuto = false;
+        await loadScholarship();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+function actionScholarshipFilter(f) {
+    haptic('light');
+    state.scholarshipFilter = f;
+    render();
 }
 
 async function loadSchedule() {
@@ -750,8 +994,13 @@ async function loadProfile() {
     } catch (e) { state.profile = { error: e.message }; }
 }
 async function loadScholarship() {
-    try { state.scholarship = await apiGet('/api/scholarship'); }
-    catch (e) { state.scholarship = null; }
+    try {
+        state.scholarship = await apiGet('/api/scholarship');
+        state.scholarshipAvailable = state.scholarship?.available_subjects || [];
+    } catch (e) {
+        state.scholarship = null;
+        state.scholarshipAvailable = [];
+    }
 }
 async function loadGroups(force = false) {
     if (state.groups && !force) return;
@@ -788,6 +1037,9 @@ async function loadTabData(tab) {
             await loadProfile();
             if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
         } else if (tab === 'profile') {
+            state.scholarshipFilter = 'all';
+            state.scholarshipEditor = false;
+            state.scholarshipEditorId = null;
             await loadProfile();
             await loadScholarship();
         }
@@ -934,15 +1186,6 @@ async function actionScholarshipSetAmount() {
     const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
     if (amount === null) return;
     try { await apiPost('/api/scholarship-set-amount', { amount: parseInt(amount) || 0 }); haptic('success'); await loadScholarship(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionScholarshipAddGrade() {
-    const subject = prompt('Название предмета:');
-    if (!subject) return;
-    const gradeStr = prompt('Оценка (2, 3, 4 или 5):');
-    const grade = parseInt(gradeStr);
-    if (![2, 3, 4, 5].includes(grade)) { alert('Нужно 2, 3, 4 или 5'); return; }
-    try { await apiPost('/api/scholarship-add-grade', { subject, grade }); haptic('success'); await loadScholarship(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionScholarshipClear() {
@@ -1128,6 +1371,21 @@ function attachHandlers() {
             e.target.value = '';
         });
     }
+
+    const schAutoCb = document.getElementById('sch-auto-input');
+    if (schAutoCb) {
+        schAutoCb.addEventListener('change', (e) => {
+            state.scholarshipEditorIsAuto = e.target.checked;
+            haptic('light');
+        });
+    }
+
+    const schSubjInput = document.getElementById('sch-subject-input');
+    if (schSubjInput) {
+        schSubjInput.addEventListener('input', (e) => {
+            state.scholarshipEditorSubject = e.target.value;
+        });
+    }
 }
 
 function handleAction(el) {
@@ -1146,8 +1404,15 @@ function handleAction(el) {
     else if (a === 'note-edit-open') actionNoteEdit(parseInt(el.dataset.id));
     else if (a === 'note-delete') actionNoteDelete(parseInt(el.dataset.id));
     else if (a === 'sch-set-amount-open') actionScholarshipSetAmount();
-    else if (a === 'sch-add-grade-open') actionScholarshipAddGrade();
     else if (a === 'sch-clear') actionScholarshipClear();
+    else if (a === 'sch-add-new') actionScholarshipAdd();
+    else if (a === 'sch-edit') actionScholarshipEdit(parseInt(el.dataset.id));
+    else if (a === 'sch-editor-back') actionScholarshipBack();
+    else if (a === 'sch-editor-save') actionScholarshipSave();
+    else if (a === 'sch-editor-delete') actionScholarshipDeleteGrade();
+    else if (a === 'sch-set-grade') actionScholarshipSetGrade(parseInt(el.dataset.value, 10));
+    else if (a === 'sch-pick-subject') actionScholarshipPickSubject(el.dataset.value);
+    else if (a === 'sch-filter') actionScholarshipFilter(el.dataset.value);
     else if (a === 'ai-send') actionAISend();
     else if (a === 'ai-clear') actionAIClear();
     else if (a === 'ai-photo-open') actionAIPhotoOpen();
