@@ -191,7 +191,11 @@ def init_db():
         user_id INTEGER PRIMARY KEY, current_amount INTEGER DEFAULT 0, updated_at TEXT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS grades (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
-        subject TEXT, grade INTEGER, created_at TEXT)""")
+        subject TEXT, grade INTEGER, created_at TEXT, is_auto INTEGER DEFAULT 0)""")
+    try:
+        conn.execute("ALTER TABLE grades ADD COLUMN is_auto INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
 
     conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (
         group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
@@ -290,19 +294,50 @@ def get_scholarship_amount(user_id):
     return row[0] if row else None
 
 
-def add_grade(user_id, subject, grade):
+def upsert_grade(user_id, subject, grade, is_auto=0):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT INTO grades (user_id, subject, grade, created_at) VALUES (?, ?, ?, ?)",
-                 (user_id, subject, grade, datetime.now(timezone.utc).isoformat()))
+    row = conn.execute(
+        "SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?)",
+        (user_id, subject)
+    ).fetchone()
+    if row:
+        conn.execute(
+            "UPDATE grades SET grade=?, subject=?, is_auto=?, created_at=? WHERE id=?",
+            (grade, subject, int(bool(is_auto)),
+             datetime.now(timezone.utc).isoformat(), row[0])
+        )
+    else:
+        conn.execute(
+            "INSERT INTO grades (user_id, subject, grade, is_auto, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, subject, grade, int(bool(is_auto)),
+             datetime.now(timezone.utc).isoformat())
+        )
     conn.commit(); conn.close()
 
 
 def get_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT id, subject, grade FROM grades WHERE user_id=? ORDER BY subject",
-                        (user_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT id, subject, grade, COALESCE(is_auto, 0) FROM grades WHERE user_id=? ORDER BY subject",
+        (user_id,)).fetchall()
     conn.close()
     return rows
+
+
+def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None):
+    conn = sqlite3.connect(DB_PATH)
+    fields = []; values = []
+    if subject is not None:
+        fields.append("subject=?"); values.append(subject)
+    if grade is not None:
+        fields.append("grade=?"); values.append(grade)
+    if is_auto is not None:
+        fields.append("is_auto=?"); values.append(int(bool(is_auto)))
+    if not fields:
+        conn.close(); return
+    values.extend([grade_id, user_id])
+    conn.execute(f"UPDATE grades SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
+    conn.commit(); conn.close()
 
 
 def delete_grade(grade_id, user_id):
@@ -1466,14 +1501,19 @@ async def api_scholarship(request: web.Request):
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
+
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
-    grades_out = [{"id": gid, "subject": subj, "grade": grade} for gid, subj, grade in grades]
+
+    grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3])} for g in grades]
+
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     count5 = sum(1 for g in grades if g[2] == 5)
     count4 = sum(1 for g in grades if g[2] == 4)
     count3 = sum(1 for g in grades if g[2] == 3)
     count2 = sum(1 for g in grades if g[2] == 2)
+    count_auto = sum(1 for g in grades if g[3])
+
     forecast = ""
     if count2 > 0 or count3 > 0:
         forecast = "На академическую не проходишь: есть тройки/двойки."
@@ -1483,10 +1523,34 @@ async def api_scholarship(request: web.Request):
         forecast = f"Проходишь на академическую. До повышенной не хватает {4.5 - avg:.2f}."
     elif grades:
         forecast = "На академическую не проходишь: средний балл ниже 4.0."
+
+    available_subjects = []
+    saved = get_user_group(user_id)
+    if saved:
+        try:
+            group_id, _ = saved
+            subgroup = get_user_subgroup(user_id)
+            today = _now_irkutsk()
+            monday = _monday_of_week(today)
+            html = await fetch_week_html(group_id, monday, use_cache=True)
+            if html:
+                _, days = parse_schedule(html)
+                subjects = set()
+                for d in days:
+                    for les in d["lessons"]:
+                        s = (les.get("subject") or "").strip()
+                        if s:
+                            subjects.add(s)
+                available_subjects = sorted(subjects)
+        except Exception as e:
+            logging.warning(f"[SCH] subjects fetch: {e}")
+
     return web.json_response({
         "amount": amount, "grades": grades_out, "avg": round(avg, 2),
         "count5": count5, "count4": count4, "count3": count3, "count2": count2,
+        "count_auto": count_auto,
         "forecast": forecast,
+        "available_subjects": available_subjects,
     })
 
 
@@ -1515,11 +1579,47 @@ async def api_scholarship_add_grade(request: web.Request):
         return web.json_response({"error": "unauthorized"}, status=401)
     subject = (body.get("subject") or "").strip()
     grade = int(body.get("grade", 0))
+    is_auto = bool(body.get("is_auto", False))
     if not subject or grade not in (2, 3, 4, 5):
         return web.json_response({"error": "invalid"}, status=400)
     if len(subject) > 100:
         subject = subject[:100]
-    add_grade(user_id, subject, grade)
+    upsert_grade(user_id, subject, grade, is_auto)
+    return web.json_response({"ok": True})
+
+
+async def api_scholarship_update_grade(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    gid = int(body.get("id", 0))
+    if not gid:
+        return web.json_response({"error": "no_id"}, status=400)
+
+    subject = (body.get("subject") or "").strip()
+    if subject and len(subject) > 100:
+        subject = subject[:100]
+
+    grade = body.get("grade")
+    if grade is not None:
+        grade = int(grade)
+        if grade not in (2, 3, 4, 5):
+            return web.json_response({"error": "invalid_grade"}, status=400)
+
+    is_auto = body.get("is_auto")
+    if is_auto is not None:
+        is_auto = bool(is_auto)
+
+    update_grade_by_id(
+        gid, user_id,
+        subject if subject else None,
+        grade,
+        is_auto,
+    )
     return web.json_response({"ok": True})
 
 
@@ -1889,6 +1989,7 @@ async def start_webapp():
     app.router.add_get("/api/scholarship", api_scholarship)
     app.router.add_post("/api/scholarship-set-amount", api_scholarship_set_amount)
     app.router.add_post("/api/scholarship-add-grade", api_scholarship_add_grade)
+    app.router.add_post("/api/scholarship-update-grade", api_scholarship_update_grade)
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
     app.router.add_post("/api/ai", api_ai)
