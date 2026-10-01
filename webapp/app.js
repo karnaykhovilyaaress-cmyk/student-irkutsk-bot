@@ -1150,8 +1150,9 @@ async function actionTaskAdd() {
     const due = prompt('Срок (ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ, можно пусто):') || '';
     let due_date = null, due_time = null;
     if (due.trim()) { const parts = due.trim().split(' '); due_date = parts[0]; if (parts[1]) due_time = parts[1]; }
-    const priorityStr = prompt('Приоритет (0=низкий, 1=средний, 2=высокий):', '1');
-    const priority = parseInt(priorityStr) || 1;
+    const priorityRaw = prompt('Приоритет (0=низкий, 1=средний, 2=высокий):', '1');
+    let priority = parseInt(priorityRaw, 10);
+    if (![0, 1, 2].includes(priority)) priority = 1;
     try { await apiPost('/api/task-add', { text, due_date, due_time, priority }); haptic('success'); await loadTasks(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
