@@ -1676,14 +1676,13 @@ async def api_ai_photo(request: web.Request):
 
     if not question:
         question = "Разберись, что это за задача или текст, и помоги студенту."
-
     if len(question) > 2000:
         question = question[:2000]
 
     try:
         prompt = (
             "Ты — студенческий помощник. Пользователь прислал фото, с которого распознан текст. "
-            "Помоги разобраться.\n\n"
+            "Выполни задачу студента.\n\n"
             "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
             "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
             "- НЕ используй LaTeX-команды.\n"
@@ -1691,7 +1690,7 @@ async def api_ai_photo(request: web.Request):
             "- Структурируй текст простыми списками.\n"
             "- Пиши без воды.\n\n"
             f"Распознанный текст с фото:\n{recognized_text}\n\n"
-            f"Вопрос студента: {question}"
+            f"Задача студента: {question}"
         )
         response = await giga_client.achat(prompt)
         try:
