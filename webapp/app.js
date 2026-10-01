@@ -55,8 +55,9 @@ const state = {
     groups: null,
 
     // Пикер группы
-    pickerMode: null,      // null | 'institute' | 'group'
+    pickerMode: null,      // null | 'institute' | 'course' | 'group'
     pickerInstitute: null,
+    pickerCourse: null,
     pickerSearch: '',
 
     aiMessages: [],
@@ -161,12 +162,18 @@ function render() {
     // Пикер — на весь экран
     if (state.pickerMode) {
         appEl?.classList.add('picker-open');
-        if (title) title.textContent = state.pickerMode === 'institute' ? 'Институт' : 'Группа';
+        if (title) {
+            if (state.pickerMode === 'institute') title.textContent = 'Институт';
+            else if (state.pickerMode === 'course') title.textContent = 'Курс';
+            else title.textContent = 'Группа';
+        }
         if (navEl) navEl.style.display = 'none';
 
         let html = '';
         if (state.pickerMode === 'institute') {
             html = renderInstitutePicker();
+        } else if (state.pickerMode === 'course') {
+            html = renderCoursePicker();
         } else {
             html = renderGroupPicker();
         }
@@ -386,7 +393,7 @@ function renderSchedule() {
         return renderUserBar() + `
             <div class="banner">
                 <div class="banner-title">Как начать</div>
-                <div class="banner-sub">1. Профиль → «Выбрать группу»<br>2. Укажи институт и группу<br>3. Вернись — расписание появится</div>
+                <div class="banner-sub">1. Профиль → «Выбрать группу»<br>2. Укажи институт, курс и группу<br>3. Вернись — расписание появится</div>
                 <button class="banner-btn" data-action="go-profile">Выбрать группу</button>
             </div>
         `;
@@ -433,6 +440,26 @@ function renderSchedule() {
 // ============================================================
 // GROUP PICKER
 // ============================================================
+function getCourseFromGroup(groupName) {
+    const m = String(groupName).match(/-(\d{2})-/);
+    if (!m) return null;
+    const year = parseInt(m[1], 10);
+    const map = {
+        26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6,
+    };
+    return map[year] || null;
+}
+
+function getCoursesForInstitute(inst) {
+    const groups = (state.groups && state.groups[inst]) || [];
+    const set = new Set();
+    for (const g of groups) {
+        const c = getCourseFromGroup(g.name);
+        if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+}
+
 function renderInstitutePicker() {
     const groups = state.groups || {};
     const institutes = Object.keys(groups);
@@ -468,14 +495,51 @@ function renderInstitutePicker() {
     return html;
 }
 
-function renderGroupPicker() {
+function renderCoursePicker() {
     const inst = state.pickerInstitute;
-    const groups = (state.groups && state.groups[inst]) || [];
+    const courses = getCoursesForInstitute(inst);
 
     let html = `
         <div class="picker-header">
             <button class="picker-back" data-action="picker-back">←</button>
-            <div class="picker-title">${escapeHtml(inst)}</div>
+            <div class="picker-title">${escapeHtml(inst)} · Курс</div>
+        </div>
+    `;
+
+    if (courses.length === 0) {
+        html += `<div class="picker-empty">Нет доступных курсов</div>`;
+        return html;
+    }
+
+    const groups = (state.groups && state.groups[inst]) || [];
+    html += `<div class="picker-list">`;
+    for (const c of courses) {
+        const count = groups.filter(g => getCourseFromGroup(g.name) === c).length;
+        html += `
+            <button class="picker-item" data-action="picker-choose-course" data-value="${c}">
+                <div class="picker-group-item">
+                    <span>${c} курс</span>
+                    <span class="picker-item-sub">${count} групп</span>
+                </div>
+                <span class="picker-item-arrow">›</span>
+            </button>
+        `;
+    }
+    html += `</div>`;
+
+    return html;
+}
+
+function renderGroupPicker() {
+    const inst = state.pickerInstitute;
+    const course = state.pickerCourse;
+    const allGroups = (state.groups && state.groups[inst]) || [];
+    const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
+
+    let html = `
+        <div class="picker-header">
+            <button class="picker-back" data-action="picker-back">←</button>
+            <div class="picker-title">${escapeHtml(inst)} · ${course} курс</div>
         </div>
         <input class="picker-search" id="picker-search" placeholder="Поиск группы..." value="${escapeHtml(state.pickerSearch)}" autocomplete="off">
         <div class="picker-list" id="picker-list">
@@ -516,7 +580,9 @@ function pickerAttachSearch() {
     input.addEventListener('input', (e) => {
         state.pickerSearch = e.target.value;
         const inst = state.pickerInstitute;
-        const groups = (state.groups && state.groups[inst]) || [];
+        const course = state.pickerCourse;
+        const allGroups = (state.groups && state.groups[inst]) || [];
+        const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
         const q = (state.pickerSearch || '').trim().toLowerCase();
         const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
 
@@ -1113,6 +1179,7 @@ async function actionChooseGroup() {
     }
     state.pickerMode = 'institute';
     state.pickerInstitute = null;
+    state.pickerCourse = null;
     state.pickerSearch = '';
     render();
 }
@@ -1120,13 +1187,20 @@ async function actionChooseGroup() {
 function actionPickerBack() {
     haptic('light');
     if (state.pickerMode === 'group') {
+        state.pickerMode = 'course';
+        state.pickerCourse = null;
+        state.pickerSearch = '';
+        render();
+    } else if (state.pickerMode === 'course') {
         state.pickerMode = 'institute';
         state.pickerInstitute = null;
+        state.pickerCourse = null;
         state.pickerSearch = '';
         render();
     } else {
         state.pickerMode = null;
         state.pickerInstitute = null;
+        state.pickerCourse = null;
         state.pickerSearch = '';
         render();
     }
@@ -1135,6 +1209,15 @@ function actionPickerBack() {
 function actionPickerChooseInstitute(inst) {
     haptic('light');
     state.pickerInstitute = inst;
+    state.pickerMode = 'course';
+    state.pickerCourse = null;
+    state.pickerSearch = '';
+    render();
+}
+
+function actionPickerChooseCourse(course) {
+    haptic('light');
+    state.pickerCourse = parseInt(course, 10);
     state.pickerMode = 'group';
     state.pickerSearch = '';
     render();
@@ -1151,6 +1234,7 @@ async function actionPickerChooseGroup(groupId, groupName) {
         if (state.profile) state.profile.group = groupName;
         state.pickerMode = null;
         state.pickerInstitute = null;
+        state.pickerCourse = null;
         state.pickerSearch = '';
         await loadProfile();
         await loadSchedule();
@@ -1468,6 +1552,7 @@ function handleAction(el) {
     else if (a === 'vip-buy') actionVipBuy();
     else if (a === 'picker-back') actionPickerBack();
     else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
+    else if (a === 'picker-choose-course') actionPickerChooseCourse(el.dataset.value);
     else if (a === 'picker-choose-group') actionPickerChooseGroup(el.dataset.id, el.dataset.name);
     else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
     else if (a === 'go-vip') { state.tab = 'vip'; loadTabData('vip'); }
