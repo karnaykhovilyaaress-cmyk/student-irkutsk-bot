@@ -1630,7 +1630,6 @@ async def api_ai_photo(request: web.Request):
         ocr_url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
         ocr_headers = {
             "Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
-            "x-folder-id": YANDEX_FOLDER_ID,
             "Content-Type": "application/json",
         }
         ocr_body = {
