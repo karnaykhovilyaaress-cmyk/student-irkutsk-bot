@@ -25,7 +25,7 @@ const state = {
     profile: null, scholarship: null, groups: null,
     pickerMode: null, pickerInstitute: null, pickerCourse: null, pickerSearch: '',
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
-    aiMessages: [], aiPending: false,
+    aiMessages: [], aiPending: false, aiPendingPhoto: null,
     adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
 };
 
@@ -548,7 +548,7 @@ function renderNotes() {
 function renderAI() {
     let html = '';
     if (state.aiMessages.length === 0) {
-        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото с задачей — AI разберётся.</div></div>`;
+        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото и напиши, что с ним сделать — перевести, сделать конспект, решить и т.п.</div></div>`;
     } else {
         for (const m of state.aiMessages) {
             if (m.role === 'user') {
@@ -566,10 +566,19 @@ function renderAI() {
         }
     }
     if (state.aiPending) html += renderLoading();
+
+    const photoPreview = state.aiPendingPhoto
+        ? `<div class="ai-photo-preview">
+              <img src="${state.aiPendingPhoto}" alt="фото">
+              <button class="ai-photo-remove" data-action="ai-photo-cancel" title="Убрать">✕</button>
+           </div>`
+        : '';
+
     html += `<div style="margin-top:12px">
-        <textarea class="input" id="ai-input" placeholder="Напиши вопрос или прикрепи фото..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
+        ${photoPreview}
+        <textarea class="input" id="ai-input" placeholder="Напиши вопрос или что сделать с фото..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
         <button class="btn" data-action="ai-send" style="width:100%" ${state.aiPending ? 'disabled' : ''}>Отправить</button>
-        <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>Прикрепить фото</button>
+        <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>📷 Прикрепить фото</button>
         <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
         <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
     </div>`;
@@ -941,14 +950,38 @@ async function actionScholarshipClear() {
     try { await apiPost('/api/scholarship-clear'); haptic('success'); await loadScholarship(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
+
 async function actionAISend() {
     const el = document.getElementById('ai-input');
     if (!el) return;
     const question = (el.value || '').trim();
-    if (!question) return;
+    const photo = state.aiPendingPhoto;
+
+    if (!question && !photo) return;
+
+    if (photo) {
+        state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
+        state.aiPendingPhoto = null;
+        el.value = '';
+        state.aiPending = true;
+        render();
+        try {
+            const r = await apiPost('/api/ai-photo', { photo, question });
+            state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+            haptic('success');
+        } catch (err) {
+            state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
+            haptic('error');
+        } finally {
+            state.aiPending = false;
+            render();
+        }
+        return;
+    }
+
     state.aiMessages.push({ role: 'user', text: question });
-    state.aiPending = true;
     el.value = '';
+    state.aiPending = true;
     render();
     try {
         const r = await apiPost('/api/ai', { question });
@@ -957,14 +990,28 @@ async function actionAISend() {
     } catch (e) {
         state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
         haptic('error');
-    } finally { state.aiPending = false; render(); }
+    } finally {
+        state.aiPending = false;
+        render();
+    }
 }
-function actionAIClear() { state.aiMessages = []; render(); }
+
+function actionAIClear() {
+    state.aiMessages = [];
+    state.aiPendingPhoto = null;
+    render();
+}
 
 function actionAIPhotoOpen() {
     haptic('light');
     const input = document.getElementById('ai-photo-input');
     if (input) input.click();
+}
+
+function actionAIPhotoCancel() {
+    haptic('light');
+    state.aiPendingPhoto = null;
+    render();
 }
 
 function actionAIPhotoSelected(file) {
@@ -977,7 +1024,6 @@ function actionAIPhotoSelected(file) {
         alert('Нужно изображение');
         return;
     }
-
     const reader = new FileReader();
     reader.onload = (e) => {
         const img = new Image();
@@ -986,57 +1032,21 @@ function actionAIPhotoSelected(file) {
             let w = img.width;
             let h = img.height;
             if (w > maxSide || h > maxSide) {
-                if (w > h) {
-                    h = Math.round(h * maxSide / w);
-                    w = maxSide;
-                } else {
-                    w = Math.round(w * maxSide / h);
-                    h = maxSide;
-                }
+                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
+                else       { w = Math.round(w * maxSide / h); h = maxSide; }
             }
             const canvas = document.createElement('canvas');
             canvas.width = w;
             canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            sendAIPhoto(jpegDataUrl);
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
+            haptic('light');
+            render();
         };
-        img.onerror = () => {
-            alert('Не удалось прочитать изображение');
-        };
+        img.onerror = () => alert('Не удалось прочитать изображение');
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
-}
-
-async function sendAIPhoto(dataUrl) {
-    const questionEl = document.getElementById('ai-input');
-    const question = questionEl ? questionEl.value.trim() : '';
-
-    state.aiMessages.push({
-        role: 'user',
-        text: question || 'Что на фото?',
-        photo: dataUrl,
-    });
-    if (questionEl) questionEl.value = '';
-    state.aiPending = true;
-    render();
-
-    try {
-        const r = await apiPost('/api/ai-photo', {
-            photo: dataUrl,
-            question: question,
-        });
-        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
-        haptic('success');
-    } catch (err) {
-        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
-        haptic('error');
-    } finally {
-        state.aiPending = false;
-        render();
-    }
 }
 
 async function actionForgetGroup() {
@@ -1141,6 +1151,7 @@ function handleAction(el) {
     else if (a === 'ai-send') actionAISend();
     else if (a === 'ai-clear') actionAIClear();
     else if (a === 'ai-photo-open') actionAIPhotoOpen();
+    else if (a === 'ai-photo-cancel') actionAIPhotoCancel();
     else if (a === 'choose-group') actionChooseGroup();
     else if (a === 'forget-group') actionForgetGroup();
     else if (a === 'copy-my-id') actionCopyMyId();
