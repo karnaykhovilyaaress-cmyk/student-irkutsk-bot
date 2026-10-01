@@ -23,9 +23,6 @@ from aiogram.types import (
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 
-# ============================================================
-# ОЧИСТКА LATEX / MARKDOWN
-# ============================================================
 def clean_latex(text: str) -> str:
     if not text:
         return text
@@ -70,9 +67,7 @@ def clean_latex(text: str) -> str:
     ]
     for cmd, repl in replacements:
         text = re.sub(cmd, repl, text)
-    text = re.sub(
-        r"\\(sin|cos|tan|ctg|cot|log|ln|lg|exp|lim|max|min|arg|det|mod)\b",
-        r"\1", text)
+    text = re.sub(r"\\(sin|cos|tan|ctg|cot|log|ln|lg|exp|lim|max|min|arg|det|mod)\b", r"\1", text)
     text = re.sub(r"\\[a-zA-Z]*\{([^{}]*)\}", r"\1", text)
     text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
     text = text.replace("{", "").replace("}", "")
@@ -111,9 +106,6 @@ def clean_markdown(text: str) -> str:
     return text.strip()
 
 
-# ============================================================
-# НАСТРОЙКИ
-# ============================================================
 TOKEN = os.getenv("BOT_TOKEN", "")
 GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
 YANDEX_VISION_API_KEY = os.getenv("YANDEX_VISION_API_KEY", "")
@@ -174,22 +166,9 @@ DAILY_QUOTES = [
     "Студенческий билет — это пропуск в мир взрослых проблем.",
     "Не сдал — не конец. Сдал — не финиш.",
     "Дисциплина — это не про силу воли, а про систему.",
-    "Отличник — это не тот, кто всё знает, а тот, кто умеет находить.",
-    "Лучший конспект — это тот, который ты написал сам.",
-    "Каждая пара приближает тебя к свободе. Или к дедлайну.",
-    "Кто рано встаёт, тот сдаёт первым.",
-    "Учиться никогда не поздно, но иногда поздно сдавать.",
-    "Самое сложное в учёбе — начать.",
-    "Знание — это единственное, что никто не отнимет.",
-    "Не сравнивай свой путь с чужим — у каждого своя траектория.",
-    "Если не понимаешь — это нормально. Если не спрашиваешь — нет.",
-    "Универ не учит думать. Универ даёт материал. Думать — твоя работа.",
 ]
 
 
-# ============================================================
-# БАЗА ДАННЫХ
-# ============================================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -208,25 +187,17 @@ def init_db():
             pass
 
     conn.execute("""CREATE TABLE IF NOT EXISTS referrals (
-        user_id INTEGER PRIMARY KEY,
-        referrer_id INTEGER,
-        created_at TEXT,
-        rewarded INTEGER DEFAULT 0)""")
+        user_id INTEGER PRIMARY KEY, referrer_id INTEGER,
+        created_at TEXT, rewarded INTEGER DEFAULT 0)""")
 
     conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (
-        user_id INTEGER PRIMARY KEY,
-        subscribed_at TEXT)""")
+        user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
 
     conn.execute("""CREATE TABLE IF NOT EXISTS scholarship (
-        user_id INTEGER PRIMARY KEY,
-        current_amount INTEGER DEFAULT 0,
-        updated_at TEXT)""")
+        user_id INTEGER PRIMARY KEY, current_amount INTEGER DEFAULT 0, updated_at TEXT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS grades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        subject TEXT,
-        grade INTEGER,
-        created_at TEXT)""")
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+        subject TEXT, grade INTEGER, created_at TEXT)""")
 
     conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (
         group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
@@ -288,28 +259,19 @@ def add_referral(new_user_id, referrer_id):
     if new_user_id == referrer_id:
         return False
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?",
-                       (new_user_id,)).fetchone()
+    row = conn.execute("SELECT referrer_id FROM referrals WHERE user_id=?", (new_user_id,)).fetchone()
     if row:
         conn.close(); return False
-    conn.execute(
-        "INSERT INTO referrals (user_id, referrer_id, created_at, rewarded) VALUES (?, ?, ?, 0)",
-        (new_user_id, referrer_id, datetime.now(timezone.utc).isoformat()))
+    conn.execute("INSERT INTO referrals (user_id, referrer_id, created_at, rewarded) VALUES (?, ?, ?, 0)",
+                 (new_user_id, referrer_id, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
     return True
 
 
-def mark_referral_rewarded(new_user_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE referrals SET rewarded=1 WHERE user_id=?", (new_user_id,))
-    conn.commit(); conn.close()
-
-
 def get_referral_stats(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT user_id, created_at, rewarded FROM referrals WHERE referrer_id=?",
-        (user_id,)).fetchall()
+    rows = conn.execute("SELECT user_id, created_at, rewarded FROM referrals WHERE referrer_id=?",
+                        (user_id,)).fetchall()
     conn.close()
     total = len(rows)
     rewarded = sum(1 for r in rows if r[2])
@@ -318,9 +280,8 @@ def get_referral_stats(user_id):
 
 def daily_subscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT OR IGNORE INTO daily_subscribers (user_id, subscribed_at) VALUES (?, ?)",
-        (user_id, datetime.now(timezone.utc).isoformat()))
+    conn.execute("INSERT OR IGNORE INTO daily_subscribers (user_id, subscribed_at) VALUES (?, ?)",
+                 (user_id, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 
@@ -332,8 +293,7 @@ def daily_unsubscribe(user_id):
 
 def daily_is_subscribed(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT 1 FROM daily_subscribers WHERE user_id=?",
-                       (user_id,)).fetchone()
+    row = conn.execute("SELECT 1 FROM daily_subscribers WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row is not None
 
@@ -347,33 +307,29 @@ def daily_get_all_subscribers():
 
 def set_scholarship_amount(user_id, amount):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT OR REPLACE INTO scholarship (user_id, current_amount, updated_at) VALUES (?, ?, ?)",
-        (user_id, amount, datetime.now(timezone.utc).isoformat()))
+    conn.execute("INSERT OR REPLACE INTO scholarship (user_id, current_amount, updated_at) VALUES (?, ?, ?)",
+                 (user_id, amount, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 
 def get_scholarship_amount(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?",
-                       (user_id,)).fetchone()
+    row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row else None
 
 
 def add_grade(user_id, subject, grade):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT INTO grades (user_id, subject, grade, created_at) VALUES (?, ?, ?, ?)",
-        (user_id, subject, grade, datetime.now(timezone.utc).isoformat()))
+    conn.execute("INSERT INTO grades (user_id, subject, grade, created_at) VALUES (?, ?, ?, ?)",
+                 (user_id, subject, grade, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 
 def get_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT id, subject, grade FROM grades WHERE user_id=? ORDER BY subject",
-        (user_id,)).fetchall()
+    rows = conn.execute("SELECT id, subject, grade FROM grades WHERE user_id=? ORDER BY subject",
+                        (user_id,)).fetchall()
     conn.close()
     return rows
 
@@ -400,8 +356,7 @@ def save_user_group(user_id, group_id, group_name):
 
 def get_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT group_id, group_name FROM users WHERE user_id=?",
-                       (user_id,)).fetchone()
+    row = conn.execute("SELECT group_id, group_name FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row if row and row[0] else None
 
@@ -427,34 +382,16 @@ def get_user_subgroup(user_id):
     return row[0] if row and row[0] else 0
 
 
-def set_notify_time(user_id, hour, minute):
-    _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET notify_hour=?, notify_minute=? WHERE user_id=?",
-                 (hour, minute, user_id))
-    conn.commit(); conn.close()
-
-
-def get_notify_time(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT notify_hour, notify_minute FROM users WHERE user_id=?",
-                       (user_id,)).fetchone()
-    conn.close()
-    return row if row and row[0] is not None and row[0] >= 0 else None
-
-
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?",
-                 (1 if enabled else 0, user_id))
+    conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?", (1 if enabled else 0, user_id))
     conn.commit(); conn.close()
 
 
 def get_notify_changes(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?",
-                       (user_id,)).fetchone()
+    row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return bool(row and row[0])
 
@@ -462,24 +399,18 @@ def get_notify_changes(user_id):
 def set_notify_settings(user_id, ntype, hour, minute):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?",
-        (ntype, hour, minute, user_id))
+    conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?",
+                 (ntype, hour, minute, user_id))
     conn.commit(); conn.close()
 
 
 def get_notify_settings(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?",
-        (user_id,)).fetchone()
+    row = conn.execute("SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?",
+                       (user_id,)).fetchone()
     conn.close()
     if row and row[0]:
-        return {
-            "type": row[0],
-            "hour": row[1] if row[1] is not None else 0,
-            "minute": row[2] if row[2] is not None else 0,
-        }
+        return {"type": row[0], "hour": row[1] if row[1] is not None else 0, "minute": row[2] if row[2] is not None else 0}
     return None
 
 
@@ -488,8 +419,16 @@ def get_users_for_notification():
     rows = conn.execute(
         "SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute "
         "FROM users WHERE notify_type IS NOT NULL AND notify_type != '' "
-        "AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''"
-    ).fetchall()
+        "AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+    conn.close()
+    return rows
+
+
+def get_users_for_change_tracking():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT user_id, group_id, subgroup FROM users "
+        "WHERE notify_changes=1 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
 
@@ -508,41 +447,8 @@ def get_all_user_ids():
     return [r[0] for r in rows]
 
 
-def set_vip(user_id, days, tier="premium"):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT expiry FROM vip WHERE user_id=?", (user_id,)).fetchone()
-    now = datetime.now(timezone.utc)
-    base = now
-    if row and row[0]:
-        try:
-            current_expiry = datetime.fromisoformat(row[0])
-            if current_expiry > now:
-                base = current_expiry
-        except Exception:
-            pass
-    new_expiry = base + timedelta(days=days)
-    conn.execute("INSERT OR REPLACE INTO vip (user_id, expiry, tier, granted_at) VALUES (?, ?, ?, ?)",
-                 (user_id, new_expiry.isoformat(), tier, now.isoformat()))
-    conn.commit(); conn.close()
-    return new_expiry
-
-
 def is_vip(user_id):
-    return True  # VIP убран — все функции бесплатны
-
-
-def get_vip_info(user_id):
-    return None
-
-
-def revoke_vip(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM vip WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-
-
-def get_all_vips():
-    return []
+    return True
 
 
 def get_cached_schedule(group_id, week_start):
@@ -566,6 +472,35 @@ def save_cached_schedule(group_id, week_start, html):
     conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
                  (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
+
+
+def save_snapshot(group_id, week_start, snapshot_str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO schedule_snapshots (group_id, week_start, snapshot, updated_at) "
+        "VALUES (?, ?, ?, ?)",
+        (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+
+
+def get_snapshot(group_id, week_start):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?",
+                       (group_id, week_start)).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def make_snapshot_str(days):
+    parts = []
+    for d in days:
+        day_key = d.get("date", "")
+        for les in d.get("lessons", []):
+            parts.append(
+                f"{day_key}|{les.get('time','')}|{les.get('subject','')}|"
+                f"{les.get('type','')}|{les.get('teacher','')}|"
+                f"{les.get('auditorium','')}|{les.get('subgroup','')}")
+    return "\n".join(sorted(parts))
 
 
 def save_feedback(user_id, username, text, admin_msg_id=None):
@@ -625,11 +560,9 @@ def add_task(user_id, text, due_date=None, priority=1, due_time=None):
     return tid
 
 
-def update_task(task_id, user_id, text=None, due_date=None, priority=None,
-                due_time=None, reset_due=False):
+def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_time=None, reset_due=False):
     conn = sqlite3.connect(DB_PATH)
-    fields = []
-    values = []
+    fields = []; values = []
     if text is not None:
         fields.append("text=?"); values.append(text)
     if reset_due:
@@ -652,8 +585,7 @@ def get_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
         "SELECT id, text, due_date, done, created_at, priority, due_time, done_at "
-        "FROM tasks WHERE id=? AND user_id=?",
-        (task_id, user_id)).fetchone()
+        "FROM tasks WHERE id=? AND user_id=?", (task_id, user_id)).fetchone()
     conn.close()
     return row
 
@@ -661,15 +593,9 @@ def get_task(task_id, user_id):
 def get_user_tasks(user_id, only_active=True):
     conn = sqlite3.connect(DB_PATH)
     if only_active:
-        rows = conn.execute(
-            "SELECT id, text, due_date, done, created_at, priority, due_time "
-            "FROM tasks WHERE user_id=? AND done=0",
-            (user_id,)).fetchall()
+        rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time FROM tasks WHERE user_id=? AND done=0", (user_id,)).fetchall()
     else:
-        rows = conn.execute(
-            "SELECT id, text, due_date, done, created_at, priority, due_time "
-            "FROM tasks WHERE user_id=? ORDER BY id DESC",
-            (user_id,)).fetchall()
+        rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time FROM tasks WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
     conn.close()
     return rows
 
@@ -680,8 +606,7 @@ def get_done_tasks(user_id, days=7):
     rows = conn.execute(
         "SELECT id, text, due_date, done, created_at, priority, due_time, done_at "
         "FROM tasks WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? "
-        "ORDER BY done_at DESC",
-        (user_id, threshold)).fetchall()
+        "ORDER BY done_at DESC", (user_id, threshold)).fetchall()
     conn.close()
     return rows
 
@@ -708,14 +633,10 @@ def clear_done_tasks(user_id):
 def count_user_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT "
-        "SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), "
-        "SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) "
+        "SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) "
         "FROM tasks WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
-    active = row[0] or 0
-    done = row[1] or 0
-    return active, done
+    return (row[0] or 0, row[1] or 0)
 
 
 def add_or_update_note(user_id, subject, text):
@@ -734,7 +655,7 @@ def add_or_update_note(user_id, subject, text):
 def get_user_notes(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject",
-                       (user_id,)).fetchall()
+                        (user_id,)).fetchall()
     conn.close()
     return rows
 
@@ -745,9 +666,6 @@ def delete_note_by_id(note_id, user_id):
     conn.commit(); conn.close()
 
 
-# ============================================================
-# ГРУППЫ
-# ============================================================
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -1089,14 +1007,6 @@ def _now_irkutsk():
     return datetime.now(timezone.utc) + timedelta(hours=8)
 
 
-def _group_name_by_id(group_id):
-    for groups in GROUPS.values():
-        for g in groups:
-            if g["id"] == group_id:
-                return g["name"]
-    return "Неизвестная группа"
-
-
 def _monday_of_week(d):
     return d - timedelta(days=d.weekday())
 
@@ -1111,22 +1021,6 @@ def _filter_lessons_by_subgroup(lessons, subgroup):
         elif str(subgroup) == str(les["subgroup"]):
             result.append(les)
     return result
-
-
-def parse_week_range(soup):
-    start = end = None
-    for item in soup.find_all("div", class_="info-block-item"):
-        label = item.find("div", class_="info-block-item-label")
-        value = item.find("div", class_="info-block-item-value")
-        if not label or not value:
-            continue
-        ltxt = label.get_text(strip=True)
-        vtxt = value.get_text(strip=True)
-        if "Начало действия" in ltxt:
-            start = vtxt
-        elif "Окончание действия" in ltxt:
-            end = vtxt
-    return start, end
 
 
 def parse_schedule(html):
@@ -1210,9 +1104,6 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
         return ""
 
 
-# ============================================================
-# initData
-# ============================================================
 def _verify_webapp_init(init_data: str):
     if not init_data:
         return None
@@ -1225,9 +1116,6 @@ def _verify_webapp_init(init_data: str):
     return None
 
 
-# ============================================================
-# API — ПОЛЬЗОВАТЕЛЬСКИЕ
-# ============================================================
 async def api_schedule(request: web.Request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -1334,6 +1222,7 @@ async def api_me(request: web.Request):
         "notify_type": notif_settings["type"] if notif_settings else None,
         "notify_hour": notif_settings["hour"] if notif_settings else -1,
         "notify_minute": notif_settings["minute"] if notif_settings else 0,
+        "notify_changes": get_notify_changes(user_id),
         "chat_unread": 0,
     })
 
@@ -1544,6 +1433,11 @@ async def api_notify_set(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
+
+    # Обновление флага "следить за изменениями"
+    if "changes" in body:
+        set_notify_changes(user_id, bool(body.get("changes", False)))
+        return web.json_response({"ok": True})
 
     ntype = body.get("type", None)
 
@@ -1777,9 +1671,6 @@ async def api_vip(request: web.Request):
     return web.json_response({"is_vip": True})
 
 
-# ============================================================
-# API — АДМИНСКИЕ
-# ============================================================
 def _admin_only(init_data):
     user_id = _verify_webapp_init(init_data)
     if not user_id or user_id != ADMIN_ID:
@@ -1890,9 +1781,6 @@ async def api_admin_monitor(request: web.Request):
         return web.json_response({"status": 0, "ok": False, "error": str(e)})
 
 
-# ============================================================
-# ВЕБ-СЕРВЕР
-# ============================================================
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1986,14 +1874,10 @@ async def start_webapp():
     logging.info(f"[WEB] сервер запущен на 0.0.0.0:{port}")
 
 
-# ============================================================
-# ХЕНДЛЕРЫ БОТА
-# ============================================================
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     _ensure_user(message.from_user.id)
 
-    # Обработка реферальной ссылки
     args = message.text.split(maxsplit=1)
     if len(args) > 1 and args[1].startswith("ref_"):
         try:
@@ -2055,9 +1939,6 @@ async def cmd_restore(message: Message):
         await message.answer(f"Ошибка: {e}")
 
 
-# ============================================================
-# ВОРКЕР УВЕДОМЛЕНИЙ
-# ============================================================
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
         today = _now_irkutsk()
@@ -2143,9 +2024,64 @@ async def notification_worker():
         await asyncio.sleep(60 - datetime.now().second)
 
 
-# ============================================================
-# ЗАПУСК
-# ============================================================
+async def check_schedule_changes():
+    users = get_users_for_change_tracking()
+    if not users:
+        return
+
+    html_cache = {}
+    now = _now_irkutsk()
+
+    for uid, group_id, subgroup in users:
+        try:
+            for offset in (0, 1):
+                target_monday = _monday_of_week(now) + timedelta(days=7 * offset)
+                week_start_str = target_monday.strftime("%Y-%m-%d")
+
+                cache_key = (group_id, week_start_str)
+                if cache_key in html_cache:
+                    html = html_cache[cache_key]
+                else:
+                    html = await fetch_week_html(group_id, target_monday, use_cache=False)
+                    html_cache[cache_key] = html
+
+                if not html:
+                    continue
+
+                _, days = parse_schedule(html)
+                new_snap = make_snapshot_str(days)
+                old_snap = get_snapshot(group_id, week_start_str)
+
+                if old_snap is None:
+                    save_snapshot(group_id, week_start_str, new_snap)
+                    continue
+
+                if old_snap != new_snap:
+                    save_snapshot(group_id, week_start_str, new_snap)
+                    label = "текущей" if offset == 0 else "следующей"
+                    try:
+                        await bot.send_message(
+                            uid,
+                            f"⚠️ <b>Изменения в расписании</b>\n\n"
+                            f"Обнаружены правки в расписании на {label} неделе.\n"
+                            f"Открой приложение, чтобы посмотреть актуальную версию.")
+                    except Exception as e:
+                        logging.error(f"[CHANGE] notify user={uid}: {e}")
+        except Exception as e:
+            logging.error(f"[CHANGE] user={uid}: {e}")
+
+
+async def change_worker():
+    logging.info("[CHANGE] воркер запущен")
+    await asyncio.sleep(180)
+    while True:
+        try:
+            await check_schedule_changes()
+        except Exception:
+            logging.exception("[CHANGE WORKER]")
+        await asyncio.sleep(1800)
+
+
 async def main():
     logging.basicConfig(
         level=logging.INFO,
@@ -2157,6 +2093,7 @@ async def main():
 
     asyncio.create_task(start_webapp())
     asyncio.create_task(notification_worker())
+    asyncio.create_task(change_worker())
     await dp.start_polling(bot)
 
 
