@@ -1591,6 +1591,126 @@ async def api_ai(request: web.Request):
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
 
+async def api_ai_photo(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    if not YANDEX_VISION_API_KEY or not YANDEX_FOLDER_ID:
+        return web.json_response({"error": "ocr_unavailable", "message": "OCR не настроен"}, status=503)
+
+    if giga_client is None:
+        return web.json_response({"error": "ai_unavailable"}, status=503)
+
+    photo_data = (body.get("photo") or "").strip()
+    question = (body.get("question") or "").strip()
+
+    if not photo_data:
+        return web.json_response({"error": "no_photo"}, status=400)
+
+    if "," in photo_data:
+        _, b64 = photo_data.split(",", 1)
+    else:
+        b64 = photo_data
+
+    try:
+        img_bytes = base64.b64decode(b64)
+    except Exception:
+        return web.json_response({"error": "bad_photo"}, status=400)
+
+    if len(img_bytes) > 8 * 1024 * 1024:
+        return web.json_response({"error": "too_big", "message": "Фото слишком большое (макс 8 МБ)"}, status=400)
+
+    try:
+        ocr_url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
+        ocr_headers = {
+            "Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
+            "x-folder-id": YANDEX_FOLDER_ID,
+            "Content-Type": "application/json",
+        }
+        ocr_body = {
+            "mimeType": "image/jpeg",
+            "languageCodes": ["ru", "en"],
+            "model": "page",
+            "content": b64,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(ocr_url, headers=ocr_headers, json=ocr_body,
+                                    timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                if resp.status != 200:
+                    err_text = await resp.text()
+                    logging.error(f"[OCR] HTTP {resp.status}: {err_text}")
+                    return web.json_response({"error": "ocr_failed", "message": f"OCR HTTP {resp.status}"}, status=500)
+                ocr_result = await resp.json()
+
+        recognized_text = ""
+        try:
+            recognized_text = ocr_result["result"]["textAnnotation"]["fullText"] or ""
+        except (KeyError, TypeError):
+            try:
+                blocks = ocr_result["result"]["textAnnotation"]["blocks"]
+                parts = []
+                for b in blocks:
+                    for line in b.get("lines", []):
+                        parts.append(line.get("text", ""))
+                recognized_text = "\n".join(parts)
+            except Exception:
+                recognized_text = ""
+
+        recognized_text = recognized_text.strip()
+    except Exception as e:
+        logging.exception("[OCR]")
+        return web.json_response({"error": "ocr_failed", "message": str(e)}, status=500)
+
+    if not recognized_text:
+        return web.json_response({
+            "answer": "На фото не удалось распознать текст. Попробуй другое фото — лучше, чтобы текст был чётким и хорошо освещённым."
+        })
+
+    if len(recognized_text) > 4000:
+        recognized_text = recognized_text[:4000]
+
+    if not question:
+        question = "Разберись, что это за задача или текст, и помоги студенту."
+
+    if len(question) > 2000:
+        question = question[:2000]
+
+    try:
+        prompt = (
+            "Ты — студенческий помощник. Пользователь прислал фото, с которого распознан текст. "
+            "Помоги разобраться.\n\n"
+            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
+            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+            "- НЕ используй LaTeX-команды.\n"
+            "- Формулы пиши обычным текстом.\n"
+            "- Структурируй текст простыми списками.\n"
+            "- Пиши без воды.\n\n"
+            f"Распознанный текст с фото:\n{recognized_text}\n\n"
+            f"Вопрос студента: {question}"
+        )
+        response = await giga_client.achat(prompt)
+        try:
+            answer = response.choices[0].message.content
+        except AttributeError:
+            answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
+
+        answer = clean_latex(answer)
+        answer = clean_markdown(answer)
+        if len(answer) > 4000:
+            answer = answer[:4000] + "\n... (обрезано)"
+
+        return web.json_response({"answer": answer})
+    except Exception as e:
+        logging.exception("[AI-PHOTO-GIGA]")
+        return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
+
+
 async def api_feedback(request: web.Request):
     try:
         body = await request.json()
@@ -1774,6 +1894,7 @@ async def start_webapp():
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
     app.router.add_post("/api/ai", api_ai)
+    app.router.add_post("/api/ai-photo", api_ai_photo)
     app.router.add_post("/api/feedback", api_feedback)
     app.router.add_get("/api/vip", api_vip)
 
