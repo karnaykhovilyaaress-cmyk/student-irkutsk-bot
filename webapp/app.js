@@ -49,22 +49,27 @@ const state = {
     notes: [],
 
     profile: null,
-    vip: null,
     scholarship: null,
     referral: null,
     groups: null,
 
+    // Пикер группы
     pickerMode: null,
     pickerInstitute: null,
     pickerCourse: null,
     pickerSearch: '',
+
+    // Редактор уведомлений
+    notifyEditor: false,
+    notifyEditorType: 'today',
+    notifyEditorHour: 8,
+    notifyEditorMinute: 0,
 
     aiMessages: [],
     aiPending: false,
 
     adminStats: null,
     adminFeedback: [],
-    adminVips: [],
     adminMonitor: null,
     adminBusy: false,
 };
@@ -81,7 +86,7 @@ async function apiGet(path, params = {}) {
     const r = await fetch(url.toString());
     if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${r.status}`);
+        throw new Error(err.message || err.error || `HTTP ${r.status}`);
     }
     return await r.json();
 }
@@ -94,7 +99,9 @@ async function apiPost(path, body = {}) {
     });
     if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${r.status}`);
+        const e = new Error(err.message || err.error || `HTTP ${r.status}`);
+        e.code = err.error;
+        throw e;
     }
     return await r.json();
 }
@@ -139,6 +146,10 @@ function haptic(type = 'light') {
     } catch (e) {}
 }
 
+function formatNotifyTime(hh, mm) {
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
 // ============================================================
 // ГЛАВНЫЙ РЕНДЕР
 // ============================================================
@@ -153,11 +164,21 @@ function render() {
         tasks: 'Задачи',
         notes: 'Заметки',
         ai: 'AI',
-        vip: 'VIP',
         admin: 'Админ',
         profile: 'Профиль',
     };
 
+    // Редактор уведомлений
+    if (state.notifyEditor) {
+        appEl?.classList.add('picker-open');
+        if (title) title.textContent = 'Уведомления';
+        if (navEl) navEl.style.display = 'none';
+        content.innerHTML = renderNotifyEditor();
+        attachHandlers();
+        return;
+    }
+
+    // Пикер группы
     if (state.pickerMode) {
         appEl?.classList.add('picker-open');
         if (title) {
@@ -168,19 +189,12 @@ function render() {
         if (navEl) navEl.style.display = 'none';
 
         let html = '';
-        if (state.pickerMode === 'institute') {
-            html = renderInstitutePicker();
-        } else if (state.pickerMode === 'course') {
-            html = renderCoursePicker();
-        } else {
-            html = renderGroupPicker();
-        }
+        if (state.pickerMode === 'institute') html = renderInstitutePicker();
+        else if (state.pickerMode === 'course') html = renderCoursePicker();
+        else html = renderGroupPicker();
         content.innerHTML = html;
         attachHandlers();
-
-        if (state.pickerMode === 'group') {
-            pickerAttachSearch();
-        }
+        if (state.pickerMode === 'group') pickerAttachSearch();
         return;
     }
 
@@ -200,7 +214,6 @@ function render() {
             case 'tasks': html = renderTasks(); break;
             case 'notes': html = renderNotes(); break;
             case 'ai': html = renderAI(); break;
-            case 'vip': html = renderVIP(); break;
             case 'admin': html = renderAdmin(); break;
             case 'profile': html = renderProfile(); break;
         }
@@ -286,24 +299,18 @@ function renderDaySwitch() {
 function getTomorrowData() {
     const wd = state.weekDays;
     if (!wd || !wd.days || wd.days.length === 0) return null;
-
     const today = new Date();
     const jsDay = today.getDay();
     const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
     const tomorrowIdx = (todayIdx + 1) % 7;
-
     if (wd.days.length >= 7) return wd.days[tomorrowIdx] || null;
-
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
     const dd = String(tomorrow.getDate()).padStart(2, '0');
     const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
     const yyyy = tomorrow.getFullYear();
     const tomorrowStr = `${dd}.${mm}.${yyyy}`;
-
-    for (const d of wd.days) {
-        if (d.date === tomorrowStr) return d;
-    }
+    for (const d of wd.days) if (d.date === tomorrowStr) return d;
     return null;
 }
 
@@ -321,7 +328,6 @@ function renderWeekView() {
     if (!wd || !wd.days || wd.days.length === 0) {
         return renderEmpty('Не удалось загрузить расписание на неделю');
     }
-
     let title;
     if (state.weekOffset === 0) title = 'Текущая неделя';
     else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
@@ -334,7 +340,6 @@ function renderWeekView() {
             wd.subgroup ? ` · подгруппа ${escapeHtml(wd.subgroup)}` : ''
         }</div>`;
     }
-
     for (const day of wd.days) {
         html += `<div class="day-header" style="margin-top:16px">${escapeHtml(day.name || day.date)}</div>`;
         if (!day.lessons || day.lessons.length === 0) {
@@ -343,7 +348,6 @@ function renderWeekView() {
             for (const les of day.lessons) html += renderLesson(les);
         }
     }
-
     html += `
         <div class="actions-row" style="margin-top:16px">
             <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
@@ -351,26 +355,22 @@ function renderWeekView() {
             <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
         </div>
     `;
-
     return html;
 }
 
 function renderDayCard(day, label) {
     let html = `<div class="day-header">${escapeHtml(label)}${day.name ? ' · ' + escapeHtml(day.name) : ''}${day.date ? ', ' + escapeHtml(day.date) : ''}</div>`;
-
     const p = state.profile;
     if (p?.group) {
         html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(p.group)}${
             p.subgroup ? ` · подгруппа ${escapeHtml(p.subgroup)}` : ''
         }</div>`;
     }
-
     if (!day.lessons || day.lessons.length === 0) {
         html += renderEmpty('Занятий нет');
     } else {
         for (const les of day.lessons) html += renderLesson(les);
     }
-
     html += `
         <div class="actions-row">
             <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
@@ -378,13 +378,11 @@ function renderDayCard(day, label) {
             <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
         </div>
     `;
-
     return html;
 }
 
 function renderSchedule() {
     if (state.scheduleViewMode === 'week' && state.weekDays) return renderWeekView();
-
     const s = state.schedule;
 
     if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
@@ -411,19 +409,16 @@ function renderSchedule() {
 
     const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
     html += `<div class="day-header">${escapeHtml(header)}</div>`;
-
     if (s.group) {
         html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${
             s.subgroup ? ` · подгруппа ${escapeHtml(s.subgroup)}` : ''
         }</div>`;
     }
-
     if (!s.lessons || s.lessons.length === 0) {
         html += renderEmpty('Занятий нет');
     } else {
         for (const les of s.lessons) html += renderLesson(les);
     }
-
     html += `
         <div class="actions-row">
             <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
@@ -431,7 +426,6 @@ function renderSchedule() {
             <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
         </div>
     `;
-
     return html;
 }
 
@@ -459,19 +453,16 @@ function getCoursesForInstitute(inst) {
 function renderInstitutePicker() {
     const groups = state.groups || {};
     const institutes = Object.keys(groups);
-
     let html = `
         <div class="picker-header">
             <button class="picker-back" data-action="picker-back">←</button>
             <div class="picker-title">Выбери институт</div>
         </div>
     `;
-
     if (institutes.length === 0) {
         html += `<div class="picker-empty">Список институтов не загружен</div>`;
         return html;
     }
-
     html += `<div class="picker-list">`;
     for (const inst of institutes) {
         const count = groups[inst]?.length || 0;
@@ -487,26 +478,22 @@ function renderInstitutePicker() {
         `;
     }
     html += `</div>`;
-
     return html;
 }
 
 function renderCoursePicker() {
     const inst = state.pickerInstitute;
     const courses = getCoursesForInstitute(inst);
-
     let html = `
         <div class="picker-header">
             <button class="picker-back" data-action="picker-back">←</button>
             <div class="picker-title">${escapeHtml(inst)} · Курс</div>
         </div>
     `;
-
     if (courses.length === 0) {
         html += `<div class="picker-empty">Нет доступных курсов</div>`;
         return html;
     }
-
     const groups = (state.groups && state.groups[inst]) || [];
     html += `<div class="picker-list">`;
     for (const c of courses) {
@@ -522,7 +509,6 @@ function renderCoursePicker() {
         `;
     }
     html += `</div>`;
-
     return html;
 }
 
@@ -531,7 +517,6 @@ function renderGroupPicker() {
     const course = state.pickerCourse;
     const allGroups = (state.groups && state.groups[inst]) || [];
     const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
-
     let html = `
         <div class="picker-header">
             <button class="picker-back" data-action="picker-back">←</button>
@@ -540,10 +525,8 @@ function renderGroupPicker() {
         <input class="picker-search" id="picker-search" placeholder="Поиск группы..." value="${escapeHtml(state.pickerSearch)}" autocomplete="off">
         <div class="picker-list" id="picker-list">
     `;
-
     const q = (state.pickerSearch || '').trim().toLowerCase();
     const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
-
     if (filtered.length === 0) {
         html += `<div class="picker-empty">Ничего не найдено</div>`;
     } else {
@@ -560,19 +543,14 @@ function renderGroupPicker() {
         }
     }
     html += `</div>`;
-
     return html;
 }
 
 function pickerAttachSearch() {
     const input = document.getElementById('picker-search');
     if (!input) return;
-
     input.focus();
-    try {
-        input.setSelectionRange(input.value.length, input.value.length);
-    } catch (e) {}
-
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
     input.addEventListener('input', (e) => {
         state.pickerSearch = e.target.value;
         const inst = state.pickerInstitute;
@@ -581,10 +559,8 @@ function pickerAttachSearch() {
         const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
         const q = (state.pickerSearch || '').trim().toLowerCase();
         const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
-
         const list = document.getElementById('picker-list');
         if (!list) return;
-
         let html = '';
         if (filtered.length === 0) {
             html = `<div class="picker-empty">Ничего не найдено</div>`;
@@ -593,9 +569,7 @@ function pickerAttachSearch() {
                 const selected = state.profile?.group === g.name;
                 html += `
                     <button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
-                        <div class="picker-group-item">
-                            <span>${escapeHtml(g.name)}</span>
-                        </div>
+                        <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
                         ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
                     </button>
                 `;
@@ -606,6 +580,121 @@ function pickerAttachSearch() {
             el.addEventListener('click', () => handleAction(el));
         });
     });
+}
+
+// ============================================================
+// NOTIFY EDITOR
+// ============================================================
+function renderNotifyEditor() {
+    const cur = state.notifyEditorType;
+    const hh = state.notifyEditorHour;
+    const mm = state.notifyEditorMinute;
+    const timeVal = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+
+    return `
+        <div class="picker-header">
+            <button class="picker-back" data-action="notify-back">←</button>
+            <div class="picker-title">Уведомления</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Когда напоминать</div>
+            <div class="tab-buttons" style="margin-bottom:12px">
+                <button data-action="notify-set-type" data-value="today" class="${cur === 'today' ? 'active' : ''}">Сегодня</button>
+                <button data-action="notify-set-type" data-value="tomorrow" class="${cur === 'tomorrow' ? 'active' : ''}">Завтра</button>
+            </div>
+            <div class="card-subtitle">
+                ${cur === 'today'
+                    ? 'Расписание на сегодня. Время — до 10:00.'
+                    : 'Расписание на завтра. Время — любое.'}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Во сколько</div>
+            <div class="card-subtitle">Время по Иркутску</div>
+            <input type="time" id="notify-time-input" class="input" value="${timeVal}">
+        </div>
+
+        <div class="actions-row" style="margin-top:16px">
+            <button class="btn" data-action="notify-save" style="flex:1">Сохранить</button>
+            <button class="btn btn-secondary" data-action="notify-off" style="flex:1">Выключить</button>
+        </div>
+    `;
+}
+
+function actionOpenNotifyEditor() {
+    haptic('light');
+    const p = state.profile;
+    state.notifyEditorType = p?.notify_type || 'today';
+    state.notifyEditorHour = p?.notify_hour >= 0 ? p.notify_hour : 8;
+    state.notifyEditorMinute = p?.notify_minute || 0;
+    state.notifyEditor = true;
+    render();
+}
+
+function actionNotifyBack() {
+    haptic('light');
+    state.notifyEditor = false;
+    render();
+}
+
+function actionNotifySetType(ntype) {
+    haptic('light');
+    state.notifyEditorType = ntype;
+    if (ntype === 'today' && state.notifyEditorHour > 10) {
+        state.notifyEditorHour = 8;
+        state.notifyEditorMinute = 0;
+    }
+    render();
+}
+
+async function actionNotifySave() {
+    const input = document.getElementById('notify-time-input');
+    if (!input) return;
+    const val = (input.value || '').trim();
+    if (!/^\d{1,2}:\d{2}$/.test(val)) {
+        alert('Введи время в формате ЧЧ:ММ');
+        return;
+    }
+    const [hhStr, mmStr] = val.split(':');
+    const hh = parseInt(hhStr, 10);
+    const mm = parseInt(mmStr, 10);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+        alert('Неверное время');
+        return;
+    }
+    if (state.notifyEditorType === 'today' && hh > 10) {
+        alert('Для «Сегодня» — не позже 10:00');
+        return;
+    }
+    haptic('success');
+    try {
+        await apiPost('/api/notify-set', {
+            type: state.notifyEditorType,
+            hour: hh,
+            minute: mm,
+        });
+        state.notifyEditor = false;
+        await loadProfile();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function actionNotifyOff() {
+    haptic('success');
+    try {
+        await apiPost('/api/notify-set', { type: null });
+        state.notifyEditor = false;
+        await loadProfile();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert('Ошибка: ' + e.message);
+    }
 }
 
 // ============================================================
@@ -660,7 +749,6 @@ function renderTasks() {
     if (state.tasksView === 'done' && tasks.length > 0) {
         html += `<button class="btn btn-secondary" data-action="tasks-clear" style="width:100%;margin-top:8px">Очистить выполненные</button>`;
     }
-
     return html;
 }
 
@@ -669,7 +757,6 @@ function renderTasks() {
 // ============================================================
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
-
     if (!state.notes || state.notes.length === 0) {
         html += `
             <div class="banner">
@@ -679,7 +766,6 @@ function renderNotes() {
         `;
         return html;
     }
-
     for (const n of state.notes) {
         html += `
             <div class="card">
@@ -699,23 +785,12 @@ function renderNotes() {
 // AI
 // ============================================================
 function renderAI() {
-    const p = state.profile;
-    if (!p || !p.is_vip) {
-        return `
-            <div class="banner">
-                <div class="banner-title">AI Помощник</div>
-                <div class="banner-sub">Доступен VIP. Отвечает на вопросы по учёбе, помогает с формулами и конспектами.</div>
-                <button class="banner-btn" data-action="go-vip">Что такое VIP?</button>
-            </div>
-        `;
-    }
-
     let html = '';
     if (state.aiMessages.length === 0) {
         html += `
             <div class="banner">
-                <div class="banner-title">Задай вопрос</div>
-                <div class="banner-sub">Например: «Объясни интеграл по частям»</div>
+                <div class="banner-title">AI Помощник</div>
+                <div class="banner-sub">Задай вопрос по учёбе — например: «Объясни интеграл по частям»</div>
             </div>
         `;
     } else {
@@ -739,78 +814,10 @@ function renderAI() {
 }
 
 // ============================================================
-// VIP
-// ============================================================
-function renderVIP() {
-    const v = state.vip;
-    let html = '';
-
-    if (v && v.is_vip) {
-        html += `
-            <div class="banner">
-                <div class="banner-title">VIP активен</div>
-                <div class="banner-sub">До: ${escapeHtml(v.expiry ? v.expiry.slice(0, 10) : '')}<br>Осталось: ${v.days_left} дней</div>
-            </div>
-        `;
-    } else {
-        html += `
-            <div class="banner">
-                <div class="banner-title">VIP-подписка</div>
-                <div class="banner-sub">
-                    • Расширенная статистика<br>
-                    • Раздел «Стипендия»<br>
-                    • AI Помощник<br><br>
-                    30 дней — 149 ₽ · 90 дней — 349 ₽ · Навсегда — 599 ₽<br><br>
-                    Для покупки: @ilyaech
-                </div>
-            </div>
-        `;
-    }
-
-    if (v && v.is_vip && state.scholarship) {
-        const s = state.scholarship;
-        html += `
-            <div class="card">
-                <div class="card-title">Стипендия</div>
-                <div class="card-subtitle">Текущая: ${s.amount !== null ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>
-                <div class="card-subtitle">Оценок: ${s.grades.length}</div>
-                ${s.grades.length ? `<div class="card-subtitle">Средний балл: ${s.avg}</div>` : ''}
-            </div>
-        `;
-        if (s.grades.length > 0) {
-            html += `<div class="card"><div class="card-title">Оценки</div>`;
-            for (const g of s.grades) {
-                html += `
-                    <div class="grade-row">
-                        <span>${escapeHtml(g.subject)}</span>
-                        <span class="grade-value">${g.grade}</span>
-                    </div>
-                `;
-            }
-            html += `</div>`;
-        }
-        if (s.forecast) {
-            html += `<div class="card"><div class="card-subtitle">${escapeHtml(s.forecast)}</div></div>`;
-        }
-        html += `
-            <div class="actions-row">
-                <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
-                <button class="btn btn-secondary" data-action="sch-add-grade-open">Оценка</button>
-                <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
-            </div>
-        `;
-    }
-
-    html += `<div class="actions-row"><button class="btn" data-action="vip-buy">Написать админу</button></div>`;
-    return html;
-}
-
-// ============================================================
 // АДМИН
 // ============================================================
 function renderAdmin() {
     if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
-
     let html = '';
 
     if (state.adminStats) {
@@ -820,7 +827,6 @@ function renderAdmin() {
                 <div class="banner-title">Статистика</div>
                 <div class="banner-sub">
                     Пользователей: ${s.total_users}<br>
-                    Активных VIP: ${s.vip_count}<br>
                     Обращений в ожидании: ${s.pending_feedback}
                 </div>
             </div>
@@ -852,32 +858,6 @@ function renderAdmin() {
         </div>
     `;
 
-    html += `
-        <div class="card">
-            <div class="card-title">Выдать VIP</div>
-            <div class="card-subtitle">user_id и срок в днях (30 / 90 / 365).</div>
-            <input class="input" id="admin-vip-uid" placeholder="user_id" type="number">
-            <input class="input" id="admin-vip-days" placeholder="дней" type="number" value="30">
-            <div class="actions-row">
-                <button class="btn" data-action="admin-give-vip">Выдать</button>
-            </div>
-        </div>
-    `;
-
-    if (state.adminVips && state.adminVips.length > 0) {
-        html += `<div class="card"><div class="card-title">Активные VIP</div>`;
-        for (const v of state.adminVips) {
-            html += `
-                <div class="grade-row">
-                    <span>${v.user_id}</span>
-                    <span class="card-subtitle">до ${escapeHtml(v.expiry)} (${v.days} дн.)</span>
-                    <button class="btn btn-secondary" data-action="admin-revoke-vip" data-id="${v.user_id}">Снять</button>
-                </div>
-            `;
-        }
-        html += `</div>`;
-    }
-
     if (state.adminFeedback && state.adminFeedback.length > 0) {
         html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
         for (const f of state.adminFeedback) {
@@ -896,7 +876,6 @@ function renderAdmin() {
     } else {
         html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
     }
-
     return html;
 }
 
@@ -918,7 +897,6 @@ function renderProfile() {
             <div class="profile-avatar">${escapeHtml(initials)}</div>
             <div class="profile-name">${escapeHtml(fullName)}</div>
             ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
-            ${p?.is_vip ? '<div class="badge">VIP</div>' : ''}
             ${p?.is_admin ? '<div class="badge" style="background:linear-gradient(135deg,#e53935,#b71c1c);color:#fff">ADMIN</div>' : ''}
         </div>
     `;
@@ -939,7 +917,6 @@ function renderProfile() {
         <div class="card">
             <div class="card-title">Мой ID</div>
             <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
-            <div class="card-subtitle">Нужен для выдачи VIP — сообщи админу.</div>
             <div class="actions-row">
                 <button class="btn btn-secondary" data-action="copy-my-id">Скопировать ID</button>
             </div>
@@ -969,42 +946,71 @@ function renderProfile() {
         </div>
     `;
 
+    // Уведомления
+    const notifyOn = !!p?.notify_type;
+    const notifyLabel = notifyOn
+        ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}`
+        : 'выключены';
+
     html += `
         <div class="card">
-            <div class="card-title">Уведомления</div>
-            <div class="card-subtitle">Сейчас: ${p?.notify_time || 'выключены'}</div>
+            <div class="card-title">Уведомления о расписании</div>
+            <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
             <div class="actions-row">
-                <button class="btn btn-secondary" data-action="notify-set" data-h="7">7:00</button>
-                <button class="btn btn-secondary" data-action="notify-set" data-h="8">8:00</button>
-                <button class="btn btn-secondary" data-action="notify-set" data-h="19">19:00</button>
-                <button class="btn btn-secondary" data-action="notify-set" data-h="20">20:00</button>
-                <button class="btn btn-secondary" data-action="notify-set" data-h="-1">Выкл</button>
+                <button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button>
             </div>
-            <label class="checkbox-row">
-                <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
-                <span>Следить за изменениями</span>
-            </label>
         </div>
     `;
 
+    // Цитата дня
     html += `
         <div class="card">
             <div class="card-title">Цитата дня</div>
-            <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан' : 'Не подписан'}</div>
+            <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
             <div class="actions-row">
-                <button class="btn btn-secondary" data-action="quote-subscribe" data-value="1">Подписаться</button>
-                <button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>
+                ${p?.daily_subscribed
+                    ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
+                    : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
             </div>
         </div>
     `;
 
+    // Стипендия (была в VIP, теперь доступна всем)
+    html += `<div class="card"><div class="card-title">Стипендия</div>`;
+    if (state.scholarship) {
+        const s = state.scholarship;
+        html += `<div class="card-subtitle">Текущая: ${s.amount !== null ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
+        html += `<div class="card-subtitle">Оценок: ${s.grades.length}</div>`;
+        if (s.grades.length) html += `<div class="card-subtitle">Средний балл: ${s.avg}</div>`;
+        if (s.forecast) html += `<div class="card-subtitle">${escapeHtml(s.forecast)}</div>`;
+    }
+    if (state.scholarship && state.scholarship.grades.length > 0) {
+        for (const g of state.scholarship.grades) {
+            html += `
+                <div class="grade-row">
+                    <span>${escapeHtml(g.subject)}</span>
+                    <span class="grade-value">${g.grade}</span>
+                </div>
+            `;
+        }
+    }
+    html += `
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
+            <button class="btn btn-secondary" data-action="sch-add-grade-open">Добавить оценку</button>
+            <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
+        </div>
+    </div>
+    `;
+
+    // Рефералка
     if (state.referral) {
         const r = state.referral;
         html += `
             <div class="card">
                 <div class="card-title">Пригласи друга</div>
-                <div class="card-subtitle">+${r.referral_days} дней VIP за друга</div>
-                <div class="card-subtitle">Пришло: ${r.total} · Засчитано: ${r.rewarded} · Дней: ${r.days}</div>
+                <div class="card-subtitle">+${r.referral_days} дней бонусов за друга</div>
+                <div class="card-subtitle">Пришло: ${r.total} · Засчитано: ${r.rewarded}</div>
                 <div style="margin-top:8px;word-break:break-all;font-size:13px;color:var(--text-2)">${escapeHtml(r.link)}</div>
                 <div class="actions-row">
                     <button class="btn btn-secondary" data-action="copy-referral">Скопировать ссылку</button>
@@ -1013,6 +1019,7 @@ function renderProfile() {
         `;
     }
 
+    // Обратная связь
     html += `
         <div class="card">
             <div class="card-title">Обратная связь</div>
@@ -1020,7 +1027,6 @@ function renderProfile() {
             <button class="btn" data-action="feedback-send">Отправить</button>
         </div>
     `;
-
     return html;
 }
 
@@ -1051,12 +1057,7 @@ async function loadProfile() {
         state.isAdmin = !!state.profile.is_admin;
     } catch (e) { state.profile = { error: e.message }; }
 }
-async function loadVIP() {
-    try { state.vip = await apiGet('/api/vip'); }
-    catch (e) { state.vip = { is_vip: false }; }
-}
 async function loadScholarship() {
-    if (!state.vip?.is_vip) { state.scholarship = null; return; }
     try { state.scholarship = await apiGet('/api/scholarship'); }
     catch (e) { state.scholarship = null; }
 }
@@ -1081,16 +1082,11 @@ async function loadAdminFeedback() {
         state.adminFeedback = r.items || [];
     } catch (e) { state.adminFeedback = []; }
 }
-async function loadAdminVips() {
-    try {
-        const r = await apiGet('/api/admin/vip-list');
-        state.adminVips = r.items || [];
-    } catch (e) { state.adminVips = []; }
-}
 
 async function loadTabData(tab) {
     state.loading = true;
     state.error = null;
+    state.notifyEditor = false;
     render();
 
     try {
@@ -1108,22 +1104,15 @@ async function loadTabData(tab) {
             await loadNotes();
         } else if (tab === 'ai') {
             await loadProfile();
-        } else if (tab === 'vip') {
-            await loadProfile();
-            await loadVIP();
-            await loadScholarship();
         } else if (tab === 'admin') {
             await loadProfile();
             if (state.isAdmin) {
-                await Promise.all([
-                    loadAdminStats(),
-                    loadAdminFeedback(),
-                    loadAdminVips(),
-                ]);
+                await Promise.all([loadAdminStats(), loadAdminFeedback()]);
             }
         } else if (tab === 'profile') {
             await loadProfile();
             await loadReferral();
+            await loadScholarship();
         }
     } catch (e) {
         console.error(e);
@@ -1165,7 +1154,6 @@ async function actionDayTomorrow() {
     render();
 }
 
-// ----- ПИКЕР -----
 async function actionChooseGroup() {
     haptic('light');
     await loadGroups(true);
@@ -1201,7 +1189,6 @@ function actionPickerBack() {
         render();
     }
 }
-
 function actionPickerChooseInstitute(inst) {
     haptic('light');
     state.pickerInstitute = inst;
@@ -1210,7 +1197,6 @@ function actionPickerChooseInstitute(inst) {
     state.pickerSearch = '';
     render();
 }
-
 function actionPickerChooseCourse(course) {
     haptic('light');
     state.pickerCourse = parseInt(course, 10);
@@ -1218,7 +1204,6 @@ function actionPickerChooseCourse(course) {
     state.pickerSearch = '';
     render();
 }
-
 async function actionPickerChooseGroup(groupId, groupName) {
     haptic('success');
     try {
@@ -1241,7 +1226,6 @@ async function actionPickerChooseGroup(groupId, groupName) {
     }
 }
 
-// ----- ОСТАЛЬНЫЕ ДЕЙСТВИЯ -----
 async function actionSetSubgroup(value) {
     try {
         await apiPost('/api/set-subgroup', { subgroup: value });
@@ -1249,26 +1233,7 @@ async function actionSetSubgroup(value) {
         haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-async function actionNotifySet(hour) {
-    try {
-        await apiPost('/api/notify-set', { hour, minute: 0, changes: state.profile?.notify_changes });
-        if (state.profile) state.profile.notify_time = hour >= 0 ? `${String(hour).padStart(2, '0')}:00` : null;
-        haptic('success'); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionNotifyChangesToggle() {
-    const cb = document.getElementById('notify-changes');
-    if (!cb) return;
-    try {
-        await apiPost('/api/notify-set', {
-            hour: state.profile?.notify_time ? parseInt(state.profile.notify_time.split(':')[0]) : -1,
-            minute: 0,
-            changes: cb.checked,
-        });
-        if (state.profile) state.profile.notify_changes = cb.checked;
-        haptic('success');
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
+
 async function actionQuoteSubscribe(value) {
     try {
         await apiPost('/api/quote-subscribe', { subscribe: value === 1 });
@@ -1276,6 +1241,7 @@ async function actionQuoteSubscribe(value) {
         haptic('success'); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
+
 async function actionFeedbackSend() {
     const el = document.getElementById('feedback-text');
     if (!el) return;
@@ -1287,6 +1253,7 @@ async function actionFeedbackSend() {
         haptic('success'); alert('Отправлено');
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
+
 async function actionTaskDone(id) {
     try {
         await apiPost('/api/task-update', { id, done: true });
@@ -1440,7 +1407,6 @@ function actionCopyMyId() {
         alert('ID скопирован: ' + id);
     } catch (e) { alert('Твой ID: ' + id); }
 }
-function actionVipBuy() { tg.openTelegramLink('https://t.me/ilyaech'); }
 
 // ============================================================
 // АДМИН-ДЕЙСТВИЯ
@@ -1462,29 +1428,6 @@ async function actionAdminBroadcast() {
         await apiPost('/api/admin/broadcast', { text });
         el.value = '';
         haptic('success'); alert('Рассылка запущена');
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionAdminGiveVip() {
-    const uidEl = document.getElementById('admin-vip-uid');
-    const daysEl = document.getElementById('admin-vip-days');
-    if (!uidEl || !daysEl) return;
-    const user_id = parseInt(uidEl.value);
-    const days = parseInt(daysEl.value);
-    if (!user_id || !days || days <= 0) { alert('Заполни user_id и дни'); return; }
-    try {
-        const r = await apiPost('/api/admin/give-vip', { user_id, days });
-        haptic('success'); alert(`VIP выдан до ${r.expiry}`);
-        uidEl.value = '';
-        await loadAdminVips();
-        render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionAdminRevokeVip(uid) {
-    if (!confirm(`Снять VIP с ${uid}?`)) return;
-    try {
-        await apiPost('/api/admin/revoke-vip', { user_id: uid });
-        haptic('success');
-        await loadAdminVips(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionAdminFbReply(fid) {
@@ -1515,15 +1458,11 @@ function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         el.addEventListener('click', () => handleAction(el));
     });
-
-    const notifyCb = document.getElementById('notify-changes');
-    if (notifyCb) notifyCb.addEventListener('change', actionNotifyChangesToggle);
 }
 
 function handleAction(el) {
     const a = el.dataset.action;
     if (a === 'set-subgroup') actionSetSubgroup(parseInt(el.dataset.value));
-    else if (a === 'notify-set') actionNotifySet(parseInt(el.dataset.h));
     else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(el.dataset.value));
     else if (a === 'feedback-send') actionFeedbackSend();
     else if (a === 'task-done') actionTaskDone(parseInt(el.dataset.id));
@@ -1545,13 +1484,16 @@ function handleAction(el) {
     else if (a === 'forget-group') actionForgetGroup();
     else if (a === 'copy-referral') actionCopyReferral();
     else if (a === 'copy-my-id') actionCopyMyId();
-    else if (a === 'vip-buy') actionVipBuy();
     else if (a === 'picker-back') actionPickerBack();
     else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
     else if (a === 'picker-choose-course') actionPickerChooseCourse(el.dataset.value);
     else if (a === 'picker-choose-group') actionPickerChooseGroup(el.dataset.id, el.dataset.name);
+    else if (a === 'notify-open') actionOpenNotifyEditor();
+    else if (a === 'notify-back') actionNotifyBack();
+    else if (a === 'notify-set-type') actionNotifySetType(el.dataset.value);
+    else if (a === 'notify-save') actionNotifySave();
+    else if (a === 'notify-off') actionNotifyOff();
     else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
-    else if (a === 'go-vip') { state.tab = 'vip'; loadTabData('vip'); }
     else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
     else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
     else if (a === 'week-current') { state.weekOffset = 0; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
@@ -1560,8 +1502,6 @@ function handleAction(el) {
     else if (a === 'day-tomorrow') actionDayTomorrow();
     else if (a === 'admin-monitor') actionAdminMonitor();
     else if (a === 'admin-broadcast') actionAdminBroadcast();
-    else if (a === 'admin-give-vip') actionAdminGiveVip();
-    else if (a === 'admin-revoke-vip') actionAdminRevokeVip(parseInt(el.dataset.id));
     else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
     else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
 }
