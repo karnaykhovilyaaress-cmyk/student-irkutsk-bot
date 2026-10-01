@@ -1896,22 +1896,22 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         day = next((d for d in days if d["date"] == target_str), None)
 
         label = "Сегодня" if ntype == "today" else "Завтра"
-        header = f"<b>{label}, {target_str}</b>"
+        header = f"{label}, {target_str}"
 
         if not day:
-            await bot.send_message(user_id, f"{header}\n\nНе удалось загрузить расписание.")
+            await bot.send_message(user_id, f"{header}\n\nНе удалось загрузить расписание.", parse_mode=None)
             return
 
         lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
         if not lessons:
-            await bot.send_message(user_id, f"{header}\n\nЗанятий нет.")
+            await bot.send_message(user_id, f"{header}\n\nЗанятий нет.", parse_mode=None)
             return
 
         lines = [header, ""]
         for les in lessons:
             time_end = LESSON_TIMES.get(les["time"], "")
             time_str = f"{les['time']}–{time_end}" if time_end else les["time"]
-            lines.append(f"<b>{time_str}</b>")
+            lines.append(time_str)
             lines.append(les["subject"])
             details = []
             if les.get("type"):
@@ -1924,7 +1924,7 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
                 lines.append(f"{' · '.join(details)}")
             lines.append("")
 
-        await bot.send_message(user_id, "\n".join(lines))
+        await bot.send_message(user_id, "\n".join(lines), parse_mode=None)
     except Exception as e:
         logging.error(f"[NOTIFY] user={user_id} error: {e}")
 
@@ -1934,10 +1934,10 @@ async def send_daily_quotes():
     if not subs:
         return
     quote = random.choice(DAILY_QUOTES)
-    text = f"<b>Цитата дня</b>\n\n<i>{quote}</i>"
+    text = f"Цитата дня\n\n{quote}"
     for uid in subs:
         try:
-            await bot.send_message(uid, text)
+            await bot.send_message(uid, text, parse_mode=None)
         except Exception as e:
             logging.error(f"[QUOTE] user={uid}: {e}")
         await asyncio.sleep(0.05)
@@ -2005,9 +2005,10 @@ async def check_schedule_changes():
                     try:
                         await bot.send_message(
                             uid,
-                            f"<b>Изменения в расписании</b>\n\n"
+                            f"Изменения в расписании\n\n"
                             f"Обнаружены правки в расписании на {label} неделе.\n"
-                            f"Открой приложение, чтобы посмотреть актуальную версию.")
+                            f"Открой приложение, чтобы посмотреть актуальную версию.",
+                            parse_mode=None)
                     except Exception as e:
                         logging.error(f"[CHANGE] notify user={uid}: {e}")
         except Exception as e:
