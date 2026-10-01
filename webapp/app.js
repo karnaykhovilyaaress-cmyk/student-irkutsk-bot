@@ -68,8 +68,8 @@ function renderEmpty(text) { return `<div class="empty">${escapeHtml(text)}</div
 function renderLoading() { return `<div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>`; }
 
 function priorityLabel(p) {
-    if (p === 2) return '<span class="priority priority-high">Высокий</span>';
-    if (p === 1) return '<span class="priority priority-medium">Средний</span>';
+    if (p === 3) return '<span class="priority priority-high">Высокий</span>';
+    if (p === 2) return '<span class="priority priority-medium">Средний</span>';
     return '<span class="priority priority-low">Низкий</span>';
 }
 function haptic(type = 'light') {
@@ -517,7 +517,7 @@ function renderTasks() {
     if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
     if (!tasks || tasks.length === 0) {
         if (state.tasksView === 'active') {
-            html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу». Срок: 25.12.2025 или 25.12.2025 14:30. Приоритет: 0 / 1 / 2.</div></div>`;
+            html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу». Срок: 25.12.2025 или 25.12.2025 14:30. Приоритет: 1 / 2 / 3.</div></div>`;
         } else html += renderEmpty('Нет выполненных задач');
         return html;
     }
@@ -1150,9 +1150,9 @@ async function actionTaskAdd() {
     const due = prompt('Срок (ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ, можно пусто):') || '';
     let due_date = null, due_time = null;
     if (due.trim()) { const parts = due.trim().split(' '); due_date = parts[0]; if (parts[1]) due_time = parts[1]; }
-    const priorityRaw = prompt('Приоритет (0=низкий, 1=средний, 2=высокий):', '1');
+    const priorityRaw = prompt('Приоритет (1=низкий, 2=средний, 3=высокий):', '2');
     let priority = parseInt(priorityRaw, 10);
-    if (![0, 1, 2].includes(priority)) priority = 1;
+    if (![1, 2, 3].includes(priority)) priority = 2;
     try { await apiPost('/api/task-add', { text, due_date, due_time, priority }); haptic('success'); await loadTasks(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
