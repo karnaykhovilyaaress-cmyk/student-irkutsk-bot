@@ -54,8 +54,7 @@ const state = {
     referral: null,
     groups: null,
 
-    // Пикер группы
-    pickerMode: null,      // null | 'institute' | 'course' | 'group'
+    pickerMode: null,
     pickerInstitute: null,
     pickerCourse: null,
     pickerSearch: '',
@@ -159,7 +158,6 @@ function render() {
         profile: 'Профиль',
     };
 
-    // Пикер — на весь экран
     if (state.pickerMode) {
         appEl?.classList.add('picker-open');
         if (title) {
@@ -444,9 +442,7 @@ function getCourseFromGroup(groupName) {
     const m = String(groupName).match(/-(\d{2})-/);
     if (!m) return null;
     const year = parseInt(m[1], 10);
-    const map = {
-        26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6,
-    };
+    const map = { 26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6 };
     return map[year] || null;
 }
 
@@ -1172,7 +1168,7 @@ async function actionDayTomorrow() {
 // ----- ПИКЕР -----
 async function actionChooseGroup() {
     haptic('light');
-    await loadGroups();
+    await loadGroups(true);
     if (!state.groups || Object.keys(state.groups).length === 0) {
         alert('Не удалось загрузить список групп');
         return;
