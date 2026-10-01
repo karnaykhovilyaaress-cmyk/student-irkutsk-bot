@@ -881,3 +881,177 @@ input[type="time"].input::-webkit-calendar-picker-indicator {
 .sch-auto-toggle span {
     flex: 1;
 }
+
+/* ============ GAME: До пары успеть ============ */
+
+.game-card { padding: 16px 18px; }
+.game-stats-row {
+    display: flex;
+    gap: 10px;
+    margin: 12px 0 4px;
+}
+.game-stat {
+    flex: 1;
+    background: var(--bg-3);
+    border-radius: var(--r-md);
+    padding: 12px 10px;
+    text-align: center;
+}
+.game-stat-value {
+    font-size: 26px;
+    font-weight: 900;
+    color: var(--neon);
+    letter-spacing: -0.8px;
+    text-shadow: 0 0 12px var(--neon-glow);
+    line-height: 1;
+}
+.game-stat-label {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-top: 6px;
+}
+
+.game-wrap {
+    position: fixed;
+    inset: 0;
+    background: #070B14;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.game-canvas {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: block;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+}
+.game-hud {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 18px);
+    left: 0;
+    right: 0;
+    text-align: center;
+    pointer-events: none;
+    z-index: 2;
+}
+.game-hud-score {
+    font-size: 58px;
+    font-weight: 900;
+    color: #fff;
+    letter-spacing: -2px;
+    text-shadow: 0 0 24px var(--neon-glow), 0 4px 12px rgba(0,0,0,0.6);
+    line-height: 1;
+}
+.game-hud-best {
+    font-size: 12px;
+    font-weight: 800;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-top: 8px;
+}
+.game-hint {
+    position: absolute;
+    bottom: 15%;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    animation: gameHintPulse 1.6s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 2;
+}
+@keyframes gameHintPulse {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+}
+.game-exit {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    right: 14px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.12);
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: transform 0.15s ease;
+}
+.game-exit:active { transform: scale(0.9); }
+
+.game-result-wrap {
+    padding: 14px 16px 30px;
+}
+.game-result-score-block {
+    text-align: center;
+    padding: 28px 0 20px;
+}
+.game-result-label {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+}
+.game-result-score {
+    font-size: 76px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -3px;
+    background: var(--grad-neon);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 24px var(--neon-glow));
+    margin: 12px 0 14px;
+}
+.game-result-record {
+    display: inline-block;
+    background: linear-gradient(135deg, #FFD700, #FF8C00);
+    color: #070B14;
+    font-size: 11px;
+    font-weight: 900;
+    padding: 6px 16px;
+    border-radius: 999px;
+    letter-spacing: 1.5px;
+    box-shadow: 0 0 20px rgba(255,176,32,0.5);
+    animation: recordPulse 1.4s ease-in-out infinite;
+}
+@keyframes recordPulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.05); }
+}
+.game-result-best {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-2);
+    margin-bottom: 20px;
+}
+.game-top-me {
+    color: var(--neon);
+    font-weight: 800;
+}
