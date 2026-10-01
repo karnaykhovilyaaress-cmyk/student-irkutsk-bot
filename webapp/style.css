@@ -82,7 +82,6 @@ html, body {
     padding-bottom: calc(84px + var(--safe-bottom));
 }
 
-/* Если открыт пикер — скрываем шапку и нижнюю навигацию */
 #app.picker-open .header,
 #app.picker-open .bottom-nav {
     display: none;
