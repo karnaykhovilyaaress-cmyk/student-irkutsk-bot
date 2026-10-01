@@ -31,6 +31,7 @@ const state = {
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
     aiMessages: [], aiPending: false, aiPendingPhoto: null,
     adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
+    gameView: null, gameInfo: null, gameResult: null, gameInstance: null,
 };
 
 async function apiGet(path, params = {}) {
@@ -89,6 +90,24 @@ function render() {
     const navEl = document.getElementById('bottom-nav');
 
     const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
+
+    // GAME — fullscreen (приоритет над всеми остальными экранами)
+    if (state.gameView === 'playing') {
+        appEl?.classList.add('picker-open');
+        if (navEl) navEl.style.display = 'none';
+        content.innerHTML = renderGameScreen();
+        attachHandlers();
+        requestAnimationFrame(() => initGame());
+        return;
+    }
+    if (state.gameView === 'result') {
+        appEl?.classList.add('picker-open');
+        if (title) title.textContent = 'Результат';
+        if (navEl) navEl.style.display = 'none';
+        content.innerHTML = renderGameResult();
+        attachHandlers();
+        return;
+    }
 
     if (state.notifyEditor) {
         appEl?.classList.add('picker-open');
@@ -663,6 +682,8 @@ function renderProfile() {
         </div>`;
     }
 
+    html += renderGameCard();
+
     html += `<div class="card">
         <div class="card-title">Мой ID</div>
         <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
@@ -721,6 +742,379 @@ function renderProfile() {
         <button class="btn" data-action="feedback-send">Отправить</button>
     </div>`;
     return html;
+}
+
+function renderGameCard() {
+    const info = state.gameInfo;
+    const best = info?.best ?? 0;
+    const plays = info?.plays ?? 0;
+
+    let html = `<div class="card game-card">
+        <div class="card-title">До пары успеть</div>
+        <div class="card-subtitle">Пролетай между парами, набирай очки. Тапни — прыжок.</div>
+        <div class="game-stats-row">
+            <div class="game-stat">
+                <div class="game-stat-value">${best}</div>
+                <div class="game-stat-label">Рекорд</div>
+            </div>
+            <div class="game-stat">
+                <div class="game-stat-value">${plays}</div>
+                <div class="game-stat-label">Игр</div>
+            </div>
+        </div>
+        <button class="btn" data-action="game-open" style="width:100%">Играть</button>
+    </div>`;
+    return html;
+}
+
+function renderGameScreen() {
+    const best = state.gameInfo?.best ?? 0;
+    return `
+        <div class="game-wrap" id="game-wrap">
+            <div class="game-hud">
+                <div class="game-hud-score" id="game-score">0</div>
+                <div class="game-hud-best">Рекорд: ${best}</div>
+            </div>
+            <canvas id="game-canvas" class="game-canvas"></canvas>
+            <div class="game-hint" id="game-hint">Тапни, чтобы начать</div>
+            <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
+        </div>
+    `;
+}
+
+function renderGameResult() {
+    const r = state.gameResult;
+    if (!r) return renderEmpty('Нет данных');
+
+    let html = `<div class="game-result-wrap">
+        <div class="game-result-score-block">
+            <div class="game-result-label">Очки</div>
+            <div class="game-result-score">${r.score}</div>
+            ${r.is_record ? '<div class="game-result-record">НОВЫЙ РЕКОРД</div>' : ''}
+        </div>
+        <div class="game-result-best">Рекорд: ${r.best}</div>
+    `;
+
+    if (r.top && r.top.length > 0) {
+        html += `<div class="card"><div class="card-title">Топ игроков</div>`;
+        for (const item of r.top) {
+            const label = item.is_me ? 'Ты' : `Игрок #${String(item.user_id).slice(-4)}`;
+            const cls = item.is_me ? 'game-top-me' : '';
+            html += `<div class="grade-row ${cls}"><span>${item.rank}. ${label}</span><span class="grade-value">${item.score}</span></div>`;
+        }
+        html += `</div>`;
+    }
+
+    html += `<div class="actions-row" style="margin-top:16px">
+        <button class="btn" data-action="game-play-again" style="flex:1">Ещё раз</button>
+        <button class="btn btn-secondary" data-action="game-exit" style="flex:1">В меню</button>
+    </div>
+    </div>`;
+    return html;
+}
+
+function actionGameOpen() {
+    haptic('light');
+    state.gameView = 'playing';
+    state.gameResult = null;
+    state.gameInstance = null;
+    render();
+}
+
+function actionGameExit() {
+    haptic('light');
+    if (state.gameInstance) state.gameInstance.running = false;
+    state.gameInstance = null;
+    state.gameView = null;
+    state.gameResult = null;
+    render();
+}
+
+function actionGamePlayAgain() {
+    haptic('light');
+    state.gameView = 'playing';
+    state.gameResult = null;
+    state.gameInstance = null;
+    render();
+}
+
+async function submitGameScore(score) {
+    try {
+        const r = await apiPost('/api/game/submit', { score });
+        state.gameResult = {
+            score,
+            best: r.best,
+            is_record: r.is_record,
+            top: r.top || [],
+        };
+        state.gameInfo = { best: r.best, plays: r.plays, top: r.top || [] };
+    } catch (e) {
+        state.gameResult = { score, best: score, is_record: false, top: [] };
+    }
+    state.gameInstance = null;
+    state.gameView = 'result';
+    render();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+    if (h < 2 * r) r = h / 2;
+    if (w < 2 * r) r = w / 2;
+    if (r < 0) r = 0;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
+
+function drawBlock(ctx, x, y, w, h) {
+    if (h <= 0 || w <= 0) return;
+    ctx.save();
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, 'rgba(30, 136, 229, 0.35)');
+    grad.addColorStop(0.5, 'rgba(0, 229, 208, 0.35)');
+    grad.addColorStop(1, 'rgba(30, 136, 229, 0.35)');
+    ctx.fillStyle = grad;
+    roundRect(ctx, x, y, w, h, 10);
+    ctx.fill();
+
+    ctx.strokeStyle = '#00E5D0';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#00E5D0';
+    ctx.shadowBlur = 12;
+    roundRect(ctx, x, y, w, h, 10);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = 'rgba(0, 229, 208, 0.85)';
+    ctx.font = 'bold 11px Manrope, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const cx = x + w / 2;
+    for (let ty = y + 34; ty < y + h - 16; ty += 44) {
+        ctx.fillText('ПАРА', cx, ty);
+    }
+    ctx.restore();
+}
+
+function drawObstacle(ctx, o, H) {
+    drawBlock(ctx, o.x, 0, o.w, o.gapY);
+    drawBlock(ctx, o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 229, 208, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(o.x - 4, o.gapY);
+    ctx.lineTo(o.x + o.w + 4, o.gapY);
+    ctx.moveTo(o.x - 4, o.gapY + o.gapH);
+    ctx.lineTo(o.x + o.w + 4, o.gapY + o.gapH);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawPlayer(ctx, p) {
+    ctx.save();
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3);
+    glow.addColorStop(0, 'rgba(0, 229, 208, 0.7)');
+    glow.addColorStop(1, 'rgba(0, 229, 208, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#00E5D0';
+    ctx.shadowColor = '#00E5D0';
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#070B14';
+    ctx.beginPath();
+    ctx.arc(p.x + 5, p.y - 4, 3, 0, Math.PI * 2);
+    ctx.arc(p.x + 12, p.y - 4, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath();
+    ctx.arc(p.x - 4, p.y - 6, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawGame(ctx, game) {
+    const W = game.W, H = game.H;
+    const frame = game.frame;
+
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#08101f');
+    grad.addColorStop(0.55, '#0d1a33');
+    grad.addColorStop(1, '#111c3a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
+    for (let i = 0; i < 30; i++) {
+        const sx = (((i * 173 - frame * 0.4) % (W + 40)) + (W + 40)) % (W + 40) - 20;
+        const sy = (i * 97) % H;
+        const sz = (i % 3) + 1;
+        ctx.fillRect(sx, sy, sz, sz);
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 229, 208, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, H - 1);
+    ctx.lineTo(W, H - 1);
+    ctx.stroke();
+    ctx.restore();
+
+    for (const o of game.obstacles) drawObstacle(ctx, o, H);
+    drawPlayer(ctx, game.player);
+}
+
+function initGame() {
+    if (state.gameInstance) return;
+
+    const canvas = document.getElementById('game-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const W = Math.max(100, rect.width);
+    const H = Math.max(100, rect.height);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const game = {
+        W, H,
+        running: true,
+        over: false,
+        started: false,
+        score: 0,
+        frame: 0,
+        player: { x: W * 0.28, y: H * 0.45, r: 16, vy: 0 },
+        obstacles: [],
+        spawnTimer: 0,
+        spawnInterval: 95,
+        gravity: 0.55,
+        jumpForce: -8.3,
+        speed: 3.1,
+        gap: Math.max(130, Math.min(170, H * 0.32)),
+    };
+
+    state.gameInstance = game;
+
+    function doJump() {
+        if (game.over || !game.running) return;
+        game.started = true;
+        const hint = document.getElementById('game-hint');
+        if (hint) hint.style.display = 'none';
+        game.player.vy = game.jumpForce;
+    }
+
+    function onPointer(e) { e.preventDefault(); doJump(); }
+    function onKey(e) {
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+            e.preventDefault();
+            doJump();
+        }
+    }
+
+    canvas.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+
+    function cleanup() {
+        canvas.removeEventListener('pointerdown', onPointer);
+        document.removeEventListener('keydown', onKey);
+    }
+
+    function gameEnd() {
+        if (game.over) return;
+        game.over = true;
+        game.running = false;
+        cleanup();
+        haptic('error');
+        submitGameScore(game.score);
+    }
+
+    function loop() {
+        if (state.gameInstance !== game || !game.running) return;
+
+        if (game.started) {
+            game.player.vy += game.gravity;
+            if (game.player.vy > 11) game.player.vy = 11;
+            game.player.y += game.player.vy;
+        }
+
+        if (game.player.y - game.player.r < 0) {
+            game.player.y = game.player.r;
+            game.player.vy = 0;
+        }
+        if (game.player.y + game.player.r > H) {
+            game.player.y = H - game.player.r;
+            gameEnd();
+            return;
+        }
+
+        game.spawnTimer++;
+        if (game.started && game.spawnTimer >= game.spawnInterval) {
+            game.spawnTimer = 0;
+            const minGapY = 40;
+            const maxGapY = H - game.gap - 40;
+            const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
+            game.obstacles.push({
+                x: W + 40,
+                w: 62,
+                gapY,
+                gapH: game.gap,
+                passed: false,
+            });
+        }
+
+        for (let i = game.obstacles.length - 1; i >= 0; i--) {
+            const o = game.obstacles[i];
+            if (game.started) o.x -= game.speed;
+
+            const px = game.player.x;
+            const py = game.player.y;
+            const pr = game.player.r;
+
+            if (px + pr > o.x && px - pr < o.x + o.w) {
+                if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) {
+                    gameEnd();
+                    return;
+                }
+            }
+
+            if (!o.passed && o.x + o.w < px) {
+                o.passed = true;
+                game.score++;
+                haptic('light');
+                const scoreEl = document.getElementById('game-score');
+                if (scoreEl) scoreEl.textContent = String(game.score);
+            }
+
+            if (o.x + o.w < -60) game.obstacles.splice(i, 1);
+        }
+
+        drawGame(ctx, game);
+        game.frame++;
+        requestAnimationFrame(loop);
+    }
+
+    drawGame(ctx, game);
+    requestAnimationFrame(loop);
 }
 
 function renderScholarshipCard() {
@@ -1015,11 +1409,17 @@ async function loadAdminFeedback() {
     try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
     catch (e) { state.adminFeedback = []; }
 }
+async function loadGameInfo() {
+    try { state.gameInfo = await apiGet('/api/game/info'); }
+    catch (e) { state.gameInfo = { best: 0, plays: 0, top: [] }; }
+}
 
 async function loadTabData(tab) {
     state.loading = true;
     state.error = null;
     state.notifyEditor = false;
+    state.gameView = null;
+    state.gameInstance = null;
     render();
     try {
         if (tab === 'schedule') {
@@ -1040,8 +1440,7 @@ async function loadTabData(tab) {
             state.scholarshipFilter = 'all';
             state.scholarshipEditor = false;
             state.scholarshipEditorId = null;
-            await loadProfile();
-            await loadScholarship();
+            await Promise.all([loadProfile(), loadScholarship(), loadGameInfo()]);
         }
     } catch (e) { console.error(e); state.error = e.message; }
     state.loading = false;
@@ -1414,6 +1813,9 @@ function handleAction(el) {
     else if (a === 'sch-set-grade') actionScholarshipSetGrade(parseInt(el.dataset.value, 10));
     else if (a === 'sch-pick-subject') actionScholarshipPickSubject(el.dataset.value);
     else if (a === 'sch-filter') actionScholarshipFilter(el.dataset.value);
+    else if (a === 'game-open') actionGameOpen();
+    else if (a === 'game-exit') actionGameExit();
+    else if (a === 'game-play-again') actionGamePlayAgain();
     else if (a === 'ai-send') actionAISend();
     else if (a === 'ai-clear') actionAIClear();
     else if (a === 'ai-photo-open') actionAIPhotoOpen();
