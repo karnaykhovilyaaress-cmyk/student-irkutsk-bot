@@ -21,17 +21,21 @@ const state = {
     tab: 'schedule', loading: false, error: null, user: tgUser, isAdmin: false,
     schedule: null, weekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
     tasks: [], tasksStats: { active: 0, done: 0 }, tasksView: 'active',
+    taskEditor: false, taskEditorId: null, taskEditorText: '', taskEditorDate: '', taskEditorTime: '', taskEditorPriority: 2,
     notes: [],
+    noteEditor: false, noteEditorId: null, noteEditorSubject: '', noteEditorText: '',
     profile: null, scholarship: null, groups: null,
     scholarshipEditor: false, scholarshipEditorId: null,
     scholarshipEditorSubject: '', scholarshipEditorGrade: 0,
-    scholarshipEditorIsAuto: false,
-    scholarshipAvailable: [], scholarshipFilter: 'all',
+    scholarshipEditorIsAuto: false, scholarshipEditorSemester: '',
+    scholarshipAvailable: [], scholarshipFilter: 'all', scholarshipSemesterFilter: 'all',
     pickerMode: null, pickerInstitute: null, pickerCourse: null, pickerSearch: '',
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
-    aiMessages: [], aiPending: false, aiPendingPhoto: null,
+    aiMessages: [], aiPending: false, aiPendingPhoto: null, aiHistoryLoaded: false,
     adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
     gameView: null, gameInfo: null, gameResult: null, gameInstance: null,
+    myFeedback: [], myFeedbackLoaded: false,
+    exportPending: false,
 };
 
 async function apiGet(path, params = {}) {
@@ -83,6 +87,32 @@ function haptic(type = 'light') {
 }
 function formatNotifyTime(hh, mm) { return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; }
 
+function displayToISO(display) {
+    if (!display) return '';
+    const parts = String(display).split('.');
+    if (parts.length !== 3) return '';
+    const [dd, mm, yyyy] = parts;
+    if (dd.length !== 2 || mm.length !== 2 || yyyy.length !== 4) return '';
+    return `${yyyy}-${mm}-${dd}`;
+}
+function isoToDisplay(iso) {
+    if (!iso) return '';
+    const parts = String(iso).split('-');
+    if (parts.length !== 3) return '';
+    const [yyyy, mm, dd] = parts;
+    return `${dd}.${mm}.${yyyy}`;
+}
+
+function currentSemester() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    if (month >= 8) return `Осень ${year}`;
+    if (month === 0) return `Осень ${year - 1}`;
+    if (month >= 1 && month <= 5) return `Весна ${year}`;
+    return `Весна ${year}`;
+}
+
 function render() {
     const content = document.getElementById('content');
     const title = document.getElementById('page-title');
@@ -91,7 +121,6 @@ function render() {
 
     const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
-    // GAME — fullscreen (приоритет над всеми остальными экранами)
     if (state.gameView === 'playing') {
         appEl?.classList.add('picker-open');
         if (navEl) navEl.style.display = 'none';
@@ -105,6 +134,24 @@ function render() {
         if (title) title.textContent = 'Результат';
         if (navEl) navEl.style.display = 'none';
         content.innerHTML = renderGameResult();
+        attachHandlers();
+        return;
+    }
+
+    if (state.taskEditor) {
+        appEl?.classList.add('picker-open');
+        if (title) title.textContent = state.taskEditorId ? 'Изменить задачу' : 'Новая задача';
+        if (navEl) navEl.style.display = 'none';
+        content.innerHTML = renderTaskEditor();
+        attachHandlers();
+        return;
+    }
+
+    if (state.noteEditor) {
+        appEl?.classList.add('picker-open');
+        if (title) title.textContent = state.noteEditorId ? 'Изменить заметку' : 'Новая заметка';
+        if (navEl) navEl.style.display = 'none';
+        content.innerHTML = renderNoteEditor();
         attachHandlers();
         return;
     }
@@ -171,7 +218,41 @@ function render() {
         btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
     attachHandlers();
+    if (state.tab === 'schedule') attachScheduleSwipe();
 }
+
+/* ============ SWIPE ============ */
+
+function attachScheduleSwipe() {
+    const content = document.getElementById('content');
+    if (!content || content.dataset.swipeBound === '1') return;
+    content.dataset.swipeBound = '1';
+    let startX = 0, startY = 0, tracking = false;
+    content.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        tracking = true;
+    }, { passive: true });
+    content.addEventListener('touchend', (e) => {
+        if (!tracking) return;
+        tracking = false;
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+        const dx = endX - startX;
+        const dy = endY - startY;
+        if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
+        if (state.tab !== 'schedule') return;
+        if (state.scheduleViewMode !== 'today') return;
+        if (dx > 0) {
+            if (state.scheduleDay === 'tomorrow') actionDayToday();
+        } else {
+            if (state.scheduleDay === 'today') actionDayTomorrow();
+        }
+    }, { passive: true });
+}
+
+/* ============ USER BAR ============ */
 
 function renderUserBar() {
     const u = state.user;
@@ -203,6 +284,8 @@ function renderUserBar() {
         </div>
     `;
 }
+
+/* ============ SCHEDULE ============ */
 
 function renderLesson(les) {
     const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
@@ -333,6 +416,8 @@ function renderSchedule() {
     return html;
 }
 
+/* ============ GROUP PICKER ============ */
+
 function getCourseFromGroup(groupName) {
     const m = String(groupName).match(/-(\d{2})-/);
     if (!m) return null;
@@ -450,6 +535,8 @@ function pickerAttachSearch() {
     });
 }
 
+/* ============ NOTIFY EDITOR ============ */
+
 function renderNotifyEditor() {
     const cur = state.notifyEditorType;
     const hh = state.notifyEditorHour;
@@ -526,6 +613,18 @@ async function actionNotifyOff() {
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
+async function actionSetNotifyBefore(minutes) {
+    haptic('light');
+    try {
+        await apiPost('/api/notify-set-before', { minutes });
+        if (state.profile) state.profile.notify_before_min = minutes;
+        haptic('success');
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+
+/* ============ TASKS ============ */
+
 function renderTasks() {
     const tasks = state.tasks;
     const stats = state.tasksStats;
@@ -536,7 +635,7 @@ function renderTasks() {
     if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
     if (!tasks || tasks.length === 0) {
         if (state.tasksView === 'active') {
-            html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу». Срок: 25.12.2025 или 25.12.2025 14:30. Приоритет: 1 / 2 / 3.</div></div>`;
+            html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу» — укажи текст, срок и приоритет.</div></div>`;
         } else html += renderEmpty('Нет выполненных задач');
         return html;
     }
@@ -558,6 +657,141 @@ function renderTasks() {
     return html;
 }
 
+function renderTaskEditor() {
+    const isEdit = state.taskEditorId !== null;
+    const p = state.taskEditorPriority;
+    const dueIso = state.taskEditorDate;
+    return `
+        <div class="editor-header">
+            <button class="picker-back" data-action="task-editor-back">←</button>
+            <div class="picker-title">${isEdit ? 'Изменить задачу' : 'Новая задача'}</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Текст задачи</div>
+            <textarea class="input" id="task-text-input" placeholder="Что нужно сделать?" rows="4">${escapeHtml(state.taskEditorText || '')}</textarea>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Срок</div>
+            <div class="card-subtitle">Дата</div>
+            <input type="date" id="task-date-input" class="input" value="${escapeHtml(dueIso)}">
+            <div class="card-subtitle" style="margin-top:8px">Время (необязательно)</div>
+            <input type="time" id="task-time-input" class="input" value="${escapeHtml(state.taskEditorTime || '')}">
+            <div class="actions-row" style="margin-top:8px">
+                <button class="btn btn-secondary" data-action="task-clear-date" style="flex:1">Очистить срок</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Приоритет</div>
+            <div class="task-priority-picker">
+                <button class="task-priority-btn p-low ${p === 1 ? 'active' : ''}" data-action="task-set-priority" data-value="1">Низкий</button>
+                <button class="task-priority-btn p-medium ${p === 2 ? 'active' : ''}" data-action="task-set-priority" data-value="2">Средний</button>
+                <button class="task-priority-btn p-high ${p === 3 ? 'active' : ''}" data-action="task-set-priority" data-value="3">Высокий</button>
+            </div>
+        </div>
+
+        <div class="actions-row" style="margin-top:16px">
+            <button class="btn" data-action="task-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
+            ${isEdit ? `<button class="btn btn-secondary" data-action="task-editor-delete" style="flex:1">Удалить</button>` : ''}
+        </div>
+    `;
+}
+
+function actionTaskAddOpen() {
+    haptic('light');
+    state.taskEditor = true;
+    state.taskEditorId = null;
+    state.taskEditorText = '';
+    state.taskEditorDate = '';
+    state.taskEditorTime = '';
+    state.taskEditorPriority = 2;
+    render();
+}
+
+function actionTaskEditOpen(id) {
+    haptic('light');
+    const t = state.tasks.find(x => x.id === id);
+    if (!t) return;
+    state.taskEditor = true;
+    state.taskEditorId = t.id;
+    state.taskEditorText = t.text || '';
+    state.taskEditorDate = displayToISO(t.due_date || '');
+    state.taskEditorTime = t.due_time || '';
+    state.taskEditorPriority = t.priority || 2;
+    render();
+}
+
+function actionTaskEditorBack() {
+    haptic('light');
+    state.taskEditor = false;
+    state.taskEditorId = null;
+    render();
+}
+
+function actionTaskSetPriority(p) {
+    haptic('light');
+    state.taskEditorPriority = p;
+    render();
+}
+
+function actionTaskClearDate() {
+    haptic('light');
+    state.taskEditorDate = '';
+    state.taskEditorTime = '';
+    render();
+}
+
+async function actionTaskEditorSave() {
+    const textEl = document.getElementById('task-text-input');
+    const dateEl = document.getElementById('task-date-input');
+    const timeEl = document.getElementById('task-time-input');
+
+    const text = (textEl?.value || '').trim();
+    if (!text) { alert('Введи текст задачи'); return; }
+
+    const dateIso = dateEl?.value || '';
+    const due_date = dateIso ? isoToDisplay(dateIso) : null;
+    const due_time = (timeEl?.value || '').trim() || null;
+    const priority = state.taskEditorPriority || 2;
+
+    try {
+        if (state.taskEditorId) {
+            await apiPost('/api/task-update', {
+                id: state.taskEditorId,
+                text,
+                due_date,
+                due_time,
+                priority,
+                reset_due: !due_date,
+            });
+        } else {
+            await apiPost('/api/task-add', { text, due_date, due_time, priority });
+        }
+        haptic('success');
+        state.taskEditor = false;
+        state.taskEditorId = null;
+        await loadTasks();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+
+async function actionTaskEditorDelete() {
+    if (!state.taskEditorId) return;
+    if (!confirm('Удалить задачу?')) return;
+    try {
+        await apiPost('/api/task-delete', { id: state.taskEditorId });
+        haptic('success');
+        state.taskEditor = false;
+        state.taskEditorId = null;
+        await loadTasks();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+
+/* ============ NOTES ============ */
+
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
     if (!state.notes || state.notes.length === 0) {
@@ -576,6 +810,87 @@ function renderNotes() {
     }
     return html;
 }
+
+function renderNoteEditor() {
+    const isEdit = state.noteEditorId !== null;
+    return `
+        <div class="editor-header">
+            <button class="picker-back" data-action="note-editor-back">←</button>
+            <div class="picker-title">${isEdit ? 'Изменить заметку' : 'Новая заметка'}</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Предмет</div>
+            <input class="input" id="note-subject-input" placeholder="Название предмета" value="${escapeHtml(state.noteEditorSubject || '')}" autocomplete="off">
+        </div>
+        <div class="card">
+            <div class="card-title">Текст заметки</div>
+            <textarea class="input note-textarea" id="note-text-input" placeholder="Что записать?" rows="8">${escapeHtml(state.noteEditorText || '')}</textarea>
+        </div>
+        <div class="actions-row" style="margin-top:16px">
+            <button class="btn" data-action="note-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
+            ${isEdit ? `<button class="btn btn-secondary" data-action="note-editor-delete" style="flex:1">Удалить</button>` : ''}
+        </div>
+    `;
+}
+
+function actionNoteAddOpen() {
+    haptic('light');
+    state.noteEditor = true;
+    state.noteEditorId = null;
+    state.noteEditorSubject = '';
+    state.noteEditorText = '';
+    render();
+}
+
+function actionNoteEditOpen(id) {
+    haptic('light');
+    const n = state.notes.find(x => x.id === id);
+    if (!n) return;
+    state.noteEditor = true;
+    state.noteEditorId = n.id;
+    state.noteEditorSubject = n.subject || '';
+    state.noteEditorText = n.text || '';
+    render();
+}
+
+function actionNoteEditorBack() {
+    haptic('light');
+    state.noteEditor = false;
+    state.noteEditorId = null;
+    render();
+}
+
+async function actionNoteEditorSave() {
+    const subjEl = document.getElementById('note-subject-input');
+    const textEl = document.getElementById('note-text-input');
+    const subject = (subjEl?.value || '').trim();
+    const text = (textEl?.value || '').trim();
+    if (!subject) { alert('Введи название предмета'); return; }
+    if (!text) { alert('Введи текст заметки'); return; }
+    try {
+        await apiPost('/api/note-save', { subject, text });
+        haptic('success');
+        state.noteEditor = false;
+        state.noteEditorId = null;
+        await loadNotes();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+
+async function actionNoteEditorDelete() {
+    if (!state.noteEditorId) return;
+    if (!confirm('Удалить заметку?')) return;
+    try {
+        await apiPost('/api/note-delete', { id: state.noteEditorId });
+        haptic('success');
+        state.noteEditor = false;
+        state.noteEditorId = null;
+        await loadNotes();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+
+/* ============ AI ============ */
 
 function renderAI() {
     let html = '';
@@ -617,6 +932,100 @@ function renderAI() {
     return html;
 }
 
+function actionAIClear() {
+    if (!confirm('Очистить историю чата?')) return;
+    haptic('light');
+    state.aiMessages = [];
+    state.aiPendingPhoto = null;
+    apiPost('/api/ai/clear-history').catch(() => {});
+    render();
+}
+
+function actionAIPhotoOpen() {
+    haptic('light');
+    const input = document.getElementById('ai-photo-input');
+    if (input) input.click();
+}
+
+function actionAIPhotoCancel() {
+    haptic('light');
+    state.aiPendingPhoto = null;
+    render();
+}
+
+function actionAIPhotoSelected(file) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { alert('Фото слишком большое (макс 8 МБ)'); return; }
+    if (!file.type.startsWith('image/')) { alert('Нужно изображение'); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxSide = 1600;
+            let w = img.width, h = img.height;
+            if (w > maxSide || h > maxSide) {
+                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
+                else { w = Math.round(w * maxSide / h); h = maxSide; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
+            haptic('light');
+            render();
+        };
+        img.onerror = () => alert('Не удалось прочитать изображение');
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+async function actionAISend() {
+    const el = document.getElementById('ai-input');
+    if (!el) return;
+    const question = (el.value || '').trim();
+    const photo = state.aiPendingPhoto;
+    if (!question && !photo) return;
+
+    if (photo) {
+        state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
+        state.aiPendingPhoto = null;
+        el.value = '';
+        state.aiPending = true;
+        render();
+        try {
+            const r = await apiPost('/api/ai-photo', { photo, question });
+            state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+            haptic('success');
+        } catch (err) {
+            state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
+            haptic('error');
+        } finally {
+            state.aiPending = false;
+            render();
+        }
+        return;
+    }
+
+    state.aiMessages.push({ role: 'user', text: question });
+    el.value = '';
+    state.aiPending = true;
+    render();
+    try {
+        const r = await apiPost('/api/ai', { question });
+        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+        haptic('success');
+    } catch (e) {
+        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
+        haptic('error');
+    } finally {
+        state.aiPending = false;
+        render();
+    }
+}
+
+/* ============ ADMIN ============ */
+
 function renderAdmin() {
     if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
     let html = '';
@@ -655,6 +1064,8 @@ function renderAdmin() {
     } else html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
     return html;
 }
+
+/* ============ PROFILE ============ */
 
 function renderProfile() {
     const p = state.profile;
@@ -722,6 +1133,13 @@ function renderProfile() {
             <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
             <span>Следить за изменениями в расписании</span>
         </label>
+        <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
+        <div class="nbf-buttons">
+            ${[0, 10, 15, 30].map(m => `
+                <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
+                        data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
+            `).join('')}
+        </div>
     </div>`;
 
     html += `<div class="card">
@@ -736,20 +1154,59 @@ function renderProfile() {
 
     html += renderScholarshipCard();
 
+    html += renderMyFeedbackCard();
+
     html += `<div class="card">
         <div class="card-title">Обратная связь</div>
         <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
         <button class="btn" data-action="feedback-send">Отправить</button>
     </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Экспорт данных</div>
+        <div class="export-hint">Скачать все свои данные (задачи, заметки, оценки, обращения) в JSON — бот пришлёт файл в чат.</div>
+        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Отправляю...' : 'Скачать JSON'}</button>
+    </div>`;
+
     return html;
 }
+
+function renderMyFeedbackCard() {
+    if (!state.myFeedbackLoaded) {
+        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Загрузка...</div></div>`;
+    }
+    if (!state.myFeedback || state.myFeedback.length === 0) {
+        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Ты ещё не писал админу.</div></div>`;
+    }
+    let html = `<div class="card"><div class="card-title">Мои обращения</div>`;
+    for (const f of state.myFeedback) {
+        let statusLabel = 'В обработке';
+        let statusCls = 'new';
+        if (f.status === 'answered') { statusLabel = 'Отвечено'; statusCls = 'answered'; }
+        else if (f.status === 'postponed') { statusLabel = 'Отложено'; statusCls = 'postponed'; }
+
+        const dateStr = (f.created_at || '').slice(0, 10);
+        html += `<div class="fb-item">
+            <div class="fb-item-head">
+                <span class="fb-date">${escapeHtml(dateStr)}</span>
+                <span class="fb-status ${statusCls}">${statusLabel}</span>
+            </div>
+            <div class="fb-text">${escapeHtml(f.text)}</div>
+            ${f.admin_reply ? `<div class="fb-reply"><div class="fb-reply-label">Ответ</div>${escapeHtml(f.admin_reply)}</div>` : ''}
+        </div>`;
+    }
+    html += `</div>`;
+    return html;
+}
+
+/* ============ GAME CARD + SCREEN ============ */
 
 function renderGameCard() {
     const info = state.gameInfo;
     const best = info?.best ?? 0;
     const plays = info?.plays ?? 0;
 
-    let html = `<div class="card game-card">
+    return `<div class="card game-card">
         <div class="card-title">До пары успеть</div>
         <div class="card-subtitle">Пролетай между парами, набирай очки. Тапни — прыжок.</div>
         <div class="game-stats-row">
@@ -764,7 +1221,6 @@ function renderGameCard() {
         </div>
         <button class="btn" data-action="game-open" style="width:100%">Играть</button>
     </div>`;
-    return html;
 }
 
 function renderGameScreen() {
@@ -798,9 +1254,9 @@ function renderGameResult() {
     if (r.top && r.top.length > 0) {
         html += `<div class="card"><div class="card-title">Топ игроков</div>`;
         for (const item of r.top) {
-            const label = item.is_me ? 'Ты' : `Игрок #${String(item.user_id).slice(-4)}`;
             const cls = item.is_me ? 'game-top-me' : '';
-            html += `<div class="grade-row ${cls}"><span>${item.rank}. ${label}</span><span class="grade-value">${item.score}</span></div>`;
+            const name = item.display || `Игрок #${String(item.user_id).slice(-4)}`;
+            html += `<div class="grade-row ${cls}"><span>${item.rank}. ${escapeHtml(name)}</span><span class="grade-value">${item.score}</span></div>`;
         }
         html += `</div>`;
     }
@@ -948,8 +1404,7 @@ function drawPlayer(ctx, p) {
 }
 
 function drawGame(ctx, game) {
-    const W = game.W, H = game.H;
-    const frame = game.frame;
+    const W = game.W, H = game.H, frame = game.frame;
 
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, '#08101f');
@@ -1073,22 +1528,14 @@ function initGame() {
             const minGapY = 40;
             const maxGapY = H - game.gap - 40;
             const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
-            game.obstacles.push({
-                x: W + 40,
-                w: 62,
-                gapY,
-                gapH: game.gap,
-                passed: false,
-            });
+            game.obstacles.push({ x: W + 40, w: 62, gapY, gapH: game.gap, passed: false });
         }
 
         for (let i = game.obstacles.length - 1; i >= 0; i--) {
             const o = game.obstacles[i];
             if (game.started) o.x -= game.speed;
 
-            const px = game.player.x;
-            const py = game.player.y;
-            const pr = game.player.r;
+            const px = game.player.x, py = game.player.y, pr = game.player.r;
 
             if (px + pr > o.x && px - pr < o.x + o.w) {
                 if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) {
@@ -1117,19 +1564,31 @@ function initGame() {
     requestAnimationFrame(loop);
 }
 
+/* ============ SCHOLARSHIP ============ */
+
 function renderScholarshipCard() {
     const s = state.scholarship;
-
     let html = `<div class="card"><div class="card-title">Стипендия</div>`;
-
-    if (!s) {
-        html += `<div class="card-subtitle">Загрузка...</div></div>`;
-        return html;
-    }
+    if (!s) { html += `<div class="card-subtitle">Загрузка...</div></div>`; return html; }
 
     html += `<div class="card-subtitle">Текущая сумма: ${s.amount !== null && s.amount !== undefined ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
 
-    if (s.grades.length === 0) {
+    const semesters = s.semesters || [];
+    if (semesters.length > 0) {
+        html += `<div class="sem-selector">
+            <button class="sem-chip ${state.scholarshipSemesterFilter === 'all' ? 'active' : ''}" data-action="sem-filter" data-value="all">Все</button>
+            ${semesters.map(sem => `
+                <button class="sem-chip ${state.scholarshipSemesterFilter === sem ? 'active' : ''}" data-action="sem-filter" data-value="${escapeHtml(sem)}">${escapeHtml(sem)}</button>
+            `).join('')}
+        </div>`;
+    }
+
+    const allGrades = s.grades || [];
+    const grades = state.scholarshipSemesterFilter === 'all'
+        ? allGrades
+        : allGrades.filter(g => (g.semester || '') === state.scholarshipSemesterFilter);
+
+    if (allGrades.length === 0) {
         html += `<div class="sch-empty">Оценок пока нет. Добавь первую — увидишь средний балл и прогноз по стипендии.</div>`;
         html += `<div class="actions-row" style="margin-top:12px">
             <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
@@ -1138,36 +1597,39 @@ function renderScholarshipCard() {
         return html;
     }
 
+    const cnt5 = grades.filter(g => g.grade === 5).length;
+    const cnt4 = grades.filter(g => g.grade === 4).length;
+    const cnt3 = grades.filter(g => g.grade === 3).length;
+    const cnt2 = grades.filter(g => g.grade === 2).length;
+    const cntAuto = grades.filter(g => g.is_auto).length;
+    const avg = grades.length > 0 ? grades.reduce((a, g) => a + g.grade, 0) / grades.length : 0;
+
     html += `<div class="sch-avg-block">
-        <div class="sch-avg-value">${s.avg}</div>
-        <div class="sch-avg-label">средний балл · ${s.grades.length} ${pluralSubjects(s.grades.length)}${s.count_auto > 0 ? ` · автоматов: ${s.count_auto}` : ''}</div>
+        <div class="sch-avg-value">${avg.toFixed(2)}</div>
+        <div class="sch-avg-label">средний балл · ${grades.length} ${pluralSubjects(grades.length)}${cntAuto > 0 ? ` · автоматов: ${cntAuto}` : ''}</div>
     </div>`;
 
     html += `<div class="sch-filters">
-        <button class="sch-filter ${state.scholarshipFilter === 'all' ? 'active' : ''}" data-action="sch-filter" data-value="all">Все · ${s.grades.length}</button>
-        ${s.count_auto > 0 ? `<button class="sch-filter sch-filter-auto ${state.scholarshipFilter === 'auto' ? 'active' : ''}" data-action="sch-filter" data-value="auto">Автоматы · ${s.count_auto}</button>` : ''}
-        ${s.count5 > 0 ? `<button class="sch-filter grade-5 ${state.scholarshipFilter === '5' ? 'active' : ''}" data-action="sch-filter" data-value="5">5 · ${s.count5}</button>` : ''}
-        ${s.count4 > 0 ? `<button class="sch-filter grade-4 ${state.scholarshipFilter === '4' ? 'active' : ''}" data-action="sch-filter" data-value="4">4 · ${s.count4}</button>` : ''}
-        ${s.count3 > 0 ? `<button class="sch-filter grade-3 ${state.scholarshipFilter === '3' ? 'active' : ''}" data-action="sch-filter" data-value="3">3 · ${s.count3}</button>` : ''}
-        ${s.count2 > 0 ? `<button class="sch-filter grade-2 ${state.scholarshipFilter === '2' ? 'active' : ''}" data-action="sch-filter" data-value="2">2 · ${s.count2}</button>` : ''}
+        <button class="sch-filter ${state.scholarshipFilter === 'all' ? 'active' : ''}" data-action="sch-filter" data-value="all">Все · ${grades.length}</button>
+        ${cntAuto > 0 ? `<button class="sch-filter sch-filter-auto ${state.scholarshipFilter === 'auto' ? 'active' : ''}" data-action="sch-filter" data-value="auto">Автоматы · ${cntAuto}</button>` : ''}
+        ${cnt5 > 0 ? `<button class="sch-filter grade-5 ${state.scholarshipFilter === '5' ? 'active' : ''}" data-action="sch-filter" data-value="5">5 · ${cnt5}</button>` : ''}
+        ${cnt4 > 0 ? `<button class="sch-filter grade-4 ${state.scholarshipFilter === '4' ? 'active' : ''}" data-action="sch-filter" data-value="4">4 · ${cnt4}</button>` : ''}
+        ${cnt3 > 0 ? `<button class="sch-filter grade-3 ${state.scholarshipFilter === '3' ? 'active' : ''}" data-action="sch-filter" data-value="3">3 · ${cnt3}</button>` : ''}
+        ${cnt2 > 0 ? `<button class="sch-filter grade-2 ${state.scholarshipFilter === '2' ? 'active' : ''}" data-action="sch-filter" data-value="2">2 · ${cnt2}</button>` : ''}
     </div>`;
 
-    if (s.forecast) {
-        const isBad = s.count2 > 0 || s.count3 > 0 || (s.grades.length && s.avg < 4.0);
+    if (state.scholarshipSemesterFilter === 'all' && s.forecast) {
+        const isBad = cnt2 > 0 || cnt3 > 0 || (grades.length && avg < 4.0);
         html += `<div class="sch-forecast ${isBad ? 'bad' : 'good'}">${escapeHtml(s.forecast)}</div>`;
     }
 
-    let filtered = s.grades;
-    if (state.scholarshipFilter === 'auto') {
-        filtered = s.grades.filter(g => g.is_auto);
-    } else if (state.scholarshipFilter !== 'all') {
-        filtered = s.grades.filter(g => String(g.grade) === state.scholarshipFilter);
-    }
+    let filtered = grades;
+    if (state.scholarshipFilter === 'auto') filtered = grades.filter(g => g.is_auto);
+    else if (state.scholarshipFilter !== 'all') filtered = grades.filter(g => String(g.grade) === state.scholarshipFilter);
 
     html += `<div class="sch-list">`;
-    if (filtered.length === 0) {
-        html += `<div class="sch-empty">Нет оценок с таким фильтром</div>`;
-    } else {
+    if (filtered.length === 0) html += `<div class="sch-empty">Нет оценок с таким фильтром</div>`;
+    else {
         for (const g of filtered) {
             html += `<button class="sch-item" data-action="sch-edit" data-id="${g.id}">
                 <div class="sch-item-subject">
@@ -1186,7 +1648,6 @@ function renderScholarshipCard() {
         <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
         <button class="btn" data-action="sch-add-new" style="flex:1">+ Оценка</button>
     </div>`;
-
     html += `</div>`;
     return html;
 }
@@ -1204,6 +1665,7 @@ function renderScholarshipEditor() {
     const subject = state.scholarshipEditorSubject || '';
     const grade = state.scholarshipEditorGrade;
     const isAuto = state.scholarshipEditorIsAuto;
+    const semester = state.scholarshipEditorSemester || currentSemester();
 
     let html = `
         <div class="picker-header">
@@ -1230,6 +1692,11 @@ function renderScholarshipEditor() {
     }
 
     html += `</div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Семестр</div>
+        <input class="input" id="sch-semester-input" placeholder="Например: Осень 2026" value="${escapeHtml(semester)}">
+    </div>`;
 
     html += `<div class="card">
         <div class="card-title">Оценка</div>
@@ -1260,6 +1727,7 @@ function actionScholarshipAdd() {
     state.scholarshipEditorSubject = '';
     state.scholarshipEditorGrade = 5;
     state.scholarshipEditorIsAuto = false;
+    state.scholarshipEditorSemester = currentSemester();
     render();
 }
 
@@ -1272,6 +1740,7 @@ function actionScholarshipEdit(id) {
     state.scholarshipEditorSubject = g.subject;
     state.scholarshipEditorGrade = g.grade;
     state.scholarshipEditorIsAuto = !!g.is_auto;
+    state.scholarshipEditorSemester = g.semester || currentSemester();
     render();
 }
 
@@ -1279,18 +1748,13 @@ function actionScholarshipBack() {
     haptic('light');
     state.scholarshipEditor = false;
     state.scholarshipEditorId = null;
-    state.scholarshipEditorSubject = '';
-    state.scholarshipEditorGrade = 0;
-    state.scholarshipEditorIsAuto = false;
     render();
 }
 
 function actionScholarshipSetGrade(g) {
     haptic('light');
     state.scholarshipEditorGrade = g;
-    document.querySelectorAll('.sch-grade-btn').forEach(b => {
-        b.classList.toggle('active', parseInt(b.dataset.value, 10) === g);
-    });
+    render();
 }
 
 function actionScholarshipPickSubject(s) {
@@ -1301,43 +1765,31 @@ function actionScholarshipPickSubject(s) {
 }
 
 async function actionScholarshipSave() {
-    const input = document.getElementById('sch-subject-input');
-    const subject = input ? input.value.trim() : (state.scholarshipEditorSubject || '').trim();
+    const subjEl = document.getElementById('sch-subject-input');
+    const semEl = document.getElementById('sch-semester-input');
+    const subject = (subjEl?.value || '').trim();
     const grade = state.scholarshipEditorGrade;
     const isAuto = state.scholarshipEditorIsAuto;
+    const semester = (semEl?.value || '').trim() || null;
 
-    if (!subject) {
-        alert('Введи название предмета');
-        return;
-    }
-    if (![2, 3, 4, 5].includes(grade)) {
-        alert('Выбери оценку');
-        return;
-    }
+    if (!subject) { alert('Введи название предмета'); return; }
+    if (![2, 3, 4, 5].includes(grade)) { alert('Выбери оценку'); return; }
 
     try {
         if (state.scholarshipEditorId) {
             await apiPost('/api/scholarship-update-grade', {
                 id: state.scholarshipEditorId,
-                subject,
-                grade,
-                is_auto: isAuto,
+                subject, grade, is_auto: isAuto, semester,
             });
         } else {
-            await apiPost('/api/scholarship-add-grade', { subject, grade, is_auto: isAuto });
+            await apiPost('/api/scholarship-add-grade', { subject, grade, is_auto: isAuto, semester });
         }
         haptic('success');
         state.scholarshipEditor = false;
         state.scholarshipEditorId = null;
-        state.scholarshipEditorSubject = '';
-        state.scholarshipEditorGrade = 0;
-        state.scholarshipEditorIsAuto = false;
         await loadScholarship();
         render();
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
 async function actionScholarshipDeleteGrade() {
@@ -1348,15 +1800,9 @@ async function actionScholarshipDeleteGrade() {
         haptic('success');
         state.scholarshipEditor = false;
         state.scholarshipEditorId = null;
-        state.scholarshipEditorSubject = '';
-        state.scholarshipEditorGrade = 0;
-        state.scholarshipEditorIsAuto = false;
         await loadScholarship();
         render();
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + e.message);
-    }
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
 function actionScholarshipFilter(f) {
@@ -1364,6 +1810,34 @@ function actionScholarshipFilter(f) {
     state.scholarshipFilter = f;
     render();
 }
+
+function actionSemesterFilter(sem) {
+    haptic('light');
+    state.scholarshipSemesterFilter = sem;
+    state.scholarshipFilter = 'all';
+    render();
+}
+
+async function actionScholarshipSetAmount() {
+    const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
+    if (amount === null) return;
+    try {
+        await apiPost('/api/scholarship-set-amount', { amount: parseInt(amount) || 0 });
+        haptic('success'); await loadScholarship(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function actionScholarshipClear() {
+    const sem = state.scholarshipSemesterFilter === 'all' ? null : state.scholarshipSemesterFilter;
+    const msg = sem ? `Очистить оценки за «${sem}»?` : 'Очистить ВСЕ оценки (за все семестры)?';
+    if (!confirm(msg)) return;
+    try {
+        await apiPost('/api/scholarship-clear', { semester: sem });
+        haptic('success'); await loadScholarship(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+/* ============ LOADERS ============ */
 
 async function loadSchedule() {
     try { state.schedule = await apiGet('/api/schedule'); }
@@ -1391,10 +1865,11 @@ async function loadScholarship() {
     try {
         state.scholarship = await apiGet('/api/scholarship');
         state.scholarshipAvailable = state.scholarship?.available_subjects || [];
-    } catch (e) {
-        state.scholarship = null;
-        state.scholarshipAvailable = [];
-    }
+        if (state.scholarshipSemesterFilter !== 'all') {
+            const list = state.scholarship?.semesters || [];
+            if (!list.includes(state.scholarshipSemesterFilter)) state.scholarshipSemesterFilter = 'all';
+        }
+    } catch (e) { state.scholarship = null; state.scholarshipAvailable = []; }
 }
 async function loadGroups(force = false) {
     if (state.groups && !force) return;
@@ -1413,11 +1888,28 @@ async function loadGameInfo() {
     try { state.gameInfo = await apiGet('/api/game/info'); }
     catch (e) { state.gameInfo = { best: 0, plays: 0, top: [] }; }
 }
+async function loadAiHistory() {
+    try {
+        const r = await apiGet('/api/ai/history');
+        const items = r.items || [];
+        state.aiMessages = items.map(it => ({ role: it.role, text: it.text, photo: null, has_photo: it.has_photo }));
+        state.aiHistoryLoaded = true;
+    } catch (e) { state.aiMessages = []; state.aiHistoryLoaded = true; }
+}
+async function loadMyFeedback() {
+    try {
+        const r = await apiGet('/api/feedback/my');
+        state.myFeedback = r.items || [];
+        state.myFeedbackLoaded = true;
+    } catch (e) { state.myFeedback = []; state.myFeedbackLoaded = true; }
+}
 
 async function loadTabData(tab) {
     state.loading = true;
     state.error = null;
     state.notifyEditor = false;
+    state.taskEditor = false;
+    state.noteEditor = false;
     state.gameView = null;
     state.gameInstance = null;
     render();
@@ -1432,20 +1924,26 @@ async function loadTabData(tab) {
             ensureWeekLoaded().catch(() => {});
         } else if (tab === 'tasks') await loadTasks();
         else if (tab === 'notes') await loadNotes();
-        else if (tab === 'ai') await loadProfile();
-        else if (tab === 'admin') {
+        else if (tab === 'ai') {
+            await loadProfile();
+            await loadAiHistory();
+        } else if (tab === 'admin') {
             await loadProfile();
             if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
         } else if (tab === 'profile') {
             state.scholarshipFilter = 'all';
+            state.scholarshipSemesterFilter = 'all';
             state.scholarshipEditor = false;
             state.scholarshipEditorId = null;
-            await Promise.all([loadProfile(), loadScholarship(), loadGameInfo()]);
+            state.myFeedbackLoaded = false;
+            await Promise.all([loadProfile(), loadScholarship(), loadGameInfo(), loadMyFeedback()]);
         }
     } catch (e) { console.error(e); state.error = e.message; }
     state.loading = false;
     render();
 }
+
+/* ============ ACTIONS (misc) ============ */
 
 async function loadWeekAndRender() {
     try {
@@ -1519,8 +2017,15 @@ async function actionFeedbackSend() {
     if (!el) return;
     const text = (el.value || '').trim();
     if (!text) return;
-    try { await apiPost('/api/feedback', { text }); el.value = ''; haptic('success'); alert('Отправлено'); }
-    catch (e) { alert('Ошибка: ' + e.message); }
+    try {
+        await apiPost('/api/feedback', { text });
+        el.value = '';
+        haptic('success');
+        alert('Отправлено');
+        state.myFeedbackLoaded = false;
+        await loadMyFeedback();
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionTaskDone(id) {
     try { await apiPost('/api/task-update', { id, done: true }); haptic('success'); popEmoji('✅'); await loadTasks(); render(); }
@@ -1543,153 +2048,28 @@ async function actionTasksClear() {
     try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
-async function actionTaskAdd() {
-    const text = prompt('Текст задачи:');
-    if (!text) return;
-    const due = prompt('Срок (ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ, можно пусто):') || '';
-    let due_date = null, due_time = null;
-    if (due.trim()) { const parts = due.trim().split(' '); due_date = parts[0]; if (parts[1]) due_time = parts[1]; }
-    const priorityRaw = prompt('Приоритет (1=низкий, 2=средний, 3=высокий):', '2');
-    let priority = parseInt(priorityRaw, 10);
-    if (![1, 2, 3].includes(priority)) priority = 2;
-    try { await apiPost('/api/task-add', { text, due_date, due_time, priority }); haptic('success'); await loadTasks(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionTaskEdit(id) {
-    const newText = prompt('Новый текст задачи:');
-    if (!newText) return;
-    try { await apiPost('/api/task-update', { id, text: newText }); haptic('success'); await loadTasks(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
 async function actionNoteDelete(id) {
     if (!confirm('Удалить заметку?')) return;
     try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
-async function actionNoteAdd() {
-    const subject = prompt('Название предмета:');
-    if (!subject) return;
-    const text = prompt('Текст заметки:');
-    if (!text) return;
-    try { await apiPost('/api/note-save', { subject, text }); haptic('success'); await loadNotes(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionNoteEdit(id) {
-    const text = prompt('Новый текст заметки:');
-    if (!text) return;
-    const note = state.notes.find(n => n.id === id);
-    if (!note) return;
-    try { await apiPost('/api/note-save', { subject: note.subject, text }); haptic('success'); await loadNotes(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionScholarshipSetAmount() {
-    const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
-    if (amount === null) return;
-    try { await apiPost('/api/scholarship-set-amount', { amount: parseInt(amount) || 0 }); haptic('success'); await loadScholarship(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionScholarshipClear() {
-    if (!confirm('Очистить все оценки?')) return;
-    try { await apiPost('/api/scholarship-clear'); haptic('success'); await loadScholarship(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
 
-async function actionAISend() {
-    const el = document.getElementById('ai-input');
-    if (!el) return;
-    const question = (el.value || '').trim();
-    const photo = state.aiPendingPhoto;
-
-    if (!question && !photo) return;
-
-    if (photo) {
-        state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
-        state.aiPendingPhoto = null;
-        el.value = '';
-        state.aiPending = true;
-        render();
-        try {
-            const r = await apiPost('/api/ai-photo', { photo, question });
-            state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
-            haptic('success');
-        } catch (err) {
-            state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
-            haptic('error');
-        } finally {
-            state.aiPending = false;
-            render();
-        }
-        return;
-    }
-
-    state.aiMessages.push({ role: 'user', text: question });
-    el.value = '';
-    state.aiPending = true;
+async function actionExportData() {
+    if (state.exportPending) return;
+    state.exportPending = true;
     render();
+    haptic('light');
     try {
-        const r = await apiPost('/api/ai', { question });
-        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+        await apiPost('/api/export');
         haptic('success');
+        alert('Файл отправлен в чат с ботом');
     } catch (e) {
-        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
         haptic('error');
+        alert('Ошибка: ' + e.message);
     } finally {
-        state.aiPending = false;
+        state.exportPending = false;
         render();
     }
-}
-
-function actionAIClear() {
-    state.aiMessages = [];
-    state.aiPendingPhoto = null;
-    render();
-}
-
-function actionAIPhotoOpen() {
-    haptic('light');
-    const input = document.getElementById('ai-photo-input');
-    if (input) input.click();
-}
-
-function actionAIPhotoCancel() {
-    haptic('light');
-    state.aiPendingPhoto = null;
-    render();
-}
-
-function actionAIPhotoSelected(file) {
-    if (!file) return;
-    if (file.size > 8 * 1024 * 1024) {
-        alert('Фото слишком большое (макс 8 МБ)');
-        return;
-    }
-    if (!file.type.startsWith('image/')) {
-        alert('Нужно изображение');
-        return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-            const maxSide = 1600;
-            let w = img.width;
-            let h = img.height;
-            if (w > maxSide || h > maxSide) {
-                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
-                else       { w = Math.round(w * maxSide / h); h = maxSide; }
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
-            haptic('light');
-            render();
-        };
-        img.onerror = () => alert('Не удалось прочитать изображение');
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
 }
 
 async function actionForgetGroup() {
@@ -1742,6 +2122,8 @@ async function actionAdminFbPostpone(fid) {
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
+/* ============ HANDLERS ============ */
+
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         el.addEventListener('click', () => handleAction(el));
@@ -1756,9 +2138,7 @@ function attachHandlers() {
                 if (state.profile) state.profile.notify_changes = val;
                 haptic('success');
             } catch (err) {
-                haptic('error');
-                alert('Ошибка: ' + err.message);
-                e.target.checked = !val;
+                haptic('error'); alert('Ошибка: ' + err.message); e.target.checked = !val;
             }
         });
     }
@@ -1790,18 +2170,28 @@ function attachHandlers() {
 
 function handleAction(el) {
     const a = el.dataset.action;
-    if (a === 'set-subgroup') actionSetSubgroup(parseInt(el.dataset.value));
-    else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(el.dataset.value));
+    const v = el.dataset.value;
+
+    if (a === 'set-subgroup') actionSetSubgroup(parseInt(v));
+    else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(v));
     else if (a === 'feedback-send') actionFeedbackSend();
     else if (a === 'task-done') actionTaskDone(parseInt(el.dataset.id));
     else if (a === 'task-delete') actionTaskDelete(parseInt(el.dataset.id));
-    else if (a === 'task-add-open') actionTaskAdd();
-    else if (a === 'task-edit-open') actionTaskEdit(parseInt(el.dataset.id));
+    else if (a === 'task-add-open') actionTaskAddOpen();
+    else if (a === 'task-edit-open') actionTaskEditOpen(parseInt(el.dataset.id));
+    else if (a === 'task-editor-back') actionTaskEditorBack();
+    else if (a === 'task-editor-save') actionTaskEditorSave();
+    else if (a === 'task-editor-delete') actionTaskEditorDelete();
+    else if (a === 'task-set-priority') actionTaskSetPriority(parseInt(v));
+    else if (a === 'task-clear-date') actionTaskClearDate();
     else if (a === 'tasks-clear') actionTasksClear();
     else if (a === 'tasks-show-active') { state.tasksView = 'active'; loadTasks().then(render); }
     else if (a === 'tasks-show-done') { state.tasksView = 'done'; loadTasks().then(render); }
-    else if (a === 'note-add-open') actionNoteAdd();
-    else if (a === 'note-edit-open') actionNoteEdit(parseInt(el.dataset.id));
+    else if (a === 'note-add-open') actionNoteAddOpen();
+    else if (a === 'note-edit-open') actionNoteEditOpen(parseInt(el.dataset.id));
+    else if (a === 'note-editor-back') actionNoteEditorBack();
+    else if (a === 'note-editor-save') actionNoteEditorSave();
+    else if (a === 'note-editor-delete') actionNoteEditorDelete();
     else if (a === 'note-delete') actionNoteDelete(parseInt(el.dataset.id));
     else if (a === 'sch-set-amount-open') actionScholarshipSetAmount();
     else if (a === 'sch-clear') actionScholarshipClear();
@@ -1810,9 +2200,12 @@ function handleAction(el) {
     else if (a === 'sch-editor-back') actionScholarshipBack();
     else if (a === 'sch-editor-save') actionScholarshipSave();
     else if (a === 'sch-editor-delete') actionScholarshipDeleteGrade();
-    else if (a === 'sch-set-grade') actionScholarshipSetGrade(parseInt(el.dataset.value, 10));
-    else if (a === 'sch-pick-subject') actionScholarshipPickSubject(el.dataset.value);
-    else if (a === 'sch-filter') actionScholarshipFilter(el.dataset.value);
+    else if (a === 'sch-set-grade') actionScholarshipSetGrade(parseInt(v, 10));
+    else if (a === 'sch-pick-subject') actionScholarshipPickSubject(v);
+    else if (a === 'sch-filter') actionScholarshipFilter(v);
+    else if (a === 'sem-filter') actionSemesterFilter(v);
+    else if (a === 'notify-set-before') actionSetNotifyBefore(parseInt(v, 10));
+    else if (a === 'export-data') actionExportData();
     else if (a === 'game-open') actionGameOpen();
     else if (a === 'game-exit') actionGameExit();
     else if (a === 'game-play-again') actionGamePlayAgain();
@@ -1824,12 +2217,12 @@ function handleAction(el) {
     else if (a === 'forget-group') actionForgetGroup();
     else if (a === 'copy-my-id') actionCopyMyId();
     else if (a === 'picker-back') actionPickerBack();
-    else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
-    else if (a === 'picker-choose-course') actionPickerChooseCourse(el.dataset.value);
+    else if (a === 'picker-choose-institute') actionPickerChooseInstitute(v);
+    else if (a === 'picker-choose-course') actionPickerChooseCourse(v);
     else if (a === 'picker-choose-group') actionPickerChooseGroup(el.dataset.id, el.dataset.name);
     else if (a === 'notify-open') actionOpenNotifyEditor();
     else if (a === 'notify-back') actionNotifyBack();
-    else if (a === 'notify-set-type') actionNotifySetType(el.dataset.value);
+    else if (a === 'notify-set-type') actionNotifySetType(v);
     else if (a === 'notify-save') actionNotifySave();
     else if (a === 'notify-off') actionNotifyOff();
     else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
