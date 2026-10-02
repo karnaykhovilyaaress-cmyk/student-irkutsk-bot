@@ -109,7 +109,6 @@ function currentSemester() {
     const month = now.getMonth();
     if (month >= 8) return `Осень ${year}`;
     if (month === 0) return `Осень ${year - 1}`;
-    if (month >= 1 && month <= 5) return `Весна ${year}`;
     return `Весна ${year}`;
 }
 
@@ -137,7 +136,6 @@ function render() {
         attachHandlers();
         return;
     }
-
     if (state.taskEditor) {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = state.taskEditorId ? 'Изменить задачу' : 'Новая задача';
@@ -146,7 +144,6 @@ function render() {
         attachHandlers();
         return;
     }
-
     if (state.noteEditor) {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = state.noteEditorId ? 'Изменить заметку' : 'Новая заметка';
@@ -155,7 +152,6 @@ function render() {
         attachHandlers();
         return;
     }
-
     if (state.notifyEditor) {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = 'Уведомления';
@@ -164,7 +160,6 @@ function render() {
         attachHandlers();
         return;
     }
-
     if (state.scholarshipEditor) {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = state.scholarshipEditorId ? 'Изменить оценку' : 'Новая оценка';
@@ -173,7 +168,6 @@ function render() {
         attachHandlers();
         return;
     }
-
     if (state.pickerMode) {
         appEl?.classList.add('picker-open');
         if (title) {
@@ -222,8 +216,6 @@ function render() {
     if (state.tab === 'schedule') attachScheduleSwipe();
 }
 
-/* ============ SWIPE ============ */
-
 function attachScheduleSwipe() {
     const content = document.getElementById('content');
     if (!content || content.dataset.swipeBound === '1') return;
@@ -238,22 +230,14 @@ function attachScheduleSwipe() {
     content.addEventListener('touchend', (e) => {
         if (!tracking) return;
         tracking = false;
-        const endX = e.changedTouches[0].clientX;
-        const endY = e.changedTouches[0].clientY;
-        const dx = endX - startX;
-        const dy = endY - startY;
+        const dx = e.changedTouches[0].clientX - startX;
+        const dy = e.changedTouches[0].clientY - startY;
         if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
-        if (state.tab !== 'schedule') return;
-        if (state.scheduleViewMode !== 'today') return;
-        if (dx > 0) {
-            if (state.scheduleDay === 'tomorrow') actionDayToday();
-        } else {
-            if (state.scheduleDay === 'today') actionDayTomorrow();
-        }
+        if (state.tab !== 'schedule' || state.scheduleViewMode !== 'today') return;
+        if (dx > 0) { if (state.scheduleDay === 'tomorrow') actionDayToday(); }
+        else { if (state.scheduleDay === 'today') actionDayTomorrow(); }
     }, { passive: true });
 }
-
-/* ============ USER BAR ============ */
 
 function renderUserBar() {
     const u = state.user;
@@ -265,7 +249,6 @@ function renderUserBar() {
     if (u.username) metaParts.push('@' + u.username);
     const meta = metaParts.join(' · ') || 'профиль не заполнен';
     const tasks = p?.tasks_active ?? 0;
-
     return `
         <div class="user-bar" data-action="go-profile">
             <div class="user-bar-avatar">${escapeHtml(initials)}</div>
@@ -286,13 +269,16 @@ function renderUserBar() {
     `;
 }
 
-/* ============ SCHEDULE ============ */
-
 function renderLesson(les) {
     const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
     const details = [];
     if (les.teacher) details.push(escapeHtml(les.teacher));
     if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
+
+    const att = les.attendance || '';
+    const attLabel = att === 'was' ? '✓' : att === 'missed' ? '✗' : att === 'sick' ? 'Б' : '';
+    const attCls = att || '';
+
     return `
         <div class="lesson">
             <div class="lesson-time">${escapeHtml(timeRange)}</div>
@@ -301,6 +287,13 @@ function renderLesson(les) {
                 ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
                 ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
             </div>
+            <button class="lesson-status ${attCls}"
+                    data-action="lesson-status"
+                    data-date="${escapeHtml(les.date || '')}"
+                    data-time="${escapeHtml(les.time || '')}"
+                    data-subject="${escapeHtml(les.subject || '')}"
+                    data-status="${att}"
+                    title="Отметить посещаемость">${attLabel}</button>
         </div>
     `;
 }
@@ -381,7 +374,6 @@ function renderDayCard(day, label) {
 function renderSchedule() {
     if (state.scheduleViewMode === 'week' && state.weekDays) return renderWeekView();
     const s = state.schedule;
-
     if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
         return renderUserBar() + `
             <div class="banner">
@@ -391,19 +383,15 @@ function renderSchedule() {
             </div>
         `;
     }
-
     let html = renderUserBar() + renderDaySwitch();
-
     if (state.scheduleDay === 'tomorrow') {
         if (!state.weekDays) return html + renderLoading();
         const tomorrow = getTomorrowData();
         if (!tomorrow) return html + renderEmpty('Не удалось загрузить расписание на завтра');
         return html + renderDayCard(tomorrow, 'Завтра');
     }
-
     if (!s) return html + renderEmpty('Нет данных о расписании');
     if (s.error) return html + renderEmpty(s.message || 'Ошибка загрузки');
-
     const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
     html += `<div class="day-header">${escapeHtml(header)}</div>`;
     if (s.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${s.subgroup ? ` · подгруппа ${escapeHtml(s.subgroup)}` : ''}</div>`;
@@ -417,8 +405,6 @@ function renderSchedule() {
     return html;
 }
 
-/* ============ GROUP PICKER ============ */
-
 function getCourseFromGroup(groupName) {
     const m = String(groupName).match(/-(\d{2})-/);
     if (!m) return null;
@@ -426,14 +412,12 @@ function getCourseFromGroup(groupName) {
     const map = { 26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6 };
     return map[year] || null;
 }
-
 function getCoursesForInstitute(inst) {
     const groups = (state.groups && state.groups[inst]) || [];
     const set = new Set();
     for (const g of groups) { const c = getCourseFromGroup(g.name); if (c) set.add(c); }
     return Array.from(set).sort((a, b) => a - b);
 }
-
 function renderInstitutePicker() {
     const groups = state.groups || {};
     const institutes = Object.keys(groups);
@@ -454,7 +438,6 @@ function renderInstitutePicker() {
     html += `</div>`;
     return html;
 }
-
 function renderCoursePicker() {
     const inst = state.pickerInstitute;
     const courses = getCoursesForInstitute(inst);
@@ -475,7 +458,6 @@ function renderCoursePicker() {
     html += `</div>`;
     return html;
 }
-
 function renderGroupPicker() {
     const inst = state.pickerInstitute;
     const course = state.pickerCourse;
@@ -490,19 +472,16 @@ function renderGroupPicker() {
     const q = (state.pickerSearch || '').trim().toLowerCase();
     const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
     if (filtered.length === 0) html += `<div class="picker-empty">Ничего не найдено</div>`;
-    else {
-        for (const g of filtered) {
-            const selected = state.profile?.group === g.name;
-            html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
-                <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
-                ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
-            </button>`;
-        }
+    else for (const g of filtered) {
+        const selected = state.profile?.group === g.name;
+        html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+            <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
+            ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+        </button>`;
     }
     html += `</div>`;
     return html;
 }
-
 function pickerAttachSearch() {
     const input = document.getElementById('picker-search');
     if (!input) return;
@@ -520,14 +499,12 @@ function pickerAttachSearch() {
         if (!list) return;
         let html = '';
         if (filtered.length === 0) html = `<div class="picker-empty">Ничего не найдено</div>`;
-        else {
-            for (const g of filtered) {
-                const selected = state.profile?.group === g.name;
-                html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
-                    <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
-                    ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
-                </button>`;
-            }
+        else for (const g of filtered) {
+            const selected = state.profile?.group === g.name;
+            html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+                <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
+                ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+            </button>`;
         }
         list.innerHTML = html;
         document.querySelectorAll('#picker-list [data-action]').forEach((el) => {
@@ -535,8 +512,6 @@ function pickerAttachSearch() {
         });
     });
 }
-
-/* ============ NOTIFY EDITOR ============ */
 
 function renderNotifyEditor() {
     const cur = state.notifyEditorType;
@@ -613,7 +588,6 @@ async function actionNotifyOff() {
         render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
 async function actionSetNotifyBefore(minutes) {
     haptic('light');
     try {
@@ -624,7 +598,47 @@ async function actionSetNotifyBefore(minutes) {
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
-/* ============ TASKS ============ */
+function actionLessonStatus(el) {
+    const date = el.dataset.date || '';
+    const time = el.dataset.time || '';
+    const subject = el.dataset.subject || '';
+    const cur = el.dataset.status || '';
+    if (!date || !time || !subject) return;
+
+    let next = '';
+    if (cur === '') next = 'was';
+    else if (cur === 'was') next = 'missed';
+    else if (cur === 'missed') next = 'sick';
+    else if (cur === 'sick') next = '';
+
+    el.dataset.status = next;
+    el.classList.remove('was', 'missed', 'sick');
+    if (next) el.classList.add(next);
+    el.textContent = next === 'was' ? '✓' : next === 'missed' ? '✗' : next === 'sick' ? 'Б' : '';
+
+    haptic(next === 'was' ? 'light' : next === 'missed' ? 'error' : 'light');
+    _applyAttendanceLocally(date, time, subject, next);
+
+    apiPost('/api/attendance-set', { date, time, subject, status: next })
+        .catch(() => { haptic('error'); });
+}
+
+function _applyAttendanceLocally(date, time, subject, status) {
+    const upd = (lessons) => {
+        if (!lessons) return;
+        for (const les of lessons) {
+            if (les.time === time && les.subject === subject && (les.date || date) === date) {
+                les.attendance = status;
+            }
+        }
+    };
+    if (state.schedule?.lessons) upd(state.schedule.lessons);
+    if (state.weekDays?.days) {
+        for (const d of state.weekDays.days) {
+            if (d.date === date) upd(d.lessons);
+        }
+    }
+}
 
 function renderTasks() {
     const tasks = state.tasks;
@@ -667,12 +681,10 @@ function renderTaskEditor() {
             <button class="picker-back" data-action="task-editor-back">←</button>
             <div class="picker-title">${isEdit ? 'Изменить задачу' : 'Новая задача'}</div>
         </div>
-
         <div class="card">
             <div class="card-title">Текст задачи</div>
             <textarea class="input" id="task-text-input" placeholder="Что нужно сделать?" rows="4">${escapeHtml(state.taskEditorText || '')}</textarea>
         </div>
-
         <div class="card">
             <div class="card-title">Срок</div>
             <div class="card-subtitle">Дата</div>
@@ -683,7 +695,6 @@ function renderTaskEditor() {
                 <button class="btn btn-secondary" data-action="task-clear-date" style="flex:1">Очистить срок</button>
             </div>
         </div>
-
         <div class="card">
             <div class="card-title">Приоритет</div>
             <div class="task-priority-picker">
@@ -692,106 +703,64 @@ function renderTaskEditor() {
                 <button class="task-priority-btn p-high ${p === 3 ? 'active' : ''}" data-action="task-set-priority" data-value="3">Высокий</button>
             </div>
         </div>
-
         <div class="actions-row" style="margin-top:16px">
             <button class="btn" data-action="task-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
             ${isEdit ? `<button class="btn btn-secondary" data-action="task-editor-delete" style="flex:1">Удалить</button>` : ''}
         </div>
     `;
 }
-
 function actionTaskAddOpen() {
     haptic('light');
-    state.taskEditor = true;
-    state.taskEditorId = null;
-    state.taskEditorText = '';
-    state.taskEditorDate = '';
-    state.taskEditorTime = '';
+    state.taskEditor = true; state.taskEditorId = null;
+    state.taskEditorText = ''; state.taskEditorDate = ''; state.taskEditorTime = '';
     state.taskEditorPriority = 2;
     render();
 }
-
 function actionTaskEditOpen(id) {
     haptic('light');
     const t = state.tasks.find(x => x.id === id);
     if (!t) return;
-    state.taskEditor = true;
-    state.taskEditorId = t.id;
+    state.taskEditor = true; state.taskEditorId = t.id;
     state.taskEditorText = t.text || '';
     state.taskEditorDate = displayToISO(t.due_date || '');
     state.taskEditorTime = t.due_time || '';
     state.taskEditorPriority = t.priority || 2;
     render();
 }
-
-function actionTaskEditorBack() {
-    haptic('light');
-    state.taskEditor = false;
-    state.taskEditorId = null;
-    render();
-}
-
-function actionTaskSetPriority(p) {
-    haptic('light');
-    state.taskEditorPriority = p;
-    render();
-}
-
-function actionTaskClearDate() {
-    haptic('light');
-    state.taskEditorDate = '';
-    state.taskEditorTime = '';
-    render();
-}
-
+function actionTaskEditorBack() { haptic('light'); state.taskEditor = false; state.taskEditorId = null; render(); }
+function actionTaskSetPriority(p) { haptic('light'); state.taskEditorPriority = p; render(); }
+function actionTaskClearDate() { haptic('light'); state.taskEditorDate = ''; state.taskEditorTime = ''; render(); }
 async function actionTaskEditorSave() {
     const textEl = document.getElementById('task-text-input');
     const dateEl = document.getElementById('task-date-input');
     const timeEl = document.getElementById('task-time-input');
-
     const text = (textEl?.value || '').trim();
     if (!text) { alert('Введи текст задачи'); return; }
-
     const dateIso = dateEl?.value || '';
     const due_date = dateIso ? isoToDisplay(dateIso) : null;
     const due_time = (timeEl?.value || '').trim() || null;
     const priority = state.taskEditorPriority || 2;
-
     try {
         if (state.taskEditorId) {
-            await apiPost('/api/task-update', {
-                id: state.taskEditorId,
-                text,
-                due_date,
-                due_time,
-                priority,
-                reset_due: !due_date,
-            });
+            await apiPost('/api/task-update', { id: state.taskEditorId, text, due_date, due_time, priority, reset_due: !due_date });
         } else {
             await apiPost('/api/task-add', { text, due_date, due_time, priority });
         }
         haptic('success');
-        state.taskEditor = false;
-        state.taskEditorId = null;
-        await loadTasks();
-        render();
+        state.taskEditor = false; state.taskEditorId = null;
+        await loadTasks(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
 async function actionTaskEditorDelete() {
     if (!state.taskEditorId) return;
     if (!confirm('Удалить задачу?')) return;
     try {
         await apiPost('/api/task-delete', { id: state.taskEditorId });
         haptic('success');
-        state.taskEditor = false;
-        state.taskEditorId = null;
-        await loadTasks();
-        render();
+        state.taskEditor = false; state.taskEditorId = null;
+        await loadTasks(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
-/* ============ NOTES ============ */
 
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
@@ -811,7 +780,6 @@ function renderNotes() {
     }
     return html;
 }
-
 function renderNoteEditor() {
     const isEdit = state.noteEditorId !== null;
     return `
@@ -833,34 +801,22 @@ function renderNoteEditor() {
         </div>
     `;
 }
-
 function actionNoteAddOpen() {
     haptic('light');
-    state.noteEditor = true;
-    state.noteEditorId = null;
-    state.noteEditorSubject = '';
-    state.noteEditorText = '';
+    state.noteEditor = true; state.noteEditorId = null;
+    state.noteEditorSubject = ''; state.noteEditorText = '';
     render();
 }
-
 function actionNoteEditOpen(id) {
     haptic('light');
     const n = state.notes.find(x => x.id === id);
     if (!n) return;
-    state.noteEditor = true;
-    state.noteEditorId = n.id;
+    state.noteEditor = true; state.noteEditorId = n.id;
     state.noteEditorSubject = n.subject || '';
     state.noteEditorText = n.text || '';
     render();
 }
-
-function actionNoteEditorBack() {
-    haptic('light');
-    state.noteEditor = false;
-    state.noteEditorId = null;
-    render();
-}
-
+function actionNoteEditorBack() { haptic('light'); state.noteEditor = false; state.noteEditorId = null; render(); }
 async function actionNoteEditorSave() {
     const subjEl = document.getElementById('note-subject-input');
     const textEl = document.getElementById('note-text-input');
@@ -871,27 +827,20 @@ async function actionNoteEditorSave() {
     try {
         await apiPost('/api/note-save', { subject, text });
         haptic('success');
-        state.noteEditor = false;
-        state.noteEditorId = null;
-        await loadNotes();
-        render();
+        state.noteEditor = false; state.noteEditorId = null;
+        await loadNotes(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
 async function actionNoteEditorDelete() {
     if (!state.noteEditorId) return;
     if (!confirm('Удалить заметку?')) return;
     try {
         await apiPost('/api/note-delete', { id: state.noteEditorId });
         haptic('success');
-        state.noteEditor = false;
-        state.noteEditorId = null;
-        await loadNotes();
-        render();
+        state.noteEditor = false; state.noteEditorId = null;
+        await loadNotes(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
-/* ============ GAMES TAB ============ */
 
 function renderGames() {
     const info = state.gameInfo;
@@ -900,7 +849,6 @@ function renderGames() {
 
     let html = `<div class="games-grid">`;
 
-    // Игра 1: До пары успеть
     html += `<div class="game-tile" data-action="game-open">
         <div class="game-tile-header">
             <div class="game-tile-icon">
@@ -918,19 +866,12 @@ function renderGames() {
             Пролетай между парами, не задень стены. Тапни — прыжок. Чем дальше — тем больше очков.
         </div>
         <div class="game-tile-stats">
-            <div class="game-tile-stat">
-                <div class="game-tile-stat-value">${best}</div>
-                <div class="game-tile-stat-label">Рекорд</div>
-            </div>
-            <div class="game-tile-stat">
-                <div class="game-tile-stat-value">${plays}</div>
-                <div class="game-tile-stat-label">Игр</div>
-            </div>
+            <div class="game-tile-stat"><div class="game-tile-stat-value">${best}</div><div class="game-tile-stat-label">Рекорд</div></div>
+            <div class="game-tile-stat"><div class="game-tile-stat-value">${plays}</div><div class="game-tile-stat-label">Игр</div></div>
         </div>
         <div class="game-tile-play">Играть</div>
     </div>`;
 
-    // Заглушка под будущие игры
     html += `<div class="game-tile" style="cursor:default;pointer-events:none;opacity:0.6;">
         <div class="game-tile-header">
             <div class="game-tile-icon" style="background:var(--bg-3);color:var(--text-2);box-shadow:none;">
@@ -944,9 +885,7 @@ function renderGames() {
                 <div class="game-tile-tagline">Новые игры в разработке</div>
             </div>
         </div>
-        <div class="game-tile-desc">
-            Здесь появятся новые игры. Следи за обновлениями.
-        </div>
+        <div class="game-tile-desc">Здесь появятся новые игры. Следи за обновлениями.</div>
     </div>`;
 
     html += `</div>`;
@@ -960,7 +899,6 @@ function renderGames() {
         }
         html += `</div>`;
     }
-
     return html;
 }
 
@@ -982,7 +920,6 @@ function renderGameScreen() {
 function renderGameResult() {
     const r = state.gameResult;
     if (!r) return renderEmpty('Нет данных');
-
     let html = `<div class="game-result-wrap">
         <div class="game-result-score-block">
             <div class="game-result-label">Очки</div>
@@ -991,7 +928,6 @@ function renderGameResult() {
         </div>
         <div class="game-result-best">Рекорд: ${r.best}</div>
     `;
-
     if (r.top && r.top.length > 0) {
         html += `<div class="card"><div class="card-title">Топ игроков</div>`;
         for (const item of r.top) {
@@ -1001,7 +937,6 @@ function renderGameResult() {
         }
         html += `</div>`;
     }
-
     html += `<div class="actions-row" style="margin-top:16px">
         <button class="btn" data-action="game-play-again" style="flex:1">Ещё раз</button>
         <button class="btn btn-secondary" data-action="game-exit" style="flex:1">В меню</button>
@@ -1009,41 +944,26 @@ function renderGameResult() {
     </div>`;
     return html;
 }
-
 function actionGameOpen() {
     haptic('light');
-    state.gameView = 'playing';
-    state.gameResult = null;
-    state.gameInstance = null;
+    state.gameView = 'playing'; state.gameResult = null; state.gameInstance = null;
     render();
 }
-
 function actionGameExit() {
     haptic('light');
     if (state.gameInstance) state.gameInstance.running = false;
-    state.gameInstance = null;
-    state.gameView = null;
-    state.gameResult = null;
+    state.gameInstance = null; state.gameView = null; state.gameResult = null;
     render();
 }
-
 function actionGamePlayAgain() {
     haptic('light');
-    state.gameView = 'playing';
-    state.gameResult = null;
-    state.gameInstance = null;
+    state.gameView = 'playing'; state.gameResult = null; state.gameInstance = null;
     render();
 }
-
 async function submitGameScore(score) {
     try {
         const r = await apiPost('/api/game/submit', { score });
-        state.gameResult = {
-            score,
-            best: r.best,
-            is_record: r.is_record,
-            top: r.top || [],
-        };
+        state.gameResult = { score, best: r.best, is_record: r.is_record, top: r.top || [] };
         state.gameInfo = { best: r.best, plays: r.plays, top: r.top || [] };
     } catch (e) {
         state.gameResult = { score, best: score, is_record: false, top: [] };
@@ -1052,7 +972,6 @@ async function submitGameScore(score) {
     state.gameView = 'result';
     render();
 }
-
 function roundRect(ctx, x, y, w, h, r) {
     if (h < 2 * r) r = h / 2;
     if (w < 2 * r) r = w / 2;
@@ -1065,7 +984,6 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
 }
-
 function drawBlock(ctx, x, y, w, h) {
     if (h <= 0 || w <= 0) return;
     ctx.save();
@@ -1074,88 +992,53 @@ function drawBlock(ctx, x, y, w, h) {
     grad.addColorStop(0.5, 'rgba(0, 229, 208, 0.35)');
     grad.addColorStop(1, 'rgba(30, 136, 229, 0.35)');
     ctx.fillStyle = grad;
-    roundRect(ctx, x, y, w, h, 10);
-    ctx.fill();
-
-    ctx.strokeStyle = '#00E5D0';
-    ctx.lineWidth = 2;
-    ctx.shadowColor = '#00E5D0';
-    ctx.shadowBlur = 12;
-    roundRect(ctx, x, y, w, h, 10);
-    ctx.stroke();
+    roundRect(ctx, x, y, w, h, 10); ctx.fill();
+    ctx.strokeStyle = '#00E5D0'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 12;
+    roundRect(ctx, x, y, w, h, 10); ctx.stroke();
     ctx.shadowBlur = 0;
-
     ctx.fillStyle = 'rgba(0, 229, 208, 0.85)';
     ctx.font = 'bold 11px Manrope, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const cx = x + w / 2;
-    for (let ty = y + 34; ty < y + h - 16; ty += 44) {
-        ctx.fillText('ПАРА', cx, ty);
-    }
+    for (let ty = y + 34; ty < y + h - 16; ty += 44) ctx.fillText('ПАРА', cx, ty);
     ctx.restore();
 }
-
 function drawObstacle(ctx, o, H) {
     drawBlock(ctx, o.x, 0, o.w, o.gapY);
     drawBlock(ctx, o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
-
     ctx.save();
     ctx.strokeStyle = 'rgba(0, 229, 208, 0.55)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 8]);
+    ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
     ctx.beginPath();
-    ctx.moveTo(o.x - 4, o.gapY);
-    ctx.lineTo(o.x + o.w + 4, o.gapY);
-    ctx.moveTo(o.x - 4, o.gapY + o.gapH);
-    ctx.lineTo(o.x + o.w + 4, o.gapY + o.gapH);
-    ctx.stroke();
-    ctx.restore();
+    ctx.moveTo(o.x - 4, o.gapY); ctx.lineTo(o.x + o.w + 4, o.gapY);
+    ctx.moveTo(o.x - 4, o.gapY + o.gapH); ctx.lineTo(o.x + o.w + 4, o.gapY + o.gapH);
+    ctx.stroke(); ctx.restore();
 }
-
 function drawPlayer(ctx, p) {
     ctx.save();
     const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3);
     glow.addColorStop(0, 'rgba(0, 229, 208, 0.7)');
     glow.addColorStop(1, 'rgba(0, 229, 208, 0)');
     ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#00E5D0';
-    ctx.shadowColor = '#00E5D0';
-    ctx.shadowBlur = 18;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#00E5D0'; ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
-
     ctx.fillStyle = '#070B14';
     ctx.beginPath();
     ctx.arc(p.x + 5, p.y - 4, 3, 0, Math.PI * 2);
-    ctx.arc(p.x + 12, p.y - 4, 3, 0, Math.PI * 2);
-    ctx.fill();
-
+    ctx.arc(p.x + 12, p.y - 4, 3, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.beginPath();
-    ctx.arc(p.x - 4, p.y - 6, 3, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x - 4, p.y - 6, 3, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
 }
-
 function drawGame(ctx, game) {
     const W = game.W, H = game.H, frame = game.frame;
-
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#08101f');
-    grad.addColorStop(0.55, '#0d1a33');
-    grad.addColorStop(1, '#111c3a');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.save();
-    ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
+    grad.addColorStop(0, '#08101f'); grad.addColorStop(0.55, '#0d1a33'); grad.addColorStop(1, '#111c3a');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
     for (let i = 0; i < 30; i++) {
         const sx = (((i * 173 - frame * 0.4) % (W + 40)) + (W + 40)) % (W + 40) - 20;
         const sy = (i * 97) % H;
@@ -1163,27 +1046,18 @@ function drawGame(ctx, game) {
         ctx.fillRect(sx, sy, sz, sz);
     }
     ctx.restore();
-
     ctx.save();
-    ctx.strokeStyle = 'rgba(0, 229, 208, 0.25)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, H - 1);
-    ctx.lineTo(W, H - 1);
-    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0, 229, 208, 0.25)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, H - 1); ctx.lineTo(W, H - 1); ctx.stroke();
     ctx.restore();
-
     for (const o of game.obstacles) drawObstacle(ctx, o, H);
     drawPlayer(ctx, game.player);
 }
-
 function initGame() {
     if (state.gameInstance) return;
-
     const canvas = document.getElementById('game-canvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     const W = Math.max(100, rect.width);
@@ -1191,26 +1065,14 @@ function initGame() {
     canvas.width = Math.floor(W * dpr);
     canvas.height = Math.floor(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
     const game = {
-        W, H,
-        running: true,
-        over: false,
-        started: false,
-        score: 0,
-        frame: 0,
+        W, H, running: true, over: false, started: false, score: 0, frame: 0,
         player: { x: W * 0.28, y: H * 0.45, r: 16, vy: 0 },
-        obstacles: [],
-        spawnTimer: 0,
-        spawnInterval: 95,
-        gravity: 0.55,
-        jumpForce: -8.3,
-        speed: 3.1,
+        obstacles: [], spawnTimer: 0, spawnInterval: 95,
+        gravity: 0.55, jumpForce: -8.3, speed: 3.1,
         gap: Math.max(130, Math.min(170, H * 0.32)),
     };
-
     state.gameInstance = game;
-
     function doJump() {
         if (game.over || !game.running) return;
         game.started = true;
@@ -1218,51 +1080,34 @@ function initGame() {
         if (hint) hint.style.display = 'none';
         game.player.vy = game.jumpForce;
     }
-
     function onPointer(e) { e.preventDefault(); doJump(); }
     function onKey(e) {
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            e.preventDefault();
-            doJump();
+            e.preventDefault(); doJump();
         }
     }
-
     canvas.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
-
     function cleanup() {
         canvas.removeEventListener('pointerdown', onPointer);
         document.removeEventListener('keydown', onKey);
     }
-
     function gameEnd() {
         if (game.over) return;
-        game.over = true;
-        game.running = false;
+        game.over = true; game.running = false;
         cleanup();
         haptic('error');
         submitGameScore(game.score);
     }
-
     function loop() {
         if (state.gameInstance !== game || !game.running) return;
-
         if (game.started) {
             game.player.vy += game.gravity;
             if (game.player.vy > 11) game.player.vy = 11;
             game.player.y += game.player.vy;
         }
-
-        if (game.player.y - game.player.r < 0) {
-            game.player.y = game.player.r;
-            game.player.vy = 0;
-        }
-        if (game.player.y + game.player.r > H) {
-            game.player.y = H - game.player.r;
-            gameEnd();
-            return;
-        }
-
+        if (game.player.y - game.player.r < 0) { game.player.y = game.player.r; game.player.vy = 0; }
+        if (game.player.y + game.player.r > H) { game.player.y = H - game.player.r; gameEnd(); return; }
         game.spawnTimer++;
         if (game.started && game.spawnTimer >= game.spawnInterval) {
             game.spawnTimer = 0;
@@ -1271,46 +1116,33 @@ function initGame() {
             const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
             game.obstacles.push({ x: W + 40, w: 62, gapY, gapH: game.gap, passed: false });
         }
-
         for (let i = game.obstacles.length - 1; i >= 0; i--) {
             const o = game.obstacles[i];
             if (game.started) o.x -= game.speed;
-
             const px = game.player.x, py = game.player.y, pr = game.player.r;
-
             if (px + pr > o.x && px - pr < o.x + o.w) {
-                if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) {
-                    gameEnd();
-                    return;
-                }
+                if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) { gameEnd(); return; }
             }
-
             if (!o.passed && o.x + o.w < px) {
-                o.passed = true;
-                game.score++;
+                o.passed = true; game.score++;
                 haptic('light');
                 const scoreEl = document.getElementById('game-score');
                 if (scoreEl) scoreEl.textContent = String(game.score);
             }
-
             if (o.x + o.w < -60) game.obstacles.splice(i, 1);
         }
-
         drawGame(ctx, game);
         game.frame++;
         requestAnimationFrame(loop);
     }
-
     drawGame(ctx, game);
     requestAnimationFrame(loop);
 }
 
-/* ============ AI ============ */
-
 function renderAI() {
     let html = '';
     if (state.aiMessages.length === 0) {
-        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото и напиши, что с ним сделать — перевести, сделать конспект, решить и т.п.</div></div>`;
+        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото и напиши, что с ним сделать.</div></div>`;
     } else {
         for (const m of state.aiMessages) {
             if (m.role === 'user') {
@@ -1328,14 +1160,12 @@ function renderAI() {
         }
     }
     if (state.aiPending) html += renderLoading();
-
     const photoPreview = state.aiPendingPhoto
         ? `<div class="ai-photo-preview">
               <img src="${state.aiPendingPhoto}" alt="фото">
               <button class="ai-photo-remove" data-action="ai-photo-cancel" title="Убрать">✕</button>
            </div>`
         : '';
-
     html += `<div style="margin-top:12px">
         ${photoPreview}
         <textarea class="input" id="ai-input" placeholder="Напиши вопрос или что сделать с фото..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
@@ -1346,28 +1176,19 @@ function renderAI() {
     </div>`;
     return html;
 }
-
 function actionAIClear() {
     if (!confirm('Очистить историю чата?')) return;
     haptic('light');
-    state.aiMessages = [];
-    state.aiPendingPhoto = null;
+    state.aiMessages = []; state.aiPendingPhoto = null;
     apiPost('/api/ai/clear-history').catch(() => {});
     render();
 }
-
 function actionAIPhotoOpen() {
     haptic('light');
     const input = document.getElementById('ai-photo-input');
     if (input) input.click();
 }
-
-function actionAIPhotoCancel() {
-    haptic('light');
-    state.aiPendingPhoto = null;
-    render();
-}
-
+function actionAIPhotoCancel() { haptic('light'); state.aiPendingPhoto = null; render(); }
 function actionAIPhotoSelected(file) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) { alert('Фото слишком большое (макс 8 МБ)'); return; }
@@ -1386,28 +1207,22 @@ function actionAIPhotoSelected(file) {
             canvas.width = w; canvas.height = h;
             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
             state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
-            haptic('light');
-            render();
+            haptic('light'); render();
         };
         img.onerror = () => alert('Не удалось прочитать изображение');
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
-
 async function actionAISend() {
     const el = document.getElementById('ai-input');
     if (!el) return;
     const question = (el.value || '').trim();
     const photo = state.aiPendingPhoto;
     if (!question && !photo) return;
-
     if (photo) {
         state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
-        state.aiPendingPhoto = null;
-        el.value = '';
-        state.aiPending = true;
-        render();
+        state.aiPendingPhoto = null; el.value = ''; state.aiPending = true; render();
         try {
             const r = await apiPost('/api/ai-photo', { photo, question });
             state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
@@ -1415,17 +1230,11 @@ async function actionAISend() {
         } catch (err) {
             state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
             haptic('error');
-        } finally {
-            state.aiPending = false;
-            render();
-        }
+        } finally { state.aiPending = false; render(); }
         return;
     }
-
     state.aiMessages.push({ role: 'user', text: question });
-    el.value = '';
-    state.aiPending = true;
-    render();
+    el.value = ''; state.aiPending = true; render();
     try {
         const r = await apiPost('/api/ai', { question });
         state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
@@ -1433,13 +1242,8 @@ async function actionAISend() {
     } catch (e) {
         state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
         haptic('error');
-    } finally {
-        state.aiPending = false;
-        render();
-    }
+    } finally { state.aiPending = false; render(); }
 }
-
-/* ============ ADMIN ============ */
 
 function renderAdmin() {
     if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
@@ -1480,8 +1284,6 @@ function renderAdmin() {
     return html;
 }
 
-/* ============ PROFILE ============ */
-
 function renderProfile() {
     const p = state.profile;
     const u = state.user;
@@ -1506,6 +1308,19 @@ function renderProfile() {
             <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
             <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
         </div>`;
+
+        const attTotal = p.attendance_total || 0;
+        html += `<div class="card">
+            <div class="card-title">Посещаемость</div>`;
+        if (attTotal === 0) {
+            html += `<div class="card-subtitle">Отмечай пары в расписании — здесь появится статистика.</div>`;
+        } else {
+            html += `<div class="att-stat-row"><span class="att-stat-label">Всего отмечено</span><span class="att-stat-value">${attTotal}</span></div>`;
+            html += `<div class="att-stat-row"><span class="att-stat-label">Посещено</span><span class="att-stat-value green">${p.attendance_was || 0}</span></div>`;
+            html += `<div class="att-stat-row"><span class="att-stat-label">Пропущено</span><span class="att-stat-value red">${p.attendance_missed || 0}</span></div>`;
+            html += `<div class="att-stat-row"><span class="att-stat-label">По болезни</span><span class="att-stat-value yellow">${p.attendance_sick || 0}</span></div>`;
+        }
+        html += `</div>`;
     }
 
     html += `<div class="card">
@@ -1535,7 +1350,6 @@ function renderProfile() {
 
     const notifyOn = !!p?.notify_type;
     const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
-
     html += `<div class="card">
         <div class="card-title">Уведомления о расписании</div>
         <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
@@ -1566,7 +1380,6 @@ function renderProfile() {
     </div>`;
 
     html += renderScholarshipCard();
-
     html += renderMyFeedbackCard();
 
     html += `<div class="card">
@@ -1577,8 +1390,8 @@ function renderProfile() {
 
     html += `<div class="card">
         <div class="card-title">Экспорт данных</div>
-        <div class="export-hint">Скачать все свои данные (задачи, заметки, оценки, обращения) в JSON — бот пришлёт файл в чат.</div>
-        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Отправляю...' : 'Скачать JSON'}</button>
+        <div class="export-hint">PDF-файл со всеми данными: задачи, заметки, оценки, посещаемость. Бот пришлёт его в чат.</div>
+        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Готовлю PDF...' : 'Скачать PDF'}</button>
     </div>`;
 
     return html;
@@ -1591,7 +1404,6 @@ function renderMyFeedbackCard() {
     if (!state.myFeedback || state.myFeedback.length === 0) {
         return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Ты ещё не писал админу.</div></div>`;
     }
-
     const total = state.myFeedback.length;
     const previewLimit = 3;
     const showAll = state.myFeedbackExpanded;
@@ -1604,7 +1416,6 @@ function renderMyFeedbackCard() {
         let statusCls = 'new';
         if (f.status === 'answered') { statusLabel = 'Отвечено'; statusCls = 'answered'; }
         else if (f.status === 'postponed') { statusLabel = 'Отложено'; statusCls = 'postponed'; }
-
         const dateStr = (f.created_at || '').slice(0, 10);
         html += `<div class="fb-item">
             <div class="fb-item-head">
@@ -1615,30 +1426,24 @@ function renderMyFeedbackCard() {
             ${f.admin_reply ? `<div class="fb-reply"><div class="fb-reply-label">Ответ</div>${escapeHtml(f.admin_reply)}</div>` : ''}
         </div>`;
     }
-
     if (total > previewLimit && !showAll) {
         html += `<button class="fb-show-more" data-action="fb-toggle">Показать все (${total})</button>`;
     } else if (showAll && total > previewLimit) {
         html += `<button class="fb-show-more" data-action="fb-toggle">Свернуть</button>`;
     }
-
     html += `</div>`;
     return html;
 }
-
 function actionFbToggle() {
     haptic('light');
     state.myFeedbackExpanded = !state.myFeedbackExpanded;
     render();
 }
 
-/* ============ SCHOLARSHIP ============ */
-
 function renderScholarshipCard() {
     const s = state.scholarship;
     let html = `<div class="card"><div class="card-title">Стипендия</div>`;
     if (!s) { html += `<div class="card-subtitle">Загрузка...</div></div>`; return html; }
-
     html += `<div class="card-subtitle">Текущая сумма: ${s.amount !== null && s.amount !== undefined ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
 
     const semesters = s.semesters || [];
@@ -1650,7 +1455,6 @@ function renderScholarshipCard() {
             `).join('')}
         </div>`;
     }
-
     const allGrades = s.grades || [];
     const grades = state.scholarshipSemesterFilter === 'all'
         ? allGrades
@@ -1664,7 +1468,6 @@ function renderScholarshipCard() {
         </div></div>`;
         return html;
     }
-
     const cnt5 = grades.filter(g => g.grade === 5).length;
     const cnt4 = grades.filter(g => g.grade === 4).length;
     const cnt3 = grades.filter(g => g.grade === 3).length;
@@ -1676,7 +1479,6 @@ function renderScholarshipCard() {
         <div class="sch-avg-value">${avg.toFixed(2)}</div>
         <div class="sch-avg-label">средний балл · ${grades.length} ${pluralSubjects(grades.length)}${cntAuto > 0 ? ` · автоматов: ${cntAuto}` : ''}</div>
     </div>`;
-
     html += `<div class="sch-filters">
         <button class="sch-filter ${state.scholarshipFilter === 'all' ? 'active' : ''}" data-action="sch-filter" data-value="all">Все · ${grades.length}</button>
         ${cntAuto > 0 ? `<button class="sch-filter sch-filter-auto ${state.scholarshipFilter === 'auto' ? 'active' : ''}" data-action="sch-filter" data-value="auto">Автоматы · ${cntAuto}</button>` : ''}
@@ -1685,32 +1487,27 @@ function renderScholarshipCard() {
         ${cnt3 > 0 ? `<button class="sch-filter grade-3 ${state.scholarshipFilter === '3' ? 'active' : ''}" data-action="sch-filter" data-value="3">3 · ${cnt3}</button>` : ''}
         ${cnt2 > 0 ? `<button class="sch-filter grade-2 ${state.scholarshipFilter === '2' ? 'active' : ''}" data-action="sch-filter" data-value="2">2 · ${cnt2}</button>` : ''}
     </div>`;
-
     if (state.scholarshipSemesterFilter === 'all' && s.forecast) {
         const isBad = cnt2 > 0 || cnt3 > 0 || (grades.length && avg < 4.0);
         html += `<div class="sch-forecast ${isBad ? 'bad' : 'good'}">${escapeHtml(s.forecast)}</div>`;
     }
-
     let filtered = grades;
     if (state.scholarshipFilter === 'auto') filtered = grades.filter(g => g.is_auto);
     else if (state.scholarshipFilter !== 'all') filtered = grades.filter(g => String(g.grade) === state.scholarshipFilter);
 
     html += `<div class="sch-list">`;
     if (filtered.length === 0) html += `<div class="sch-empty">Нет оценок с таким фильтром</div>`;
-    else {
-        for (const g of filtered) {
-            html += `<button class="sch-item" data-action="sch-edit" data-id="${g.id}">
-                <div class="sch-item-subject">
-                    <span class="sch-item-subject-text">${escapeHtml(g.subject)}</span>
-                    ${g.is_auto ? '<span class="sch-auto-badge">АВТО</span>' : ''}
-                </div>
-                <div class="sch-item-grade grade-${g.grade}">${g.grade}</div>
-                <div class="sch-item-arrow">›</div>
-            </button>`;
-        }
+    else for (const g of filtered) {
+        html += `<button class="sch-item" data-action="sch-edit" data-id="${g.id}">
+            <div class="sch-item-subject">
+                <span class="sch-item-subject-text">${escapeHtml(g.subject)}</span>
+                ${g.is_auto ? '<span class="sch-auto-badge">АВТО</span>' : ''}
+            </div>
+            <div class="sch-item-grade grade-${g.grade}">${g.grade}</div>
+            <div class="sch-item-arrow">›</div>
+        </button>`;
     }
     html += `</div>`;
-
     html += `<div class="actions-row" style="margin-top:12px">
         <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
         <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
@@ -1719,28 +1516,23 @@ function renderScholarshipCard() {
     html += `</div>`;
     return html;
 }
-
 function pluralSubjects(n) {
-    const mod10 = n % 10;
-    const mod100 = n % 100;
+    const mod10 = n % 10, mod100 = n % 100;
     if (mod10 === 1 && mod100 !== 11) return 'предмет';
     if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'предмета';
     return 'предметов';
 }
-
 function renderScholarshipEditor() {
     const isEdit = state.scholarshipEditorId !== null;
     const subject = state.scholarshipEditorSubject || '';
     const grade = state.scholarshipEditorGrade;
     const isAuto = state.scholarshipEditorIsAuto;
     const semester = state.scholarshipEditorSemester || currentSemester();
-
     let html = `
         <div class="picker-header">
             <button class="picker-back" data-action="sch-editor-back">←</button>
             <div class="picker-title">${isEdit ? 'Изменить оценку' : 'Новая оценка'}</div>
         </div>
-
         <div class="card">
             <div class="card-title">Предмет</div>
             <input class="input" id="sch-subject-input" list="sch-subjects-list"
@@ -1750,7 +1542,6 @@ function renderScholarshipEditor() {
                 ${state.scholarshipAvailable.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}
             </datalist>
     `;
-
     if (state.scholarshipAvailable.length > 0) {
         const preview = state.scholarshipAvailable.slice(0, 12);
         html += `<div class="sch-hint">Из твоего расписания:</div>
@@ -1758,14 +1549,11 @@ function renderScholarshipEditor() {
                 ${preview.map(s => `<button class="sch-subject-chip" data-action="sch-pick-subject" data-value="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}
             </div>`;
     }
-
     html += `</div>`;
-
     html += `<div class="card">
         <div class="card-title">Семестр</div>
         <input class="input" id="sch-semester-input" placeholder="Например: Осень 2026" value="${escapeHtml(semester)}">
     </div>`;
-
     html += `<div class="card">
         <div class="card-title">Оценка</div>
         <div class="sch-grade-picker">
@@ -1779,59 +1567,38 @@ function renderScholarshipEditor() {
             <span>Автомат — оценка выставлена без экзамена</span>
         </label>
     </div>`;
-
     html += `<div class="actions-row" style="margin-top:16px">
         <button class="btn" data-action="sch-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
         ${isEdit ? `<button class="btn btn-secondary" data-action="sch-editor-delete" style="flex:1">Удалить</button>` : ''}
     </div>`;
-
     return html;
 }
-
 function actionScholarshipAdd() {
     haptic('light');
-    state.scholarshipEditor = true;
-    state.scholarshipEditorId = null;
-    state.scholarshipEditorSubject = '';
-    state.scholarshipEditorGrade = 5;
-    state.scholarshipEditorIsAuto = false;
-    state.scholarshipEditorSemester = currentSemester();
+    state.scholarshipEditor = true; state.scholarshipEditorId = null;
+    state.scholarshipEditorSubject = ''; state.scholarshipEditorGrade = 5;
+    state.scholarshipEditorIsAuto = false; state.scholarshipEditorSemester = currentSemester();
     render();
 }
-
 function actionScholarshipEdit(id) {
     haptic('light');
     const g = state.scholarship?.grades.find(x => x.id === id);
     if (!g) return;
-    state.scholarshipEditor = true;
-    state.scholarshipEditorId = g.id;
+    state.scholarshipEditor = true; state.scholarshipEditorId = g.id;
     state.scholarshipEditorSubject = g.subject;
     state.scholarshipEditorGrade = g.grade;
     state.scholarshipEditorIsAuto = !!g.is_auto;
     state.scholarshipEditorSemester = g.semester || currentSemester();
     render();
 }
-
-function actionScholarshipBack() {
-    haptic('light');
-    state.scholarshipEditor = false;
-    state.scholarshipEditorId = null;
-    render();
-}
-
-function actionScholarshipSetGrade(g) {
-    haptic('light');
-    state.scholarshipEditorGrade = g;
-    render();
-}
-
+function actionScholarshipBack() { haptic('light'); state.scholarshipEditor = false; state.scholarshipEditorId = null; render(); }
+function actionScholarshipSetGrade(g) { haptic('light'); state.scholarshipEditorGrade = g; render(); }
 function actionScholarshipPickSubject(s) {
     haptic('light');
     state.scholarshipEditorSubject = s;
     const input = document.getElementById('sch-subject-input');
     if (input) input.value = s;
 }
-
 async function actionScholarshipSave() {
     const subjEl = document.getElementById('sch-subject-input');
     const semEl = document.getElementById('sch-semester-input');
@@ -1839,53 +1606,31 @@ async function actionScholarshipSave() {
     const grade = state.scholarshipEditorGrade;
     const isAuto = state.scholarshipEditorIsAuto;
     const semester = (semEl?.value || '').trim() || null;
-
     if (!subject) { alert('Введи название предмета'); return; }
     if (![2, 3, 4, 5].includes(grade)) { alert('Выбери оценку'); return; }
-
     try {
         if (state.scholarshipEditorId) {
-            await apiPost('/api/scholarship-update-grade', {
-                id: state.scholarshipEditorId,
-                subject, grade, is_auto: isAuto, semester,
-            });
+            await apiPost('/api/scholarship-update-grade', { id: state.scholarshipEditorId, subject, grade, is_auto: isAuto, semester });
         } else {
             await apiPost('/api/scholarship-add-grade', { subject, grade, is_auto: isAuto, semester });
         }
         haptic('success');
-        state.scholarshipEditor = false;
-        state.scholarshipEditorId = null;
-        await loadScholarship();
-        render();
+        state.scholarshipEditor = false; state.scholarshipEditorId = null;
+        await loadScholarship(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
 async function actionScholarshipDeleteGrade() {
     if (!state.scholarshipEditorId) return;
     if (!confirm('Удалить эту оценку?')) return;
     try {
         await apiPost('/api/scholarship-delete-grade', { id: state.scholarshipEditorId });
         haptic('success');
-        state.scholarshipEditor = false;
-        state.scholarshipEditorId = null;
-        await loadScholarship();
-        render();
+        state.scholarshipEditor = false; state.scholarshipEditorId = null;
+        await loadScholarship(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
-function actionScholarshipFilter(f) {
-    haptic('light');
-    state.scholarshipFilter = f;
-    render();
-}
-
-function actionSemesterFilter(sem) {
-    haptic('light');
-    state.scholarshipSemesterFilter = sem;
-    state.scholarshipFilter = 'all';
-    render();
-}
-
+function actionScholarshipFilter(f) { haptic('light'); state.scholarshipFilter = f; render(); }
+function actionSemesterFilter(sem) { haptic('light'); state.scholarshipSemesterFilter = sem; state.scholarshipFilter = 'all'; render(); }
 async function actionScholarshipSetAmount() {
     const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
     if (amount === null) return;
@@ -1894,7 +1639,6 @@ async function actionScholarshipSetAmount() {
         haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionScholarshipClear() {
     const sem = state.scholarshipSemesterFilter === 'all' ? null : state.scholarshipSemesterFilter;
     const msg = sem ? `Очистить оценки за «${sem}»?` : 'Очистить ВСЕ оценки (за все семестры)?';
@@ -1904,8 +1648,6 @@ async function actionScholarshipClear() {
         haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
-/* ============ LOADERS ============ */
 
 async function loadSchedule() {
     try { state.schedule = await apiGet('/api/schedule'); }
@@ -1992,14 +1734,9 @@ async function loadTabData(tab) {
             ensureWeekLoaded().catch(() => {});
         } else if (tab === 'tasks') await loadTasks();
         else if (tab === 'notes') await loadNotes();
-        else if (tab === 'games') {
-            await loadProfile();
-            await loadGameInfo();
-        }
-        else if (tab === 'ai') {
-            await loadProfile();
-            await loadAiHistory();
-        } else if (tab === 'admin') {
+        else if (tab === 'games') { await loadProfile(); await loadGameInfo(); }
+        else if (tab === 'ai') { await loadProfile(); await loadAiHistory(); }
+        else if (tab === 'admin') {
             await loadProfile();
             if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
         } else if (tab === 'profile') {
@@ -2016,8 +1753,6 @@ async function loadTabData(tab) {
     render();
 }
 
-/* ============ ACTIONS (misc) ============ */
-
 async function loadWeekAndRender() {
     try {
         const r = await apiGet('/api/week', { offset: state.weekOffset });
@@ -2028,9 +1763,7 @@ async function loadWeekAndRender() {
 }
 async function loadTodayAndRender() {
     state.scheduleViewMode = 'today';
-    state.weekOffset = 0;
-    state.weekDays = null;
-    state.scheduleDay = 'today';
+    state.weekOffset = 0; state.weekDays = null; state.scheduleDay = 'today';
     await loadSchedule();
     render();
 }
@@ -2071,9 +1804,7 @@ async function actionPickerChooseGroup(groupId, groupName) {
         await apiPost('/api/set-group', { group_id: groupId, group_name: groupName, subgroup: state.profile?.subgroup || 0 });
         if (state.profile) state.profile.group = groupName;
         state.pickerMode = null; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
-        await loadProfile();
-        await loadSchedule();
-        render();
+        await loadProfile(); await loadSchedule(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
@@ -2092,13 +1823,9 @@ async function actionFeedbackSend() {
     if (!text) return;
     try {
         await apiPost('/api/feedback', { text });
-        el.value = '';
-        haptic('success');
-        alert('Отправлено');
-        state.myFeedbackLoaded = false;
-        state.myFeedbackExpanded = false;
-        await loadMyFeedback();
-        render();
+        el.value = ''; haptic('success'); alert('Отправлено');
+        state.myFeedbackLoaded = false; state.myFeedbackExpanded = false;
+        await loadMyFeedback(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionTaskDone(id) {
@@ -2127,7 +1854,6 @@ async function actionNoteDelete(id) {
     try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionExportData() {
     if (state.exportPending) return;
     state.exportPending = true;
@@ -2136,7 +1862,7 @@ async function actionExportData() {
     try {
         await apiPost('/api/export');
         haptic('success');
-        alert('Файл отправлен в чат с ботом');
+        alert('PDF отправлен в чат с ботом');
     } catch (e) {
         haptic('error');
         alert('Ошибка: ' + e.message);
@@ -2145,7 +1871,6 @@ async function actionExportData() {
         render();
     }
 }
-
 async function actionForgetGroup() {
     if (!confirm('Забыть группу?')) return;
     try {
@@ -2181,28 +1906,21 @@ async function actionAdminFbReply(fid) {
     try {
         await apiPost('/api/admin/feedback-reply', { id: fid, text: reply });
         haptic('success');
-        await loadAdminFeedback();
-        await loadAdminStats();
-        render();
+        await loadAdminFeedback(); await loadAdminStats(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionAdminFbPostpone(fid) {
     try {
         await apiPost('/api/admin/feedback-postpone', { id: fid });
         haptic('success');
-        await loadAdminFeedback();
-        await loadAdminStats();
-        render();
+        await loadAdminFeedback(); await loadAdminStats(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
-/* ============ HANDLERS ============ */
 
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         el.addEventListener('click', () => handleAction(el));
     });
-
     const notifyCb = document.getElementById('notify-changes');
     if (notifyCb) {
         notifyCb.addEventListener('change', async (e) => {
@@ -2216,7 +1934,6 @@ function attachHandlers() {
             }
         });
     }
-
     const aiPhotoInput = document.getElementById('ai-photo-input');
     if (aiPhotoInput) {
         aiPhotoInput.addEventListener('change', (e) => {
@@ -2225,7 +1942,6 @@ function attachHandlers() {
             e.target.value = '';
         });
     }
-
     const schAutoCb = document.getElementById('sch-auto-input');
     if (schAutoCb) {
         schAutoCb.addEventListener('change', (e) => {
@@ -2233,7 +1949,6 @@ function attachHandlers() {
             haptic('light');
         });
     }
-
     const schSubjInput = document.getElementById('sch-subject-input');
     if (schSubjInput) {
         schSubjInput.addEventListener('input', (e) => {
@@ -2250,6 +1965,7 @@ function handleAction(el) {
     else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(v));
     else if (a === 'feedback-send') actionFeedbackSend();
     else if (a === 'fb-toggle') actionFbToggle();
+    else if (a === 'lesson-status') actionLessonStatus(el);
     else if (a === 'task-done') actionTaskDone(parseInt(el.dataset.id));
     else if (a === 'task-delete') actionTaskDelete(parseInt(el.dataset.id));
     else if (a === 'task-add-open') actionTaskAddOpen();
