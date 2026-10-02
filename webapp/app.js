@@ -34,7 +34,7 @@ const state = {
     aiMessages: [], aiPending: false, aiPendingPhoto: null, aiHistoryLoaded: false,
     adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
     gameView: null, gameInfo: null, gameResult: null, gameInstance: null,
-    myFeedback: [], myFeedbackLoaded: false,
+    myFeedback: [], myFeedbackLoaded: false, myFeedbackExpanded: false,
     exportPending: false,
 };
 
@@ -119,7 +119,7 @@ function render() {
     const appEl = document.getElementById('app');
     const navEl = document.getElementById('bottom-nav');
 
-    const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
+    const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
     if (state.gameView === 'playing') {
         appEl?.classList.add('picker-open');
@@ -205,6 +205,7 @@ function render() {
             case 'schedule': html = renderSchedule(); break;
             case 'tasks': html = renderTasks(); break;
             case 'notes': html = renderNotes(); break;
+            case 'games': html = renderGames(); break;
             case 'ai': html = renderAI(); break;
             case 'admin': html = renderAdmin(); break;
             case 'profile': html = renderProfile(); break;
@@ -890,337 +891,77 @@ async function actionNoteEditorDelete() {
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
-/* ============ AI ============ */
+/* ============ GAMES TAB ============ */
 
-function renderAI() {
-    let html = '';
-    if (state.aiMessages.length === 0) {
-        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото и напиши, что с ним сделать — перевести, сделать конспект, решить и т.п.</div></div>`;
-    } else {
-        for (const m of state.aiMessages) {
-            if (m.role === 'user') {
-                if (m.photo) {
-                    html += `<div class="card" style="background:var(--neon);color:#070B14;padding:10px">
-                        <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="фото">
-                        <div style="font-weight:600">${escapeHtml(m.text || '')}</div>
-                    </div>`;
-                } else {
-                    html += `<div class="card" style="background:var(--neon);color:#070B14"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
-                }
-            } else {
-                html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(m.text)}</div></div>`;
-            }
-        }
-    }
-    if (state.aiPending) html += renderLoading();
-
-    const photoPreview = state.aiPendingPhoto
-        ? `<div class="ai-photo-preview">
-              <img src="${state.aiPendingPhoto}" alt="фото">
-              <button class="ai-photo-remove" data-action="ai-photo-cancel" title="Убрать">✕</button>
-           </div>`
-        : '';
-
-    html += `<div style="margin-top:12px">
-        ${photoPreview}
-        <textarea class="input" id="ai-input" placeholder="Напиши вопрос или что сделать с фото..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
-        <button class="btn" data-action="ai-send" style="width:100%" ${state.aiPending ? 'disabled' : ''}>Отправить</button>
-        <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>Прикрепить фото</button>
-        <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
-        <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
-    </div>`;
-    return html;
-}
-
-function actionAIClear() {
-    if (!confirm('Очистить историю чата?')) return;
-    haptic('light');
-    state.aiMessages = [];
-    state.aiPendingPhoto = null;
-    apiPost('/api/ai/clear-history').catch(() => {});
-    render();
-}
-
-function actionAIPhotoOpen() {
-    haptic('light');
-    const input = document.getElementById('ai-photo-input');
-    if (input) input.click();
-}
-
-function actionAIPhotoCancel() {
-    haptic('light');
-    state.aiPendingPhoto = null;
-    render();
-}
-
-function actionAIPhotoSelected(file) {
-    if (!file) return;
-    if (file.size > 8 * 1024 * 1024) { alert('Фото слишком большое (макс 8 МБ)'); return; }
-    if (!file.type.startsWith('image/')) { alert('Нужно изображение'); return; }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-            const maxSide = 1600;
-            let w = img.width, h = img.height;
-            if (w > maxSide || h > maxSide) {
-                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
-                else { w = Math.round(w * maxSide / h); h = maxSide; }
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
-            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
-            haptic('light');
-            render();
-        };
-        img.onerror = () => alert('Не удалось прочитать изображение');
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-}
-
-async function actionAISend() {
-    const el = document.getElementById('ai-input');
-    if (!el) return;
-    const question = (el.value || '').trim();
-    const photo = state.aiPendingPhoto;
-    if (!question && !photo) return;
-
-    if (photo) {
-        state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
-        state.aiPendingPhoto = null;
-        el.value = '';
-        state.aiPending = true;
-        render();
-        try {
-            const r = await apiPost('/api/ai-photo', { photo, question });
-            state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
-            haptic('success');
-        } catch (err) {
-            state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
-            haptic('error');
-        } finally {
-            state.aiPending = false;
-            render();
-        }
-        return;
-    }
-
-    state.aiMessages.push({ role: 'user', text: question });
-    el.value = '';
-    state.aiPending = true;
-    render();
-    try {
-        const r = await apiPost('/api/ai', { question });
-        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
-        haptic('success');
-    } catch (e) {
-        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
-        haptic('error');
-    } finally {
-        state.aiPending = false;
-        render();
-    }
-}
-
-/* ============ ADMIN ============ */
-
-function renderAdmin() {
-    if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
-    let html = '';
-    if (state.adminStats) {
-        const s = state.adminStats;
-        html += `<div class="banner"><div class="banner-title">Статистика</div><div class="banner-sub">Пользователей: ${s.total_users}<br>Обращений в ожидании: ${s.pending_feedback}</div></div>`;
-    } else html += renderLoading();
-    html += `<div class="card">
-        <div class="card-title">Мониторинг ИРНИТУ</div>
-        ${state.adminMonitor
-            ? (state.adminMonitor.ok
-                ? `<div class="card-subtitle" style="color:var(--accent-green)">Сайт отвечает (HTTP ${state.adminMonitor.status})</div>`
-                : `<div class="card-subtitle overdue">Сайт не отвечает${state.adminMonitor.error ? ': ' + escapeHtml(state.adminMonitor.error) : ''}</div>`)
-            : `<div class="card-subtitle">Не проверено</div>`}
-        <div class="actions-row"><button class="btn btn-secondary" data-action="admin-monitor">Проверить</button></div>
-    </div>`;
-    html += `<div class="card">
-        <div class="card-title">Рассылка</div>
-        <div class="card-subtitle">Уйдёт всем пользователям бота.</div>
-        <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
-        <button class="btn" data-action="admin-broadcast">Отправить всем</button>
-    </div>`;
-    if (state.adminFeedback && state.adminFeedback.length > 0) {
-        html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
-        for (const f of state.adminFeedback) {
-            html += `<div style="border-bottom:1px solid var(--divider);padding:10px 0">
-                <div class="card-subtitle">#${f.id} | ${escapeHtml(f.username || f.user_id)}${f.status === 'postponed' ? ' [отложено]' : ''}</div>
-                <div style="white-space:pre-wrap;margin-top:4px">${escapeHtml(f.text)}</div>
-                <div class="actions-row">
-                    <button class="btn btn-secondary" data-action="admin-fb-reply" data-id="${f.id}">Ответить</button>
-                    <button class="btn btn-secondary" data-action="admin-fb-postpone" data-id="${f.id}">Отложить</button>
-                </div>
-            </div>`;
-        }
-        html += `</div>`;
-    } else html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
-    return html;
-}
-
-/* ============ PROFILE ============ */
-
-function renderProfile() {
-    const p = state.profile;
-    const u = state.user;
-    const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
-    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Гость';
-    const metaParts = [];
-    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` (подгр. ${p.subgroup})` : ''));
-    if (u.username) metaParts.push('@' + u.username);
-
-    let html = `<div class="profile-header">
-        <div class="profile-avatar">${escapeHtml(initials)}</div>
-        <div class="profile-name">${escapeHtml(fullName)}</div>
-        ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
-        ${p?.is_admin ? '<div class="badge" style="background:linear-gradient(135deg,#e53935,#b71c1c);color:#fff">ADMIN</div>' : ''}
-    </div>`;
-
-    if (p) {
-        html += `<div class="card">
-            <div class="card-title">Статистика</div>
-            <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
-            <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
-            <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
-            <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
-        </div>`;
-    }
-
-    html += renderGameCard();
-
-    html += `<div class="card">
-        <div class="card-title">Мой ID</div>
-        <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
-        <div class="actions-row"><button class="btn btn-secondary" data-action="copy-my-id">Скопировать ID</button></div>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Моя группа</div>
-        <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="choose-group">${p?.group ? 'Изменить' : 'Выбрать группу'}</button>
-            ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
-        </div>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Подгруппа</div>
-        <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">—</button>
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
-        </div>
-    </div>`;
-
-    const notifyOn = !!p?.notify_type;
-    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
-
-    html += `<div class="card">
-        <div class="card-title">Уведомления о расписании</div>
-        <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
-        <div class="actions-row">
-            <button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button>
-        </div>
-        <label class="checkbox-row">
-            <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
-            <span>Следить за изменениями в расписании</span>
-        </label>
-        <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
-        <div class="nbf-buttons">
-            ${[0, 10, 15, 30].map(m => `
-                <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
-                        data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
-            `).join('')}
-        </div>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Цитата дня</div>
-        <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
-        <div class="actions-row">
-            ${p?.daily_subscribed
-                ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
-                : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
-        </div>
-    </div>`;
-
-    html += renderScholarshipCard();
-
-    html += renderMyFeedbackCard();
-
-    html += `<div class="card">
-        <div class="card-title">Обратная связь</div>
-        <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
-        <button class="btn" data-action="feedback-send">Отправить</button>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Экспорт данных</div>
-        <div class="export-hint">Скачать все свои данные (задачи, заметки, оценки, обращения) в JSON — бот пришлёт файл в чат.</div>
-        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Отправляю...' : 'Скачать JSON'}</button>
-    </div>`;
-
-    return html;
-}
-
-function renderMyFeedbackCard() {
-    if (!state.myFeedbackLoaded) {
-        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Загрузка...</div></div>`;
-    }
-    if (!state.myFeedback || state.myFeedback.length === 0) {
-        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Ты ещё не писал админу.</div></div>`;
-    }
-    let html = `<div class="card"><div class="card-title">Мои обращения</div>`;
-    for (const f of state.myFeedback) {
-        let statusLabel = 'В обработке';
-        let statusCls = 'new';
-        if (f.status === 'answered') { statusLabel = 'Отвечено'; statusCls = 'answered'; }
-        else if (f.status === 'postponed') { statusLabel = 'Отложено'; statusCls = 'postponed'; }
-
-        const dateStr = (f.created_at || '').slice(0, 10);
-        html += `<div class="fb-item">
-            <div class="fb-item-head">
-                <span class="fb-date">${escapeHtml(dateStr)}</span>
-                <span class="fb-status ${statusCls}">${statusLabel}</span>
-            </div>
-            <div class="fb-text">${escapeHtml(f.text)}</div>
-            ${f.admin_reply ? `<div class="fb-reply"><div class="fb-reply-label">Ответ</div>${escapeHtml(f.admin_reply)}</div>` : ''}
-        </div>`;
-    }
-    html += `</div>`;
-    return html;
-}
-
-/* ============ GAME CARD + SCREEN ============ */
-
-function renderGameCard() {
+function renderGames() {
     const info = state.gameInfo;
     const best = info?.best ?? 0;
     const plays = info?.plays ?? 0;
 
-    return `<div class="card game-card">
-        <div class="card-title">До пары успеть</div>
-        <div class="card-subtitle">Пролетай между парами, набирай очки. Тапни — прыжок.</div>
-        <div class="game-stats-row">
-            <div class="game-stat">
-                <div class="game-stat-value">${best}</div>
-                <div class="game-stat-label">Рекорд</div>
+    let html = `<div class="games-grid">`;
+
+    // Игра 1: До пары успеть
+    html += `<div class="game-tile" data-action="game-open">
+        <div class="game-tile-header">
+            <div class="game-tile-icon">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M8 12l3 3 5-6"></path>
+                </svg>
             </div>
-            <div class="game-stat">
-                <div class="game-stat-value">${plays}</div>
-                <div class="game-stat-label">Игр</div>
+            <div style="flex:1;min-width:0">
+                <div class="game-tile-title">До пары успеть</div>
+                <div class="game-tile-tagline">Flappy-стиль · реакция</div>
             </div>
         </div>
-        <button class="btn" data-action="game-open" style="width:100%">Играть</button>
+        <div class="game-tile-desc">
+            Пролетай между парами, не задень стены. Тапни — прыжок. Чем дальше — тем больше очков.
+        </div>
+        <div class="game-tile-stats">
+            <div class="game-tile-stat">
+                <div class="game-tile-stat-value">${best}</div>
+                <div class="game-tile-stat-label">Рекорд</div>
+            </div>
+            <div class="game-tile-stat">
+                <div class="game-tile-stat-value">${plays}</div>
+                <div class="game-tile-stat-label">Игр</div>
+            </div>
+        </div>
+        <div class="game-tile-play">Играть</div>
     </div>`;
+
+    // Заглушка под будущие игры
+    html += `<div class="game-tile" style="cursor:default;pointer-events:none;opacity:0.6;">
+        <div class="game-tile-header">
+            <div class="game-tile-icon" style="background:var(--bg-3);color:var(--text-2);box-shadow:none;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </div>
+            <div style="flex:1;min-width:0">
+                <div class="game-tile-title">Скоро</div>
+                <div class="game-tile-tagline">Новые игры в разработке</div>
+            </div>
+        </div>
+        <div class="game-tile-desc">
+            Здесь появятся новые игры. Следи за обновлениями.
+        </div>
+    </div>`;
+
+    html += `</div>`;
+
+    if (state.gameInfo?.top && state.gameInfo.top.length > 0) {
+        html += `<div class="card" style="margin-top:12px"><div class="card-title">Топ игроков</div>`;
+        for (const item of state.gameInfo.top) {
+            const cls = item.is_me ? 'game-top-me' : '';
+            const name = item.display || `Игрок #${String(item.user_id).slice(-4)}`;
+            html += `<div class="grade-row ${cls}"><span>${item.rank}. ${escapeHtml(name)}</span><span class="grade-value">${item.score}</span></div>`;
+        }
+        html += `</div>`;
+    }
+
+    return html;
 }
 
 function renderGameScreen() {
@@ -1562,6 +1303,333 @@ function initGame() {
 
     drawGame(ctx, game);
     requestAnimationFrame(loop);
+}
+
+/* ============ AI ============ */
+
+function renderAI() {
+    let html = '';
+    if (state.aiMessages.length === 0) {
+        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото и напиши, что с ним сделать — перевести, сделать конспект, решить и т.п.</div></div>`;
+    } else {
+        for (const m of state.aiMessages) {
+            if (m.role === 'user') {
+                if (m.photo) {
+                    html += `<div class="card" style="background:var(--neon);color:#070B14;padding:10px">
+                        <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="фото">
+                        <div style="font-weight:600">${escapeHtml(m.text || '')}</div>
+                    </div>`;
+                } else {
+                    html += `<div class="card" style="background:var(--neon);color:#070B14"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
+                }
+            } else {
+                html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(m.text)}</div></div>`;
+            }
+        }
+    }
+    if (state.aiPending) html += renderLoading();
+
+    const photoPreview = state.aiPendingPhoto
+        ? `<div class="ai-photo-preview">
+              <img src="${state.aiPendingPhoto}" alt="фото">
+              <button class="ai-photo-remove" data-action="ai-photo-cancel" title="Убрать">✕</button>
+           </div>`
+        : '';
+
+    html += `<div style="margin-top:12px">
+        ${photoPreview}
+        <textarea class="input" id="ai-input" placeholder="Напиши вопрос или что сделать с фото..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
+        <button class="btn" data-action="ai-send" style="width:100%" ${state.aiPending ? 'disabled' : ''}>Отправить</button>
+        <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>Прикрепить фото</button>
+        <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
+        <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
+    </div>`;
+    return html;
+}
+
+function actionAIClear() {
+    if (!confirm('Очистить историю чата?')) return;
+    haptic('light');
+    state.aiMessages = [];
+    state.aiPendingPhoto = null;
+    apiPost('/api/ai/clear-history').catch(() => {});
+    render();
+}
+
+function actionAIPhotoOpen() {
+    haptic('light');
+    const input = document.getElementById('ai-photo-input');
+    if (input) input.click();
+}
+
+function actionAIPhotoCancel() {
+    haptic('light');
+    state.aiPendingPhoto = null;
+    render();
+}
+
+function actionAIPhotoSelected(file) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { alert('Фото слишком большое (макс 8 МБ)'); return; }
+    if (!file.type.startsWith('image/')) { alert('Нужно изображение'); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxSide = 1600;
+            let w = img.width, h = img.height;
+            if (w > maxSide || h > maxSide) {
+                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
+                else { w = Math.round(w * maxSide / h); h = maxSide; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
+            haptic('light');
+            render();
+        };
+        img.onerror = () => alert('Не удалось прочитать изображение');
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+async function actionAISend() {
+    const el = document.getElementById('ai-input');
+    if (!el) return;
+    const question = (el.value || '').trim();
+    const photo = state.aiPendingPhoto;
+    if (!question && !photo) return;
+
+    if (photo) {
+        state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
+        state.aiPendingPhoto = null;
+        el.value = '';
+        state.aiPending = true;
+        render();
+        try {
+            const r = await apiPost('/api/ai-photo', { photo, question });
+            state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+            haptic('success');
+        } catch (err) {
+            state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
+            haptic('error');
+        } finally {
+            state.aiPending = false;
+            render();
+        }
+        return;
+    }
+
+    state.aiMessages.push({ role: 'user', text: question });
+    el.value = '';
+    state.aiPending = true;
+    render();
+    try {
+        const r = await apiPost('/api/ai', { question });
+        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+        haptic('success');
+    } catch (e) {
+        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
+        haptic('error');
+    } finally {
+        state.aiPending = false;
+        render();
+    }
+}
+
+/* ============ ADMIN ============ */
+
+function renderAdmin() {
+    if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
+    let html = '';
+    if (state.adminStats) {
+        const s = state.adminStats;
+        html += `<div class="banner"><div class="banner-title">Статистика</div><div class="banner-sub">Пользователей: ${s.total_users}<br>Обращений в ожидании: ${s.pending_feedback}</div></div>`;
+    } else html += renderLoading();
+    html += `<div class="card">
+        <div class="card-title">Мониторинг ИРНИТУ</div>
+        ${state.adminMonitor
+            ? (state.adminMonitor.ok
+                ? `<div class="card-subtitle" style="color:var(--accent-green)">Сайт отвечает (HTTP ${state.adminMonitor.status})</div>`
+                : `<div class="card-subtitle overdue">Сайт не отвечает${state.adminMonitor.error ? ': ' + escapeHtml(state.adminMonitor.error) : ''}</div>`)
+            : `<div class="card-subtitle">Не проверено</div>`}
+        <div class="actions-row"><button class="btn btn-secondary" data-action="admin-monitor">Проверить</button></div>
+    </div>`;
+    html += `<div class="card">
+        <div class="card-title">Рассылка</div>
+        <div class="card-subtitle">Уйдёт всем пользователям бота.</div>
+        <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
+        <button class="btn" data-action="admin-broadcast">Отправить всем</button>
+    </div>`;
+    if (state.adminFeedback && state.adminFeedback.length > 0) {
+        html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
+        for (const f of state.adminFeedback) {
+            html += `<div style="border-bottom:1px solid var(--divider);padding:10px 0">
+                <div class="card-subtitle">#${f.id} | ${escapeHtml(f.username || f.user_id)}${f.status === 'postponed' ? ' [отложено]' : ''}</div>
+                <div style="white-space:pre-wrap;margin-top:4px">${escapeHtml(f.text)}</div>
+                <div class="actions-row">
+                    <button class="btn btn-secondary" data-action="admin-fb-reply" data-id="${f.id}">Ответить</button>
+                    <button class="btn btn-secondary" data-action="admin-fb-postpone" data-id="${f.id}">Отложить</button>
+                </div>
+            </div>`;
+        }
+        html += `</div>`;
+    } else html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
+    return html;
+}
+
+/* ============ PROFILE ============ */
+
+function renderProfile() {
+    const p = state.profile;
+    const u = state.user;
+    const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
+    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Гость';
+    const metaParts = [];
+    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` (подгр. ${p.subgroup})` : ''));
+    if (u.username) metaParts.push('@' + u.username);
+
+    let html = `<div class="profile-header">
+        <div class="profile-avatar">${escapeHtml(initials)}</div>
+        <div class="profile-name">${escapeHtml(fullName)}</div>
+        ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+        ${p?.is_admin ? '<div class="badge" style="background:linear-gradient(135deg,#e53935,#b71c1c);color:#fff">ADMIN</div>' : ''}
+    </div>`;
+
+    if (p) {
+        html += `<div class="card">
+            <div class="card-title">Статистика</div>
+            <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
+            <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
+            <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
+            <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
+        </div>`;
+    }
+
+    html += `<div class="card">
+        <div class="card-title">Мой ID</div>
+        <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
+        <div class="actions-row"><button class="btn btn-secondary" data-action="copy-my-id">Скопировать ID</button></div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Моя группа</div>
+        <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="choose-group">${p?.group ? 'Изменить' : 'Выбрать группу'}</button>
+            ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Подгруппа</div>
+        <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">—</button>
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
+        </div>
+    </div>`;
+
+    const notifyOn = !!p?.notify_type;
+    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
+
+    html += `<div class="card">
+        <div class="card-title">Уведомления о расписании</div>
+        <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
+        <div class="actions-row">
+            <button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button>
+        </div>
+        <label class="checkbox-row">
+            <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
+            <span>Следить за изменениями в расписании</span>
+        </label>
+        <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
+        <div class="nbf-buttons">
+            ${[0, 10, 15, 30].map(m => `
+                <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
+                        data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
+            `).join('')}
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Цитата дня</div>
+        <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
+        <div class="actions-row">
+            ${p?.daily_subscribed
+                ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
+                : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
+        </div>
+    </div>`;
+
+    html += renderScholarshipCard();
+
+    html += renderMyFeedbackCard();
+
+    html += `<div class="card">
+        <div class="card-title">Обратная связь</div>
+        <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
+        <button class="btn" data-action="feedback-send">Отправить</button>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Экспорт данных</div>
+        <div class="export-hint">Скачать все свои данные (задачи, заметки, оценки, обращения) в JSON — бот пришлёт файл в чат.</div>
+        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Отправляю...' : 'Скачать JSON'}</button>
+    </div>`;
+
+    return html;
+}
+
+function renderMyFeedbackCard() {
+    if (!state.myFeedbackLoaded) {
+        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Загрузка...</div></div>`;
+    }
+    if (!state.myFeedback || state.myFeedback.length === 0) {
+        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Ты ещё не писал админу.</div></div>`;
+    }
+
+    const total = state.myFeedback.length;
+    const previewLimit = 3;
+    const showAll = state.myFeedbackExpanded;
+    const items = showAll ? state.myFeedback : state.myFeedback.slice(0, previewLimit);
+
+    let html = `<div class="card"><div class="card-title">Мои обращения <span style="color:var(--text-2);font-weight:600;font-size:13px">${total > previewLimit && !showAll ? `· показаны ${previewLimit} из ${total}` : `· ${total}`}</span></div>`;
+
+    for (const f of items) {
+        let statusLabel = 'В обработке';
+        let statusCls = 'new';
+        if (f.status === 'answered') { statusLabel = 'Отвечено'; statusCls = 'answered'; }
+        else if (f.status === 'postponed') { statusLabel = 'Отложено'; statusCls = 'postponed'; }
+
+        const dateStr = (f.created_at || '').slice(0, 10);
+        html += `<div class="fb-item">
+            <div class="fb-item-head">
+                <span class="fb-date">${escapeHtml(dateStr)}</span>
+                <span class="fb-status ${statusCls}">${statusLabel}</span>
+            </div>
+            <div class="fb-text">${escapeHtml(f.text)}</div>
+            ${f.admin_reply ? `<div class="fb-reply"><div class="fb-reply-label">Ответ</div>${escapeHtml(f.admin_reply)}</div>` : ''}
+        </div>`;
+    }
+
+    if (total > previewLimit && !showAll) {
+        html += `<button class="fb-show-more" data-action="fb-toggle">Показать все (${total})</button>`;
+    } else if (showAll && total > previewLimit) {
+        html += `<button class="fb-show-more" data-action="fb-toggle">Свернуть</button>`;
+    }
+
+    html += `</div>`;
+    return html;
+}
+
+function actionFbToggle() {
+    haptic('light');
+    state.myFeedbackExpanded = !state.myFeedbackExpanded;
+    render();
 }
 
 /* ============ SCHOLARSHIP ============ */
@@ -1924,6 +1992,10 @@ async function loadTabData(tab) {
             ensureWeekLoaded().catch(() => {});
         } else if (tab === 'tasks') await loadTasks();
         else if (tab === 'notes') await loadNotes();
+        else if (tab === 'games') {
+            await loadProfile();
+            await loadGameInfo();
+        }
         else if (tab === 'ai') {
             await loadProfile();
             await loadAiHistory();
@@ -1936,7 +2008,8 @@ async function loadTabData(tab) {
             state.scholarshipEditor = false;
             state.scholarshipEditorId = null;
             state.myFeedbackLoaded = false;
-            await Promise.all([loadProfile(), loadScholarship(), loadGameInfo(), loadMyFeedback()]);
+            state.myFeedbackExpanded = false;
+            await Promise.all([loadProfile(), loadScholarship(), loadMyFeedback()]);
         }
     } catch (e) { console.error(e); state.error = e.message; }
     state.loading = false;
@@ -2023,6 +2096,7 @@ async function actionFeedbackSend() {
         haptic('success');
         alert('Отправлено');
         state.myFeedbackLoaded = false;
+        state.myFeedbackExpanded = false;
         await loadMyFeedback();
         render();
     } catch (e) { alert('Ошибка: ' + e.message); }
@@ -2175,6 +2249,7 @@ function handleAction(el) {
     if (a === 'set-subgroup') actionSetSubgroup(parseInt(v));
     else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(v));
     else if (a === 'feedback-send') actionFeedbackSend();
+    else if (a === 'fb-toggle') actionFbToggle();
     else if (a === 'task-done') actionTaskDone(parseInt(el.dataset.id));
     else if (a === 'task-delete') actionTaskDelete(parseInt(el.dataset.id));
     else if (a === 'task-add-open') actionTaskAddOpen();
