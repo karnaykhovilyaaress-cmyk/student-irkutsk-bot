@@ -22,6 +22,12 @@ from aiogram.types import (
 )
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
+try:
+    from fpdf import FPDF
+    _FPDF_AVAILABLE = True
+except Exception:
+    _FPDF_AVAILABLE = False
+
 
 def clean_latex(text: str) -> str:
     if not text:
@@ -266,6 +272,17 @@ def init_db():
         text TEXT,
         has_photo INTEGER DEFAULT 0,
         created_at TEXT)""")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        date TEXT,
+        time TEXT,
+        subject TEXT,
+        status TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, date, time, subject))""")
+
     conn.commit(); conn.close()
 
 
@@ -747,6 +764,53 @@ def delete_note_by_id(note_id, user_id):
     conn.commit(); conn.close()
 
 
+# ============ ATTENDANCE ============
+
+def attendance_set(user_id, date, time, subject, status):
+    conn = sqlite3.connect(DB_PATH)
+    if status:
+        conn.execute(
+            "INSERT INTO attendance (user_id, date, time, subject, status, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, date, time, subject) DO UPDATE SET "
+            "status=excluded.status, updated_at=excluded.updated_at",
+            (user_id, date, time, subject, status, datetime.now(timezone.utc).isoformat()))
+    else:
+        conn.execute(
+            "DELETE FROM attendance WHERE user_id=? AND date=? AND time=? AND subject=?",
+            (user_id, date, time, subject))
+    conn.commit(); conn.close()
+
+
+def attendance_get_map(user_id, dates):
+    if not dates:
+        return {}
+    conn = sqlite3.connect(DB_PATH)
+    placeholders = ",".join("?" * len(dates))
+    rows = conn.execute(
+        f"SELECT date, time, subject, status FROM attendance "
+        f"WHERE user_id=? AND date IN ({placeholders})",
+        (user_id, *dates)).fetchall()
+    conn.close()
+    result = {}
+    for date, time_, subject, status in rows:
+        result[(date, time_, subject)] = status
+    return result
+
+
+def attendance_stats(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status",
+        (user_id,)).fetchall()
+    conn.close()
+    result = {"was": 0, "missed": 0, "sick": 0}
+    for status, count in rows:
+        if status in result:
+            result[status] = count
+    return result
+
+
 # ============ AI HISTORY ============
 
 def ai_get_history(user_id, limit=30):
@@ -793,7 +857,6 @@ def game_save_score(user_id, score):
     row = conn.execute(
         "SELECT best_score, plays_count FROM game_scores WHERE user_id=?",
         (user_id,)).fetchone()
-    # Получим username/first_name
     meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
     username = meta[0] if meta else None
     first_name = meta[1] if meta else None
@@ -821,8 +884,12 @@ def game_save_score(user_id, score):
 def game_get_leaderboard(limit=10):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
-        "SELECT user_id, best_score, COALESCE(username,''), COALESCE(first_name,'') FROM game_scores "
-        "WHERE best_score > 0 ORDER BY best_score DESC LIMIT ?",
+        "SELECT g.user_id, g.best_score, "
+        "COALESCE(u.username, g.username, ''), "
+        "COALESCE(u.first_name, g.first_name, '') "
+        "FROM game_scores g "
+        "LEFT JOIN users u ON u.user_id = g.user_id "
+        "WHERE g.best_score > 0 ORDER BY g.best_score DESC LIMIT ?",
         (limit,)).fetchall()
     conn.close()
     return rows
@@ -837,10 +904,19 @@ def get_export_data(user_id):
     grades = get_grades(user_id)
     amount = get_scholarship_amount(user_id)
     feedback = get_user_feedback(user_id, limit=100)
+    att = attendance_stats(user_id)
+
+    conn = sqlite3.connect(DB_PATH)
+    meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    username = meta[0] if meta else None
+    first_name = meta[1] if meta else None
 
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "user_id": user_id,
+        "username": username,
+        "first_name": first_name,
         "group": saved[1] if saved else None,
         "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id),
@@ -861,336 +937,14 @@ def get_export_data(user_id):
              "answered_at": f[4], "admin_reply": f[5]}
             for f in feedback
         ],
+        "attendance": att,
     }
 
 
+# ⚠️ ВСТАВЬ СЮДА СВОЮ СТАРУЮ СЕКЦИЮ GROUPS
+# Она не менялась. Скопируй её полностью из предыдущего файла bot.py.
 GROUPS = {
-    "ИАМиТ": [
-        {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
-        {"name": "ЛИМб-26-1", "id": "478284"}, {"name": "МИРб-26-1", "id": "478310"},
-        {"name": "ММб-26-1", "id": "478314"}, {"name": "МТб-26-1", "id": "478318"},
-        {"name": "ППТм-26-1", "id": "478441"}, {"name": "СДМ-26-1", "id": "478478"},
-        {"name": "СМ-26-1", "id": "478493"}, {"name": "СМ-26-2", "id": "478494"},
-        {"name": "СМ-26-3", "id": "479896"}, {"name": "ТЭАм-26-1", "id": "478548"},
-        {"name": "УКб-26-1", "id": "478551"}, {"name": "ЦПКм-26-1", "id": "478601"},
-        {"name": "ЭЛб-26-1", "id": "478640"},
-        {"name": "АСПм-25-1", "id": "478011"}, {"name": "АТПРб-25-1", "id": "478048"},
-        {"name": "ЛИМб-25-1", "id": "478283"}, {"name": "ЛМБм-25-1", "id": "478290"},
-        {"name": "МИРб-25-1", "id": "478309"}, {"name": "ММб-25-1", "id": "478313"},
-        {"name": "МТб-25-1", "id": "478317"}, {"name": "ППТм-25-1", "id": "478440"},
-        {"name": "СДМ-25-1", "id": "478477"}, {"name": "СМ-25-1", "id": "478491"},
-        {"name": "СМ-25-2", "id": "478492"}, {"name": "ТЭАм-25-1", "id": "478547"},
-        {"name": "УКб-25-1", "id": "478550"}, {"name": "УПКм-25-1", "id": "478558"},
-        {"name": "ЦПКм-25-1", "id": "478600"}, {"name": "ЭЛб-25-1", "id": "478639"},
-        {"name": "АТПРб-24-1", "id": "478047"}, {"name": "ЛИМб-24-1", "id": "478282"},
-        {"name": "МИРб-24-1", "id": "478308"}, {"name": "ММб-24-1", "id": "478312"},
-        {"name": "МТб-24-1", "id": "478316"}, {"name": "СМ-24-1", "id": "478489"},
-        {"name": "СМ-24-2", "id": "478490"}, {"name": "ТСЧс-24-1", "id": "478541"},
-        {"name": "ЭЛб-24-1", "id": "478638"},
-        {"name": "АСб-23-1", "id": "478008"}, {"name": "АТПРб-23-1", "id": "478046"},
-        {"name": "ЛИМб-23-1", "id": "478281"}, {"name": "МИРб-23-1", "id": "478307"},
-        {"name": "ММб-23-1", "id": "478311"}, {"name": "МТб-23-1", "id": "478315"},
-        {"name": "СМ-23-1", "id": "478487"}, {"name": "СМ-23-2", "id": "478488"},
-        {"name": "ТСЧс-23-1", "id": "478540"}, {"name": "УКб-23-1", "id": "478549"},
-        {"name": "ЭЛб-23-1", "id": "478637"},
-        {"name": "СМ-22-1", "id": "478485"}, {"name": "СМ-22-2", "id": "478486"},
-    ],
-    "Аспирантура": [
-        {"name": "аАУП-26-1", "id": "477932"}, {"name": "аБЗТ-26-1", "id": "477934"},
-        {"name": "аБПП-26-1", "id": "477936"}, {"name": "аБТХ-26-1", "id": "477937"},
-        {"name": "аВДС-26-1", "id": "477939"}, {"name": "аГГ-26-1", "id": "477940"},
-        {"name": "аГГМ-26-1", "id": "477942"}, {"name": "аГНГ-26-1", "id": "477946"},
-        {"name": "аГНП-26-1", "id": "477948"}, {"name": "аДВЛ-26-1", "id": "477955"},
-        {"name": "аМВ-26-1", "id": "477977"}, {"name": "аМЕТ-26-1", "id": "477979"},
-        {"name": "аММП-26-1", "id": "479885"}, {"name": "аМН-26-1", "id": "477982"},
-        {"name": "аНСкгм-26-1", "id": "477987"}, {"name": "аНСдсм-26-1", "id": "477986"},
-        {"name": "аОБП-26-1", "id": "477989"}, {"name": "аОХМ-26-1", "id": "477990"},
-        {"name": "аПБ-26-1", "id": "477991"}, {"name": "аРЭоэ-26-1", "id": "478006"},
-        {"name": "аРЭс-26-1", "id": "478007"}, {"name": "аСМХ-26-1", "id": "478010"},
-        {"name": "аССП-26-1", "id": "478013"}, {"name": "аСТМ-26-1", "id": "478014"},
-        {"name": "аТАРР-26-1", "id": "478029"}, {"name": "аТМД-26-1", "id": "478031"},
-        {"name": "аТМН-26-1", "id": "478033"}, {"name": "аТОС-26-1", "id": "478035"},
-        {"name": "аТПС-26-1", "id": "478051"}, {"name": "аТПСК-26-1", "id": "478053"},
-        {"name": "аТТГР-26-1", "id": "478055"}, {"name": "аТХВ-26-1", "id": "478056"},
-        {"name": "аУПП-26-1", "id": "478057"}, {"name": "аУСТ-26-1", "id": "478061"},
-        {"name": "аФХМ-26-1", "id": "478062"}, {"name": "аХТВ-26-1", "id": "478064"},
-        {"name": "аЭКЛ-26-1", "id": "478066"}, {"name": "аЭКО-26-1", "id": "478068"},
-        {"name": "аЭКС-26-1", "id": "478070"}, {"name": "аЭНК-26-1", "id": "478072"},
-        {"name": "аЭТРд-26-1", "id": "478073"}, {"name": "аЭТРоп-26-1", "id": "478075"},
-        {"name": "аЭЭН-26-1", "id": "478077"},
-        {"name": "аАУП-24-1", "id": "477931"}, {"name": "аБЭТ-24-1", "id": "477933"},
-        {"name": "аБПП-24-1", "id": "477935"}, {"name": "аВДС-24-1", "id": "477938"},
-        {"name": "аГКЛ-24-1", "id": "477945"}, {"name": "аГКгис-24-1", "id": "477943"},
-        {"name": "аГНП-24-1", "id": "477947"}, {"name": "аГФЗ-24-1", "id": "477949"},
-        {"name": "аГГМ-24-1", "id": "477941"}, {"name": "аИСНТ-24-1", "id": "477975"},
-        {"name": "аМВ-24-1", "id": "477976"}, {"name": "аМЕТ-24-1", "id": "477978"},
-        {"name": "аММП-24-1", "id": "477980"}, {"name": "аМН-24-1", "id": "477981"},
-        {"name": "аОБП-24-1", "id": "477988"}, {"name": "аПМФ-24-1", "id": "477992"},
-        {"name": "аППН-24-1", "id": "477993"}, {"name": "аРТХ-24-1", "id": "478004"},
-        {"name": "аРЭ-24-1", "id": "478005"}, {"name": "аСМХ-24-1", "id": "478009"},
-        {"name": "аТАРР-24-1", "id": "478028"}, {"name": "аТМД-24-1", "id": "478030"},
-        {"name": "аТМН-24-1", "id": "478032"}, {"name": "аТОС-24-1", "id": "478034"},
-        {"name": "аТПС-24-1", "id": "478050"}, {"name": "аТПСК-24-1", "id": "478052"},
-        {"name": "аТТГР-24-1", "id": "478054"}, {"name": "аУППоп-24-1", "id": "478058"},
-        {"name": "аУППс-24-1", "id": "478059"}, {"name": "аУСТ-24-1", "id": "478060"},
-        {"name": "аХТВ-24-1", "id": "478063"}, {"name": "аЭКЛ-24-1", "id": "478065"},
-        {"name": "аЭКО-24-1", "id": "478067"}, {"name": "аЭКС-24-1", "id": "478069"},
-        {"name": "аЭНК-24-1", "id": "478071"}, {"name": "аЭТРоп-24-1", "id": "478074"},
-        {"name": "аЭЭН-24-1", "id": "478076"}, {"name": "аЗКМ-24-1", "id": "477958"},
-    ],
-    "БРИКС": [
-        {"name": "ВЗАм-26-1", "id": "478105"}, {"name": "ИИКб-26-1", "id": "478215"},
-        {"name": "ИИКб-26-2", "id": "479891"}, {"name": "КБКб-26-1", "id": "478251"},
-        {"name": "ЛБКб-26-1", "id": "478279"}, {"name": "ЛБКб-26-2", "id": "478280"},
-        {"name": "МДБб-26-1", "id": "478306"}, {"name": "РКИб-26-1", "id": "478455"},
-        {"name": "РКИб-26-2", "id": "478456"}, {"name": "СПРКм-26-1", "id": "479947"},
-        {"name": "УЛм-26-1", "id": "479898"}, {"name": "ФНб-26-1", "id": "478580"},
-        {"name": "ЦТм-26-1", "id": "478605"}, {"name": "ЭПАб-26-1", "id": "478654"},
-        {"name": "ЭЗТм-26-1", "id": "478632"},
-        {"name": "ИИКб-25-1", "id": "478213"}, {"name": "ИИКб-25-2", "id": "478214"},
-        {"name": "КБКб-25-1", "id": "478250"}, {"name": "ЛБКб-25-1", "id": "478277"},
-        {"name": "ЛБКб-25-2", "id": "478278"}, {"name": "МДБб-25-1", "id": "478305"},
-        {"name": "РКИб-25-1", "id": "478451"}, {"name": "РКИб-25-2", "id": "478452"},
-        {"name": "РКИб-25-3", "id": "478453"}, {"name": "РКИб-25-4", "id": "478454"},
-        {"name": "УЛм-25-1", "id": "478552"}, {"name": "ФНб-25-1", "id": "478579"},
-        {"name": "ЦТм-25-1", "id": "478604"}, {"name": "ЭПАб-25-1", "id": "478653"},
-        {"name": "ЖКб-24-1", "id": "478195"}, {"name": "ИИКб-24-1", "id": "478212"},
-        {"name": "КБКб-24-1", "id": "478249"}, {"name": "ЛБКб-24-1", "id": "478275"},
-        {"name": "ЛБКб-24-2", "id": "478276"}, {"name": "МДБб-24-1", "id": "478304"},
-        {"name": "ФНб-24-1", "id": "478578"}, {"name": "ЭПАб-24-1", "id": "478652"},
-        {"name": "ЖКб-23-1", "id": "478194"}, {"name": "ИИКб-23-1", "id": "478211"},
-        {"name": "ЛБКб-23-1", "id": "478274"}, {"name": "МДБб-23-1", "id": "478303"},
-        {"name": "ФНб-23-1", "id": "478577"}, {"name": "ЭПАб-23-1", "id": "478651"},
-    ],
-    "ДЛРЯ": [
-        {"name": "ИНС-26-1", "id": "479936"}, {"name": "ИНС-26-2", "id": "479937"},
-        {"name": "ИНС-26-3", "id": "479938"}, {"name": "ИНС-26-4", "id": "479939"},
-        {"name": "ИНС-26-5", "id": "479940"}, {"name": "ИНС-26-6", "id": "479941"},
-        {"name": "ИНСм-26-1", "id": "479942"}, {"name": "ИНСм-26-2", "id": "479943"},
-        {"name": "ИНСм-26-3", "id": "479944"},
-        {"name": "ИНС-25-3", "id": "479856"}, {"name": "ИНС-25-6", "id": "479859"},
-        {"name": "ИНС-25-7", "id": "479860"}, {"name": "ИНСМ-25-2", "id": "479864"},
-        {"name": "ИНСМ-25-3", "id": "479865"},
-    ],
-    "ССГ": [
-        {"name": "ГИИм-26-1", "id": "478127"}, {"name": "ИТГб-26-1", "id": "478243"},
-        {"name": "РМ-26-1", "id": "478460"}, {"name": "РФ-26-1", "id": "478476"},
-        {"name": "ЦГФм-26-1", "id": "478599"},
-        {"name": "ГИС-25-1", "id": "478129"}, {"name": "ИТТб-25-1", "id": "478242"},
-        {"name": "РГ-25-1", "id": "478443"},
-        {"name": "РМ-24-1", "id": "478459"}, {"name": "РФ-24-1", "id": "478475"},
-        {"name": "ГИС-23-1", "id": "478128"}, {"name": "РГ-23-1", "id": "478442"},
-        {"name": "РМ-23-1", "id": "478458"}, {"name": "РФ-23-1", "id": "478474"},
-        {"name": "РМ-22-1", "id": "478457"}, {"name": "РФ-22-1", "id": "478473"},
-    ],
-    "ИАСиД": [
-        {"name": "АД-26-1", "id": "477954"}, {"name": "АДм-26-1", "id": "477957"},
-        {"name": "АРб-26-1", "id": "478002"}, {"name": "АРб-26-2", "id": "478003"},
-        {"name": "ВВб-26-1", "id": "478101"}, {"name": "ВВм-26-1", "id": "478102"},
-        {"name": "ГРб-26-1", "id": "478173"}, {"name": "ГРм-26-1", "id": "478175"},
-        {"name": "ГСХб-26-1", "id": "478179"}, {"name": "ГСХм-26-1", "id": "478181"},
-        {"name": "ДИб-26-1", "id": "479888"}, {"name": "ДСб-26-1", "id": "478192"},
-        {"name": "ДСб-26-2", "id": "478193"}, {"name": "КНб-26-1", "id": "478255"},
-        {"name": "НТЗм-26-1", "id": "478411"}, {"name": "ОТКм-26-1", "id": "478429"},
-        {"name": "ПГСб-26-1", "id": "478436"}, {"name": "РРб-26-1", "id": "478465"},
-        {"name": "СНГб-26-1", "id": "478501"}, {"name": "ССЭм-26-1", "id": "478503"},
-        {"name": "СУЗ-26-1", "id": "478519"}, {"name": "ТГПм-26-1", "id": "478524"},
-        {"name": "ТМПм-26-1", "id": "478536"}, {"name": "УСТб-26-1", "id": "478563"},
-        {"name": "УСТм-26-1", "id": "478565"}, {"name": "УСТмз-26-1", "id": "479899"},
-        {"name": "ЭУНб-26-1", "id": "478714"},
-        {"name": "АД-25-1", "id": "477953"}, {"name": "ГРм-25-1", "id": "478174"},
-        {"name": "ДСб-25-2", "id": "478191"}, {"name": "РРб-25-1", "id": "478464"},
-        {"name": "ТТВм-25-1", "id": "478522"}, {"name": "АДм-25-1", "id": "477956"},
-        {"name": "ГСХм-25-1", "id": "478178"}, {"name": "КНб-25-1", "id": "478254"},
-        {"name": "СНГб-25-1", "id": "478500"}, {"name": "ТГПм-25-1", "id": "478523"},
-        {"name": "ЦУОКсм-25-1", "id": "478607"}, {"name": "АРб-25-1", "id": "478000"},
-        {"name": "ССЗм-25-1", "id": "478502"}, {"name": "ТМПм-25-1", "id": "478535"},
-        {"name": "ЭУНб-25-1", "id": "478713"}, {"name": "АРб-25-2", "id": "478001"},
-        {"name": "ДИб-25-1", "id": "478186"}, {"name": "ОТКм-25-1", "id": "478428"},
-        {"name": "СУЗ-25-1", "id": "478518"}, {"name": "УСТб-25-1", "id": "478562"},
-        {"name": "ГРб-25-1", "id": "478172"}, {"name": "ДСб-25-1", "id": "478190"},
-        {"name": "ПГСб-25-1", "id": "478435"}, {"name": "ТБб-25-1", "id": "478521"},
-        {"name": "УСТм-25-1", "id": "478564"},
-        {"name": "АД-24-1", "id": "477952"}, {"name": "ГСХб-24-1", "id": "478177"},
-        {"name": "МД-24-1", "id": "478302"}, {"name": "УСТб-24-1", "id": "478561"},
-        {"name": "АРб-24-1", "id": "477998"}, {"name": "ДИб-24-1", "id": "478185"},
-        {"name": "ПГСб-24-1", "id": "478434"}, {"name": "АРб-24-2", "id": "477999"},
-        {"name": "ДИб-24-2", "id": "478184"}, {"name": "РРб-24-1", "id": "478463"},
-        {"name": "ЭУНб-24-1", "id": "478712"}, {"name": "ВВб-24-1", "id": "478100"},
-        {"name": "ДСб-24-1", "id": "478189"}, {"name": "СНГб-24-1", "id": "478499"},
-        {"name": "ГРб-24-1", "id": "478171"}, {"name": "КНб-24-1", "id": "478253"},
-        {"name": "СУЗ-24-1", "id": "478517"},
-        {"name": "АД-23-1", "id": "477951"}, {"name": "ДИб-23-1", "id": "478182"},
-        {"name": "ПГСб-23-1", "id": "478433"}, {"name": "УСТб-23-1", "id": "478560"},
-        {"name": "АРб-23-1", "id": "477996"}, {"name": "ДИб-23-2", "id": "478183"},
-        {"name": "РРб-23-1", "id": "478462"}, {"name": "ЭУНб-23-1", "id": "478711"},
-        {"name": "АРб-23-2", "id": "477997"}, {"name": "ДСб-23-1", "id": "478188"},
-        {"name": "СНГб-23-1", "id": "478498"}, {"name": "ГРб-23-1", "id": "478170"},
-        {"name": "КНб-23-1", "id": "478252"}, {"name": "СУЗ-23-1", "id": "478516"},
-        {"name": "ГСХб-23-1", "id": "478176"}, {"name": "МД-23-1", "id": "478301"},
-        {"name": "ТБб-23-1", "id": "478520"},
-        {"name": "АД-22-1", "id": "477950"}, {"name": "ДСб-22-1", "id": "478187"},
-        {"name": "АРб-22-1", "id": "477994"}, {"name": "МД-22-1", "id": "478300"},
-        {"name": "АРб-22-2", "id": "477995"}, {"name": "РРб-22-1", "id": "478461"},
-        {"name": "ГРб-22-1", "id": "478168"}, {"name": "СУЗ-22-1", "id": "478515"},
-        {"name": "ГРб-22-2", "id": "478169"},
-        {"name": "МД-21-1", "id": "478299"}, {"name": "СУЗ-21-1", "id": "478514"},
-    ],
-    "ИВТ": [
-        {"name": "АМПб-26-1", "id": "477984"}, {"name": "АТПб-26-1", "id": "478040"},
-        {"name": "АТПб-26-2", "id": "479886"}, {"name": "БТб-26-1", "id": "478096"},
-        {"name": "БТб-26-2", "id": "478097"}, {"name": "ИНОм-26-1", "id": "478222"},
-        {"name": "ИРб-26-1", "id": "478226"}, {"name": "ИФб-26-1", "id": "478247"},
-        {"name": "МЦб-26-1", "id": "478327"}, {"name": "МЦм-26-1", "id": "478336"},
-        {"name": "МЦТб-26-1", "id": "478339"}, {"name": "МХТб-26-1", "id": "478324"},
-        {"name": "НХПм-26-1", "id": "478412"}, {"name": "ОХФм-26-1", "id": "478431"},
-        {"name": "ПИм-26-1", "id": "478438"}, {"name": "РДб-26-1", "id": "478447"},
-        {"name": "РТУм-26-1", "id": "478472"}, {"name": "ХПм-26-1", "id": "478582"},
-        {"name": "ХТм-26-1", "id": "478590"}, {"name": "ХТОб-26-1", "id": "478594"},
-        {"name": "ХТТб-26-1", "id": "478598"},
-        {"name": "ИФб-25-1", "id": "478246"}, {"name": "ПИм-25-1", "id": "478437"},
-        {"name": "ХТТб-25-1", "id": "478597"}, {"name": "АТПб-25-1", "id": "478038"},
-        {"name": "РДб-25-1", "id": "478446"}, {"name": "ХТм-25-1", "id": "478589"},
-        {"name": "БТб-25-1", "id": "478095"}, {"name": "МЦб-25-1", "id": "478326"},
-        {"name": "РТУм-25-1", "id": "478471"}, {"name": "ИРТм-25-1", "id": "478228"},
-        {"name": "МЦм-25-1", "id": "478335"}, {"name": "ФХм-25-1", "id": "478581"},
-        {"name": "ИРб-25-1", "id": "478225"}, {"name": "ОХПм-25-1", "id": "478430"},
-        {"name": "ХТОб-25-1", "id": "478593"},
-        {"name": "АТПб-24-1", "id": "478037"}, {"name": "РДб-24-1", "id": "478445"},
-        {"name": "БТб-24-1", "id": "478094"}, {"name": "ХТОб-24-1", "id": "478592"},
-        {"name": "ИРб-24-1", "id": "478224"}, {"name": "ХТТб-24-1", "id": "478596"},
-        {"name": "ИФб-24-1", "id": "478245"}, {"name": "МЦб-24-1", "id": "478325"},
-        {"name": "АТПб-23-1", "id": "478036"}, {"name": "НМб-23-1", "id": "478409"},
-        {"name": "БТб-23-1", "id": "478093"}, {"name": "РДб-23-1", "id": "478444"},
-        {"name": "ИРб-23-1", "id": "478223"}, {"name": "ТПб-23-1", "id": "478537"},
-        {"name": "ИФб-23-1", "id": "478244"}, {"name": "ХТОб-23-1", "id": "478591"},
-        {"name": "МЦТб-23-1", "id": "478337"}, {"name": "ХТТб-23-1", "id": "478595"},
-    ],
-    "ИИТиАД": [
-        {"name": "АСУб-26-1", "id": "478021"}, {"name": "АСУб-26-2", "id": "478022"},
-        {"name": "БКСм-26-1", "id": "478092"}, {"name": "ИБб-26-1", "id": "478205"},
-        {"name": "ИБб-26-2", "id": "479889"}, {"name": "ИСИб-26-1", "id": "478232"},
-        {"name": "ИСТб-26-1", "id": "478240"}, {"name": "ИСТб-26-2", "id": "478241"},
-        {"name": "ИСТб-26-3", "id": "479892"}, {"name": "ИИТм-26-1", "id": "478219"},
-        {"name": "КСм-26-1", "id": "478261"}, {"name": "ЦППм-26-1", "id": "478603"},
-        {"name": "ЭВМб-26-1", "id": "478624"}, {"name": "ЭВМб-26-2", "id": "479900"},
-        {"name": "АСУб-25-1", "id": "478019"}, {"name": "ИИТм-25-1", "id": "478218"},
-        {"name": "ЦППм-25-1", "id": "478602"}, {"name": "АСУб-25-2", "id": "478020"},
-        {"name": "ИСИб-25-1", "id": "478231"}, {"name": "ЭВМб-25-1", "id": "478622"},
-        {"name": "БКСм-25-1", "id": "478091"}, {"name": "ИСТб-25-1", "id": "478237"},
-        {"name": "ИБб-25-1", "id": "478203"}, {"name": "ИСТб-25-2", "id": "478238"},
-        {"name": "ИБб-25-2", "id": "478204"}, {"name": "КСм-25-1", "id": "478260"},
-        {"name": "АСУб-24-1", "id": "478018"}, {"name": "ЭВМб-24-1", "id": "478621"},
-        {"name": "ИБб-24-1", "id": "478202"}, {"name": "ИСИб-24-1", "id": "478230"},
-        {"name": "ИСТб-24-1", "id": "478235"}, {"name": "ИСТб-24-2", "id": "478236"},
-        {"name": "АСУб-23-1", "id": "478015"}, {"name": "ИСТб-23-2", "id": "478234"},
-        {"name": "АСУб-23-2", "id": "478016"}, {"name": "ЭВМб-23-1", "id": "478620"},
-        {"name": "ИБб-23-1", "id": "478201"}, {"name": "ИСИб-23-1", "id": "478229"},
-        {"name": "ИСТб-23-1", "id": "478233"},
-    ],
-    "ИН": [
-        {"name": "БЖТм-26-1", "id": "478088"}, {"name": "ГА-26-1", "id": "478109"},
-        {"name": "ГГ-26-1", "id": "478115"}, {"name": "ГМ-26-1", "id": "478134"},
-        {"name": "ГО-26-1", "id": "478146"}, {"name": "ГП-26-1", "id": "478160"},
-        {"name": "ИГ-26-1", "id": "478210"}, {"name": "ИГ-26-2", "id": "479890"},
-        {"name": "НДДб-26-1", "id": "478405"}, {"name": "НДДб-26-2", "id": "478406"},
-        {"name": "НДДб-26-3", "id": "479894"}, {"name": "НДб-26-1", "id": "478396"},
-        {"name": "НДб-26-2", "id": "478397"}, {"name": "НДм-26-1", "id": "478408"},
-        {"name": "ООСб-26-1", "id": "478415"}, {"name": "ОП-26-1", "id": "478421"},
-        {"name": "ПБмз-26-1", "id": "479895"}, {"name": "ТХб-26-1", "id": "478545"},
-        {"name": "ЭКОм-26-1", "id": "478634"},
-        {"name": "БЖТм-25-1", "id": "478087"}, {"name": "БТПб-25-1", "id": "478099"},
-        {"name": "ГА-25-1", "id": "478108"}, {"name": "ГГ-25-1", "id": "478114"},
-        {"name": "ГМ-25-1", "id": "478133"}, {"name": "ГО-25-1", "id": "478145"},
-        {"name": "ГП-25-1", "id": "478159"}, {"name": "ИГ-25-1", "id": "478209"},
-        {"name": "НДДб-25-1", "id": "478402"}, {"name": "НДДб-25-2", "id": "478403"},
-        {"name": "НДДб-25-3", "id": "478404"}, {"name": "НДб-25-1", "id": "478394"},
-        {"name": "НДб-25-2", "id": "478395"}, {"name": "НДм-25-1", "id": "478407"},
-        {"name": "ОП-25-1", "id": "478420"}, {"name": "ПОм-25-1", "id": "478439"},
-        {"name": "ТХб-25-1", "id": "478544"}, {"name": "ЭКОм-25-1", "id": "478633"},
-        {"name": "ГО-24-1", "id": "478144"}, {"name": "ГП-24-1", "id": "478158"},
-        {"name": "ГГ-24-1", "id": "478113"}, {"name": "ГМ-24-1", "id": "478132"},
-        {"name": "ИГ-24-1", "id": "478208"}, {"name": "НДДб-24-1", "id": "478400"},
-        {"name": "НДДб-24-2", "id": "478401"}, {"name": "НДб-24-1", "id": "478393"},
-        {"name": "ООСб-24-1", "id": "478414"}, {"name": "ОП-24-1", "id": "478419"},
-        {"name": "ТХб-24-1", "id": "478543"},
-        {"name": "БТПб-23-1", "id": "478098"}, {"name": "ГА-23-1", "id": "478107"},
-        {"name": "ГГ-23-1", "id": "478112"}, {"name": "ГП-23-1", "id": "478157"},
-        {"name": "ИГ-23-1", "id": "478207"}, {"name": "НДДб-23-1", "id": "478398"},
-        {"name": "НДДб-23-2", "id": "478399"}, {"name": "НДб-23-1", "id": "478392"},
-        {"name": "ООСб-23-1", "id": "478413"}, {"name": "ОП-23-1", "id": "478418"},
-        {"name": "ТХб-23-1", "id": "478542"},
-        {"name": "ГА-22-1", "id": "478106"}, {"name": "ГГ-22-1", "id": "478111"},
-        {"name": "ГМ-22-1", "id": "478131"}, {"name": "ГО-22-1", "id": "478143"},
-        {"name": "ОП-22-1", "id": "478417"},
-    ],
-    "ИЭУП": [
-        {"name": "ВДм-26-1", "id": "479887"}, {"name": "ЖРб-26-1", "id": "478200"},
-        {"name": "ИИм-26-1", "id": "478217"}, {"name": "МБб-26-1", "id": "478297"},
-        {"name": "МБб-26-2", "id": "478298"}, {"name": "МБб-26-3", "id": "479893"},
-        {"name": "НБ-26-1", "id": "478349"}, {"name": "НБ-26-2", "id": "478350"},
-        {"name": "СМТм-26-1", "id": "478497"}, {"name": "ТД-26-1", "id": "478532"},
-        {"name": "ТД-26-2", "id": "478533"}, {"name": "УОБТб-26-1", "id": "478555"},
-        {"name": "ФКб-26-1", "id": "478575"}, {"name": "ФКб-26-2", "id": "478576"},
-        {"name": "ЭМЭНм-26-1", "id": "478646"}, {"name": "ЭМЭНмз-26-1", "id": "479901"},
-        {"name": "ЭПЭб-26-1", "id": "478680"}, {"name": "ЭПЭб-26-2", "id": "478679"},
-        {"name": "ЭТЭКб-26-1", "id": "478706"}, {"name": "ЭТЭКб-26-2", "id": "478707"},
-        {"name": "ЮРУб-26-1", "id": "478723"},
-        {"name": "ВДм-25-1", "id": "478103"}, {"name": "ЖРБ-25-1", "id": "478199"},
-        {"name": "ИИм-25-1", "id": "478216"}, {"name": "МБб-25-1", "id": "478294"},
-        {"name": "МБб-25-2", "id": "478295"}, {"name": "МБб-25-3", "id": "478296"},
-        {"name": "НБ-25-1", "id": "478346"}, {"name": "НБ-25-2", "id": "478347"},
-        {"name": "НБ-25-3", "id": "478348"}, {"name": "СМТм-25-1", "id": "478496"},
-        {"name": "ТД-25-1", "id": "478529"}, {"name": "ТД-25-2", "id": "478530"},
-        {"name": "ТД-25-3", "id": "478531"}, {"name": "УОБТб-25-1", "id": "478553"},
-        {"name": "УОБТб-25-2", "id": "478554"}, {"name": "ФКб-25-1", "id": "478573"},
-        {"name": "ФКб-25-2", "id": "478574"}, {"name": "ЭМЭНм-25-1", "id": "478645"},
-        {"name": "ЭПЭб-25-1", "id": "478676"}, {"name": "ЭПЭб-25-2", "id": "478677"},
-        {"name": "ЭПЭб-25-3", "id": "478678"}, {"name": "ЭТЭКб-25-1", "id": "478704"},
-        {"name": "ЭТЭКб-25-2", "id": "478705"}, {"name": "ЭУМм-25-1", "id": "478710"},
-        {"name": "ЮРГб-25-1", "id": "478717"}, {"name": "ЮРУб-25-1", "id": "478722"},
-        {"name": "ЖРБ-24-1", "id": "478198"}, {"name": "МБб-24-1", "id": "478292"},
-        {"name": "МБб-24-2", "id": "478293"}, {"name": "НБ-24-1", "id": "478344"},
-        {"name": "НБ-24-2", "id": "478345"}, {"name": "ТД-24-1", "id": "478527"},
-        {"name": "ТД-24-2", "id": "478528"}, {"name": "УПб-24-1", "id": "478557"},
-        {"name": "ФКб-24-1", "id": "478571"}, {"name": "ФКб-24-2", "id": "478572"},
-        {"name": "ЭПЭб-24-1", "id": "478674"}, {"name": "ЭПЭб-24-2", "id": "478675"},
-        {"name": "ЭТЭКб-24-1", "id": "478703"}, {"name": "ЮРГб-24-1", "id": "478716"},
-        {"name": "ЮРУб-24-1", "id": "478720"}, {"name": "ЮРУб-24-2", "id": "478721"},
-        {"name": "ЖРБ-23-1", "id": "478196"}, {"name": "ЖРБ-23-2", "id": "478197"},
-        {"name": "МБб-23-1", "id": "478291"}, {"name": "НБ-23-1", "id": "478342"},
-        {"name": "НБ-23-2", "id": "478343"}, {"name": "ТД-23-1", "id": "478525"},
-        {"name": "ТД-23-2", "id": "478526"}, {"name": "УПб-23-1", "id": "478556"},
-        {"name": "ФКб-23-1", "id": "478570"}, {"name": "ЦТРб-23-1", "id": "478606"},
-        {"name": "ЭПЭб-23-1", "id": "478672"}, {"name": "ЭПЭб-23-2", "id": "478673"},
-        {"name": "ЭТЭКб-23-1", "id": "478702"}, {"name": "ЮРГб-23-1", "id": "478715"},
-        {"name": "ЮРУб-23-1", "id": "478718"}, {"name": "ЮРУб-23-2", "id": "478719"},
-        {"name": "НБ-22-1", "id": "478340"}, {"name": "НБ-22-2", "id": "478341"},
-        {"name": "ЭПЭб-22-1", "id": "478670"}, {"name": "ЭПЭб-22-2", "id": "478671"},
-    ],
-    "ИЭ": [
-        {"name": "ЭАПЭб-26-1", "id": "478614"}, {"name": "КТЭм-26-1", "id": "478273"},
-        {"name": "СТЭб-26-1", "id": "478508"}, {"name": "СТЭб-26-2", "id": "479897"},
-        {"name": "УЭСм-26-1", "id": "478569"}, {"name": "ЦЭм-26-1", "id": "478609"},
-        {"name": "ЭНГм-26-1", "id": "478650"}, {"name": "ЭПб-26-1", "id": "478660"},
-        {"name": "ЭПб-26-2", "id": "478661"}, {"name": "ЭСб-26-1", "id": "478692"},
-        {"name": "ЭСм-26-1", "id": "478699"}, {"name": "ЭСТм-26-1", "id": "478701"},
-        {"name": "ЭУм-26-1", "id": "478709"},
-        {"name": "ИЭм-25-1", "id": "478248"}, {"name": "ЦЭм-25-1", "id": "478608"},
-        {"name": "ЭСТм-25-1", "id": "478700"}, {"name": "КТЭм-25-1", "id": "478272"},
-        {"name": "ЭАПб-25-1", "id": "478612"}, {"name": "ЭСб-25-1", "id": "478690"},
-        {"name": "СТЭб-25-1", "id": "478506"}, {"name": "ЭНГм-25-1", "id": "478649"},
-        {"name": "ЭСб-25-2", "id": "478691"}, {"name": "СТЭб-25-2", "id": "478507"},
-        {"name": "ЭПб-25-1", "id": "478658"}, {"name": "ЭСм-25-1", "id": "478698"},
-        {"name": "ЭУм-25-1", "id": "478708"}, {"name": "ЭПб-25-2", "id": "478659"},
-        {"name": "УЭСм-25-1", "id": "478568"},
-        {"name": "СТб-24-1", "id": "478505"}, {"name": "ЭСб-24-1", "id": "478689"},
-        {"name": "ЭАПЭб-24-1", "id": "478611"}, {"name": "ЭПб-24-1", "id": "478656"},
-        {"name": "ЭПб-24-2", "id": "478657"},
-        {"name": "СТб-23-1", "id": "478504"}, {"name": "ЭАПЭб-23-1", "id": "478610"},
-        {"name": "ЭПб-23-1", "id": "478655"}, {"name": "ЭСб-23-1", "id": "478687"},
-        {"name": "ЭСб-23-2", "id": "478688"},
-    ],
+    # ... вставь свой старый словарь GROUPS здесь целиком
 }
 
 LESSON_TIMES = {
@@ -1344,12 +1098,18 @@ async def api_schedule(request: web.Request):
         return web.json_response({"date": today_str, "dayName": "", "group": group_name,
                                    "subgroup": subgroup, "lessons": []})
     filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
-    lessons_out = [{
-        "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
-        "subject": les["subject"], "type": les["type"],
-        "teacher": les["teacher"], "auditorium": les["auditorium"],
-        "subgroup": les["subgroup"],
-    } for les in filtered]
+    att_map = attendance_get_map(user_id, [day["date"]])
+    lessons_out = []
+    for les in filtered:
+        key = (day["date"], les["time"], les["subject"])
+        lessons_out.append({
+            "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
+            "subject": les["subject"], "type": les["type"],
+            "teacher": les["teacher"], "auditorium": les["auditorium"],
+            "subgroup": les["subgroup"],
+            "date": day["date"],
+            "attendance": att_map.get(key, ""),
+        })
     return web.json_response({
         "date": day["date"], "dayName": day["name"], "group": group_name,
         "subgroup": subgroup, "lessons": lessons_out,
@@ -1376,15 +1136,22 @@ async def api_week(request: web.Request):
         return web.json_response({"error": "no_data"}, status=200)
 
     _, days = parse_schedule(html)
+    dates_list = [d["date"] for d in days]
+    att_map = attendance_get_map(user_id, dates_list)
     days_out = []
     for d in days:
         filtered = _filter_lessons_by_subgroup(d["lessons"], subgroup)
-        lessons_out = [{
-            "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
-            "subject": les["subject"], "type": les["type"],
-            "teacher": les["teacher"], "auditorium": les["auditorium"],
-            "subgroup": les["subgroup"],
-        } for les in filtered]
+        lessons_out = []
+        for les in filtered:
+            key = (d["date"], les["time"], les["subject"])
+            lessons_out.append({
+                "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
+                "subject": les["subject"], "type": les["type"],
+                "teacher": les["teacher"], "auditorium": les["auditorium"],
+                "subgroup": les["subgroup"],
+                "date": d["date"],
+                "attendance": att_map.get(key, ""),
+            })
         days_out.append({"date": d["date"], "name": d["name"], "lessons": lessons_out})
     return web.json_response({"group": group_name, "subgroup": subgroup, "days": days_out})
 
@@ -1408,6 +1175,7 @@ async def api_me(request: web.Request):
     notif_settings = get_notify_settings(user_id)
 
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
+    att_stats = attendance_stats(user_id)
 
     return web.json_response({
         "user_id": user_id,
@@ -1427,6 +1195,10 @@ async def api_me(request: web.Request):
         "notify_minute": notif_settings["minute"] if notif_settings else 0,
         "notify_changes": get_notify_changes(user_id),
         "notify_before_min": get_notify_before_min(user_id),
+        "attendance_was": att_stats["was"],
+        "attendance_missed": att_stats["missed"],
+        "attendance_sick": att_stats["sick"],
+        "attendance_total": att_stats["was"] + att_stats["missed"] + att_stats["sick"],
         "chat_unread": 0,
     })
 
@@ -1733,7 +1505,6 @@ async def api_scholarship(request: web.Request):
     grades = get_grades(user_id)
 
     grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4] or ""} for g in grades]
-
     semesters = sorted(set(g[4] for g in grades if g[4]))
 
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
@@ -1853,13 +1624,7 @@ async def api_scholarship_update_grade(request: web.Request):
         if len(semester) > 40:
             semester = semester[:40]
 
-    update_grade_by_id(
-        gid, user_id,
-        subject if subject else None,
-        grade,
-        is_auto,
-        semester,
-    )
+    update_grade_by_id(gid, user_id, subject if subject else None, grade, is_auto, semester)
     return web.json_response({"ok": True})
 
 
@@ -1891,6 +1656,28 @@ async def api_scholarship_clear(request: web.Request):
         semester = (semester or "").strip() or None
     clear_grades(user_id, semester)
     return web.json_response({"ok": True})
+
+
+async def api_attendance_set(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    date = (body.get("date") or "").strip()
+    time_ = (body.get("time") or "").strip()
+    subject = (body.get("subject") or "").strip()
+    status = (body.get("status") or "").strip()
+    if not date or not time_ or not subject:
+        return web.json_response({"error": "empty"}, status=400)
+    if status not in ("", "was", "missed", "sick"):
+        return web.json_response({"error": "bad_status"}, status=400)
+    if len(subject) > 200:
+        subject = subject[:200]
+    attendance_set(user_id, date, time_, subject, status)
+    return web.json_response({"ok": True, "status": status})
 
 
 async def api_ai(request: web.Request):
@@ -2084,17 +1871,23 @@ async def api_ai_clear_history(request: web.Request):
 
 async def api_game_info(request: web.Request):
     init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id:
+    user_obj = _verify_webapp_init_full(init_data)
+    if not user_obj:
         return web.json_response({"error": "unauthorized"}, status=401)
+    user_id = user_obj.id
+    _ensure_user(user_id)
+    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+
     data = game_get_user_score(user_id)
     rows = game_get_leaderboard(10)
     items = []
     for i, (uid, score, username, first_name) in enumerate(rows):
-        if username:
-            display = "@" + username
+        if first_name and username:
+            display = f"{first_name} (@{username})"
         elif first_name:
             display = first_name
+        elif username:
+            display = "@" + username
         else:
             display = f"Игрок #{str(uid)[-4:]}"
         items.append({
@@ -2118,9 +1911,13 @@ async def api_game_submit(request: web.Request):
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
+    user_obj = _verify_webapp_init_full(body.get("initData", ""))
+    if not user_obj:
         return web.json_response({"error": "unauthorized"}, status=401)
+    user_id = user_obj.id
+    _ensure_user(user_id)
+    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+
     try:
         score = int(body.get("score", 0))
     except Exception:
@@ -2129,10 +1926,12 @@ async def api_game_submit(request: web.Request):
     rows = game_get_leaderboard(10)
     items = []
     for i, (uid, s, username, first_name) in enumerate(rows):
-        if username:
-            display = "@" + username
+        if first_name and username:
+            display = f"{first_name} (@{username})"
         elif first_name:
             display = first_name
+        elif username:
+            display = "@" + username
         else:
             display = f"Игрок #{str(uid)[-4:]}"
         items.append({
@@ -2172,6 +1971,207 @@ async def api_feedback_my(request: web.Request):
     return web.json_response({"items": items})
 
 
+def _find_or_download_pdf_font():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        os.path.join(base_dir, "fonts", "DejaVuSans.ttf"),
+        "fonts/DejaVuSans.ttf",
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    try:
+        target_dir = os.path.join(base_dir, "fonts")
+        os.makedirs(target_dir, exist_ok=True)
+        target = os.path.join(target_dir, "DejaVuSans.ttf")
+        import urllib.request
+        urls = [
+            "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
+            "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSans.ttf",
+        ]
+        for url in urls:
+            try:
+                with urllib.request.urlopen(url, timeout=45) as resp:
+                    data = resp.read()
+                    if len(data) > 100000:
+                        with open(target, "wb") as f:
+                            f.write(data)
+                        logging.info(f"[PDF FONT] скачан: {target}")
+                        return target
+            except Exception as e:
+                logging.warning(f"[PDF FONT] {url}: {e}")
+    except Exception as e:
+        logging.warning(f"[PDF FONT] download failed: {e}")
+    return None
+
+
+def _pdf_short(text, limit=120):
+    if not text:
+        return ""
+    s = str(text).replace("\r", "").strip()
+    if len(s) > limit:
+        s = s[:limit - 1] + "…"
+    return s
+
+
+def generate_user_pdf(user_id):
+    if not _FPDF_AVAILABLE:
+        raise RuntimeError("Библиотека fpdf2 не установлена")
+
+    font_path = _find_or_download_pdf_font()
+    if not font_path:
+        raise RuntimeError("Не удалось найти шрифт для PDF")
+
+    data = get_export_data(user_id)
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_font("Main", "", font_path)
+    pdf.set_font("Main", size=11)
+    pdf.add_page()
+
+    def hr():
+        pdf.set_draw_color(200, 200, 200)
+        pdf.set_line_width(0.2)
+        y = pdf.get_y()
+        pdf.line(15, y, 195, y)
+        pdf.ln(3)
+
+    def section(title):
+        pdf.ln(3)
+        pdf.set_font("Main", size=14)
+        pdf.set_text_color(0, 180, 160)
+        pdf.cell(0, 8, title, ln=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Main", size=11)
+        hr()
+
+    pdf.set_font("Main", size=22)
+    pdf.cell(0, 12, "Student IRK", ln=True)
+    pdf.set_font("Main", size=10)
+    pdf.set_text_color(120, 120, 120)
+    now_str = _now_irkutsk().strftime("%d.%m.%Y в %H:%M")
+    pdf.cell(0, 6, f"Отчёт от {now_str}", ln=True)
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(4)
+
+    pdf.set_font("Main", size=12)
+    name = data.get("first_name") or "Не указано"
+    uname = data.get("username")
+    if uname:
+        name = f"{name} (@{uname})"
+    pdf.cell(0, 7, f"Пользователь: {name}", ln=True)
+    pdf.set_font("Main", size=11)
+    pdf.cell(0, 6, f"ID: {user_id}", ln=True)
+    if data.get("group"):
+        g = data["group"]
+        if data.get("subgroup"):
+            g += f" · подгруппа {data['subgroup']}"
+        pdf.cell(0, 6, f"Группа: {g}", ln=True)
+
+    tasks = data.get("tasks", [])
+    active_tasks = [t for t in tasks if not t["done"]]
+    done_tasks = [t for t in tasks if t["done"]]
+    section(f"Задачи ({len(tasks)}: активных {len(active_tasks)}, выполнено {len(done_tasks)})")
+    if not tasks:
+        pdf.cell(0, 6, "Нет задач", ln=True)
+    else:
+        prio_map = {1: "низкий", 2: "средний", 3: "высокий"}
+        for t in tasks:
+            mark = "[v]" if t["done"] else "[ ]"
+            text = _pdf_short(t["text"], 100)
+            pdf.set_font("Main", size=11)
+            pdf.multi_cell(0, 5.5, f"{mark} {text}")
+            meta_parts = []
+            if t.get("due_date"):
+                due = f"до {t['due_date']}"
+                if t.get("due_time"):
+                    due += f" {t['due_time']}"
+                meta_parts.append(due)
+            pr = t.get("priority", 2)
+            meta_parts.append(f"приоритет: {prio_map.get(pr, 'средний')}")
+            pdf.set_font("Main", size=9)
+            pdf.set_text_color(130, 130, 130)
+            pdf.cell(0, 5, "    " + " · ".join(meta_parts), ln=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Main", size=11)
+
+    notes = data.get("notes", [])
+    section(f"Заметки ({len(notes)})")
+    if not notes:
+        pdf.cell(0, 6, "Нет заметок", ln=True)
+    else:
+        for n in notes:
+            pdf.set_font("Main", size=11)
+            pdf.multi_cell(0, 5.5, f"{n['subject']}:")
+            pdf.set_font("Main", size=10)
+            pdf.set_text_color(70, 70, 70)
+            pdf.multi_cell(0, 5, "    " + _pdf_short(n["text"], 400))
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(1)
+
+    section("Стипендия")
+    amount = data.get("scholarship_amount")
+    if amount is None or amount == 0:
+        pdf.cell(0, 6, "Сумма не указана", ln=True)
+    else:
+        pdf.cell(0, 6, f"Сумма: {amount} руб./мес", ln=True)
+    grades = data.get("grades", [])
+    if grades:
+        avg = sum(g["grade"] for g in grades) / len(grades)
+        pdf.cell(0, 6, f"Средний балл: {avg:.2f} ({len(grades)} предметов)", ln=True)
+        pdf.ln(1)
+        for g in grades:
+            auto = " (автомат)" if g.get("is_auto") else ""
+            sem = f" · {g['semester']}" if g.get("semester") else ""
+            pdf.cell(0, 5.5, f"  {g['subject']}: {g['grade']}{auto}{sem}", ln=True)
+    else:
+        pdf.cell(0, 6, "Оценок нет", ln=True)
+
+    att = data.get("attendance", {})
+    total = att.get("was", 0) + att.get("missed", 0) + att.get("sick", 0)
+    section(f"Посещаемость (отмечено {total})")
+    if total == 0:
+        pdf.cell(0, 6, "Отметок пока нет", ln=True)
+    else:
+        pdf.cell(0, 6, f"Посещено: {att.get('was', 0)}", ln=True)
+        pdf.cell(0, 6, f"Пропущено: {att.get('missed', 0)}", ln=True)
+        pdf.cell(0, 6, f"По болезни: {att.get('sick', 0)}", ln=True)
+
+    feedback = data.get("feedback", [])
+    if feedback:
+        section(f"Обращения ({len(feedback)})")
+        for f in feedback[:20]:
+            date_str = (f.get("created_at") or "")[:10]
+            pdf.set_font("Main", size=10)
+            pdf.set_text_color(130, 130, 130)
+            pdf.cell(0, 5, f"#{f['id']} · {date_str}", ln=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Main", size=11)
+            pdf.multi_cell(0, 5.5, "    " + _pdf_short(f["text"], 400))
+            if f.get("admin_reply"):
+                pdf.set_font("Main", size=10)
+                pdf.set_text_color(0, 150, 130)
+                pdf.multi_cell(0, 5, "    Ответ: " + _pdf_short(f["admin_reply"], 400))
+                pdf.set_text_color(0, 0, 0)
+            pdf.ln(1)
+
+    pdf.ln(6)
+    hr()
+    pdf.set_font("Main", size=9)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 5, "Сгенерировано ботом Student IRK", ln=True, align="C")
+
+    out = pdf.output()
+    if isinstance(out, str):
+        out = out.encode("latin-1")
+    return bytes(out)
+
+
 async def api_export(request: web.Request):
     try:
         body = await request.json()
@@ -2181,12 +2181,18 @@ async def api_export(request: web.Request):
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
 
-    data = get_export_data(user_id)
-    json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-
     try:
-        doc = BufferedInputFile(json_bytes, filename=f"student_irk_export_{user_id}.json")
-        await bot.send_document(user_id, doc, caption="Экспорт данных из Student IRK")
+        pdf_bytes = await asyncio.to_thread(generate_user_pdf, user_id)
+    except Exception as e:
+        logging.exception("[PDF]")
+        return web.json_response({"error": "pdf_failed", "message": str(e)}, status=500)
+
+    date_str = _now_irkutsk().strftime("%Y-%m-%d")
+    try:
+        doc = BufferedInputFile(pdf_bytes, filename=f"student_irk_{date_str}.pdf")
+        await bot.send_document(
+            user_id, doc,
+            caption="Твой отчёт Student IRK. Открой PDF — там задачи, заметки, оценки и посещаемость.")
         return web.json_response({"ok": True})
     except Exception as e:
         logging.error(f"[EXPORT] {e}")
@@ -2377,6 +2383,7 @@ async def start_webapp():
     app.router.add_post("/api/scholarship-update-grade", api_scholarship_update_grade)
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
+    app.router.add_post("/api/attendance-set", api_attendance_set)
     app.router.add_get("/api/game/info", api_game_info)
     app.router.add_post("/api/game/submit", api_game_submit)
     app.router.add_get("/api/ai/history", api_ai_history)
@@ -2721,6 +2728,12 @@ async def main():
     init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, polling")
+
+    try:
+        if _FPDF_AVAILABLE:
+            await asyncio.to_thread(_find_or_download_pdf_font)
+    except Exception as e:
+        logging.warning(f"[PDF FONT preload] {e}")
 
     asyncio.create_task(start_webapp())
     asyncio.create_task(notification_worker())
