@@ -18,7 +18,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery, FSInputFile, WebAppInfo
+    CallbackQuery, FSInputFile, WebAppInfo, BufferedInputFile
 )
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
@@ -178,6 +178,9 @@ def init_db():
         "ALTER TABLE users ADD COLUMN subgroup INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN notify_type TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN last_notified_at TEXT DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN notify_before_min INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN username TEXT DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL",
     ]:
         try:
             conn.execute(alter)
@@ -192,10 +195,14 @@ def init_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS grades (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
         subject TEXT, grade INTEGER, created_at TEXT, is_auto INTEGER DEFAULT 0)""")
-    try:
-        conn.execute("ALTER TABLE grades ADD COLUMN is_auto INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    for alter in [
+        "ALTER TABLE grades ADD COLUMN is_auto INTEGER DEFAULT 0",
+        "ALTER TABLE grades ADD COLUMN semester TEXT DEFAULT NULL",
+    ]:
+        try:
+            conn.execute(alter)
+        except sqlite3.OperationalError:
+            pass
 
     conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (
         group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
@@ -206,10 +213,11 @@ def init_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS feedback (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT,
         text TEXT, created_at TEXT, admin_msg_id INTEGER,
-        status TEXT DEFAULT 'new', answered_at TEXT)""")
+        status TEXT DEFAULT 'new', answered_at TEXT, admin_reply TEXT DEFAULT NULL)""")
     for alter in [
         "ALTER TABLE feedback ADD COLUMN status TEXT DEFAULT 'new'",
         "ALTER TABLE feedback ADD COLUMN answered_at TEXT",
+        "ALTER TABLE feedback ADD COLUMN admin_reply TEXT DEFAULT NULL",
     ]:
         try:
             conn.execute(alter)
@@ -242,12 +250,35 @@ def init_db():
         best_score INTEGER DEFAULT 0,
         plays_count INTEGER DEFAULT 0,
         updated_at TEXT)""")
+    for alter in [
+        "ALTER TABLE game_scores ADD COLUMN username TEXT DEFAULT NULL",
+        "ALTER TABLE game_scores ADD COLUMN first_name TEXT DEFAULT NULL",
+    ]:
+        try:
+            conn.execute(alter)
+        except sqlite3.OperationalError:
+            pass
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS ai_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        role TEXT,
+        text TEXT,
+        has_photo INTEGER DEFAULT 0,
+        created_at TEXT)""")
     conn.commit(); conn.close()
 
 
 def _ensure_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+    conn.commit(); conn.close()
+
+
+def _update_user_meta(user_id, username, first_name):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?",
+                 (username, first_name, user_id))
     conn.commit(); conn.close()
 
 
@@ -299,22 +330,22 @@ def get_scholarship_amount(user_id):
     return row[0] if row else None
 
 
-def upsert_grade(user_id, subject, grade, is_auto=0):
+def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?)",
-        (user_id, subject)
+        "SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?) AND COALESCE(semester,'')=COALESCE(?,'')",
+        (user_id, subject, semester)
     ).fetchone()
     if row:
         conn.execute(
-            "UPDATE grades SET grade=?, subject=?, is_auto=?, created_at=? WHERE id=?",
-            (grade, subject, int(bool(is_auto)),
+            "UPDATE grades SET grade=?, subject=?, is_auto=?, semester=?, created_at=? WHERE id=?",
+            (grade, subject, int(bool(is_auto)), semester,
              datetime.now(timezone.utc).isoformat(), row[0])
         )
     else:
         conn.execute(
-            "INSERT INTO grades (user_id, subject, grade, is_auto, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, subject, grade, int(bool(is_auto)),
+            "INSERT INTO grades (user_id, subject, grade, is_auto, semester, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, subject, grade, int(bool(is_auto)), semester,
              datetime.now(timezone.utc).isoformat())
         )
     conn.commit(); conn.close()
@@ -323,13 +354,14 @@ def upsert_grade(user_id, subject, grade, is_auto=0):
 def get_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
-        "SELECT id, subject, grade, COALESCE(is_auto, 0) FROM grades WHERE user_id=? ORDER BY subject",
+        "SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') "
+        "FROM grades WHERE user_id=? ORDER BY subject",
         (user_id,)).fetchall()
     conn.close()
     return rows
 
 
-def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None):
+def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None, semester=None):
     conn = sqlite3.connect(DB_PATH)
     fields = []; values = []
     if subject is not None:
@@ -338,6 +370,8 @@ def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None
         fields.append("grade=?"); values.append(grade)
     if is_auto is not None:
         fields.append("is_auto=?"); values.append(int(bool(is_auto)))
+    if semester is not None:
+        fields.append("semester=?"); values.append(semester)
     if not fields:
         conn.close(); return
     values.extend([grade_id, user_id])
@@ -351,9 +385,12 @@ def delete_grade(grade_id, user_id):
     conn.commit(); conn.close()
 
 
-def clear_grades(user_id):
+def clear_grades(user_id, semester=None):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
+    if semester:
+        conn.execute("DELETE FROM grades WHERE user_id=? AND COALESCE(semester,'')=?", (user_id, semester))
+    else:
+        conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
 
 
@@ -425,6 +462,20 @@ def get_notify_settings(user_id):
     return None
 
 
+def set_notify_before_min(user_id, minutes):
+    _ensure_user(user_id)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE users SET notify_before_min=? WHERE user_id=?", (int(minutes), user_id))
+    conn.commit(); conn.close()
+
+
+def get_notify_before_min(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT notify_before_min FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
 def get_users_for_notification():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
@@ -440,6 +491,15 @@ def get_users_for_change_tracking():
     rows = conn.execute(
         "SELECT user_id, group_id, subgroup FROM users "
         "WHERE notify_changes=1 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+    conn.close()
+    return rows
+
+
+def get_users_for_lesson_reminder():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT user_id, group_id, subgroup, notify_before_min FROM users "
+        "WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
 
@@ -545,10 +605,10 @@ def set_feedback_status(feedback_id, status):
     conn.commit(); conn.close()
 
 
-def mark_feedback_answered(feedback_id):
+def mark_feedback_answered(feedback_id, reply_text=None):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE feedback SET status='answered', answered_at=? WHERE id=?",
-                 (datetime.now(timezone.utc).isoformat(), feedback_id))
+    conn.execute("UPDATE feedback SET status='answered', answered_at=?, admin_reply=? WHERE id=?",
+                 (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
     conn.commit(); conn.close()
 
 
@@ -558,6 +618,16 @@ def get_feedback_by_id(feedback_id):
                        (feedback_id,)).fetchone()
     conn.close()
     return row
+
+
+def get_user_feedback(user_id, limit=30):
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT id, text, COALESCE(status,'new'), created_at, answered_at, admin_reply "
+        "FROM feedback WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, limit)).fetchall()
+    conn.close()
+    return rows
 
 
 def add_task(user_id, text, due_date=None, priority=2, due_time=None):
@@ -677,7 +747,34 @@ def delete_note_by_id(note_id, user_id):
     conn.commit(); conn.close()
 
 
-# ============ GAME: До пары успеть ============
+# ============ AI HISTORY ============
+
+def ai_get_history(user_id, limit=30):
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT id, role, text, has_photo, created_at FROM ai_messages "
+        "WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, limit)).fetchall()
+    conn.close()
+    rows.reverse()
+    return rows
+
+
+def ai_save_message(user_id, role, text, has_photo=0):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+
+
+def ai_clear_history(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
+
+
+# ============ GAME ============
 
 def game_get_user_score(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -696,21 +793,26 @@ def game_save_score(user_id, score):
     row = conn.execute(
         "SELECT best_score, plays_count FROM game_scores WHERE user_id=?",
         (user_id,)).fetchone()
+    # Получим username/first_name
+    meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
+    username = meta[0] if meta else None
+    first_name = meta[1] if meta else None
+
     now = datetime.now(timezone.utc).isoformat()
     if row:
         old_best = row[0] or 0
         plays = (row[1] or 0) + 1
         new_best = max(old_best, score)
         conn.execute(
-            "UPDATE game_scores SET best_score=?, plays_count=?, updated_at=? WHERE user_id=?",
-            (new_best, plays, now, user_id))
+            "UPDATE game_scores SET best_score=?, plays_count=?, updated_at=?, username=?, first_name=? WHERE user_id=?",
+            (new_best, plays, now, username, first_name, user_id))
         is_record = score > old_best
     else:
         new_best = score
         plays = 1
         conn.execute(
-            "INSERT INTO game_scores (user_id, best_score, plays_count, updated_at) VALUES (?, ?, ?, ?)",
-            (user_id, score, 1, now))
+            "INSERT INTO game_scores (user_id, best_score, plays_count, updated_at, username, first_name) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, score, 1, now, username, first_name))
         is_record = score > 0
     conn.commit(); conn.close()
     return {"best": new_best, "is_record": is_record, "plays": plays}
@@ -719,11 +821,47 @@ def game_save_score(user_id, score):
 def game_get_leaderboard(limit=10):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
-        "SELECT user_id, best_score FROM game_scores "
+        "SELECT user_id, best_score, COALESCE(username,''), COALESCE(first_name,'') FROM game_scores "
         "WHERE best_score > 0 ORDER BY best_score DESC LIMIT ?",
         (limit,)).fetchall()
     conn.close()
     return rows
+
+
+# ============ EXPORT ============
+
+def get_export_data(user_id):
+    saved = get_user_group(user_id)
+    tasks = get_user_tasks(user_id, only_active=False)
+    notes = get_user_notes(user_id)
+    grades = get_grades(user_id)
+    amount = get_scholarship_amount(user_id)
+    feedback = get_user_feedback(user_id, limit=100)
+
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "user_id": user_id,
+        "group": saved[1] if saved else None,
+        "group_id": saved[0] if saved else None,
+        "subgroup": get_user_subgroup(user_id),
+        "scholarship_amount": amount,
+        "tasks": [
+            {"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]),
+             "priority": t[5], "due_time": t[6]}
+            for t in tasks
+        ],
+        "notes": [{"id": n[0], "subject": n[1], "text": n[2]} for n in notes],
+        "grades": [
+            {"id": g[0], "subject": g[1], "grade": g[2],
+             "is_auto": bool(g[3]), "semester": g[4]}
+            for g in grades
+        ],
+        "feedback": [
+            {"id": f[0], "text": f[1], "status": f[2], "created_at": f[3],
+             "answered_at": f[4], "admin_reply": f[5]}
+            for f in feedback
+        ],
+    }
 
 
 GROUPS = {
@@ -1164,16 +1302,21 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
         return ""
 
 
-def _verify_webapp_init(init_data: str):
+def _verify_webapp_init_full(init_data: str):
     if not init_data:
         return None
     try:
         data = safe_parse_webapp_init_data(token=TOKEN, init_data=init_data)
         if data and data.user:
-            return data.user.id
+            return data.user
     except Exception as e:
         logging.warning(f"[WEB] initData verify error: {e}")
     return None
+
+
+def _verify_webapp_init(init_data: str):
+    u = _verify_webapp_init_full(init_data)
+    return u.id if u else None
 
 
 async def api_schedule(request: web.Request):
@@ -1248,11 +1391,14 @@ async def api_week(request: web.Request):
 
 async def api_me(request: web.Request):
     init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id:
+    user_obj = _verify_webapp_init_full(init_data)
+    if not user_obj:
         return web.json_response({"error": "unauthorized"}, status=401)
+    user_id = user_obj.id
 
     _ensure_user(user_id)
+    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+
     saved = get_user_group(user_id)
     active, done = count_user_tasks(user_id)
     notes = get_user_notes(user_id)
@@ -1280,6 +1426,7 @@ async def api_me(request: web.Request):
         "notify_hour": notif_settings["hour"] if notif_settings else -1,
         "notify_minute": notif_settings["minute"] if notif_settings else 0,
         "notify_changes": get_notify_changes(user_id),
+        "notify_before_min": get_notify_before_min(user_id),
         "chat_unread": 0,
     })
 
@@ -1531,6 +1678,24 @@ async def api_notify_set(request: web.Request):
     return web.json_response({"ok": True, "type": ntype, "hour": hour, "minute": minute})
 
 
+async def api_notify_set_before(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        minutes = int(body.get("minutes", 0))
+    except Exception:
+        return web.json_response({"error": "bad_minutes"}, status=400)
+    if minutes not in (0, 5, 10, 15, 20, 30, 60):
+        minutes = 0
+    set_notify_before_min(user_id, minutes)
+    return web.json_response({"ok": True, "minutes": minutes})
+
+
 async def api_quote(request: web.Request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -1567,7 +1732,9 @@ async def api_scholarship(request: web.Request):
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
 
-    grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3])} for g in grades]
+    grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4] or ""} for g in grades]
+
+    semesters = sorted(set(g[4] for g in grades if g[4]))
 
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     count5 = sum(1 for g in grades if g[2] == 5)
@@ -1613,6 +1780,7 @@ async def api_scholarship(request: web.Request):
         "count_auto": count_auto,
         "forecast": forecast,
         "available_subjects": available_subjects,
+        "semesters": semesters,
     })
 
 
@@ -1642,11 +1810,14 @@ async def api_scholarship_add_grade(request: web.Request):
     subject = (body.get("subject") or "").strip()
     grade = int(body.get("grade", 0))
     is_auto = bool(body.get("is_auto", False))
+    semester = (body.get("semester") or "").strip() or None
     if not subject or grade not in (2, 3, 4, 5):
         return web.json_response({"error": "invalid"}, status=400)
     if len(subject) > 100:
         subject = subject[:100]
-    upsert_grade(user_id, subject, grade, is_auto)
+    if semester and len(semester) > 40:
+        semester = semester[:40]
+    upsert_grade(user_id, subject, grade, is_auto, semester)
     return web.json_response({"ok": True})
 
 
@@ -1676,11 +1847,18 @@ async def api_scholarship_update_grade(request: web.Request):
     if is_auto is not None:
         is_auto = bool(is_auto)
 
+    semester = body.get("semester")
+    if semester is not None:
+        semester = (semester or "").strip()
+        if len(semester) > 40:
+            semester = semester[:40]
+
     update_grade_by_id(
         gid, user_id,
         subject if subject else None,
         grade,
         is_auto,
+        semester,
     )
     return web.json_response({"ok": True})
 
@@ -1708,51 +1886,11 @@ async def api_scholarship_clear(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    clear_grades(user_id)
+    semester = body.get("semester")
+    if semester is not None:
+        semester = (semester or "").strip() or None
+    clear_grades(user_id, semester)
     return web.json_response({"ok": True})
-
-
-async def api_game_info(request: web.Request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    data = game_get_user_score(user_id)
-    rows = game_get_leaderboard(10)
-    items = []
-    for i, (uid, score) in enumerate(rows):
-        items.append({"rank": i + 1, "user_id": uid, "score": score, "is_me": uid == user_id})
-    return web.json_response({
-        "best": data["best"],
-        "plays": data["plays"],
-        "top": items,
-    })
-
-
-async def api_game_submit(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        score = int(body.get("score", 0))
-    except Exception:
-        score = 0
-    result = game_save_score(user_id, score)
-    rows = game_get_leaderboard(10)
-    items = []
-    for i, (uid, s) in enumerate(rows):
-        items.append({"rank": i + 1, "user_id": uid, "score": s, "is_me": uid == user_id})
-    return web.json_response({
-        "ok": True,
-        "best": result["best"],
-        "is_record": result["is_record"],
-        "plays": result["plays"],
-        "top": items,
-    })
 
 
 async def api_ai(request: web.Request):
@@ -1770,6 +1908,9 @@ async def api_ai(request: web.Request):
         return web.json_response({"error": "empty"}, status=400)
     if len(question) > 2000:
         question = question[:2000]
+
+    ai_save_message(user_id, 'user', question, has_photo=0)
+
     try:
         prompt = (
             "Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
@@ -1790,6 +1931,8 @@ async def api_ai(request: web.Request):
         answer = clean_markdown(answer)
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
+
+        ai_save_message(user_id, 'assistant', answer, has_photo=0)
         return web.json_response({"answer": answer})
     except Exception as e:
         logging.exception("[AI-WEB]")
@@ -1830,6 +1973,8 @@ async def api_ai_photo(request: web.Request):
 
     if len(img_bytes) > 8 * 1024 * 1024:
         return web.json_response({"error": "too_big", "message": "Фото слишком большое (макс 8 МБ)"}, status=400)
+
+    ai_save_message(user_id, 'user', question or 'Что на фото?', has_photo=1)
 
     try:
         ocr_url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
@@ -1908,10 +2053,144 @@ async def api_ai_photo(request: web.Request):
         if len(answer) > 4000:
             answer = answer[:4000] + "\n... (обрезано)"
 
+        ai_save_message(user_id, 'assistant', answer, has_photo=0)
         return web.json_response({"answer": answer})
     except Exception as e:
         logging.exception("[AI-PHOTO-GIGA]")
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
+
+
+async def api_ai_history(request: web.Request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    rows = ai_get_history(user_id, limit=30)
+    items = [{"id": r[0], "role": r[1], "text": r[2], "has_photo": bool(r[3])} for r in rows]
+    return web.json_response({"items": items})
+
+
+async def api_ai_clear_history(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    ai_clear_history(user_id)
+    return web.json_response({"ok": True})
+
+
+async def api_game_info(request: web.Request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    data = game_get_user_score(user_id)
+    rows = game_get_leaderboard(10)
+    items = []
+    for i, (uid, score, username, first_name) in enumerate(rows):
+        if username:
+            display = "@" + username
+        elif first_name:
+            display = first_name
+        else:
+            display = f"Игрок #{str(uid)[-4:]}"
+        items.append({
+            "rank": i + 1,
+            "user_id": uid,
+            "score": score,
+            "username": username or "",
+            "first_name": first_name or "",
+            "display": display,
+            "is_me": uid == user_id,
+        })
+    return web.json_response({
+        "best": data["best"],
+        "plays": data["plays"],
+        "top": items,
+    })
+
+
+async def api_game_submit(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        score = int(body.get("score", 0))
+    except Exception:
+        score = 0
+    result = game_save_score(user_id, score)
+    rows = game_get_leaderboard(10)
+    items = []
+    for i, (uid, s, username, first_name) in enumerate(rows):
+        if username:
+            display = "@" + username
+        elif first_name:
+            display = first_name
+        else:
+            display = f"Игрок #{str(uid)[-4:]}"
+        items.append({
+            "rank": i + 1,
+            "user_id": uid,
+            "score": s,
+            "username": username or "",
+            "first_name": first_name or "",
+            "display": display,
+            "is_me": uid == user_id,
+        })
+    return web.json_response({
+        "ok": True,
+        "best": result["best"],
+        "is_record": result["is_record"],
+        "plays": result["plays"],
+        "top": items,
+    })
+
+
+async def api_feedback_my(request: web.Request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    rows = get_user_feedback(user_id, limit=30)
+    items = []
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "text": r[1],
+            "status": r[2],
+            "created_at": r[3],
+            "answered_at": r[4],
+            "admin_reply": r[5],
+        })
+    return web.json_response({"items": items})
+
+
+async def api_export(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    data = get_export_data(user_id)
+    json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+
+    try:
+        doc = BufferedInputFile(json_bytes, filename=f"student_irk_export_{user_id}.json")
+        await bot.send_document(user_id, doc, caption="Экспорт данных из Student IRK")
+        return web.json_response({"ok": True})
+    except Exception as e:
+        logging.error(f"[EXPORT] {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
 
 async def api_feedback(request: web.Request):
@@ -1996,7 +2275,7 @@ async def api_admin_feedback_reply(request: web.Request):
     _, target_uid, _, _ = row
     try:
         await bot.send_message(target_uid, f"Ответ администратора на обращение #{fid}:\n\n{reply}")
-        mark_feedback_answered(fid)
+        mark_feedback_answered(fid, reply)
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -2089,6 +2368,7 @@ async def start_webapp():
     app.router.add_post("/api/note-save", api_note_save)
     app.router.add_post("/api/note-delete", api_note_delete)
     app.router.add_post("/api/notify-set", api_notify_set)
+    app.router.add_post("/api/notify-set-before", api_notify_set_before)
     app.router.add_get("/api/quote", api_quote)
     app.router.add_post("/api/quote-subscribe", api_quote_subscribe)
     app.router.add_get("/api/scholarship", api_scholarship)
@@ -2099,9 +2379,13 @@ async def start_webapp():
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
     app.router.add_get("/api/game/info", api_game_info)
     app.router.add_post("/api/game/submit", api_game_submit)
+    app.router.add_get("/api/ai/history", api_ai_history)
+    app.router.add_post("/api/ai/clear-history", api_ai_clear_history)
     app.router.add_post("/api/ai", api_ai)
     app.router.add_post("/api/ai-photo", api_ai_photo)
     app.router.add_post("/api/feedback", api_feedback)
+    app.router.add_get("/api/feedback/my", api_feedback_my)
+    app.router.add_post("/api/export", api_export)
     app.router.add_get("/api/vip", api_vip)
 
     app.router.add_get("/api/admin/stats", api_admin_stats)
@@ -2156,6 +2440,10 @@ async def start_webapp():
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     _ensure_user(message.from_user.id)
+    try:
+        _update_user_meta(message.from_user.id, message.from_user.username, message.from_user.first_name)
+    except Exception:
+        pass
 
     if not WEBAPP_URL:
         await message.answer("Приложение ещё не настроено. Обратись к администратору.")
@@ -2256,6 +2544,27 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         logging.error(f"[NOTIFY] user={user_id} error: {e}")
 
 
+async def send_lesson_reminder(user_id, les, before_min):
+    try:
+        subject = les.get("subject", "Пара")
+        time_str = les.get("time", "")
+        auditorium = les.get("auditorium", "")
+        teacher = les.get("teacher", "")
+        text = f"Через {before_min} мин — {subject}"
+        if time_str:
+            text += f" в {time_str}"
+        details = []
+        if auditorium:
+            details.append(f"ауд. {auditorium}")
+        if teacher:
+            details.append(teacher)
+        if details:
+            text += "\n" + " · ".join(details)
+        await bot.send_message(user_id, text, parse_mode=None)
+    except Exception as e:
+        logging.error(f"[REMIND] send user={user_id}: {e}")
+
+
 async def send_daily_quotes():
     subs = daily_get_all_subscribers()
     if not subs:
@@ -2292,6 +2601,57 @@ async def notification_worker():
             logging.exception("[NOTIFY WORKER]")
 
         await asyncio.sleep(60 - datetime.now().second)
+
+
+async def lesson_reminder_worker():
+    logging.info("[REMIND] воркер запущен")
+    sent_keys = set()
+    while True:
+        try:
+            now = _now_irkutsk()
+            today_str = now.strftime("%d.%m.%Y")
+            if len(sent_keys) > 20000:
+                sent_keys.clear()
+
+            users = get_users_for_lesson_reminder()
+            html_cache = {}
+            for uid, gid, subgroup, before_min in users:
+                try:
+                    monday = _monday_of_week(now)
+                    key_cache = (gid, monday.strftime("%Y-%m-%d"))
+                    if key_cache in html_cache:
+                        html = html_cache[key_cache]
+                    else:
+                        html = await fetch_week_html(gid, monday, use_cache=True)
+                        html_cache[key_cache] = html
+                    if not html:
+                        continue
+                    _, days = parse_schedule(html)
+                    day = next((d for d in days if d["date"] == today_str), None)
+                    if not day:
+                        continue
+                    lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
+                    for les in lessons:
+                        time_str = les.get("time", "")
+                        if not time_str or ":" not in time_str:
+                            continue
+                        try:
+                            hh_s, mm_s = time_str.split(":")
+                            lesson_dt = now.replace(hour=int(hh_s), minute=int(mm_s), second=0, microsecond=0)
+                        except Exception:
+                            continue
+                        delta_min = (lesson_dt - now).total_seconds() / 60
+                        if abs(delta_min - before_min) < 1:
+                            key = (uid, today_str, time_str, before_min)
+                            if key in sent_keys:
+                                continue
+                            sent_keys.add(key)
+                            await send_lesson_reminder(uid, les, before_min)
+                except Exception as e:
+                    logging.error(f"[REMIND] user={uid}: {e}")
+        except Exception:
+            logging.exception("[REMIND WORKER]")
+        await asyncio.sleep(60)
 
 
 async def check_schedule_changes():
@@ -2364,6 +2724,7 @@ async def main():
 
     asyncio.create_task(start_webapp())
     asyncio.create_task(notification_worker())
+    asyncio.create_task(lesson_reminder_worker())
     asyncio.create_task(change_worker())
     await dp.start_polling(bot)
 
