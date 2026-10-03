@@ -803,34 +803,10 @@ function renderGames() {
 }
 
 // ============================================================
-//   СТАРТОВЫЙ ЭКРАН + ОБУЧЕНИЕ + САМ ЭКРАН ИГРЫ
+//   ЭКРАН ИГРЫ
 // ============================================================
 
-function renderGameStartOverlay(gid) {
-    const g = state.gamesList.find(x => x.id === gid);
-    const best = g?.best || 0;
-    return `<div class="game-start-overlay" id="game-start-overlay">
-        <div class="game-start-icon">
-            <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-                <defs><linearGradient id="fsi" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#1E88E5"/>
-                </linearGradient></defs>
-                <circle cx="60" cy="60" r="52" fill="none" stroke="url(#fsi)" stroke-width="3" opacity="0.4"/>
-                <rect x="78" y="20" width="14" height="30" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-                <rect x="78" y="72" width="14" height="28" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-                <circle cx="45" cy="60" r="10" fill="#00E5D0">
-                    <animate attributeName="r" values="10;12;10" dur="1.4s" repeatCount="indefinite"/>
-                </circle>
-                <circle cx="48" cy="56" r="2" fill="#070B14"/>
-            </svg>
-        </div>
-        <div class="game-start-title">До пары<br>успеть</div>
-        <div class="game-start-best">🏆 Рекорд: <strong>${best}</strong></div>
-        <div class="game-start-hint">Нажми, чтобы начать</div>
-    </div>`;
-}
-
-function renderGameTutorialOverlay(gid) {
+function renderGameTutorialOverlay() {
     return `<div class="tutorial-overlay hide" id="game-tutorial-overlay">
         <div class="tutorial-arrow">👆</div>
         <div class="tutorial-title">Как играть</div>
@@ -850,8 +826,7 @@ function renderGameScreen() {
             <div class="game-hud-best">Рекорд: ${best}</div>
         </div>
         <canvas id="game-canvas" class="game-canvas"></canvas>
-        ${renderGameStartOverlay(gid)}
-        ${renderGameTutorialOverlay(gid)}
+        ${renderGameTutorialOverlay()}
         <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
     </div>`;
 }
@@ -935,44 +910,42 @@ function initGame() {
     if (state.currentGame === 'flappy') initFlappy();
 }
 
+// Логика старта: туториал — один раз, потом сразу игра.
+// Никакого стартового оверлея — просто первый тап = старт + прыжок.
 function showTutorialThenStart(startFn) {
-    const startOv = document.getElementById('game-start-overlay');
     const tutOv = document.getElementById('game-tutorial-overlay');
     const tutShown = localStorage.getItem('flappy_tutorial_shown') === '1';
-    let passedTut = tutShown;
-    let started = false;
 
+    let started = false;
     function doStart() {
         if (started) return;
         started = true;
-        if (startOv) startOv.classList.add('hide');
         if (tutOv) tutOv.classList.add('hide');
-        document.removeEventListener('pointerdown', onAnyTap);
-        document.removeEventListener('keydown', onKeyDown);
+        document.removeEventListener('pointerdown', onTap);
+        document.removeEventListener('keydown', onKey);
         startFn();
     }
 
-    function advance() {
-        if (passedTut) { doStart(); return; }
-        passedTut = true;
-        try { localStorage.setItem('flappy_tutorial_shown', '1'); } catch (e) {}
-        if (startOv) startOv.classList.add('hide');
-        if (tutOv) tutOv.classList.remove('hide');
-        haptic('light');
-    }
-
-    function onAnyTap(e) {
+    function onTap(e) {
         if (e.target && e.target.id === 'game-exit') return;
-        advance();
+        if (!tutShown) {
+            try { localStorage.setItem('flappy_tutorial_shown', '1'); } catch (er) {}
+        }
+        doStart();
     }
-    function onKeyDown(e) {
+    function onKey(e) {
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
-            advance();
+            onTap({ target: { id: '' } });
         }
     }
 
-    document.addEventListener('pointerdown', onAnyTap);
-    document.addEventListener('keydown', onKeyDown);
+    if (!tutShown && tutOv) {
+        tutOv.classList.remove('hide');
+        haptic('light');
+    }
+
+    document.addEventListener('pointerdown', onTap);
+    document.addEventListener('keydown', onKey);
 }
 
 // ============================================================
@@ -1125,11 +1098,13 @@ function initFlappy() {
         pg.fill();
     }
 
+    // ============ ПАРАМЕТРЫ ============
     const GAP = 160;
     const MIN_GAP = 132;
     const COL_W = 62;
-    const SPAWN_INTERVAL = 88;
-    const MIN_SPAWN_INTERVAL = 66;
+    // РАССТОЯНИЕ МЕЖДУ СТОЛБЦАМИ УВЕЛИЧЕНО:
+    const SPAWN_INTERVAL = 120;
+    const MIN_SPAWN_INTERVAL = 95;
 
     const COL_FILL = 'rgba(139, 92, 246, 0.88)';
     const COL_STROKE = '#C084FC';
