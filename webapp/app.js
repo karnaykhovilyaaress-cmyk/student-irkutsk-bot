@@ -1012,35 +1012,114 @@ function showTutorialThenStart(startFn) {
 }
 
 // ============================================================
-//         ИГРА: ДО ПАРЫ УСПЕТЬ (Flappy, сбалансированная)
+//         ИГРА: ДО ПАРЫ УСПЕТЬ (оптимизированная + сложнее)
 // ============================================================
 
 function initFlappy() {
     if (state.gameInstance) return;
     const canvas = document.getElementById('game-canvas');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = canvas.getBoundingClientRect();
-    const W = Math.max(100, rect.width);
-    const H = Math.max(100, rect.height);
+    const W = Math.max(100, Math.floor(rect.width));
+    const H = Math.max(100, Math.floor(rect.height));
     canvas.width = Math.floor(W * dpr);
     canvas.height = Math.floor(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    const GROUND_H = 40;
+
+    // ============ PRE-RENDER: небо + звёзды + дальний город ============
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = Math.floor(W * dpr);
+    bgCanvas.height = Math.floor(H * dpr);
+    const bgCtx = bgCanvas.getContext('2d');
+    bgCtx.scale(dpr, dpr);
+    {
+        const sky = bgCtx.createLinearGradient(0, 0, 0, H);
+        sky.addColorStop(0, '#060d1c');
+        sky.addColorStop(0.5, '#0b1730');
+        sky.addColorStop(1, '#14203f');
+        bgCtx.fillStyle = sky;
+        bgCtx.fillRect(0, 0, W, H);
+
+        for (let i = 0; i < 30; i++) {
+            const sx = (i * 197) % W;
+            const sy = (i * 71) % (H * 0.5);
+            const alpha = 0.20 + ((i * 13) % 5) * 0.10;
+            bgCtx.fillStyle = `rgba(180,220,255,${alpha})`;
+            bgCtx.fillRect(sx, sy, 1.5, 1.5);
+        }
+
+        bgCtx.fillStyle = '#0a1526';
+        for (let i = 0; i <= Math.ceil(W / 80); i++) {
+            const bx = i * 80;
+            const bh = 60 + ((i * 37) % 5) * 12;
+            bgCtx.fillRect(bx, H - 80 - bh, 60, bh);
+        }
+    }
+
+    // ============ PRE-RENDER: ближний город (скроллящийся тайл) ============
+    const TILE_W = 100;
+    const nearTile = document.createElement('canvas');
+    nearTile.width = Math.floor(TILE_W * dpr);
+    nearTile.height = Math.floor(H * dpr);
+    const nearCtx = nearTile.getContext('2d');
+    nearCtx.scale(dpr, dpr);
+    {
+        const baseY = H - GROUND_H - 80;
+        nearCtx.fillStyle = '#05090f';
+        nearCtx.fillRect(0, baseY, 74, 80);
+        nearCtx.fillStyle = 'rgba(0,229,208,0.28)';
+        for (let wy = baseY + 12; wy < H - GROUND_H - 8; wy += 14) {
+            for (let wx = 8; wx < 68; wx += 14) {
+                if ((wx + wy) % 3 === 0) nearCtx.fillRect(wx, wy, 5, 7);
+            }
+        }
+    }
+
+    // ============ PRE-RENDER: земля ============
+    const groundCanvas = document.createElement('canvas');
+    groundCanvas.width = Math.floor(W * dpr);
+    groundCanvas.height = Math.floor(GROUND_H * dpr);
+    const groundCtx = groundCanvas.getContext('2d');
+    groundCtx.scale(dpr, dpr);
+    {
+        const g = groundCtx.createLinearGradient(0, 0, 0, GROUND_H);
+        g.addColorStop(0, '#0a1226');
+        g.addColorStop(1, '#03060d');
+        groundCtx.fillStyle = g;
+        groundCtx.fillRect(0, 0, W, GROUND_H);
+        groundCtx.strokeStyle = 'rgba(0,229,208,0.8)';
+        groundCtx.lineWidth = 2;
+        groundCtx.beginPath();
+        groundCtx.moveTo(0, 1);
+        groundCtx.lineTo(W, 1);
+        groundCtx.stroke();
+    }
+
+    // ============ STATE (сложнее чем было) ============
+    const initialGap = Math.max(170, Math.min(220, H * 0.32));
+    const minGap = Math.max(130, Math.min(165, H * 0.24));
+
     const game = {
-        W, H, running: true, over: false, started: false,
+        W, H, GROUND_H,
+        running: true, over: false, started: false,
         score: 0, frame: 0,
-        player: { x: W * 0.30, y: H * 0.5, r: 16, vy: 0 },
+        player: { x: W * 0.28, y: H * 0.5, r: 14, vy: 0 },
         obstacles: [],
         spawnTimer: 0,
-        spawnInterval: 140,
-        minSpawnInterval: 85,
-        gravity: 0.42,
-        jumpForce: -7.2,
-        speed: 2.2,
-        maxSpeed: 5.2,
-        gap: Math.max(200, Math.min(260, H * 0.38)),
+        spawnInterval: 105,
+        minSpawnInterval: 60,
+        gravity: 0.58,
+        jumpForce: -8.2,
+        maxFallSpeed: 10.5,
+        speed: 3.0,
+        maxSpeed: 7.0,
+        gap: initialGap,
+        minGap: minGap,
+        lastFrameTime: 0,
     };
     state.gameInstance = game;
 
@@ -1050,7 +1129,6 @@ function initFlappy() {
     }
 
     let startedFromTutorial = false;
-
     showTutorialThenStart(() => {
         startedFromTutorial = true;
         game.started = true;
@@ -1064,13 +1142,12 @@ function initFlappy() {
         doJump();
     }
     function onKey(e) {
-        if (['Space', 'ArrowUp', 'KeyW'].includes(e.code)) {
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
             e.preventDefault();
             if (!startedFromTutorial) return;
             doJump();
         }
     }
-
     canvas.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
 
@@ -1086,166 +1163,129 @@ function initFlappy() {
         submitGameScore('flappy', game.score);
     }
 
-    function drawBackground() {
-        const sky = ctx.createLinearGradient(0, 0, 0, H);
-        sky.addColorStop(0, '#060d1c');
-        sky.addColorStop(0.5, '#0b1730');
-        sky.addColorStop(1, '#14203f');
-        ctx.fillStyle = sky;
-        ctx.fillRect(0, 0, W, H);
-
-        ctx.save();
-        ctx.globalAlpha = 0.35;
-        const cityOffset = (game.frame * 0.4) % 80;
-        for (let i = -1; i < Math.ceil(W / 80) + 1; i++) {
-            const bx = i * 80 - cityOffset;
-            const bh = 60 + ((i * 37) % 5) * 12;
-            ctx.fillStyle = '#0a1526';
-            ctx.fillRect(bx, H - 80 - bh, 60, bh);
+    // ============ DRAW (быстрые операции) ============
+    function drawNearCity() {
+        const offset = (game.frame * game.speed * 0.5) % TILE_W;
+        const tiles = Math.ceil(W / TILE_W) + 1;
+        for (let i = 0; i < tiles; i++) {
+            ctx.drawImage(nearTile, 0, 0, nearTile.width, nearTile.height,
+                          i * TILE_W - offset, 0, TILE_W, H);
         }
-        ctx.restore();
+    }
 
-        ctx.save();
-        ctx.globalAlpha = 0.55;
-        const nearOffset = (game.frame * 1.1) % 100;
-        for (let i = -1; i < Math.ceil(W / 100) + 1; i++) {
-            const bx = i * 100 - nearOffset;
-            const bh = 40 + ((i * 53) % 4) * 10;
-            ctx.fillStyle = '#05090f';
-            ctx.fillRect(bx, H - 40 - bh, 74, bh);
-            ctx.fillStyle = 'rgba(0,229,208,0.25)';
-            for (let wy = H - 40 - bh + 12; wy < H - 40 - 8; wy += 14) {
-                for (let wx = bx + 8; wx < bx + 68; wx += 14) {
-                    if ((wx + wy + i) % 3 === 0) ctx.fillRect(wx, wy, 5, 7);
-                }
-            }
+    function drawGround() {
+        ctx.drawImage(groundCanvas, 0, 0, groundCanvas.width, groundCanvas.height,
+                      0, H - GROUND_H, W, GROUND_H);
+        const offset = (game.frame * game.speed * 0.8) % 20;
+        ctx.fillStyle = 'rgba(0,229,208,0.22)';
+        for (let x = -offset; x < W; x += 20) {
+            ctx.fillRect(x, H - GROUND_H + 8, 10, 2);
         }
-        ctx.restore();
-
-        ctx.save();
-        for (let i = 0; i < 40; i++) {
-            const sx = ((i * 197 - game.frame * 0.15) % (W + 60) + (W + 60)) % (W + 60) - 30;
-            const sy = (i * 71) % (H * 0.6);
-            const sz = 0.5 + (i % 4) * 0.5;
-            const twinkle = 0.35 + 0.35 * Math.sin(game.frame * 0.03 + i);
-            ctx.fillStyle = `rgba(180,220,255,${twinkle})`;
-            ctx.fillRect(sx, sy, sz, sz);
-        }
-        ctx.restore();
-
-        ctx.save();
-        const groundGrad = ctx.createLinearGradient(0, H - 40, 0, H);
-        groundGrad.addColorStop(0, '#0a1226');
-        groundGrad.addColorStop(1, '#03060d');
-        ctx.fillStyle = groundGrad;
-        ctx.fillRect(0, H - 40, W, 40);
-        ctx.strokeStyle = 'rgba(0,229,208,0.55)';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(0, H - 40); ctx.lineTo(W, H - 40); ctx.stroke();
-        ctx.restore();
     }
 
     function drawBlock(x, y, w, h) {
         if (h <= 0 || w <= 0) return;
-        ctx.save();
-        const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-        grad.addColorStop(0, 'rgba(30, 136, 229, 0.55)');
-        grad.addColorStop(0.5, 'rgba(0, 229, 208, 0.55)');
-        grad.addColorStop(1, 'rgba(30, 136, 229, 0.55)');
-        ctx.fillStyle = grad;
-        roundRect(ctx, x, y, w, h, 12); ctx.fill();
+        ctx.fillStyle = 'rgba(0, 180, 170, 0.85)';
+        roundRect(ctx, x, y, w, h, 10);
+        ctx.fill();
         ctx.strokeStyle = '#00E5D0';
         ctx.lineWidth = 2;
-        ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 12;
-        roundRect(ctx, x, y, w, h, 12); ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = 'rgba(0, 229, 208, 0.35)';
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
         ctx.lineWidth = 1;
-        for (let ly = y + 30; ly < y + h - 8; ly += 34) {
-            ctx.beginPath();
-            ctx.moveTo(x + 6, ly); ctx.lineTo(x + w - 6, ly);
-            ctx.stroke();
+        ctx.beginPath();
+        for (let ly = y + 24; ly < y + h - 6; ly += 30) {
+            ctx.moveTo(x + 5, ly);
+            ctx.lineTo(x + w - 5, ly);
         }
-        ctx.restore();
+        ctx.stroke();
     }
 
-    function draw() {
-        drawBackground();
-        for (const o of game.obstacles) {
-            drawBlock(o.x, 0, o.w, o.gapY);
-            drawBlock(o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
-            ctx.save();
-            ctx.strokeStyle = 'rgba(0,229,208,0.6)';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([8, 6]);
-            ctx.beginPath();
-            ctx.moveTo(o.x - 3, o.gapY);
-            ctx.lineTo(o.x + o.w + 3, o.gapY);
-            ctx.moveTo(o.x - 3, o.gapY + o.gapH);
-            ctx.lineTo(o.x + o.w + 3, o.gapY + o.gapH);
-            ctx.stroke();
-            ctx.restore();
-        }
+    function drawPlayer() {
         const p = game.player;
-        ctx.save();
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y + p.r + 6, p.r * 1.1, p.r * 0.35, 0, 0, Math.PI * 2);
+        ctx.ellipse(p.x, p.y + p.r + 6, p.r * 1.05, p.r * 0.32, 0, 0, Math.PI * 2);
         ctx.fill();
-        const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3);
-        glow.addColorStop(0, 'rgba(0, 229, 208, 0.55)');
-        glow.addColorStop(1, 'rgba(0, 229, 208, 0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,229,208,0.35)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r + 5, 0, Math.PI * 2);
+        ctx.stroke();
         ctx.fillStyle = '#070B14';
         ctx.strokeStyle = '#00E5D0';
         ctx.lineWidth = 3;
-        ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 14;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
-        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
         ctx.fillStyle = '#00E5D0';
         ctx.beginPath();
         ctx.arc(p.x + 4, p.y - 4, 3, 0, Math.PI * 2);
-        ctx.arc(p.x + 11, p.y - 4, 3, 0, Math.PI * 2);
+        ctx.arc(p.x + 10, p.y - 4, 3, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#00E5D0';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(p.x + 7, p.y + 2, 4, 0.1 * Math.PI, 0.9 * Math.PI);
+        ctx.arc(p.x + 6, p.y + 2, 4, 0.1 * Math.PI, 0.9 * Math.PI);
         ctx.stroke();
-        ctx.restore();
     }
 
-    function loop() {
+    function draw() {
+        ctx.drawImage(bgCanvas, 0, 0, bgCanvas.width, bgCanvas.height, 0, 0, W, H);
+        drawNearCity();
+        for (let i = 0; i < game.obstacles.length; i++) {
+            const o = game.obstacles[i];
+            drawBlock(o.x, 0, o.w, o.gapY);
+            drawBlock(o.x, o.gapY + o.gapH, o.w, H - GROUND_H - o.gapY - o.gapH);
+        }
+        drawGround();
+        drawPlayer();
+    }
+
+    function updateDifficulty() {
+        const s = game.score;
+        game.speed = Math.min(game.maxSpeed, 3.0 + Math.floor(s / 8) * 0.22);
+        game.spawnInterval = Math.max(game.minSpawnInterval, 105 - Math.floor(s / 4) * 2);
+        game.gap = Math.max(game.minGap, initialGap - Math.floor(s / 6) * 3);
+    }
+
+    function loop(timestamp) {
         if (state.gameInstance !== game || !game.running) return;
+        requestAnimationFrame(loop);
+
+        // Кап 60 FPS (скип на 120Hz-экранах)
+        if (game.lastFrameTime && timestamp - game.lastFrameTime < 15) return;
+        game.lastFrameTime = timestamp;
 
         if (game.started) {
             game.player.vy += game.gravity;
-            if (game.player.vy > 11) game.player.vy = 11;
+            if (game.player.vy > game.maxFallSpeed) game.player.vy = game.maxFallSpeed;
             game.player.y += game.player.vy;
         }
         if (game.player.y - game.player.r < 0) {
             game.player.y = game.player.r;
             game.player.vy = 0;
         }
-        if (game.player.y + game.player.r > H - 40) {
-            game.player.y = H - 40 - game.player.r;
+        if (game.player.y + game.player.r > H - GROUND_H) {
+            game.player.y = H - GROUND_H - game.player.r;
             endGame();
             return;
         }
+
         game.spawnTimer++;
         if (game.started && game.spawnTimer >= game.spawnInterval) {
             game.spawnTimer = 0;
-            const minGapY = 60;
-            const maxGapY = H - 40 - game.gap - 60;
+            const minGapY = 55;
+            const maxGapY = H - GROUND_H - game.gap - 55;
             const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
-            game.obstacles.push({ x: W + 40, w: 62, gapY, gapH: game.gap, passed: false });
+            game.obstacles.push({ x: W + 30, w: 58, gapY, gapH: game.gap, passed: false });
         }
+
+        const px = game.player.x, py = game.player.y, pr = game.player.r;
         for (let i = game.obstacles.length - 1; i >= 0; i--) {
             const o = game.obstacles[i];
             if (game.started) o.x -= game.speed;
-            const px = game.player.x, py = game.player.y, pr = game.player.r;
             if (px + pr > o.x && px - pr < o.x + o.w) {
                 if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) {
                     endGame();
@@ -1257,14 +1297,13 @@ function initFlappy() {
                 game.score++;
                 haptic('light');
                 updateScore(game.score);
-                if (game.score % 30 === 0) game.speed = Math.min(game.maxSpeed, game.speed + 0.15);
-                if (game.score % 20 === 0 && game.spawnInterval > game.minSpawnInterval) game.spawnInterval -= 3;
+                updateDifficulty();
             }
             if (o.x + o.w < -80) game.obstacles.splice(i, 1);
         }
+
         draw();
         game.frame++;
-        requestAnimationFrame(loop);
     }
     draw();
     requestAnimationFrame(loop);
