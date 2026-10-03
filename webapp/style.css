@@ -662,7 +662,7 @@ textarea.note-textarea { min-height: 200px; }
 .att-stat-value.yellow { color: var(--accent-yellow); }
 
 /* ============================================================
-   ПРОФИЛЬ — с одним персонажем-студентом
+   ПРОФИЛЬ — с PNG-аватаром студента
    ============================================================ */
 
 .profile-hero {
@@ -739,12 +739,21 @@ textarea.note-textarea { min-height: 200px; }
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     animation: spinSlow 8s linear infinite;
+    pointer-events: none;
 }
 @keyframes spinSlow { to { transform: rotate(360deg); } }
-.profile-avatar-wrap svg {
-    width: 140px; height: 140px;
-    filter: drop-shadow(0 0 18px var(--neon-glow));
+
+.profile-avatar-wrap svg,
+.profile-avatar-wrap img,
+.profile-avatar-img {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: center 25%;
+    display: block;
     z-index: 1;
+    filter: drop-shadow(0 0 22px var(--neon-glow));
 }
 
 .profile-level-block { text-align: center; position: relative; z-index: 1; margin-bottom: 12px; }
@@ -915,7 +924,7 @@ textarea.note-textarea { min-height: 200px; }
 .chest-btn:active { transform: scale(0.96); box-shadow: 0 0 32px rgba(255,176,32,0.7); }
 .chest-btn:disabled { opacity: 0.55; box-shadow: none; cursor: not-allowed; }
 
-/* Достижения — ИСПРАВЛЕНО */
+/* Достижения */
 .ach-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1044,7 +1053,9 @@ textarea.note-textarea { min-height: 200px; }
     .ach-emoji { font-size: 20px; }
     .ach-name { font-size: 8.5px; }
     .profile-avatar-wrap { width: 140px; height: 140px; }
-    .profile-avatar-wrap svg { width: 122px; height: 122px; }
+    .profile-avatar-wrap svg,
+    .profile-avatar-wrap img,
+    .profile-avatar-img { width: 122px; height: 122px; }
     .profile-name-main { font-size: 18px; }
     .chest-timer { font-size: 18px; letter-spacing: 2px; }
     .game-cover { width: 100px; }
