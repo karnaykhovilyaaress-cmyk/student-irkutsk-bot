@@ -506,29 +506,74 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 .sch-auto-toggle input[type="checkbox"] { width: 22px; height: 22px; cursor: pointer; accent-color: var(--accent-yellow); flex-shrink: 0; }
 .sch-auto-toggle span { flex: 1; }
 
-/* GAMES */
-.game-wrap { position: fixed; inset: 0; background: #070B14; z-index: 50; display: flex; flex-direction: column; overflow: hidden; }
-.game-canvas { flex: 1; min-height: 0; width: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; }
-.game-hud { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 60px); left: 0; right: 0; text-align: center; pointer-events: none; z-index: 2; }
-.game-hud-score { font-size: 58px; font-weight: 900; color: #fff; letter-spacing: -2px; text-shadow: 0 0 24px var(--neon-glow), 0 4px 12px rgba(0,0,0,0.6); line-height: 1; }
-.game-hud-best { font-size: 12px; font-weight: 800; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 2px; margin-top: 8px; }
+/* ============================================================
+   ИГРЫ — ОБЩИЕ СТИЛИ
+   ============================================================ */
+
+.game-wrap {
+    position: fixed; inset: 0;
+    background: #070B14;
+    z-index: 50;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.game-canvas {
+    flex: 1; min-height: 0; width: 100%;
+    display: block;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+}
+.game-hud {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 60px);
+    left: 0; right: 0;
+    text-align: center;
+    pointer-events: none;
+    z-index: 2;
+}
+.game-hud-score {
+    font-size: 58px; font-weight: 900; color: #fff;
+    letter-spacing: -2px;
+    text-shadow: 0 0 24px var(--neon-glow), 0 4px 12px rgba(0,0,0,0.6);
+    line-height: 1;
+}
+.game-hud-best {
+    font-size: 12px; font-weight: 800;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase; letter-spacing: 2px; margin-top: 8px;
+}
 .game-hint {
-    position: absolute; bottom: 15%; left: 0; right: 0; text-align: center;
-    font-size: 13px; font-weight: 800; color: rgba(255,255,255,0.55);
+    position: absolute;
+    bottom: 15%; left: 0; right: 0;
+    text-align: center;
+    font-size: 13px; font-weight: 800;
+    color: rgba(255,255,255,0.55);
     text-transform: uppercase; letter-spacing: 3px;
     animation: gameHintPulse 1.6s ease-in-out infinite;
-    pointer-events: none; z-index: 2;
+    pointer-events: none;
+    z-index: 2;
 }
 @keyframes gameHintPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
 .game-exit {
-    position: absolute; top: calc(env(safe-area-inset-top, 0px) + 60px);
-    right: 14px; width: 42px; height: 42px; border-radius: 50%;
-    background: rgba(0,0,0,0.55); color: #fff;
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 60px);
+    right: 14px;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
     border: 1px solid rgba(255,255,255,0.12);
-    font-size: 18px; font-weight: 700; cursor: pointer; z-index: 3;
+    font-size: 18px; font-weight: 700;
+    cursor: pointer; z-index: 6;
     display: flex; align-items: center; justify-content: center;
     font-family: inherit;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    transition: transform 0.15s ease;
 }
 .game-exit:active { transform: scale(0.9); }
 .game-result-wrap { padding: 14px 16px 30px; }
@@ -553,6 +598,267 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 @keyframes recordPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 .game-result-best { text-align: center; font-size: 14px; font-weight: 700; color: var(--text-2); margin-bottom: 20px; }
 .game-top-me { color: var(--neon); font-weight: 800; }
+
+/* ============================================================
+   ЗАСТАВКА ИГРЫ (общая, красивая, для всех 5 игр)
+   ============================================================ */
+
+.game-start-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(circle at 50% 35%, rgba(0,229,208,0.18) 0%, rgba(7,11,20,0.94) 55%, rgba(7,11,20,0.99) 100%);
+    animation: startOverlayIn 0.4s ease;
+    cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overflow-y: auto;
+}
+@keyframes startOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+.game-start-overlay.hide {
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.35s ease;
+}
+
+.game-start-icon {
+    width: 130px;
+    height: 130px;
+    margin-bottom: 22px;
+    filter: drop-shadow(0 0 28px var(--neon-glow));
+    animation: startFloat 2.6s ease-in-out infinite;
+}
+@keyframes startFloat {
+    0%, 100% { transform: translateY(0) rotate(-3deg); }
+    50%      { transform: translateY(-12px) rotate(3deg); }
+}
+
+.game-start-title {
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: -0.6px;
+    line-height: 1.1;
+    text-transform: uppercase;
+    background: var(--grad-neon);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 16px var(--neon-glow));
+    margin-bottom: 8px;
+    max-width: 320px;
+}
+
+.game-start-tagline {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-2);
+    letter-spacing: 0.4px;
+    margin-bottom: 22px;
+    max-width: 300px;
+    line-height: 1.5;
+}
+
+.game-start-best {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-2);
+    padding: 8px 16px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(0,229,208,0.25);
+    border-radius: 999px;
+    margin-bottom: 18px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+}
+.game-start-best strong {
+    color: var(--neon);
+    font-size: 15px;
+    text-shadow: 0 0 10px var(--neon-glow);
+}
+
+.game-start-btn {
+    background: var(--neon);
+    color: #070B14;
+    border: none;
+    border-radius: var(--r-md);
+    padding: 15px 44px;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+    box-shadow: 0 0 28px var(--neon-glow);
+    transition: transform 0.15s ease, box-shadow 0.2s ease;
+    margin-bottom: 16px;
+    min-width: 200px;
+}
+.game-start-btn:active { transform: scale(0.95); box-shadow: 0 0 40px var(--neon-glow); }
+
+.game-start-hint {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-2);
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    animation: hintPulse 1.8s ease-in-out infinite;
+}
+@keyframes hintPulse {
+    0%, 100% { opacity: 0.5; }
+    50%      { opacity: 1; }
+}
+
+/* ============================================================
+   ОБУЧЕНИЕ (туториал)
+   ============================================================ */
+
+.tutorial-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 20px calc(env(safe-area-inset-bottom, 0px) + 30px) 20px;
+    background: linear-gradient(180deg, rgba(7,11,20,0.4) 0%, rgba(7,11,20,0.85) 45%, rgba(7,11,20,0.98) 100%);
+    animation: tutorialIn 0.35s ease;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+@keyframes tutorialIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.tutorial-overlay.hide {
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.tutorial-icon {
+    font-size: 64px;
+    margin-bottom: 14px;
+    filter: drop-shadow(0 0 24px var(--neon-glow));
+    animation: tutorialIconPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes tutorialIconPop {
+    0% { transform: scale(0.4) rotate(-20deg); opacity: 0; }
+    60% { transform: scale(1.15) rotate(5deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.tutorial-title {
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--text);
+    letter-spacing: -0.3px;
+    margin-bottom: 8px;
+    text-align: center;
+    line-height: 1.2;
+}
+.tutorial-title strong {
+    color: var(--neon);
+    text-shadow: 0 0 12px var(--neon-glow);
+}
+
+.tutorial-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-2);
+    line-height: 1.55;
+    text-align: center;
+    max-width: 320px;
+    margin-bottom: 24px;
+}
+.tutorial-text strong { color: var(--neon); font-weight: 800; }
+
+.tutorial-tap-hint {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--neon);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    animation: hintPulse 1.6s ease-in-out infinite;
+    padding: 8px 20px;
+    border: 1px solid rgba(0,229,208,0.3);
+    border-radius: 999px;
+    background: rgba(0,229,208,0.08);
+}
+
+/* Стрелка вверх для туториала */
+.tutorial-arrow {
+    font-size: 32px;
+    margin-bottom: 10px;
+    color: var(--neon);
+    animation: arrowUp 1.2s ease-in-out infinite;
+    filter: drop-shadow(0 0 10px var(--neon-glow));
+}
+@keyframes arrowUp {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-10px); }
+}
+
+/* Для игр с зажатием — горизонтальные стрелки */
+.tutorial-arrows-h {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 16px;
+}
+.tutorial-arrow-h {
+    font-size: 42px;
+    color: var(--neon);
+    filter: drop-shadow(0 0 12px var(--neon-glow));
+    animation: arrowHPulse 1.4s ease-in-out infinite;
+}
+.tutorial-arrow-h.left { animation-delay: 0.2s; }
+.tutorial-arrow-h.right { animation-delay: 0.6s; }
+@keyframes arrowHPulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.95); }
+    50%      { opacity: 1; transform: scale(1.1); }
+}
+
+/* ============================================================
+   ИГРА «ДО ДЕКАНАТА» — управление зажатием
+   ============================================================ */
+
+.race-controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 120px;
+    display: flex;
+    z-index: 4;
+    pointer-events: none;
+}
+.race-control {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    font-weight: 900;
+    color: rgba(0,229,208,0.35);
+    pointer-events: auto;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.1s ease, background 0.1s ease;
+}
+.race-control.active {
+    color: var(--neon);
+    background: radial-gradient(circle at 50% 100%, rgba(0,229,208,0.20) 0%, transparent 70%);
+    text-shadow: 0 0 20px var(--neon-glow);
+}
+
+/* ============================================================
+   СПИСОК ИГР
+   ============================================================ */
 
 .games-catalog { display: flex; flex-direction: column; gap: 12px; }
 .game-catalog-card {
@@ -881,10 +1187,7 @@ textarea.note-textarea { min-height: 200px; }
 }
 .streak-row .fire { color: #FF6B35; filter: drop-shadow(0 0 8px rgba(255,107,53,0.5)); }
 
-/* ============================================================
-   СУНДУК «ХАЛЯВА ДНЯ»
-   ============================================================ */
-
+/* Сундук дня */
 .chest-card {
     background: linear-gradient(160deg, rgba(255,215,0,0.10) 0%, rgba(255,140,0,0.05) 100%);
     border: 1px solid rgba(255,215,0,0.28);
@@ -957,10 +1260,7 @@ textarea.note-textarea { min-height: 200px; }
 .chest-btn:active { transform: scale(0.96); box-shadow: 0 0 32px rgba(255,176,32,0.7); }
 .chest-btn:disabled { opacity: 0.55; box-shadow: none; cursor: not-allowed; }
 
-/* ============================================================
-   ПРЕМИУМ-СУНДУК
-   ============================================================ */
-
+/* Премиум-сундук */
 .premium-chest-card {
     background: linear-gradient(160deg, rgba(168,85,247,0.12) 0%, rgba(255,215,0,0.08) 100%);
     border: 1px solid rgba(168,85,247,0.35);
@@ -1044,7 +1344,6 @@ textarea.note-textarea { min-height: 200px; }
     background: var(--bg-3); color: var(--text-2);
 }
 
-/* Reward premium */
 .reward-premium-label {
     font-size: 22px; font-weight: 900;
     background: linear-gradient(135deg, #C084FC, #FFD700);
@@ -1075,12 +1374,8 @@ textarea.note-textarea { min-height: 200px; }
     text-shadow: 0 0 10px var(--neon-glow);
 }
 .reward-premium-row .val.gold { color: #FFD700; text-shadow: 0 0 10px rgba(255,215,0,0.55); }
-.reward-premium-row .val.purple { color: #C084FC; text-shadow: 0 0 10px rgba(168,85,247,0.55); }
 
-/* ============================================================
-   ДОСТИЖЕНИЯ
-   ============================================================ */
-
+/* Достижения */
 .ach-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1134,11 +1429,7 @@ textarea.note-textarea { min-height: 200px; }
 }
 .ach-item.unlocked .ach-name { color: var(--neon); }
 
-/* Тосты достижений */
-.ach-toast-list {
-    display: flex; flex-direction: column; gap: 12px;
-    margin-bottom: 16px;
-}
+.ach-toast-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
 .ach-toast-item {
     display: flex; align-items: center; gap: 12px;
     padding: 12px 14px;
@@ -1157,10 +1448,7 @@ textarea.note-textarea { min-height: 200px; }
     letter-spacing: 0.4px;
 }
 
-/* ============================================================
-   МОДАЛКИ
-   ============================================================ */
-
+/* Модалки */
 .modal-backdrop {
     position: fixed; inset: 0;
     background: rgba(0,0,0,0.72);
@@ -1221,21 +1509,11 @@ textarea.note-textarea { min-height: 200px; }
 }
 .reward-desc { font-size: 13px; color: var(--text-2); font-weight: 500; margin-bottom: 18px; }
 
-/* Инфо-модалка — уровни и достижения */
-.info-modal-title {
-    font-size: 20px; font-weight: 900;
-    text-align: center; letter-spacing: -0.4px;
-    margin-bottom: 6px;
-}
-.info-modal-sub {
-    font-size: 13px; color: var(--text-2);
-    text-align: center; font-weight: 500;
-    margin-bottom: 18px; line-height: 1.45;
-}
+.info-modal-title { font-size: 20px; font-weight: 900; text-align: center; letter-spacing: -0.4px; margin-bottom: 6px; }
+.info-modal-sub { font-size: 13px; color: var(--text-2); text-align: center; font-weight: 500; margin-bottom: 18px; line-height: 1.45; }
 .info-section { margin-bottom: 18px; }
 .info-section-title {
-    font-size: 11px; font-weight: 800;
-    color: var(--neon);
+    font-size: 11px; font-weight: 800; color: var(--neon);
     letter-spacing: 1.6px; text-transform: uppercase;
     margin-bottom: 10px; padding-bottom: 6px;
     border-bottom: 1px solid rgba(0,229,208,0.20);
@@ -1243,16 +1521,12 @@ textarea.note-textarea { min-height: 200px; }
 .info-row {
     display: flex; align-items: center; justify-content: space-between;
     gap: 10px; padding: 9px 0;
-    font-size: 13px; font-weight: 600;
-    color: var(--text); border-bottom: 1px solid var(--divider);
+    font-size: 13px; font-weight: 600; color: var(--text);
+    border-bottom: 1px solid var(--divider);
 }
 .info-row:last-child { border-bottom: none; }
 .info-row-label { flex: 1; min-width: 0; color: var(--text-2); font-weight: 500; }
-.info-row-value {
-    font-weight: 900; font-size: 13px; white-space: nowrap;
-    color: var(--neon);
-    text-shadow: 0 0 10px var(--neon-glow);
-}
+.info-row-value { font-weight: 900; font-size: 13px; white-space: nowrap; color: var(--neon); text-shadow: 0 0 10px var(--neon-glow); }
 .info-row-value.gold { color: #FFD700; text-shadow: 0 0 10px rgba(255,215,0,0.5); }
 .info-row-value.muted { color: var(--text-2); text-shadow: none; font-weight: 700; }
 
@@ -1261,8 +1535,7 @@ textarea.note-textarea { min-height: 200px; }
     gap: 14px; padding: 14px;
     background: var(--grad-neon-soft);
     border: 1px solid rgba(0,229,208,0.30);
-    border-radius: var(--r-lg);
-    margin-bottom: 16px;
+    border-radius: var(--r-lg); margin-bottom: 16px;
 }
 .info-current-lvl {
     font-size: 42px; font-weight: 900; line-height: 1;
@@ -1272,80 +1545,28 @@ textarea.note-textarea { min-height: 200px; }
     -webkit-text-fill-color: transparent;
     filter: drop-shadow(0 0 12px var(--neon-glow));
 }
-.info-current-lvl small {
-    font-size: 14px;
-    -webkit-text-fill-color: var(--text-2);
-    letter-spacing: 1.6px; margin-left: 2px;
-}
+.info-current-lvl small { font-size: 14px; -webkit-text-fill-color: var(--text-2); letter-spacing: 1.6px; margin-left: 2px; }
 .info-current-info { text-align: left; min-width: 0; }
-.info-current-name {
-    font-size: 14px; font-weight: 800; color: var(--text);
-    margin-bottom: 4px; letter-spacing: -0.2px;
-}
-.info-current-xp {
-    font-size: 11px; font-weight: 700; color: var(--text-2);
-    letter-spacing: 0.6px; text-transform: uppercase;
-}
-.info-xp-bar {
-    height: 8px; background: rgba(0,0,0,0.35);
-    border-radius: 999px; overflow: hidden;
-    margin-bottom: 16px;
-    border: 1px solid rgba(0,229,208,0.18);
-}
-.info-xp-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #00E5D0, #1E88E5);
-    box-shadow: 0 0 12px var(--neon-glow);
-    border-radius: 999px;
-}
+.info-current-name { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 4px; letter-spacing: -0.2px; }
+.info-current-xp { font-size: 11px; font-weight: 700; color: var(--text-2); letter-spacing: 0.6px; text-transform: uppercase; }
+.info-xp-bar { height: 8px; background: rgba(0,0,0,0.35); border-radius: 999px; overflow: hidden; margin-bottom: 16px; border: 1px solid rgba(0,229,208,0.18); }
+.info-xp-fill { height: 100%; background: linear-gradient(90deg, #00E5D0, #1E88E5); box-shadow: 0 0 12px var(--neon-glow); border-radius: 999px; }
 
-.info-ach-hero {
-    display: flex; flex-direction: column;
-    align-items: center;
-    padding: 10px 0 20px;
-}
-.info-ach-icon {
-    font-size: 64px; line-height: 1;
-    margin-bottom: 12px;
-    filter: drop-shadow(0 0 20px rgba(0,229,208,0.55));
-}
-.info-ach-icon.locked {
-    filter: grayscale(1) opacity(0.5);
-    font-size: 56px;
-}
-.info-ach-name {
-    font-size: 20px; font-weight: 900;
-    color: var(--text); letter-spacing: -0.3px;
-    text-align: center; margin-bottom: 6px;
-}
-.info-ach-badge {
-    display: inline-block;
-    font-size: 10px; font-weight: 800;
-    padding: 4px 12px; border-radius: 999px;
-    letter-spacing: 1.2px; text-transform: uppercase;
-}
-.info-ach-badge.unlocked {
-    background: rgba(0,229,160,0.16);
-    color: var(--accent-green);
-    box-shadow: 0 0 12px rgba(0,229,160,0.25);
-}
-.info-ach-badge.locked {
-    background: rgba(138,152,176,0.16);
-    color: var(--text-2);
-}
-.info-ach-desc {
-    font-size: 14px; color: var(--text-2);
-    font-weight: 500; line-height: 1.55;
-    text-align: center; padding: 14px 8px 4px;
-}
+.info-ach-hero { display: flex; flex-direction: column; align-items: center; padding: 10px 0 20px; }
+.info-ach-icon { font-size: 64px; line-height: 1; margin-bottom: 12px; filter: drop-shadow(0 0 20px rgba(0,229,208,0.55)); }
+.info-ach-icon.locked { filter: grayscale(1) opacity(0.5); font-size: 56px; }
+.info-ach-name { font-size: 20px; font-weight: 900; color: var(--text); letter-spacing: -0.3px; text-align: center; margin-bottom: 6px; }
+.info-ach-badge { display: inline-block; font-size: 10px; font-weight: 800; padding: 4px 12px; border-radius: 999px; letter-spacing: 1.2px; text-transform: uppercase; }
+.info-ach-badge.unlocked { background: rgba(0,229,160,0.16); color: var(--accent-green); box-shadow: 0 0 12px rgba(0,229,160,0.25); }
+.info-ach-badge.locked { background: rgba(138,152,176,0.16); color: var(--text-2); }
+.info-ach-desc { font-size: 14px; color: var(--text-2); font-weight: 500; line-height: 1.55; text-align: center; padding: 14px 8px 4px; }
 .info-ach-hint {
     margin-top: 14px; padding: 12px 14px;
     background: var(--grad-neon-soft);
     border: 1px solid rgba(0,229,208,0.25);
     border-radius: var(--r-md);
-    font-size: 12px; font-weight: 600;
-    color: var(--neon); line-height: 1.5;
-    text-align: center;
+    font-size: 12px; font-weight: 600; color: var(--neon);
+    line-height: 1.5; text-align: center;
 }
 
 @keyframes pop {
@@ -1354,7 +1575,6 @@ textarea.note-textarea { min-height: 200px; }
     100% { transform: translate(-50%, -80%) scale(1); opacity: 0; }
 }
 
-/* Адаптив */
 @media (max-width: 420px) {
     .ach-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
