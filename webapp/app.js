@@ -841,7 +841,7 @@ const GAME_META = {
         tagline: 'Пролетай между столбцами расписания,<br>не задень границы',
         tutorialIcon: '👆',
         tutorialTitle: 'Как играть',
-        tutorialText: 'Тапай по экрану — студент <strong>прыгает</strong>. Пролетай между парами и набирай очки. Заденешь столбец — конец.',
+        tutorialText: 'Тапай по экрану — шарик <strong>прыгает</strong>. Пролетай между столбцами и набирай очки. Заденешь столбец — конец.',
         tutorialHint: 'Тапни, чтобы начать',
     },
 };
@@ -1012,7 +1012,7 @@ function showTutorialThenStart(startFn) {
 }
 
 // ============================================================
-//         ИГРА: ДО ПАРЫ УСПЕТЬ (оптимизированная + сложнее)
+//   ИГРА: ДО ПАРЫ УСПЕТЬ (звёздный фон, шар, узкие дырки)
 // ============================================================
 
 function initFlappy() {
@@ -1028,97 +1028,65 @@ function initFlappy() {
     canvas.height = Math.floor(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const GROUND_H = 40;
-
-    // ============ PRE-RENDER: небо + звёзды + дальний город ============
-    const bgCanvas = document.createElement('canvas');
-    bgCanvas.width = Math.floor(W * dpr);
-    bgCanvas.height = Math.floor(H * dpr);
-    const bgCtx = bgCanvas.getContext('2d');
-    bgCtx.scale(dpr, dpr);
+    // ============ ЗВЁЗДНЫЙ ФОН (pre-render один раз) ============
+    const starCanvas = document.createElement('canvas');
+    starCanvas.width = Math.floor(W * dpr);
+    starCanvas.height = Math.floor(H * dpr);
+    const starCtx = starCanvas.getContext('2d');
+    starCtx.scale(dpr, dpr);
     {
-        const sky = bgCtx.createLinearGradient(0, 0, 0, H);
-        sky.addColorStop(0, '#060d1c');
-        sky.addColorStop(0.5, '#0b1730');
-        sky.addColorStop(1, '#14203f');
-        bgCtx.fillStyle = sky;
-        bgCtx.fillRect(0, 0, W, H);
+        const bg = starCtx.createLinearGradient(0, 0, 0, H);
+        bg.addColorStop(0, '#050813');
+        bg.addColorStop(0.5, '#08101f');
+        bg.addColorStop(1, '#0b1524');
+        starCtx.fillStyle = bg;
+        starCtx.fillRect(0, 0, W, H);
 
-        for (let i = 0; i < 30; i++) {
-            const sx = (i * 197) % W;
-            const sy = (i * 71) % (H * 0.5);
-            const alpha = 0.20 + ((i * 13) % 5) * 0.10;
-            bgCtx.fillStyle = `rgba(180,220,255,${alpha})`;
-            bgCtx.fillRect(sx, sy, 1.5, 1.5);
-        }
+        const glow = starCtx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.75);
+        glow.addColorStop(0, 'rgba(0,229,208,0.07)');
+        glow.addColorStop(1, 'rgba(0,229,208,0)');
+        starCtx.fillStyle = glow;
+        starCtx.fillRect(0, 0, W, H);
 
-        bgCtx.fillStyle = '#0a1526';
-        for (let i = 0; i <= Math.ceil(W / 80); i++) {
-            const bx = i * 80;
-            const bh = 60 + ((i * 37) % 5) * 12;
-            bgCtx.fillRect(bx, H - 80 - bh, 60, bh);
-        }
-    }
-
-    // ============ PRE-RENDER: ближний город (скроллящийся тайл) ============
-    const TILE_W = 100;
-    const nearTile = document.createElement('canvas');
-    nearTile.width = Math.floor(TILE_W * dpr);
-    nearTile.height = Math.floor(H * dpr);
-    const nearCtx = nearTile.getContext('2d');
-    nearCtx.scale(dpr, dpr);
-    {
-        const baseY = H - GROUND_H - 80;
-        nearCtx.fillStyle = '#05090f';
-        nearCtx.fillRect(0, baseY, 74, 80);
-        nearCtx.fillStyle = 'rgba(0,229,208,0.28)';
-        for (let wy = baseY + 12; wy < H - GROUND_H - 8; wy += 14) {
-            for (let wx = 8; wx < 68; wx += 14) {
-                if ((wx + wy) % 3 === 0) nearCtx.fillRect(wx, wy, 5, 7);
-            }
+        const starCount = Math.floor((W * H) / 3500);
+        for (let i = 0; i < starCount; i++) {
+            const x = Math.random() * W;
+            const y = Math.random() * H;
+            const r = Math.random();
+            let size, alpha;
+            if (r < 0.72) { size = 0.8; alpha = 0.25 + Math.random() * 0.30; }
+            else if (r < 0.95) { size = 1.3; alpha = 0.55 + Math.random() * 0.35; }
+            else { size = 2.0; alpha = 0.85 + Math.random() * 0.15; }
+            starCtx.fillStyle = `rgba(220,235,255,${alpha})`;
+            starCtx.beginPath();
+            starCtx.arc(x, y, size, 0, Math.PI * 2);
+            starCtx.fill();
         }
     }
 
-    // ============ PRE-RENDER: земля ============
-    const groundCanvas = document.createElement('canvas');
-    groundCanvas.width = Math.floor(W * dpr);
-    groundCanvas.height = Math.floor(GROUND_H * dpr);
-    const groundCtx = groundCanvas.getContext('2d');
-    groundCtx.scale(dpr, dpr);
-    {
-        const g = groundCtx.createLinearGradient(0, 0, 0, GROUND_H);
-        g.addColorStop(0, '#0a1226');
-        g.addColorStop(1, '#03060d');
-        groundCtx.fillStyle = g;
-        groundCtx.fillRect(0, 0, W, GROUND_H);
-        groundCtx.strokeStyle = 'rgba(0,229,208,0.8)';
-        groundCtx.lineWidth = 2;
-        groundCtx.beginPath();
-        groundCtx.moveTo(0, 1);
-        groundCtx.lineTo(W, 1);
-        groundCtx.stroke();
-    }
-
-    // ============ STATE (сложнее чем было) ============
-    const initialGap = Math.max(170, Math.min(220, H * 0.32));
-    const minGap = Math.max(130, Math.min(165, H * 0.24));
+    // ============ ПАРАМЕТРЫ ============
+    const GAP = 145;
+    const MIN_GAP = 118;
+    const COL_W = 58;
+    const SPAWN_INTERVAL = 78;
+    const MIN_SPAWN_INTERVAL = 60;
 
     const game = {
-        W, H, GROUND_H,
+        W, H,
         running: true, over: false, started: false,
         score: 0, frame: 0,
-        player: { x: W * 0.28, y: H * 0.5, r: 14, vy: 0 },
+        player: { x: W * 0.28, y: H * 0.5, r: 13, vy: 0 },
         obstacles: [],
         spawnTimer: 0,
-        spawnInterval: 105,
-        minSpawnInterval: 60,
-        gravity: 0.58,
-        jumpForce: -8.2,
+        spawnInterval: SPAWN_INTERVAL,
+        minSpawnInterval: MIN_SPAWN_INTERVAL,
+        gravity: 0.55,
+        jumpForce: -8.0,
         maxFallSpeed: 10.5,
-        speed: 3.0,
-        maxSpeed: 7.0,
-        gap: initialGap,
-        minGap: minGap,
+        speed: 2.9,
+        maxSpeed: 5.8,
+        gap: GAP,
+        minGap: MIN_GAP,
         lastFrameTime: 0,
     };
     state.gameInstance = game;
@@ -1163,98 +1131,66 @@ function initFlappy() {
         submitGameScore('flappy', game.score);
     }
 
-    // ============ DRAW (быстрые операции) ============
-    function drawNearCity() {
-        const offset = (game.frame * game.speed * 0.5) % TILE_W;
-        const tiles = Math.ceil(W / TILE_W) + 1;
-        for (let i = 0; i < tiles; i++) {
-            ctx.drawImage(nearTile, 0, 0, nearTile.width, nearTile.height,
-                          i * TILE_W - offset, 0, TILE_W, H);
-        }
-    }
-
-    function drawGround() {
-        ctx.drawImage(groundCanvas, 0, 0, groundCanvas.width, groundCanvas.height,
-                      0, H - GROUND_H, W, GROUND_H);
-        const offset = (game.frame * game.speed * 0.8) % 20;
-        ctx.fillStyle = 'rgba(0,229,208,0.22)';
-        for (let x = -offset; x < W; x += 20) {
-            ctx.fillRect(x, H - GROUND_H + 8, 10, 2);
-        }
-    }
-
-    function drawBlock(x, y, w, h) {
-        if (h <= 0 || w <= 0) return;
-        ctx.fillStyle = 'rgba(0, 180, 170, 0.85)';
-        roundRect(ctx, x, y, w, h, 10);
+    function drawColumn(x, y, w, h) {
+        if (h <= 0) return;
+        ctx.fillStyle = 'rgba(0, 175, 165, 0.85)';
+        roundRect(ctx, x, y, w, h, 8);
         ctx.fill();
         ctx.strokeStyle = '#00E5D0';
         ctx.lineWidth = 2;
         ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        for (let ly = y + 24; ly < y + h - 6; ly += 30) {
-            ctx.moveTo(x + 5, ly);
-            ctx.lineTo(x + w - 5, ly);
+        for (let ly = y + 22; ly < y + h - 6; ly += 28) {
+            ctx.moveTo(x + 6, ly);
+            ctx.lineTo(x + w - 6, ly);
         }
         ctx.stroke();
     }
 
     function drawPlayer() {
         const p = game.player;
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y + p.r + 6, p.r * 1.05, p.r * 0.32, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,229,208,0.35)';
+        ctx.strokeStyle = 'rgba(0,229,208,0.28)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r + 5, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.r + 4, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = '#070B14';
-        ctx.strokeStyle = '#00E5D0';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,229,208,0.12)';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(p.x, p.y, p.r + 9, 0, Math.PI * 2);
         ctx.stroke();
         ctx.fillStyle = '#00E5D0';
         ctx.beginPath();
-        ctx.arc(p.x + 4, p.y - 4, 3, 0, Math.PI * 2);
-        ctx.arc(p.x + 10, p.y - 4, 3, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#00E5D0';
-        ctx.lineWidth = 1.5;
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
         ctx.beginPath();
-        ctx.arc(p.x + 6, p.y + 2, 4, 0.1 * Math.PI, 0.9 * Math.PI);
-        ctx.stroke();
+        ctx.arc(p.x - 4, p.y - 4, p.r * 0.32, 0, Math.PI * 2);
+        ctx.fill();
     }
 
     function draw() {
-        ctx.drawImage(bgCanvas, 0, 0, bgCanvas.width, bgCanvas.height, 0, 0, W, H);
-        drawNearCity();
+        ctx.drawImage(starCanvas, 0, 0, starCanvas.width, starCanvas.height, 0, 0, W, H);
         for (let i = 0; i < game.obstacles.length; i++) {
             const o = game.obstacles[i];
-            drawBlock(o.x, 0, o.w, o.gapY);
-            drawBlock(o.x, o.gapY + o.gapH, o.w, H - GROUND_H - o.gapY - o.gapH);
+            drawColumn(o.x, 0, o.w, o.gapY);
+            drawColumn(o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
         }
-        drawGround();
         drawPlayer();
     }
 
     function updateDifficulty() {
         const s = game.score;
-        game.speed = Math.min(game.maxSpeed, 3.0 + Math.floor(s / 8) * 0.22);
-        game.spawnInterval = Math.max(game.minSpawnInterval, 105 - Math.floor(s / 4) * 2);
-        game.gap = Math.max(game.minGap, initialGap - Math.floor(s / 6) * 3);
+        game.speed = Math.min(game.maxSpeed, 2.9 + Math.floor(s / 6) * 0.18);
+        game.spawnInterval = Math.max(game.minSpawnInterval, SPAWN_INTERVAL - Math.floor(s / 4) * 1.5);
+        game.gap = Math.max(game.minGap, GAP - Math.floor(s / 8) * 2);
     }
 
     function loop(timestamp) {
         if (state.gameInstance !== game || !game.running) return;
         requestAnimationFrame(loop);
 
-        // Кап 60 FPS (скип на 120Hz-экранах)
         if (game.lastFrameTime && timestamp - game.lastFrameTime < 15) return;
         game.lastFrameTime = timestamp;
 
@@ -1267,8 +1203,8 @@ function initFlappy() {
             game.player.y = game.player.r;
             game.player.vy = 0;
         }
-        if (game.player.y + game.player.r > H - GROUND_H) {
-            game.player.y = H - GROUND_H - game.player.r;
+        if (game.player.y + game.player.r > H) {
+            game.player.y = H - game.player.r;
             endGame();
             return;
         }
@@ -1276,10 +1212,10 @@ function initFlappy() {
         game.spawnTimer++;
         if (game.started && game.spawnTimer >= game.spawnInterval) {
             game.spawnTimer = 0;
-            const minGapY = 55;
-            const maxGapY = H - GROUND_H - game.gap - 55;
+            const minGapY = 40;
+            const maxGapY = H - game.gap - 40;
             const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
-            game.obstacles.push({ x: W + 30, w: 58, gapY, gapH: game.gap, passed: false });
+            game.obstacles.push({ x: W + 20, w: COL_W, gapY, gapH: game.gap, passed: false });
         }
 
         const px = game.player.x, py = game.player.y, pr = game.player.r;
