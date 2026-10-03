@@ -547,6 +547,8 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
     color: rgba(255,255,255,0.55);
     text-transform: uppercase; letter-spacing: 2px; margin-top: 8px;
 }
+
+/* Кнопка выхода */
 .game-exit {
     position: absolute;
     top: calc(env(safe-area-inset-top, 0px) + 60px);
@@ -557,13 +559,40 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
     color: #fff;
     border: 1px solid rgba(255,255,255,0.12);
     font-size: 18px; font-weight: 700;
-    cursor: pointer; z-index: 6;
+    cursor: pointer; z-index: 9;
     display: flex; align-items: center; justify-content: center;
     font-family: inherit;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     transition: transform 0.15s ease;
 }
 .game-exit:active { transform: scale(0.9); }
+
+/* Кнопка mute (рядом с выходом) */
+.game-mute {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 60px);
+    right: 64px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.12);
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: transform 0.15s ease;
+    padding: 0;
+    line-height: 1;
+}
+.game-mute:active { transform: scale(0.9); }
+
 .game-result-wrap { padding: 14px 16px 30px; }
 .game-result-score-block { text-align: center; padding: 28px 0 20px; }
 .game-result-label { font-size: 11px; font-weight: 800; color: var(--text-2); text-transform: uppercase; letter-spacing: 3px; }
@@ -586,90 +615,6 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 @keyframes recordPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 .game-result-best { text-align: center; font-size: 14px; font-weight: 700; color: var(--text-2); margin-bottom: 20px; }
 .game-top-me { color: var(--neon); font-weight: 800; }
-
-/* ============================================================
-   СТАРТОВЫЙ ЭКРАН ИГРЫ (внутри, после тапа)
-   ============================================================ */
-
-.game-start-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    text-align: center;
-    background: radial-gradient(circle at 50% 35%, rgba(0,229,208,0.18) 0%, rgba(7,11,20,0.94) 55%, rgba(7,11,20,0.99) 100%);
-    animation: startOverlayIn 0.4s ease;
-    cursor: pointer;
-    user-select: none; -webkit-user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    overflow-y: auto;
-}
-@keyframes startOverlayIn { from { opacity: 0; } to { opacity: 1; } }
-.game-start-overlay.hide {
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.35s ease;
-}
-.game-start-icon {
-    width: 130px;
-    height: 130px;
-    margin-bottom: 22px;
-    filter: drop-shadow(0 0 28px var(--neon-glow));
-    animation: startFloat 2.6s ease-in-out infinite;
-}
-@keyframes startFloat {
-    0%, 100% { transform: translateY(0) rotate(-3deg); }
-    50%      { transform: translateY(-12px) rotate(3deg); }
-}
-.game-start-title {
-    font-size: 28px;
-    font-weight: 900;
-    letter-spacing: -0.6px;
-    line-height: 1.1;
-    text-transform: uppercase;
-    background: var(--grad-neon);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 16px var(--neon-glow));
-    margin-bottom: 8px;
-    max-width: 320px;
-}
-.game-start-best {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    font-weight: 800;
-    color: var(--text-2);
-    padding: 8px 16px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(0,229,208,0.25);
-    border-radius: 999px;
-    margin-bottom: 18px;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-}
-.game-start-best strong {
-    color: var(--neon);
-    font-size: 15px;
-    text-shadow: 0 0 10px var(--neon-glow);
-}
-.game-start-hint {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-2);
-    letter-spacing: 1.4px;
-    text-transform: uppercase;
-    animation: hintPulse 1.8s ease-in-out infinite;
-}
-@keyframes hintPulse {
-    0%, 100% { opacity: 0.5; }
-    50%      { opacity: 1; }
-}
 
 /* ============================================================
    ОБУЧЕНИЕ (туториал)
@@ -735,6 +680,10 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
     border: 1px solid rgba(0,229,208,0.3);
     border-radius: 999px;
     background: rgba(0,229,208,0.08);
+}
+@keyframes hintPulse {
+    0%, 100% { opacity: 0.5; }
+    50%      { opacity: 1; }
 }
 
 /* ============================================================
