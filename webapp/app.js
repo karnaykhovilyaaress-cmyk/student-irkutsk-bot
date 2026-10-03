@@ -827,7 +827,7 @@ function renderGameStartOverlay(gid) {
     const g = state.gamesList.find(x => x.id === gid);
     const best = g?.best || 0;
     return `<div class="game-start-overlay" id="game-start-overlay">
-        <img src="assets/game-start.png" alt="До пары успеть" class="game-start-image"
+        <img src="assets/game-start.webp" alt="До пары успеть" class="game-start-image"
              onerror="this.style.display='none'">
         <div class="game-start-best">🏆 Рекорд: <strong>${best}</strong></div>
         <div class="game-start-hint">Нажми, чтобы играть</div>
@@ -1046,7 +1046,6 @@ function initFlappy() {
         const cx = SPRITE_W / 2;
         const cy = SPRITE_H / 2;
 
-        // Мягкое голубое свечение вокруг
         const glow = pg.createRadialGradient(cx, cy, 4, cx, cy, SPRITE_W / 2);
         glow.addColorStop(0, 'rgba(120,200,255,0.45)');
         glow.addColorStop(0.5, 'rgba(80,150,255,0.18)');
@@ -1054,7 +1053,6 @@ function initFlappy() {
         pg.fillStyle = glow;
         pg.fillRect(0, 0, SPRITE_W, SPRITE_H);
 
-        // Реактивное пламя под ногами
         const flameGrad = pg.createLinearGradient(cx, cy + 12, cx, cy + 36);
         flameGrad.addColorStop(0, 'rgba(255,255,255,0.95)');
         flameGrad.addColorStop(0.35, 'rgba(160,220,255,0.9)');
@@ -1067,7 +1065,6 @@ function initFlappy() {
         pg.lineTo(cx, cy + 36);
         pg.closePath();
         pg.fill();
-        // внутренняя струя
         pg.fillStyle = 'rgba(255,255,255,0.85)';
         pg.beginPath();
         pg.moveTo(cx - 4, cy + 12);
@@ -1076,43 +1073,36 @@ function initFlappy() {
         pg.closePath();
         pg.fill();
 
-        // Ноги (тёмные штаны)
         pg.fillStyle = '#0d0e17';
         pg.beginPath();
         pg.roundRect(cx - 8, cy + 8, 6, 10, 2);
         pg.roundRect(cx + 2, cy + 8, 6, 10, 2);
         pg.fill();
-        // Кроссовки белые
         pg.fillStyle = '#eef2ff';
         pg.beginPath();
         pg.roundRect(cx - 10, cy + 15, 9, 5, 2);
         pg.roundRect(cx + 1, cy + 15, 9, 5, 2);
         pg.fill();
 
-        // Тело — чёрное худи
         pg.fillStyle = '#15161f';
         pg.beginPath();
         pg.roundRect(cx - 12, cy - 8, 24, 18, 7);
         pg.fill();
-        // молния худи
         pg.strokeStyle = 'rgba(200,200,220,0.35)';
         pg.lineWidth = 1;
         pg.beginPath();
         pg.moveTo(cx, cy - 6);
         pg.lineTo(cx, cy + 6);
         pg.stroke();
-        // белая футболка выглядывает
         pg.fillStyle = 'rgba(240,240,255,0.85)';
         pg.beginPath();
         pg.roundRect(cx - 4, cy + 7, 8, 4, 2);
         pg.fill();
 
-        // Голова — кожа
         pg.fillStyle = '#eec096';
         pg.beginPath();
         pg.arc(cx, cy - 17, 8.5, 0, Math.PI * 2);
         pg.fill();
-        // волосы (шапка волос)
         pg.fillStyle = '#3a2418';
         pg.beginPath();
         pg.arc(cx, cy - 19, 8.8, Math.PI, 2 * Math.PI);
@@ -1123,7 +1113,6 @@ function initFlappy() {
         pg.beginPath();
         pg.arc(cx + 7.5, cy - 16, 3.5, 0, Math.PI * 2);
         pg.fill();
-        // глаза
         pg.fillStyle = '#0a0d16';
         pg.beginPath();
         pg.arc(cx + 3, cy - 17, 1.3, 0, Math.PI * 2);
@@ -1131,26 +1120,23 @@ function initFlappy() {
         pg.beginPath();
         pg.arc(cx + 6.5, cy - 17, 1.3, 0, Math.PI * 2);
         pg.fill();
-        // рука вытянута вперёд (вправо) — жест «вперёд»
         pg.fillStyle = '#15161f';
         pg.beginPath();
         pg.roundRect(cx + 8, cy - 6, 14, 7, 3.5);
         pg.fill();
-        // кулак
         pg.fillStyle = '#eec096';
         pg.beginPath();
         pg.arc(cx + 22, cy - 2.5, 3.5, 0, Math.PI * 2);
         pg.fill();
     }
 
-    // ============ ПАРАМЕТРЫ (скорость снижена) ============
+    // ============ ПАРАМЕТРЫ ============
     const GAP = 160;
     const MIN_GAP = 132;
     const COL_W = 62;
     const SPAWN_INTERVAL = 88;
     const MIN_SPAWN_INTERVAL = 66;
 
-    // Столбцы — фиолетовая палитра
     const COL_FILL = 'rgba(139, 92, 246, 0.88)';
     const COL_STROKE = '#C084FC';
     const COL_LINE = 'rgba(255,255,255,0.16)';
@@ -1167,8 +1153,8 @@ function initFlappy() {
         gravity: 0.55,
         jumpForce: -8.0,
         maxFallSpeed: 10.5,
-        speed: 3.4,       // было 4.0
-        maxSpeed: 7.0,    // было 8.2
+        speed: 3.4,
+        maxSpeed: 7.0,
         gap: GAP,
         minGap: MIN_GAP,
         lastTime: 0,
