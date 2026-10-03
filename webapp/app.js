@@ -823,50 +823,23 @@ function renderGames() {
 //   СТАРТОВЫЙ ЭКРАН + ОБУЧЕНИЕ + САМ ЭКРАН ИГРЫ
 // ============================================================
 
-const GAME_META = {
-    flappy: {
-        icon: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="fsi" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#1E88E5"/>
-            </linearGradient></defs>
-            <circle cx="60" cy="60" r="52" fill="none" stroke="url(#fsi)" stroke-width="3" opacity="0.4"/>
-            <rect x="78" y="20" width="14" height="30" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-            <rect x="78" y="72" width="14" height="28" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-            <circle cx="45" cy="60" r="10" fill="#00E5D0">
-                <animate attributeName="r" values="10;12;10" dur="1.4s" repeatCount="indefinite"/>
-            </circle>
-            <circle cx="48" cy="56" r="2" fill="#070B14"/>
-        </svg>`,
-        title: 'До пары<br>успеть',
-        tagline: 'Пролетай между стопками учебников,<br>не задень границы',
-        tutorialIcon: '👆',
-        tutorialTitle: 'Как играть',
-        tutorialText: 'Тапай по экрану — шарик <strong>прыгает</strong>. Пролетай между стопками учебников и набирай очки. Заденешь стопку — конец.',
-        tutorialHint: 'Тапни, чтобы начать',
-    },
-};
-
 function renderGameStartOverlay(gid) {
-    const meta = GAME_META[gid] || GAME_META.flappy;
     const g = state.gamesList.find(x => x.id === gid);
     const best = g?.best || 0;
     return `<div class="game-start-overlay" id="game-start-overlay">
-        <div class="game-start-icon">${meta.icon}</div>
-        <div class="game-start-title">${meta.title}</div>
-        <div class="game-start-tagline">${meta.tagline}</div>
+        <img src="assets/game-start.png" alt="До пары успеть" class="game-start-image"
+             onerror="this.style.display='none'">
         <div class="game-start-best">🏆 Рекорд: <strong>${best}</strong></div>
-        <button class="game-start-btn" id="game-start-btn">Играть</button>
-        <div class="game-start-hint">Как играть — покажем дальше</div>
+        <div class="game-start-hint">Нажми, чтобы играть</div>
     </div>`;
 }
 
 function renderGameTutorialOverlay(gid) {
-    const meta = GAME_META[gid] || GAME_META.flappy;
     return `<div class="tutorial-overlay hide" id="game-tutorial-overlay">
-        <div class="tutorial-arrow">${meta.tutorialIcon}</div>
-        <div class="tutorial-title">${meta.tutorialTitle}</div>
-        <div class="tutorial-text">${meta.tutorialText}</div>
-        <div class="tutorial-tap-hint">${meta.tutorialHint}</div>
+        <div class="tutorial-arrow">👆</div>
+        <div class="tutorial-title">Как играть</div>
+        <div class="tutorial-text">Тапай по экрану — студент <strong>прыгает</strong>. Пролетай между столбцами и набирай очки. Заденешь столбец — конец.</div>
+        <div class="tutorial-tap-hint">Тапни, чтобы начать</div>
     </div>`;
 }
 
@@ -966,55 +939,49 @@ function initGame() {
     if (state.currentGame === 'flappy') initFlappy();
 }
 
+// Показать обучение ровно один раз
 function showTutorialThenStart(startFn) {
     const startOv = document.getElementById('game-start-overlay');
     const tutOv = document.getElementById('game-tutorial-overlay');
-    let tutorialDone = false;
+    const tutShown = localStorage.getItem('flappy_tutorial_shown') === '1';
+    let passedTut = tutShown;
+    let started = false;
 
-    function onAnyTap(e) {
-        if (e.target && e.target.id === 'game-start-btn') return;
-        if (!tutorialDone) {
-            tutorialDone = true;
-            if (startOv) startOv.classList.add('hide');
-            if (tutOv) tutOv.classList.remove('hide');
-            haptic('light');
-            return;
-        }
+    function doStart() {
+        if (started) return;
+        started = true;
+        if (startOv) startOv.classList.add('hide');
         if (tutOv) tutOv.classList.add('hide');
         document.removeEventListener('pointerdown', onAnyTap);
+        document.removeEventListener('keydown', onKeyDown);
         startFn();
     }
 
-    const startBtn = document.getElementById('game-start-btn');
-    if (startBtn) {
-        startBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!tutorialDone) {
-                tutorialDone = true;
-                if (startOv) startOv.classList.add('hide');
-                if (tutOv) tutOv.classList.remove('hide');
-                haptic('light');
-                return;
-            }
-            if (tutOv) tutOv.classList.add('hide');
-            document.removeEventListener('pointerdown', onAnyTap);
-            startFn();
-        });
+    function advance() {
+        if (passedTut) { doStart(); return; }
+        passedTut = true;
+        try { localStorage.setItem('flappy_tutorial_shown', '1'); } catch (e) {}
+        if (startOv) startOv.classList.add('hide');
+        if (tutOv) tutOv.classList.remove('hide');
+        haptic('light');
+    }
+
+    function onAnyTap(e) {
+        if (e.target && e.target.id === 'game-exit') return;
+        advance();
+    }
+    function onKeyDown(e) {
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
+            advance();
+        }
     }
 
     document.addEventListener('pointerdown', onAnyTap);
-    document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
-            onAnyTap({ target: { id: '' } });
-        }
-    });
+    document.addEventListener('keydown', onKeyDown);
 }
 
 // ============================================================
-//   ИГРА: ДО ПАРЫ УСПЕТЬ
-//   — плавность через delta-time
-//   — стопки учебников вместо столбцов
-//   — шар с глазами и свечением
+//   ИГРА: ДО ПАРЫ УСПЕТЬ (фиолетовые столбцы, персонаж-студент)
 // ============================================================
 
 function initFlappy() {
@@ -1045,8 +1012,8 @@ function initFlappy() {
         starCtx.fillRect(0, 0, W, H);
 
         const glow = starCtx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.75);
-        glow.addColorStop(0, 'rgba(0,229,208,0.07)');
-        glow.addColorStop(1, 'rgba(0,229,208,0)');
+        glow.addColorStop(0, 'rgba(139,92,246,0.10)');
+        glow.addColorStop(1, 'rgba(139,92,246,0)');
         starCtx.fillStyle = glow;
         starCtx.fillRect(0, 0, W, H);
 
@@ -1066,119 +1033,127 @@ function initFlappy() {
         }
     }
 
-    // ============ ПРЕРЕНДЕР ШАРА (свечение + глаза) ============
-    const PLAYER_R = 13;
-    const SPRITE_SIZE = 90;
+    // ============ ПРЕРЕНДЕР ПЕРСОНАЖА-СТУДЕНТА ============
+    const PLAYER_R = 15;
+    const SPRITE_W = 78;
+    const SPRITE_H = 78;
     const playerSprite = document.createElement('canvas');
-    playerSprite.width = Math.floor(SPRITE_SIZE * dpr);
-    playerSprite.height = Math.floor(SPRITE_SIZE * dpr);
+    playerSprite.width = Math.floor(SPRITE_W * dpr);
+    playerSprite.height = Math.floor(SPRITE_H * dpr);
     {
         const pg = playerSprite.getContext('2d');
         pg.scale(dpr, dpr);
-        const cx = SPRITE_SIZE / 2;
-        const cy = SPRITE_SIZE / 2;
+        const cx = SPRITE_W / 2;
+        const cy = SPRITE_H / 2;
 
-        const glow = pg.createRadialGradient(cx, cy, PLAYER_R * 0.5, cx, cy, SPRITE_SIZE / 2);
-        glow.addColorStop(0, 'rgba(0,229,208,0.55)');
-        glow.addColorStop(0.35, 'rgba(0,229,208,0.22)');
-        glow.addColorStop(0.7, 'rgba(0,229,208,0.06)');
-        glow.addColorStop(1, 'rgba(0,229,208,0)');
+        // Мягкое голубое свечение вокруг
+        const glow = pg.createRadialGradient(cx, cy, 4, cx, cy, SPRITE_W / 2);
+        glow.addColorStop(0, 'rgba(120,200,255,0.45)');
+        glow.addColorStop(0.5, 'rgba(80,150,255,0.18)');
+        glow.addColorStop(1, 'rgba(80,150,255,0)');
         pg.fillStyle = glow;
-        pg.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
+        pg.fillRect(0, 0, SPRITE_W, SPRITE_H);
 
-        pg.fillStyle = '#00E5D0';
+        // Реактивное пламя под ногами
+        const flameGrad = pg.createLinearGradient(cx, cy + 12, cx, cy + 36);
+        flameGrad.addColorStop(0, 'rgba(255,255,255,0.95)');
+        flameGrad.addColorStop(0.35, 'rgba(160,220,255,0.9)');
+        flameGrad.addColorStop(0.7, 'rgba(80,160,255,0.5)');
+        flameGrad.addColorStop(1, 'rgba(80,160,255,0)');
+        pg.fillStyle = flameGrad;
         pg.beginPath();
-        pg.arc(cx, cy, PLAYER_R, 0, Math.PI * 2);
+        pg.moveTo(cx - 9, cy + 10);
+        pg.lineTo(cx + 9, cy + 10);
+        pg.lineTo(cx, cy + 36);
+        pg.closePath();
+        pg.fill();
+        // внутренняя струя
+        pg.fillStyle = 'rgba(255,255,255,0.85)';
+        pg.beginPath();
+        pg.moveTo(cx - 4, cy + 12);
+        pg.lineTo(cx + 4, cy + 12);
+        pg.lineTo(cx, cy + 28);
+        pg.closePath();
         pg.fill();
 
-        const hl = pg.createRadialGradient(cx - 4, cy - 5, 0, cx - 4, cy - 5, PLAYER_R);
-        hl.addColorStop(0, 'rgba(255,255,255,0.55)');
-        hl.addColorStop(1, 'rgba(255,255,255,0)');
-        pg.fillStyle = hl;
+        // Ноги (тёмные штаны)
+        pg.fillStyle = '#0d0e17';
         pg.beginPath();
-        pg.arc(cx, cy, PLAYER_R, 0, Math.PI * 2);
+        pg.roundRect(cx - 8, cy + 8, 6, 10, 2);
+        pg.roundRect(cx + 2, cy + 8, 6, 10, 2);
+        pg.fill();
+        // Кроссовки белые
+        pg.fillStyle = '#eef2ff';
+        pg.beginPath();
+        pg.roundRect(cx - 10, cy + 15, 9, 5, 2);
+        pg.roundRect(cx + 1, cy + 15, 9, 5, 2);
         pg.fill();
 
-        pg.fillStyle = '#070B14';
+        // Тело — чёрное худи
+        pg.fillStyle = '#15161f';
         pg.beginPath();
-        pg.arc(cx - 3.5, cy - 1, 2.8, 0, Math.PI * 2);
-        pg.arc(cx + 5.5, cy - 1, 2.8, 0, Math.PI * 2);
+        pg.roundRect(cx - 12, cy - 8, 24, 18, 7);
+        pg.fill();
+        // молния худи
+        pg.strokeStyle = 'rgba(200,200,220,0.35)';
+        pg.lineWidth = 1;
+        pg.beginPath();
+        pg.moveTo(cx, cy - 6);
+        pg.lineTo(cx, cy + 6);
+        pg.stroke();
+        // белая футболка выглядывает
+        pg.fillStyle = 'rgba(240,240,255,0.85)';
+        pg.beginPath();
+        pg.roundRect(cx - 4, cy + 7, 8, 4, 2);
         pg.fill();
 
-        pg.fillStyle = 'rgba(255,255,255,0.95)';
+        // Голова — кожа
+        pg.fillStyle = '#eec096';
         pg.beginPath();
-        pg.arc(cx - 4.2, cy - 1.8, 0.95, 0, Math.PI * 2);
-        pg.arc(cx + 4.8, cy - 1.8, 0.95, 0, Math.PI * 2);
+        pg.arc(cx, cy - 17, 8.5, 0, Math.PI * 2);
+        pg.fill();
+        // волосы (шапка волос)
+        pg.fillStyle = '#3a2418';
+        pg.beginPath();
+        pg.arc(cx, cy - 19, 8.8, Math.PI, 2 * Math.PI);
+        pg.fill();
+        pg.beginPath();
+        pg.arc(cx - 7.5, cy - 16, 3.5, 0, Math.PI * 2);
+        pg.fill();
+        pg.beginPath();
+        pg.arc(cx + 7.5, cy - 16, 3.5, 0, Math.PI * 2);
+        pg.fill();
+        // глаза
+        pg.fillStyle = '#0a0d16';
+        pg.beginPath();
+        pg.arc(cx + 3, cy - 17, 1.3, 0, Math.PI * 2);
+        pg.fill();
+        pg.beginPath();
+        pg.arc(cx + 6.5, cy - 17, 1.3, 0, Math.PI * 2);
+        pg.fill();
+        // рука вытянута вперёд (вправо) — жест «вперёд»
+        pg.fillStyle = '#15161f';
+        pg.beginPath();
+        pg.roundRect(cx + 8, cy - 6, 14, 7, 3.5);
+        pg.fill();
+        // кулак
+        pg.fillStyle = '#eec096';
+        pg.beginPath();
+        pg.arc(cx + 22, cy - 2.5, 3.5, 0, Math.PI * 2);
         pg.fill();
     }
 
-    // ============ ПАРАМЕТРЫ ============
-    const GAP = 160;             // широкая дырка
+    // ============ ПАРАМЕТРЫ (скорость снижена) ============
+    const GAP = 160;
     const MIN_GAP = 132;
-    const COL_W = 62;            // чуть шире для книг
-    const SPAWN_INTERVAL = 88;   // чуть реже
+    const COL_W = 62;
+    const SPAWN_INTERVAL = 88;
     const MIN_SPAWN_INTERVAL = 66;
 
-    // Палитра книг — контрастная к зелёному шару
-    const BOOK_COLORS = [
-        '#E63946', // красная
-        '#457B9D', // синяя
-        '#F4A261', // жёлто-оранжевая
-        '#9D4EDD', // фиолетовая
-        '#FFB703', // золотая
-        '#E76F51', // коралловая
-        '#D6336C', // малиновая
-        '#118AB2', // голубая
-    ];
-
-    // Генерирует массив «книг» (y, h, color) с общей высотой ровно totalHeight
-    function generateBooks(totalHeight) {
-        const books = [];
-        let y = 0;
-        while (y < totalHeight) {
-            let h = 14 + Math.floor(Math.random() * 10); // 14-23 px
-            if (y + h > totalHeight) h = totalHeight - y;
-            if (h < 8) {
-                // слишком тонкая остаточная полоска — приклеим к предыдущей книге
-                if (books.length) books[books.length - 1].h += h;
-                else books.push({ y: 0, h: totalHeight, color: BOOK_COLORS[Math.floor(Math.random() * BOOK_COLORS.length)] });
-                break;
-            }
-            books.push({ y, h, color: BOOK_COLORS[Math.floor(Math.random() * BOOK_COLORS.length)] });
-            y += h;
-        }
-        return books;
-    }
-
-    // Рисует стопку книг в offscreen-canvas → возвращает { canvas, w, h }
-    function createStackSprite(books, totalHeight, width) {
-        const c = document.createElement('canvas');
-        c.width = Math.ceil(width * dpr);
-        c.height = Math.ceil(totalHeight * dpr);
-        const g = c.getContext('2d');
-        g.scale(dpr, dpr);
-
-        for (const b of books) {
-            // тело книги (с отступом в 3px по бокам)
-            g.fillStyle = b.color;
-            g.fillRect(3, b.y + 1.5, width - 6, b.h - 3);
-
-            // тёмная обводка
-            g.strokeStyle = 'rgba(0,0,0,0.45)';
-            g.lineWidth = 2;
-            g.strokeRect(3, b.y + 1.5, width - 6, b.h - 3);
-
-            // тёмный корешок слева
-            g.fillStyle = 'rgba(0,0,0,0.22)';
-            g.fillRect(3, b.y + 1.5, 6, b.h - 3);
-
-            // светлое «тиснение»/страницы по центру
-            g.fillStyle = 'rgba(255,255,255,0.28)';
-            g.fillRect(12, b.y + b.h / 2 - 1, width - 24, 2);
-        }
-
-        return { canvas: c, w: width, h: totalHeight };
-    }
+    // Столбцы — фиолетовая палитра
+    const COL_FILL = 'rgba(139, 92, 246, 0.88)';
+    const COL_STROKE = '#C084FC';
+    const COL_LINE = 'rgba(255,255,255,0.16)';
 
     const game = {
         W, H,
@@ -1192,8 +1167,8 @@ function initFlappy() {
         gravity: 0.55,
         jumpForce: -8.0,
         maxFallSpeed: 10.5,
-        speed: 4.0,
-        maxSpeed: 8.2,
+        speed: 3.4,       // было 4.0
+        maxSpeed: 7.0,    // было 8.2
         gap: GAP,
         minGap: MIN_GAP,
         lastTime: 0,
@@ -1240,14 +1215,32 @@ function initFlappy() {
         submitGameScore('flappy', game.score);
     }
 
+    function drawColumn(x, y, w, h) {
+        if (h <= 0) return;
+        ctx.fillStyle = COL_FILL;
+        roundRect(ctx, x, y, w, h, 8);
+        ctx.fill();
+        ctx.strokeStyle = COL_STROKE;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = COL_LINE;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let ly = y + 22; ly < y + h - 6; ly += 28) {
+            ctx.moveTo(x + 6, ly);
+            ctx.lineTo(x + w - 6, ly);
+        }
+        ctx.stroke();
+    }
+
     function drawPlayer() {
         const p = game.player;
         ctx.drawImage(
             playerSprite,
-            p.x - SPRITE_SIZE / 2,
-            p.y - SPRITE_SIZE / 2,
-            SPRITE_SIZE,
-            SPRITE_SIZE
+            p.x - SPRITE_W / 2,
+            p.y - SPRITE_H / 2,
+            SPRITE_W,
+            SPRITE_H
         );
     }
 
@@ -1255,44 +1248,17 @@ function initFlappy() {
         ctx.drawImage(starCanvas, 0, 0, starCanvas.width, starCanvas.height, 0, 0, W, H);
         for (let i = 0; i < game.obstacles.length; i++) {
             const o = game.obstacles[i];
-            // верхняя стопка книг
-            ctx.drawImage(o.topSprite.canvas, o.x, 0, o.topSprite.w, o.topSprite.h);
-            // нижняя стопка книг
-            ctx.drawImage(o.botSprite.canvas, o.x, o.gapY + o.gapH, o.botSprite.w, o.botSprite.h);
+            drawColumn(o.x, 0, o.w, o.gapY);
+            drawColumn(o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
         }
         drawPlayer();
     }
 
     function updateDifficulty() {
         const s = game.score;
-        game.speed = Math.min(game.maxSpeed, 4.0 + Math.floor(s / 5) * 0.25);
+        game.speed = Math.min(game.maxSpeed, 3.4 + Math.floor(s / 6) * 0.20);
         game.spawnInterval = Math.max(game.minSpawnInterval, SPAWN_INTERVAL - Math.floor(s / 4) * 2);
         game.gap = Math.max(game.minGap, GAP - Math.floor(s / 8) * 2);
-    }
-
-    // Создать препятствие с уже готовыми спрайтами стопок
-    function spawnObstacle() {
-        const minGapY = 40;
-        const maxGapY = H - game.gap - 40;
-        const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
-        const topH = gapY;
-        const botH = H - gapY - game.gap;
-
-        const topBooks = generateBooks(topH);
-        const botBooks = generateBooks(botH);
-
-        const topSprite = createStackSprite(topBooks, topH, COL_W);
-        const botSprite = createStackSprite(botBooks, botH, COL_W);
-
-        game.obstacles.push({
-            x: W + 20,
-            w: COL_W,
-            gapY,
-            gapH: game.gap,
-            passed: false,
-            topSprite,
-            botSprite,
-        });
     }
 
     function loop(timestamp) {
@@ -1323,7 +1289,10 @@ function initFlappy() {
         game.spawnTimer += dt;
         if (game.started && game.spawnTimer >= game.spawnInterval) {
             game.spawnTimer = 0;
-            spawnObstacle();
+            const minGapY = 40;
+            const maxGapY = H - game.gap - 40;
+            const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
+            game.obstacles.push({ x: W + 20, w: COL_W, gapY, gapH: game.gap, passed: false });
         }
 
         const px = game.player.x, py = game.player.y, pr = game.player.r;
