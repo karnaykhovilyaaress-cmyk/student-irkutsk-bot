@@ -134,6 +134,38 @@ function popEmoji(char) {
 }
 
 // ============================================================
+//              МУЗЫКА И ЗВУК
+// ============================================================
+
+function isMusicMuted() {
+    return localStorage.getItem('flappy_muted') === '1';
+}
+function startGameMusic() {
+    if (isMusicMuted()) return;
+    const el = document.getElementById('game-music');
+    if (!el) return;
+    el.volume = 0.4;
+    el.play().catch(() => {});
+}
+function stopGameMusic() {
+    const el = document.getElementById('game-music');
+    if (!el) return;
+    try { el.pause(); el.currentTime = 0; } catch (e) {}
+}
+function toggleMusicMute() {
+    const nowMuted = !isMusicMuted();
+    try { localStorage.setItem('flappy_muted', nowMuted ? '1' : '0'); } catch (e) {}
+    if (nowMuted) {
+        stopGameMusic();
+    } else if (state.gameView === 'playing' && state.gameInstance && state.gameInstance.started) {
+        startGameMusic();
+    }
+    const btn = document.getElementById('game-mute-btn');
+    if (btn) btn.textContent = nowMuted ? '🔇' : '🔊';
+    haptic('light');
+}
+
+// ============================================================
 //          SVG / ИКОНКИ
 // ============================================================
 
@@ -819,6 +851,7 @@ function renderGameScreen() {
     const gid = state.currentGame;
     const g = state.gamesList.find(x => x.id === gid);
     const best = g?.best || 0;
+    const muteIcon = isMusicMuted() ? '🔇' : '🔊';
 
     return `<div class="game-wrap" id="game-wrap">
         <div class="game-hud">
@@ -828,6 +861,7 @@ function renderGameScreen() {
         <canvas id="game-canvas" class="game-canvas"></canvas>
         ${renderGameTutorialOverlay()}
         <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
+        <button class="game-mute" id="game-mute-btn" data-action="music-toggle" title="Звук">${muteIcon}</button>
     </div>`;
 }
 
@@ -871,6 +905,7 @@ function actionGameOpen(gameId) {
 }
 function actionGameExit() {
     haptic('light');
+    stopGameMusic();
     if (state.gameInstance) state.gameInstance.running = false;
     state.gameInstance = null;
     state.gameView = null;
@@ -910,8 +945,6 @@ function initGame() {
     if (state.currentGame === 'flappy') initFlappy();
 }
 
-// Логика старта: туториал — один раз, потом сразу игра.
-// Никакого стартового оверлея — просто первый тап = старт + прыжок.
 function showTutorialThenStart(startFn) {
     const tutOv = document.getElementById('game-tutorial-overlay');
     const tutShown = localStorage.getItem('flappy_tutorial_shown') === '1';
@@ -927,7 +960,7 @@ function showTutorialThenStart(startFn) {
     }
 
     function onTap(e) {
-        if (e.target && e.target.id === 'game-exit') return;
+        if (e.target && e.target.dataset && (e.target.dataset.action === 'game-exit' || e.target.dataset.action === 'music-toggle')) return;
         if (!tutShown) {
             try { localStorage.setItem('flappy_tutorial_shown', '1'); } catch (er) {}
         }
@@ -935,7 +968,7 @@ function showTutorialThenStart(startFn) {
     }
     function onKey(e) {
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
-            onTap({ target: { id: '' } });
+            onTap({ target: { dataset: {} } });
         }
     }
 
@@ -965,7 +998,6 @@ function initFlappy() {
     canvas.height = Math.floor(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // ============ ЗВЁЗДНЫЙ ФОН ============
     const starCanvas = document.createElement('canvas');
     starCanvas.width = Math.floor(W * dpr);
     starCanvas.height = Math.floor(H * dpr);
@@ -1001,7 +1033,6 @@ function initFlappy() {
         }
     }
 
-    // ============ ПРЕРЕНДЕР ПЕРСОНАЖА-СТУДЕНТА ============
     const PLAYER_R = 15;
     const SPRITE_W = 78;
     const SPRITE_H = 78;
@@ -1098,11 +1129,9 @@ function initFlappy() {
         pg.fill();
     }
 
-    // ============ ПАРАМЕТРЫ ============
     const GAP = 160;
     const MIN_GAP = 132;
     const COL_W = 62;
-    // РАССТОЯНИЕ МЕЖДУ СТОЛБЦАМИ УВЕЛИЧЕНО:
     const SPAWN_INTERVAL = 120;
     const MIN_SPAWN_INTERVAL = 95;
 
@@ -1141,6 +1170,7 @@ function initFlappy() {
         game.started = true;
         haptic('medium');
         game.player.vy = game.jumpForce;
+        startGameMusic();
     });
 
     function onPointer(e) {
@@ -1167,6 +1197,7 @@ function initFlappy() {
         game.over = true; game.running = false;
         cleanup();
         haptic('error');
+        stopGameMusic();
         submitGameScore('flappy', game.score);
     }
 
@@ -2601,6 +2632,7 @@ function handleAction(el) {
     else if (a === 'game-open') actionGameOpen(el.dataset.game);
     else if (a === 'game-exit') actionGameExit();
     else if (a === 'game-play-again') actionGamePlayAgain();
+    else if (a === 'music-toggle') toggleMusicMute();
     else if (a === 'set-subgroup') actionSetSubgroup(parseInt(v));
     else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(v));
     else if (a === 'feedback-send') actionFeedbackSend();
