@@ -45,7 +45,7 @@ const state = {
     walletLeaderboard: [],
     myFeedback: [], myFeedbackLoaded: false, myFeedbackExpanded: false,
     exportPending: false,
-    gamePhase: 'start',   // 'start' | 'tutorial' | 'playing' | 'result'
+    gamePhase: 'start',
     tutorialShown: {},
 };
 
@@ -208,72 +208,18 @@ function chestSvg() {
     </svg>`;
 }
 function gameCoverSvg(gameId) {
-    const designs = {
-        flappy: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="gcf" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#0E1424"/><stop offset="100%" stop-color="#1E88E5"/>
-            </linearGradient></defs>
-            <rect width="120" height="120" fill="url(#gcf)"/>
-            <rect x="76" y="20" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-            <rect x="76" y="66" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-            <rect x="30" y="20" width="16" height="26" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-            <rect x="30" y="58" width="16" height="42" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-            <circle cx="55" cy="60" r="9" fill="#00E5D0"/>
-            <circle cx="58" cy="57" r="2" fill="#070B14"/>
-        </svg>`,
-        race: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="gcr" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#0B0F1F"/><stop offset="100%" stop-color="#1a0e30"/>
-            </linearGradient></defs>
-            <rect width="120" height="120" fill="url(#gcr)"/>
-            <rect x="10" y="0" width="4" height="120" fill="rgba(0,229,208,0.4)"/>
-            <rect x="58" y="0" width="4" height="120" fill="rgba(0,229,208,0.4)"/>
-            <rect x="106" y="0" width="4" height="120" fill="rgba(0,229,208,0.4)"/>
-            <rect x="20" y="18" width="20" height="28" rx="4" fill="#FF4D4F" opacity="0.85"/>
-            <rect x="50" y="52" width="20" height="28" rx="4" fill="#FFB020" opacity="0.85"/>
-            <rect x="80" y="82" width="20" height="28" rx="4" fill="#00E5A0" opacity="0.85"/>
-            <rect x="42" y="46" width="16" height="24" rx="4" fill="#00E5D0" stroke="#fff" stroke-width="1.5"/>
-        </svg>`,
-        ninja: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="gcn" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#150a25"/><stop offset="100%" stop-color="#0E1424"/>
-            </linearGradient></defs>
-            <rect width="120" height="120" fill="url(#gcn)"/>
-            <text x="30" y="40" font-size="30" text-anchor="middle">📐</text>
-            <text x="80" y="55" font-size="30" text-anchor="middle">📚</text>
-            <text x="40" y="90" font-size="30" text-anchor="middle">⚗️</text>
-            <text x="90" y="92" font-size="30" text-anchor="middle">💣</text>
-        </svg>`,
-        hunt: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="gch" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#0E1424"/><stop offset="100%" stop-color="#1a1f3a"/>
-            </linearGradient></defs>
-            <rect width="120" height="120" fill="url(#gch)"/>
-            <text x="30" y="40" font-size="26" text-anchor="middle">🔍</text>
-            <text x="70" y="40" font-size="26" text-anchor="middle">📕</text>
-            <text x="30" y="75" font-size="26" text-anchor="middle">📐</text>
-            <text x="70" y="75" font-size="26" text-anchor="middle">🎯</text>
-            <text x="50" y="108" font-size="26" text-anchor="middle">🔬</text>
-        </svg>`,
-        cosmo: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="gcc" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#05020f"/><stop offset="100%" stop-color="#1a0e40"/>
-            </linearGradient></defs>
-            <rect width="120" height="120" fill="url(#gcc)"/>
-            <circle cx="20" cy="20" r="1.5" fill="#fff" opacity="0.7"/>
-            <circle cx="100" cy="30" r="1" fill="#fff" opacity="0.6"/>
-            <circle cx="30" cy="100" r="1.2" fill="#fff" opacity="0.7"/>
-            <circle cx="95" cy="95" r="1.4" fill="#fff" opacity="0.6"/>
-            <circle cx="60" cy="40" r="14" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-            <ellipse cx="60" cy="40" rx="10" ry="6" fill="rgba(0,229,208,0.5)"/>
-            <path d="M52 54 L60 64 L68 54" fill="#FF4D4F"/>
-            <path d="M56 60 L60 76 L64 60" fill="#FFB020"/>
-            <circle cx="20" cy="50" r="4" fill="#888"/>
-            <circle cx="90" cy="70" r="5" fill="#888"/>
-            <circle cx="30" cy="80" r="3" fill="#888"/>
-        </svg>`
-    };
-    return designs[gameId] || designs.flappy;
+    return `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="gcf" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#0E1424"/><stop offset="100%" stop-color="#1E88E5"/>
+        </linearGradient></defs>
+        <rect width="120" height="120" fill="url(#gcf)"/>
+        <rect x="76" y="20" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+        <rect x="76" y="66" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+        <rect x="30" y="20" width="16" height="26" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+        <rect x="30" y="58" width="16" height="42" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+        <circle cx="55" cy="60" r="9" fill="#00E5D0"/>
+        <circle cx="58" cy="57" r="2" fill="#070B14"/>
+    </svg>`;
 }
 
 // ============================================================
@@ -288,7 +234,6 @@ function render() {
 
     const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
-    // Игра активна
     if (state.gameView === 'result') {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = 'Результат';
@@ -503,7 +448,7 @@ function renderProfile() {
     </div>`;
 
     html += `<div class="card">
-        <div class="card-title">Достижения: ${achGot} / ${ach.length || 12}</div>
+        <div class="card-title">Достижения: ${achGot} / ${ach.length || 8}</div>
         <div class="ach-grid">
             ${ach.length === 0 ? '<div class="card-subtitle">Загрузка...</div>' : ach.map(a => `
                 <div class="ach-item ${a.unlocked ? 'unlocked' : ''}" data-action="ach-open" data-id="${escapeHtml(a.id)}">
@@ -899,77 +844,6 @@ const GAME_META = {
         tutorialText: 'Тапай по экрану — студент <strong>прыгает</strong>. Пролетай между парами и набирай очки. Заденешь столбец — конец.',
         tutorialHint: 'Тапни, чтобы начать',
     },
-    race: {
-        icon: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="rsi" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#1E88E5"/>
-            </linearGradient></defs>
-            <rect x="10" y="0" width="4" height="120" fill="rgba(0,229,208,0.35)"/>
-            <rect x="58" y="0" width="4" height="120" fill="rgba(0,229,208,0.35)"/>
-            <rect x="106" y="0" width="4" height="120" fill="rgba(0,229,208,0.35)"/>
-            <rect x="42" y="58" width="22" height="30" rx="4" fill="#00E5D0" stroke="#fff" stroke-width="1.5"/>
-            <rect x="46" y="62" width="14" height="10" rx="2" fill="#070B14"/>
-            <circle cx="46" cy="92" r="4" fill="#070B14"/>
-            <circle cx="60" cy="92" r="4" fill="#070B14"/>
-        </svg>`,
-        title: 'До<br>деканата',
-        tagline: 'Мчись сквозь пробки на пары',
-        tutorialIcon: '👈👉',
-        tutorialTitle: 'Как играть',
-        tutorialText: 'Зажми <strong>левую</strong> половину экрана — тачка едет влево. <strong>Правую</strong> — вправо. Уворачивайся от встречных машин. Врезался — игра окончена.',
-        tutorialHint: 'Зажми и рули',
-    },
-    ninja: {
-        icon: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="nsi" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#1E88E5"/>
-            </linearGradient></defs>
-            <text x="35" y="50" font-size="42" text-anchor="middle">📚</text>
-            <text x="88" y="80" font-size="42" text-anchor="middle">📐</text>
-            <text x="30" y="100" font-size="42" text-anchor="middle">💣</text>
-        </svg>`,
-        title: 'Стипуха-<br>ниндзя',
-        tagline: 'Режь предметы, не задень бомбы',
-        tutorialIcon: '⚔️',
-        tutorialTitle: 'Как играть',
-        tutorialText: 'По экрану летят школьные предметы. Тапай по ним, чтобы <strong>разрезать</strong>. Не попадай в <strong>💣 бомбы</strong> — они отнимают жизнь. У тебя 2 жизни.',
-        tutorialHint: 'Тапни, чтобы начать',
-    },
-    hunt: {
-        icon: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <text x="35" y="50" font-size="42" text-anchor="middle">🔍</text>
-            <text x="88" y="50" font-size="42" text-anchor="middle">📕</text>
-            <text x="35" y="100" font-size="42" text-anchor="middle">🎯</text>
-            <text x="88" y="100" font-size="42" text-anchor="middle">🔬</text>
-        </svg>`,
-        title: 'Найди<br>предмет',
-        tagline: 'Найди нужный предмет за 30 секунд',
-        tutorialIcon: '🎯',
-        tutorialTitle: 'Как играть',
-        tutorialText: 'Сверху показано, что нужно найти. Найди и <strong>тапни</strong> нужную карточку. За ошибку −2 секунды.',
-        tutorialHint: 'Тапни, чтобы начать',
-    },
-    cosmo: {
-        icon: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="csi" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#C084FC"/>
-            </linearGradient></defs>
-            <circle cx="60" cy="42" r="20" fill="#0E1424" stroke="url(#csi)" stroke-width="2"/>
-            <ellipse cx="60" cy="42" rx="14" ry="8" fill="rgba(0,229,208,0.5)"/>
-            <path d="M48 62 L60 76 L72 62" fill="#FF4D4F"/>
-            <path d="M54 68 L60 88 L66 68" fill="#FFB020"/>
-            <circle cx="25" cy="30" r="3" fill="#fff" opacity="0.6"/>
-            <circle cx="95" cy="50" r="2" fill="#fff" opacity="0.5"/>
-            <circle cx="30" cy="95" r="3" fill="#888"/>
-            <circle cx="88" cy="100" r="4" fill="#888"/>
-        </svg>`,
-        title: 'Космос<br>ИРНИТУ',
-        tagline: 'Отстреливай астероиды на пути к диплому',
-        tutorialIcon: '🚀',
-        tutorialTitle: 'Как играть',
-        tutorialText: 'Веди палец по экрану — ракета летит за пальцем. Автоматически стреляет. Не дай астероидам врезаться в ракету. 3 жизни.',
-        tutorialHint: 'Тапни, чтобы начать',
-    },
 };
 
 function renderGameStartOverlay(gid) {
@@ -989,14 +863,7 @@ function renderGameStartOverlay(gid) {
 function renderGameTutorialOverlay(gid) {
     const meta = GAME_META[gid] || GAME_META.flappy;
     return `<div class="tutorial-overlay hide" id="game-tutorial-overlay">
-        ${gid === 'race' ? `
-            <div class="tutorial-arrows-h">
-                <div class="tutorial-arrow-h left">◀</div>
-                <div class="tutorial-arrow-h right">▶</div>
-            </div>
-        ` : `
-            <div class="tutorial-arrow">${meta.tutorialIcon}</div>
-        `}
+        <div class="tutorial-arrow">${meta.tutorialIcon}</div>
         <div class="tutorial-title">${meta.tutorialTitle}</div>
         <div class="tutorial-text">${meta.tutorialText}</div>
         <div class="tutorial-tap-hint">${meta.tutorialHint}</div>
@@ -1005,30 +872,8 @@ function renderGameTutorialOverlay(gid) {
 
 function renderGameScreen() {
     const gid = state.currentGame;
-    const meta = GAME_META[gid] || GAME_META.flappy;
     const g = state.gamesList.find(x => x.id === gid);
     const best = g?.best || 0;
-
-    if (gid === 'hunt') {
-        return `<div class="game-wrap" id="game-wrap">
-            <div class="game-hud">
-                <div class="game-hud-score" id="game-score">0</div>
-                <div class="game-hud-best" id="game-best">${escapeHtml(state.huntTarget || '')}</div>
-            </div>
-            <div id="hunt-board" style="flex:1;padding:80px 14px 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;overflow-y:auto"></div>
-            ${renderGameStartOverlay(gid)}
-            ${renderGameTutorialOverlay(gid)}
-            <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
-        </div>`;
-    }
-
-    let extra = '';
-    if (gid === 'race') {
-        extra = `<div class="race-controls">
-            <div class="race-control" id="race-left">◀</div>
-            <div class="race-control" id="race-right">▶</div>
-        </div>`;
-    }
 
     return `<div class="game-wrap" id="game-wrap">
         <div class="game-hud">
@@ -1036,7 +881,6 @@ function renderGameScreen() {
             <div class="game-hud-best">Рекорд: ${best}</div>
         </div>
         <canvas id="game-canvas" class="game-canvas"></canvas>
-        ${extra}
         ${renderGameStartOverlay(gid)}
         ${renderGameTutorialOverlay(gid)}
         <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
@@ -1119,13 +963,7 @@ async function submitGameScore(gameId, score) {
 }
 
 function initGame() {
-    const gid = state.currentGame;
-    if (!gid) return;
-    if (gid === 'flappy') initFlappy();
-    else if (gid === 'race') initRace();
-    else if (gid === 'ninja') initNinja();
-    else if (gid === 'hunt') initHunt();
-    else if (gid === 'cosmo') initCosmo();
+    if (state.currentGame === 'flappy') initFlappy();
 }
 
 // Утилита: показать обучение → старт игры
@@ -1137,14 +975,12 @@ function showTutorialThenStart(startFn) {
     function onAnyTap(e) {
         if (e.target && e.target.id === 'game-start-btn') return;
         if (!tutorialDone) {
-            // Показываем обучение
             tutorialDone = true;
             if (startOv) startOv.classList.add('hide');
             if (tutOv) tutOv.classList.remove('hide');
             haptic('light');
             return;
         }
-        // Уже показали туториал — старт
         if (tutOv) tutOv.classList.add('hide');
         document.removeEventListener('pointerdown', onAnyTap);
         startFn();
@@ -1176,7 +1012,7 @@ function showTutorialThenStart(startFn) {
 }
 
 // ============================================================
-//         ИГРА 1: ДО ПАРЫ УСПЕТЬ (Flappy, сбалансированная)
+//         ИГРА: ДО ПАРЫ УСПЕТЬ (Flappy, сбалансированная)
 // ============================================================
 
 function initFlappy() {
@@ -1258,7 +1094,6 @@ function initFlappy() {
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, W, H);
 
-        // Дальний город
         ctx.save();
         ctx.globalAlpha = 0.35;
         const cityOffset = (game.frame * 0.4) % 80;
@@ -1270,7 +1105,6 @@ function initFlappy() {
         }
         ctx.restore();
 
-        // Ближний город
         ctx.save();
         ctx.globalAlpha = 0.55;
         const nearOffset = (game.frame * 1.1) % 100;
@@ -1288,7 +1122,6 @@ function initFlappy() {
         }
         ctx.restore();
 
-        // Звёзды
         ctx.save();
         for (let i = 0; i < 40; i++) {
             const sx = ((i * 197 - game.frame * 0.15) % (W + 60) + (W + 60)) % (W + 60) - 30;
@@ -1300,7 +1133,6 @@ function initFlappy() {
         }
         ctx.restore();
 
-        // Земля
         ctx.save();
         const groundGrad = ctx.createLinearGradient(0, H - 40, 0, H);
         groundGrad.addColorStop(0, '#0a1226');
@@ -1354,7 +1186,6 @@ function initFlappy() {
             ctx.stroke();
             ctx.restore();
         }
-        // Игрок
         const p = game.player;
         ctx.save();
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -1433,1102 +1264,6 @@ function initFlappy() {
         }
         draw();
         game.frame++;
-        requestAnimationFrame(loop);
-    }
-    draw();
-    requestAnimationFrame(loop);
-}
-
-// ============================================================
-//   ИГРА 2: ДО ДЕКАНАТА (гонки, зажатие, русские тачки)
-// ============================================================
-
-function initRace() {
-    if (state.gameInstance) return;
-    const canvas = document.getElementById('game-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const W = Math.max(100, rect.width);
-    const H = Math.max(100, rect.height);
-    canvas.width = Math.floor(W * dpr);
-    canvas.height = Math.floor(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const LANES = 3;
-    const laneW = W / LANES;
-    const game = {
-        W, H, running: true, over: false, started: false,
-        score: 0, meters: 0, frame: 0,
-        // Позиция игрока в мировых координатах (плавно)
-        playerX: W / 2,
-        targetX: W / 2,
-        playerW: 38, playerH: 62,
-        obstacles: [],
-        spawnTimer: 0,
-        spawnInterval: 70,
-        baseSpeed: 3.0,
-        speed: 3.0,
-        maxSpeed: 9,
-        holdLeft: false,
-        holdRight: false,
-        // Русские тачки
-        carTypes: [
-            { name: 'Жигули', color: '#e8b821', accent: '#8b6914', type: 'sedan' },
-            { name: 'Нива',    color: '#d64545', accent: '#8b2020', type: 'suv' },
-            { name: 'Лада',    color: '#4a7fd6', accent: '#1e4a8b', type: 'sedan' },
-            { name: 'Москвич', color: '#5a5a5a', accent: '#2e2e2e', type: 'sedan' },
-            { name: 'ГАЗ',     color: '#3a8b5c', accent: '#1e5b3a', type: 'truck' },
-        ],
-    };
-    state.gameInstance = game;
-
-    showTutorialThenStart(() => {
-        game.started = true;
-        haptic('medium');
-    });
-
-    // === УПРАВЛЕНИЕ ЗАЖАТИЕМ ===
-    const leftBtn = document.getElementById('race-left');
-    const rightBtn = document.getElementById('race-right');
-
-    function pressLeft(e) { e && e.preventDefault(); game.holdLeft = true; if (leftBtn) leftBtn.classList.add('active'); }
-    function releaseLeft(e) { e && e.preventDefault(); game.holdLeft = false; if (leftBtn) leftBtn.classList.remove('active'); }
-    function pressRight(e) { e && e.preventDefault(); game.holdRight = true; if (rightBtn) rightBtn.classList.add('active'); }
-    function releaseRight(e) { e && e.preventDefault(); game.holdRight = false; if (rightBtn) rightBtn.classList.remove('active'); }
-
-    if (leftBtn) {
-        leftBtn.addEventListener('pointerdown', pressLeft);
-        leftBtn.addEventListener('pointerup', releaseLeft);
-        leftBtn.addEventListener('pointercancel', releaseLeft);
-        leftBtn.addEventListener('pointerleave', releaseLeft);
-    }
-    if (rightBtn) {
-        rightBtn.addEventListener('pointerdown', pressRight);
-        rightBtn.addEventListener('pointerup', releaseRight);
-        rightBtn.addEventListener('pointercancel', releaseRight);
-        rightBtn.addEventListener('pointerleave', releaseRight);
-    }
-
-    function onKey(e) {
-        if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); game.holdLeft = true; }
-        if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); game.holdRight = true; }
-    }
-    function onKeyUp(e) {
-        if (e.code === 'ArrowLeft' || e.code === 'KeyA') { game.holdLeft = false; }
-        if (e.code === 'ArrowRight' || e.code === 'KeyD') { game.holdRight = false; }
-    }
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('keyup', onKeyUp);
-
-    function cleanup() {
-        document.removeEventListener('keydown', onKey);
-        document.removeEventListener('keyup', onKeyUp);
-    }
-    function endGame() {
-        if (game.over) return;
-        game.over = true;
-        game.running = false;
-        cleanup();
-        haptic('error');
-        submitGameScore('race', Math.floor(game.meters / 10));
-    }
-
-    // === РИСОВАНИЕ ФОНА — ночное шоссе ===
-    function drawRoad() {
-        const grad = ctx.createLinearGradient(0, 0, 0, H);
-        grad.addColorStop(0, '#0a0a1a');
-        grad.addColorStop(1, '#1a1428');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, W, H);
-
-        // Разметка — три полосы
-        const dashOffset = (game.frame * game.speed) % 60;
-        ctx.save();
-        ctx.strokeStyle = 'rgba(0,229,208,0.35)';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([30, 30]);
-        ctx.lineDashOffset = -dashOffset;
-        for (let i = 1; i < LANES; i++) {
-            ctx.beginPath();
-            ctx.moveTo(i * laneW, 0);
-            ctx.lineTo(i * laneW, H);
-            ctx.stroke();
-        }
-        ctx.restore();
-
-        // Обочины
-        ctx.save();
-        ctx.fillStyle = 'rgba(255,215,0,0.15)';
-        ctx.fillRect(0, 0, 6, H);
-        ctx.fillRect(W - 6, 0, 6, H);
-        ctx.restore();
-    }
-
-    // === РИСОВАНИЕ ТАЧКИ ===
-    // car: {x, y, w, h, color, accent, type, isPlayer}
-    function drawCar(car) {
-        const { x, y, w, h, color, accent, type, isPlayer } = car;
-        const cx = x + w / 2;
-        const cy = y + h / 2;
-
-        ctx.save();
-
-        // Тень
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.beginPath();
-        ctx.ellipse(cx, y + h + 4, w * 0.55, 5, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Свечение для игрока
-        if (isPlayer) {
-            const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 1.5);
-            glow.addColorStop(0, 'rgba(0,229,208,0.5)');
-            glow.addColorStop(1, 'rgba(0,229,208,0)');
-            ctx.fillStyle = glow;
-            ctx.beginPath(); ctx.arc(cx, cy, w * 1.5, 0, Math.PI * 2); ctx.fill();
-        }
-
-        // Кузов
-        const bodyGrad = ctx.createLinearGradient(x, y, x + w, y + h);
-        bodyGrad.addColorStop(0, color);
-        bodyGrad.addColorStop(1, accent);
-        ctx.fillStyle = bodyGrad;
-        roundRect(ctx, x, y, w, h, 6);
-        ctx.fill();
-
-        // Обводка
-        ctx.strokeStyle = isPlayer ? '#00E5D0' : accent;
-        ctx.lineWidth = isPlayer ? 2.5 : 1.5;
-        ctx.stroke();
-
-        // Крыша / стекло
-        ctx.fillStyle = 'rgba(10,15,30,0.7)';
-        let roofY = y + h * 0.18;
-        let roofH = h * 0.35;
-        if (type === 'suv') { roofY = y + h * 0.15; roofH = h * 0.42; }
-        if (type === 'truck') { roofY = y + h * 0.35; roofH = h * 0.28; }
-        roundRect(ctx, x + 5, roofY, w - 10, roofH, 3);
-        ctx.fill();
-
-        // Фары
-        ctx.fillStyle = isPlayer ? '#FFEE9C' : '#FF6B35';
-        ctx.beginPath();
-        ctx.arc(x + 6, y + 3, 2.5, 0, Math.PI * 2);
-        ctx.arc(x + w - 6, y + 3, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Стопы
-        ctx.fillStyle = '#FF4D4F';
-        ctx.beginPath();
-        ctx.arc(x + 6, y + h - 3, 2.2, 0, Math.PI * 2);
-        ctx.arc(x + w - 6, y + h - 3, 2.2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Иконка "!" на легковушках-противниках, чтобы было видно
-        if (!isPlayer) {
-            ctx.fillStyle = 'rgba(255,255,255,0.7)';
-            ctx.font = `bold ${Math.floor(w * 0.5)}px Manrope`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('🚗', cx, cy);
-        } else {
-            // Игрок — стилизованный студент за рулём
-            ctx.fillStyle = '#00E5D0';
-            ctx.font = `bold ${Math.floor(w * 0.45)}px Manrope`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('🎓', cx, cy);
-        }
-
-        ctx.restore();
-    }
-
-    function draw() {
-        drawRoad();
-        // Препятствия
-        for (const o of game.obstacles) {
-            drawCar(o);
-        }
-        // Игрок
-        const playerCar = {
-            x: game.playerX - game.playerW / 2,
-            y: H - 140,
-            w: game.playerW, h: game.playerH,
-            color: '#00E5D0', accent: '#0a7a6e',
-            type: 'sedan', isPlayer: true,
-        };
-        drawCar(playerCar);
-    }
-
-    function loop() {
-        if (state.gameInstance !== game || !game.running) return;
-
-        // Плавное движение игрока
-        const moveSpeed = 5.5;
-        if (game.holdLeft) game.targetX -= moveSpeed;
-        if (game.holdRight) game.targetX += moveSpeed;
-        game.targetX = Math.max(game.playerW / 2 + 8, Math.min(W - game.playerW / 2 - 8, game.targetX));
-        // Плавная интерполяция
-        game.playerX += (game.targetX - game.playerX) * 0.18;
-
-        // Прогресс
-        if (game.started) {
-            game.frame++;
-            game.meters += game.speed;
-            const newScore = Math.floor(game.meters / 10);
-            if (newScore !== game.score) {
-                game.score = newScore;
-                updateScore(game.score);
-            }
-            // Ускорение
-            if (game.frame % 90 === 0) game.speed = Math.min(game.maxSpeed, game.speed + 0.2);
-        }
-
-        // Спавн врагов
-        game.spawnTimer++;
-        if (game.started && game.spawnTimer >= Math.max(28, game.spawnInterval - Math.floor(game.speed * 3))) {
-            game.spawnTimer = 0;
-            // Выбираем полосу (не пересекается с другой)
-            const lane = Math.floor(Math.random() * LANES);
-            const cx = lane * laneW + laneW / 2;
-            // Проверяем что нет близкой машины
-            let tooClose = false;
-            for (const o of game.obstacles) {
-                if (Math.abs(o.x + o.w / 2 - cx) < laneW * 0.7 && o.y < 120) { tooClose = true; break; }
-            }
-            if (!tooClose) {
-                const carType = game.carTypes[Math.floor(Math.random() * game.carTypes.length)];
-                game.obstacles.push({
-                    x: cx - 19, y: -80, w: 38, h: 62,
-                    color: carType.color, accent: carType.accent, type: carType.type,
-                    isPlayer: false,
-                });
-            }
-        }
-
-        // Движение врагов и коллизии
-        const playerY = H - 140;
-        const px1 = game.playerX - game.playerW / 2;
-        const px2 = game.playerX + game.playerW / 2;
-        const py1 = playerY;
-        const py2 = playerY + game.playerH;
-
-        for (let i = game.obstacles.length - 1; i >= 0; i--) {
-            const o = game.obstacles[i];
-            if (game.started) o.y += game.speed;
-
-            // Коллизия
-            const ox1 = o.x, ox2 = o.x + o.w;
-            const oy1 = o.y, oy2 = o.y + o.h;
-            if (px1 < ox2 && px2 > ox1 && py1 < oy2 && py2 > oy1) {
-                endGame();
-                return;
-            }
-
-            if (o.y > H + 80) game.obstacles.splice(i, 1);
-        }
-
-        draw();
-        requestAnimationFrame(loop);
-    }
-    draw();
-    requestAnimationFrame(loop);
-}
-
-// ============================================================
-//   ИГРА 3: СТИПУХА-НИНДЗЯ (летящие предметы, 2 жизни)
-// ============================================================
-
-function initNinja() {
-    if (state.gameInstance) return;
-    const canvas = document.getElementById('game-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const W = Math.max(100, rect.width);
-    const H = Math.max(100, rect.height);
-    canvas.width = Math.floor(W * dpr);
-    canvas.height = Math.floor(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    // Предметы (можно резать) — школьные предметы и символы
-    const GOOD_ITEMS = [
-        { emoji: '📚', color: '#00E5D0' },
-        { emoji: '📐', color: '#FFD700' },
-        { emoji: '📏', color: '#00E5A0' },
-        { emoji: '✏️', color: '#FFB020' },
-        { emoji: '📎', color: '#1E88E5' },
-        { emoji: '🧪', color: '#C084FC' },
-        { emoji: '🔬', color: '#00E5D0' },
-        { emoji: '🧮', color: '#FF6B35' },
-        { emoji: '🎓', color: '#FFD700' },
-        { emoji: 'π',   color: '#00E5D0' },
-        { emoji: 'Σ',   color: '#FFD700' },
-        { emoji: '√',   color: '#00E5A0' },
-        { emoji: '∞',   color: '#C084FC' },
-        { emoji: '∫',   color: '#1E88E5' },
-    ];
-    // Плохие (нельзя резать) — бомбы
-    const BAD_ITEMS = [
-        { emoji: '💣', color: '#FF4D4F' },
-        { emoji: '💥', color: '#FF4D4F' },
-    ];
-
-    const game = {
-        W, H, running: true, over: false, started: false,
-        score: 0, lives: 2, maxLives: 2, frame: 0,
-        items: [],            // летящие объекты
-        particles: [],        // частицы разрезов
-        spawnTimer: 0,
-        spawnInterval: 55,    // реже спавн
-        minSpawnInterval: 26,
-        // Трейл от пальца
-        trail: [],
-        trailMaxLen: 14,
-    };
-    state.gameInstance = game;
-
-    showTutorialThenStart(() => {
-        game.started = true;
-        haptic('medium');
-    });
-
-    function spawnItem() {
-        const isBad = Math.random() < 0.22;
-        const pool = isBad ? BAD_ITEMS : GOOD_ITEMS;
-        const item = pool[Math.floor(Math.random() * pool.length)];
-        const r = 30;
-        const x = 50 + Math.random() * (W - 100);
-        const startY = H + r + 10;
-        // Двигаемся вверх с наклоном
-        const vx = (Math.random() - 0.5) * 1.6;
-        const vy = -3.4 - Math.random() * 1.2;
-        game.items.push({
-            x, y: startY, r,
-            vx, vy,
-            gravity: 0.05,
-            emoji: item.emoji,
-            color: item.color,
-            isBad,
-            sliced: false,
-            rot: 0,
-            rotSpeed: (Math.random() - 0.5) * 0.1,
-        });
-    }
-
-    // Проверка пересечения точки с объектом
-    function hitTest(x, y, item) {
-        const dx = x - item.x, dy = y - item.y;
-        return dx * dx + dy * dy < item.r * item.r * 1.1;
-    }
-
-    function sliceItem(item) {
-        item.sliced = true;
-        if (item.isBad) {
-            game.lives--;
-            haptic('error');
-            // Красная вспышка
-            game.particles.push({
-                x: item.x, y: item.y, color: '#FF4D4F',
-                life: 30, maxLife: 30, type: 'bad',
-            });
-            if (game.lives <= 0) {
-                endGame();
-            }
-        } else {
-            game.score++;
-            haptic('light');
-            updateScore(game.score);
-            // Частицы разреза
-            for (let i = 0; i < 6; i++) {
-                game.particles.push({
-                    x: item.x, y: item.y,
-                    vx: (Math.random() - 0.5) * 5,
-                    vy: (Math.random() - 0.5) * 5,
-                    color: item.color,
-                    life: 25, maxLife: 25, type: 'good',
-                    size: 2 + Math.random() * 3,
-                });
-            }
-        }
-    }
-
-    let isTouching = false;
-    let lastTouchedId = null;
-
-    function getCanvasCoords(e) {
-        const rect = canvas.getBoundingClientRect();
-        const cx = e.touches ? e.touches[0].clientX : e.clientX;
-        const cy = e.touches ? e.touches[0].clientY : e.clientY;
-        return { x: cx - rect.left, y: cy - rect.top };
-    }
-
-    function onMove(e) {
-        if (!game.started || game.over) return;
-        e.preventDefault();
-        const { x, y } = getCanvasCoords(e);
-        game.trail.push({ x, y, life: 12, maxLife: 12 });
-        if (game.trail.length > game.trailMaxLen) game.trail.shift();
-        // Проверяем разрезание
-        for (let i = game.items.length - 1; i >= 0; i--) {
-            const item = game.items[i];
-            if (item.sliced) continue;
-            if (hitTest(x, y, item)) {
-                sliceItem(item);
-            }
-        }
-    }
-
-    function onDown(e) {
-        if (!game.started || game.over) return;
-        e.preventDefault();
-        isTouching = true;
-        onMove(e);
-    }
-
-    function onUp(e) {
-        isTouching = false;
-    }
-
-    canvas.addEventListener('touchstart', onDown, { passive: false });
-    canvas.addEventListener('touchmove', onMove, { passive: false });
-    canvas.addEventListener('touchend', onUp);
-    canvas.addEventListener('mousedown', onDown);
-    canvas.addEventListener('mousemove', (e) => { if (e.buttons) onMove(e); });
-    canvas.addEventListener('mouseup', onUp);
-    canvas.addEventListener('mouseleave', onUp);
-
-    function cleanup() {
-        canvas.removeEventListener('touchstart', onDown);
-        canvas.removeEventListener('touchmove', onMove);
-        canvas.removeEventListener('touchend', onUp);
-        canvas.removeEventListener('mousedown', onDown);
-        canvas.removeEventListener('mouseup', onUp);
-        canvas.removeEventListener('mouseleave', onUp);
-    }
-
-    function endGame() {
-        if (game.over) return;
-        game.over = true;
-        game.running = false;
-        cleanup();
-        haptic('error');
-        submitGameScore('ninja', game.score);
-    }
-
-    // === Отрисовка ===
-    function drawBackground() {
-        const grad = ctx.createLinearGradient(0, 0, W, H);
-        grad.addColorStop(0, '#0b0416');
-        grad.addColorStop(0.5, '#150a25');
-        grad.addColorStop(1, '#0E1424');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, W, H);
-
-        // Свечение снизу
-        const glow = ctx.createRadialGradient(W / 2, H, 0, W / 2, H, H * 0.8);
-        glow.addColorStop(0, 'rgba(168,85,247,0.15)');
-        glow.addColorStop(1, 'rgba(168,85,247,0)');
-        ctx.fillStyle = glow;
-        ctx.fillRect(0, 0, W, H);
-    }
-
-    function drawLives() {
-        // Сердца сверху слева
-        ctx.save();
-        ctx.font = 'bold 24px Manrope';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        let h = '';
-        for (let i = 0; i < game.maxLives; i++) {
-            h += i < game.lives ? '❤' : '🖤';
-        }
-        ctx.fillText(h, 16, 16);
-        ctx.restore();
-    }
-
-    function drawTrail() {
-        if (game.trail.length < 2) return;
-        ctx.save();
-        ctx.strokeStyle = 'rgba(0,229,208,0.85)';
-        ctx.lineWidth = 6;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.shadowColor = '#00E5D0';
-        ctx.shadowBlur = 16;
-        ctx.beginPath();
-        for (let i = 0; i < game.trail.length; i++) {
-            const p = game.trail[i];
-            const alpha = p.life / p.maxLife;
-            ctx.globalAlpha = alpha;
-            if (i === 0) ctx.moveTo(p.x, p.y);
-            else ctx.lineTo(p.x, p.y);
-        }
-        ctx.stroke();
-        ctx.restore();
-    }
-
-    function draw() {
-        drawBackground();
-
-        // Летящие предметы
-        for (const item of game.items) {
-            if (item.sliced) continue;
-            ctx.save();
-            ctx.translate(item.x, item.y);
-            ctx.rotate(item.rot);
-
-            // Свечение вокруг
-            const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, item.r * 1.8);
-            glow.addColorStop(0, item.color + '55');
-            glow.addColorStop(1, item.color + '00');
-            ctx.fillStyle = glow;
-            ctx.beginPath(); ctx.arc(0, 0, item.r * 1.8, 0, Math.PI * 2); ctx.fill();
-
-            // Круг
-            ctx.fillStyle = 'rgba(10,15,25,0.75)';
-            ctx.beginPath(); ctx.arc(0, 0, item.r, 0, Math.PI * 2); ctx.fill();
-            ctx.strokeStyle = item.color;
-            ctx.lineWidth = 2.5;
-            ctx.shadowColor = item.color; ctx.shadowBlur = 14;
-            ctx.beginPath(); ctx.arc(0, 0, item.r, 0, Math.PI * 2); ctx.stroke();
-            ctx.shadowBlur = 0;
-
-            // Emoji/символ
-            ctx.font = `${item.emoji.length > 1 ? 26 : 28}px Manrope, "Apple Color Emoji", "Segoe UI Emoji"`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = item.color;
-            if (item.emoji.length > 1) {
-                // Emoji — рисуем как есть
-                ctx.fillText(item.emoji, 0, 2);
-            } else {
-                // Символ — рисуем как текст
-                ctx.fillText(item.emoji, 0, 2);
-            }
-
-            ctx.restore();
-        }
-
-        // Частицы
-        for (const p of game.particles) {
-            ctx.save();
-            const alpha = p.life / p.maxLife;
-            ctx.globalAlpha = alpha;
-            if (p.type === 'bad') {
-                ctx.strokeStyle = p.color;
-                ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.arc(p.x, p.y, (1 - alpha) * 60 + 10, 0, Math.PI * 2); ctx.stroke();
-            } else {
-                ctx.fillStyle = p.color;
-                ctx.beginPath(); ctx.arc(p.x, p.y, p.size || 3, 0, Math.PI * 2); ctx.fill();
-            }
-            ctx.restore();
-        }
-
-        drawTrail();
-        drawLives();
-    }
-
-    function loop() {
-        if (state.gameInstance !== game || !game.running) return;
-
-        game.frame++;
-
-        // Спавн
-        if (game.started) {
-            game.spawnTimer++;
-            if (game.spawnTimer >= game.spawnInterval) {
-                game.spawnTimer = 0;
-                spawnItem();
-                if (game.spawnInterval > game.minSpawnInterval) game.spawnInterval -= 0.4;
-            }
-        }
-
-        // Движение предметов
-        for (let i = game.items.length - 1; i >= 0; i--) {
-            const item = game.items[i];
-            item.x += item.vx;
-            item.y += item.vy;
-            item.vy += item.gravity;
-            item.rot += item.rotSpeed;
-            // Ушёл за экран
-            if (item.y > H + 60 || item.y < -60 || item.x < -60 || item.x > W + 60) {
-                // Если это был good и он улетел — не считаем промахом
-                game.items.splice(i, 1);
-            }
-        }
-
-        // Частицы
-        for (let i = game.particles.length - 1; i >= 0; i--) {
-            const p = game.particles[i];
-            if (p.type === 'good') {
-                p.x += p.vx; p.y += p.vy; p.vy += 0.15;
-            }
-            p.life--;
-            if (p.life <= 0) game.particles.splice(i, 1);
-        }
-
-        // Трейл — угасание
-        for (let i = game.trail.length - 1; i >= 0; i--) {
-            game.trail[i].life--;
-            if (game.trail[i].life <= 0) game.trail.splice(i, 1);
-        }
-
-        draw();
-        requestAnimationFrame(loop);
-    }
-    draw();
-    requestAnimationFrame(loop);
-}
-
-// ============================================================
-//   ИГРА 4: НАЙДИ ПРЕДМЕТ (карточки с иконками)
-// ============================================================
-
-function initHunt() {
-    if (state.gameInstance) return;
-    const game = { running: true, over: false, started: false, score: 0, timeLeft: 30, maxTime: 30 };
-    state.gameInstance = game;
-
-    const SUBJECTS = [
-        { name: 'Математика',  emoji: '📐', color: '#00E5D0' },
-        { name: 'Физика',      emoji: '⚛️', color: '#1E88E5' },
-        { name: 'Химия',       emoji: '🧪', color: '#C084FC' },
-        { name: 'История',     emoji: '📜', color: '#FFB020' },
-        { name: 'Биология',    emoji: '🧬', color: '#00E5A0' },
-        { name: 'География',   emoji: '🌍', color: '#4a7fd6' },
-        { name: 'Литература',  emoji: '📖', color: '#FF6B35' },
-        { name: 'Информатика', emoji: '💻', color: '#00B4FF' },
-        { name: 'Английский',  emoji: '🇬🇧', color: '#FF4D4F' },
-        { name: 'Философия',   emoji: '🤔', color: '#8A98B0' },
-        { name: 'Экономика',   emoji: '💰', color: '#FFD700' },
-        { name: 'Право',       emoji: '⚖️', color: '#1E88E5' },
-        { name: 'Экология',    emoji: '🌱', color: '#00E5A0' },
-        { name: 'Астрономия',  emoji: '🔭', color: '#C084FC' },
-        { name: 'Социология',  emoji: '👥', color: '#00E5D0' },
-        { name: 'Психология',  emoji: '🧠', color: '#FF6B35' },
-        { name: 'Русский',     emoji: '📝', color: '#FF4D4F' },
-        { name: 'Геометрия',   emoji: '📏', color: '#FFD700' },
-        { name: 'Алгебра',     emoji: '➗', color: '#00E5D0' },
-        { name: 'Черчение',    emoji: '✏️', color: '#1E88E5' },
-    ];
-
-    const board = document.getElementById('hunt-board');
-    const hintEl = document.getElementById('game-hint');
-    const bestEl = document.getElementById('game-best');
-    if (!board) return;
-
-    showTutorialThenStart(() => {
-        game.started = true;
-        haptic('medium');
-        if (hintEl) hintEl.style.display = 'none';
-        nextRound();
-        game.timer = setInterval(() => {
-            if (game.over) return;
-            game.timeLeft--;
-            if (bestEl) bestEl.textContent = `Найди: ${state.huntTarget || '...'} · ⏱ ${game.timeLeft}с`;
-            if (game.timeLeft <= 0) endGame();
-        }, 1000);
-    });
-
-    function nextRound() {
-        if (game.over) return;
-        // 12 случайных разных предметов
-        const shuffled = [...SUBJECTS].sort(() => Math.random() - 0.5);
-        const cards = shuffled.slice(0, 12);
-        const target = cards[Math.floor(Math.random() * cards.length)];
-        state.huntTarget = target.name;
-        if (bestEl) bestEl.textContent = `Найди: ${target.name} · ⏱ ${game.timeLeft}с`;
-
-        board.innerHTML = cards.map(s => `
-            <button class="hunt-card" data-name="${escapeHtml(s.name)}" style="
-                aspect-ratio:1;
-                border-radius:14px;
-                background: linear-gradient(135deg, rgba(20,28,48,0.9) 0%, rgba(10,15,25,0.9) 100%);
-                border:2px solid ${s.color}55;
-                color:#F2F6FF;
-                font-family: inherit;
-                padding:6px 4px;
-                cursor:pointer;
-                display:flex;
-                flex-direction:column;
-                align-items:center;
-                justify-content:center;
-                gap:2px;
-                transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-                -webkit-tap-highlight-color: transparent;
-                box-shadow: 0 0 12px ${s.color}22;
-            ">
-                <span style="font-size:26px;line-height:1;">${s.emoji}</span>
-                <span style="font-size:9px;font-weight:800;letter-spacing:0.3px;color:${s.color};text-align:center;line-height:1.1;">${escapeHtml(s.name)}</span>
-            </button>
-        `).join('');
-
-        board.querySelectorAll('.hunt-card').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (game.over || !game.started) return;
-                if (btn.dataset.name === target.name) {
-                    game.score++;
-                    updateScore(game.score);
-                    haptic('light');
-                    btn.style.background = 'linear-gradient(135deg, rgba(0,229,160,0.35), rgba(0,150,110,0.35))';
-                    btn.style.borderColor = '#00E5A0';
-                    btn.style.transform = 'scale(0.92)';
-                    setTimeout(() => { if (!game.over) nextRound(); }, 220);
-                } else {
-                    haptic('error');
-                    game.timeLeft = Math.max(0, game.timeLeft - 2);
-                    btn.style.background = 'linear-gradient(135deg, rgba(255,77,79,0.4), rgba(180,30,30,0.4))';
-                    btn.style.borderColor = '#FF4D4F';
-                    btn.style.transform = 'scale(0.94)';
-                    setTimeout(() => {
-                        btn.style.background = 'linear-gradient(135deg, rgba(20,28,48,0.9), rgba(10,15,25,0.9))';
-                        btn.style.borderColor = btn.dataset.color ? '' : '';
-                        btn.style.transform = '';
-                    }, 250);
-                }
-            });
-        });
-    }
-
-    function endGame() {
-        if (game.over) return;
-        game.over = true;
-        game.running = false;
-        if (game.timer) clearInterval(game.timer);
-        submitGameScore('hunt', game.score);
-    }
-}
-
-// ============================================================
-//   ИГРА 5: КОСМОС ИРНИТУ (шутер)
-// ============================================================
-
-function initCosmo() {
-    if (state.gameInstance) return;
-    const canvas = document.getElementById('game-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const W = Math.max(100, rect.width);
-    const H = Math.max(100, rect.height);
-    canvas.width = Math.floor(W * dpr);
-    canvas.height = Math.floor(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const game = {
-        W, H, running: true, over: false, started: false,
-        frame: 0, score: 0,
-        player: { x: W / 2, y: H - 80, r: 16, targetX: W / 2 },
-        bullets: [],
-        asteroids: [],
-        stars: [],
-        particles: [],
-        spawnTimer: 0,
-        shootTimer: 0,
-        lives: 3, maxLives: 3,
-        holdLeft: false, holdRight: false,
-    };
-    for (let i = 0; i < 70; i++) {
-        game.stars.push({
-            x: Math.random() * W, y: Math.random() * H,
-            r: Math.random() * 1.6 + 0.3,
-            s: Math.random() * 1.4 + 0.4,
-        });
-    }
-    state.gameInstance = game;
-
-    showTutorialThenStart(() => {
-        game.started = true;
-        haptic('medium');
-    });
-
-    function getX(e) {
-        const rect = canvas.getBoundingClientRect();
-        const cx = e.touches ? e.touches[0].clientX : e.clientX;
-        return Math.max(game.player.r + 4, Math.min(W - game.player.r - 4, cx - rect.left));
-    }
-
-    function onDown(e) {
-        if (!game.started || game.over) return;
-        e.preventDefault();
-        game.player.targetX = getX(e);
-    }
-    function onMove(e) {
-        if (!game.started || game.over) return;
-        e.preventDefault();
-        game.player.targetX = getX(e);
-    }
-    function onKey(e) {
-        if (!game.started || game.over) return;
-        if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); game.holdLeft = true; }
-        if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); game.holdRight = true; }
-    }
-    function onKeyUp(e) {
-        if (e.code === 'ArrowLeft' || e.code === 'KeyA') game.holdLeft = false;
-        if (e.code === 'ArrowRight' || e.code === 'KeyD') game.holdRight = false;
-    }
-
-    canvas.addEventListener('touchstart', onDown, { passive: false });
-    canvas.addEventListener('touchmove', onMove, { passive: false });
-    canvas.addEventListener('mousedown', onDown);
-    canvas.addEventListener('mousemove', (e) => { if (e.buttons) onMove(e); });
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('keyup', onKeyUp);
-
-    function cleanup() {
-        canvas.removeEventListener('touchstart', onDown);
-        canvas.removeEventListener('touchmove', onMove);
-        canvas.removeEventListener('mousedown', onDown);
-        document.removeEventListener('keydown', onKey);
-        document.removeEventListener('keyup', onKeyUp);
-    }
-    function endGame() {
-        if (game.over) return;
-        game.over = true;
-        game.running = false;
-        cleanup();
-        haptic('error');
-        submitGameScore('cosmo', game.score);
-    }
-
-    function draw() {
-        // Фон
-        const grad = ctx.createLinearGradient(0, 0, 0, H);
-        grad.addColorStop(0, '#05020f');
-        grad.addColorStop(1, '#1a0e40');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, W, H);
-
-        // Звёзды с параллаксом
-        for (const st of game.stars) {
-            st.y += st.s * (game.started ? 1 : 0.4);
-            if (st.y > H) { st.y = 0; st.x = Math.random() * W; }
-            ctx.fillStyle = `rgba(255,255,255,${0.4 + st.r * 0.3})`;
-            ctx.beginPath();
-            ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Дальние планеты / ИРНИТУ
-        ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.fillStyle = '#2a1a4a';
-        ctx.beginPath();
-        ctx.arc(W * 0.15, H * 0.2, 60, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#1a3a5a';
-        ctx.beginPath();
-        ctx.arc(W * 0.85, H * 0.35, 40, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        // Астероиды
-        for (const a of game.asteroids) {
-            ctx.save();
-            const grad2 = ctx.createRadialGradient(a.x - a.r * 0.3, a.y - a.r * 0.3, a.r * 0.2, a.x, a.y, a.r);
-            grad2.addColorStop(0, '#aaa');
-            grad2.addColorStop(0.6, '#666');
-            grad2.addColorStop(1, '#333');
-            ctx.fillStyle = grad2;
-            ctx.shadowColor = '#FF4D4F';
-            ctx.shadowBlur = 12;
-            ctx.beginPath();
-            ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
-            ctx.fill();
-            // Кратеры
-            ctx.fillStyle = '#444';
-            ctx.beginPath(); ctx.arc(a.x - a.r * 0.3, a.y - a.r * 0.3, a.r * 0.25, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(a.x + a.r * 0.35, a.y + a.r * 0.2, a.r * 0.18, 0, Math.PI * 2); ctx.fill();
-            ctx.restore();
-        }
-
-        // Пули
-        ctx.save();
-        for (const b of game.bullets) {
-            const grad3 = ctx.createLinearGradient(b.x, b.y - 12, b.x, b.y + 4);
-            grad3.addColorStop(0, 'rgba(0,229,208,0)');
-            grad3.addColorStop(0.5, '#7CFFEE');
-            grad3.addColorStop(1, '#00E5D0');
-            ctx.fillStyle = grad3;
-            ctx.shadowColor = '#00E5D0';
-            ctx.shadowBlur = 12;
-            roundRect(ctx, b.x - 2, b.y - 12, 4, 16, 2);
-            ctx.fill();
-        }
-        ctx.restore();
-
-        // Игрок — ракета-студент
-        const p = game.player;
-        const px = p.x, py = p.y;
-
-        // Свечение
-        const glow = ctx.createRadialGradient(px, py, 0, px, py, 40);
-        glow.addColorStop(0, 'rgba(0,229,208,0.5)');
-        glow.addColorStop(1, 'rgba(0,229,208,0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(px, py, 40, 0, Math.PI * 2); ctx.fill();
-
-        // Пламя снизу
-        const flame = ctx.createLinearGradient(px, py + 12, px, py + 30 + Math.random() * 8);
-        flame.addColorStop(0, 'rgba(255,215,0,0.95)');
-        flame.addColorStop(0.5, 'rgba(255,140,0,0.7)');
-        flame.addColorStop(1, 'rgba(255,77,79,0)');
-        ctx.fillStyle = flame;
-        ctx.beginPath();
-        ctx.moveTo(px - 6, py + 12);
-        ctx.lineTo(px + 6, py + 12);
-        ctx.lineTo(px, py + 30 + Math.random() * 8);
-        ctx.closePath();
-        ctx.fill();
-
-        // Корпус ракеты
-        ctx.save();
-        ctx.fillStyle = '#0E1424';
-        ctx.strokeStyle = '#00E5D0';
-        ctx.lineWidth = 2.5;
-        ctx.shadowColor = '#00E5D0';
-        ctx.shadowBlur = 14;
-        ctx.beginPath();
-        ctx.moveTo(px, py - 18);
-        ctx.lineTo(px - 13, py + 12);
-        ctx.lineTo(px + 13, py + 12);
-        ctx.closePath();
-        ctx.fill(); ctx.stroke();
-
-        // Кабина с пилотом
-        ctx.fillStyle = 'rgba(0,229,208,0.35)';
-        ctx.beginPath();
-        ctx.arc(px, py - 6, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#00E5D0';
-        ctx.beginPath();
-        ctx.arc(px, py - 6, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        // Жизни
-        ctx.save();
-        ctx.font = 'bold 22px Manrope';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        let h = '';
-        for (let i = 0; i < game.maxLives; i++) h += i < game.lives ? '❤' : '🖤';
-        ctx.fillText(h, 16, 16);
-        ctx.restore();
-    }
-
-    function loop() {
-        if (state.gameInstance !== game || !game.running) return;
-        game.frame++;
-
-        // Управление клавой
-        if (game.holdLeft) game.player.targetX = Math.max(20, game.player.targetX - 8);
-        if (game.holdRight) game.player.targetX = Math.min(W - 20, game.player.targetX + 8);
-        // Плавное движение
-        game.player.x += (game.player.targetX - game.player.x) * 0.25;
-
-        // Автострельба
-        game.shootTimer++;
-        if (game.started && game.shootTimer >= 11) {
-            game.shootTimer = 0;
-            game.bullets.push({ x: game.player.x, y: game.player.y - 20 });
-        }
-
-        // Движение пуль
-        for (let i = game.bullets.length - 1; i >= 0; i--) {
-            game.bullets[i].y -= 9;
-            if (game.bullets[i].y < -20) game.bullets.splice(i, 1);
-        }
-
-        // Спавн астероидов
-        if (game.started) {
-            game.spawnTimer++;
-            const interval = Math.max(18, 55 - Math.floor(game.frame / 220));
-            if (game.spawnTimer >= interval) {
-                game.spawnTimer = 0;
-                game.asteroids.push({
-                    x: 30 + Math.random() * (W - 60),
-                    y: -30,
-                    r: 14 + Math.random() * 14,
-                    vy: 1.8 + Math.random() * 1.4,
-                    vx: (Math.random() - 0.5) * 1.0,
-                });
-            }
-        }
-
-        // Движение астероидов + коллизии
-        const p = game.player;
-        for (let i = game.asteroids.length - 1; i >= 0; i--) {
-            const a = game.asteroids[i];
-            a.y += a.vy;
-            a.x += a.vx;
-            if (a.y > H + 30) { game.asteroids.splice(i, 1); continue; }
-
-            // Пуля → астероид
-            let hit = false;
-            for (let j = game.bullets.length - 1; j >= 0; j--) {
-                const b = game.bullets[j];
-                const dx = b.x - a.x, dy = b.y - a.y;
-                if (dx * dx + dy * dy < a.r * a.r + 20) {
-                    game.asteroids.splice(i, 1);
-                    game.bullets.splice(j, 1);
-                    // Частицы взрыва
-                    for (let k = 0; k < 6; k++) {
-                        game.particles.push({
-                            x: a.x, y: a.y,
-                            vx: (Math.random() - 0.5) * 5,
-                            vy: (Math.random() - 0.5) * 5,
-                            life: 20, maxLife: 20, size: 2 + Math.random() * 2,
-                        });
-                    }
-                    game.score++;
-                    updateScore(game.score);
-                    haptic('light');
-                    hit = true;
-                    break;
-                }
-            }
-            if (hit) continue;
-
-            // Ракета → астероид
-            const dx = a.x - p.x, dy = a.y - p.y;
-            if (dx * dx + dy * dy < a.r * a.r + 144) {
-                game.lives--;
-                haptic('error');
-                game.asteroids.splice(i, 1);
-                if (game.lives <= 0) { endGame(); return; }
-            }
-        }
-
-        // Частицы
-        for (let i = game.particles.length - 1; i >= 0; i--) {
-            const pt = game.particles[i];
-            pt.x += pt.vx; pt.y += pt.vy;
-            pt.life--;
-            if (pt.life <= 0) game.particles.splice(i, 1);
-        }
-
-        // Отрисовка частиц поверх
-        draw();
-
-        // Частицы (после draw, чтобы поверх)
-        ctx.save();
-        for (const pt of game.particles) {
-            const alpha = pt.life / pt.maxLife;
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle = '#FFD700';
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, pt.size || 3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        ctx.restore();
-
         requestAnimationFrame(loop);
     }
     draw();
