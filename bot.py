@@ -121,7 +121,6 @@ ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
-# === БОНУСЫ АДМИНА ===
 ADMIN_BONUS_SOFT = 1000000
 ADMIN_BONUS_HARD = 10000
 
@@ -177,14 +176,16 @@ DAILY_QUOTES = [
 ]
 
 
+# ============================================================
+#   ИГРЫ: только одна — «До пары успеть»
+# ============================================================
 GAMES = {
-    "flappy": {"name": "До пары успеть", "desc": "Пролетай между парами, не задень стены"},
-    "race":   {"name": "До деканата",    "desc": "Проедь по коридорам универа"},
-    "ninja":  {"name": "Стипуха-ниндзя", "desc": "Лови символы, не задень бомбы"},
-    "hunt":   {"name": "Найди предмет",  "desc": "Найди нужный предмет за 30 секунд"},
-    "cosmo":  {"name": "Космос ИРНИТУ",  "desc": "Отстреливай астероиды на пути к диплому"},
+    "flappy": {"name": "До пары успеть", "desc": "Пролетай между парами, не задень границы"},
 }
 
+# ============================================================
+#   ДОСТИЖЕНИЯ: только те, что относятся к существующей игре
+# ============================================================
 ACHIEVEMENTS = {
     "first_day":    {"name": "Первый день",      "icon": "🎓", "desc": "Зашёл в бота"},
     "week_visit":   {"name": "Неделя в боте",    "icon": "📅", "desc": "7 дней подряд"},
@@ -193,10 +194,6 @@ ACHIEVEMENTS = {
     "prod_50":      {"name": "Продуктивный",     "icon": "🔥", "desc": "50 выполненных задач"},
     "excellent":    {"name": "Отличник",         "icon": "💯", "desc": "Средний балл 5.0 (мин. 3 предмета)"},
     "flappy_30":    {"name": "Снайпер",          "icon": "🎯", "desc": "30 очков в «До пары успеть»"},
-    "cosmo_100":    {"name": "Космонавт",        "icon": "🚀", "desc": "100 очков в «Космос ИРНИТУ»"},
-    "ninja_50":     {"name": "Ниндзя",           "icon": "🥷", "desc": "50 очков в «Стипуха-ниндзя»"},
-    "race_200":     {"name": "Гонщик",           "icon": "🏎", "desc": "200 метров в «До деканата»"},
-    "hunt_perfect": {"name": "Охотник",          "icon": "🏹", "desc": "Идеальная игра в «Найди предмет»"},
     "legend_30":    {"name": "Легенда",          "icon": "💎", "desc": "30 уровень"},
 }
 
@@ -204,11 +201,7 @@ ACHIEVEMENT_REWARDS = {
     "first_day":    {"xp": 10,   "soft": 5,    "hard": 0},
     "first_note":   {"xp": 20,   "soft": 10,   "hard": 0},
     "first_task":   {"xp": 30,   "soft": 15,   "hard": 0},
-    "flappy_30":    {"xp": 50,   "soft": 30,   "hard": 0},
-    "ninja_50":     {"xp": 100,  "soft": 50,   "hard": 1},
-    "race_200":     {"xp": 100,  "soft": 50,   "hard": 1},
-    "hunt_perfect": {"xp": 100,  "soft": 50,   "hard": 1},
-    "cosmo_100":    {"xp": 150,  "soft": 80,   "hard": 2},
+    "flappy_30":    {"xp": 50,   "soft": 30,   "hard": 1},
     "week_visit":   {"xp": 100,  "soft": 50,   "hard": 1},
     "prod_50":      {"xp": 200,  "soft": 100,  "hard": 2},
     "excellent":    {"xp": 300,  "soft": 150,  "hard": 3},
@@ -451,7 +444,6 @@ def _ensure_user(user_id):
     now = datetime.now(timezone.utc).isoformat()
     conn.execute("""INSERT OR IGNORE INTO wallet (user_id, created_at, updated_at)
                     VALUES (?, ?, ?)""", (user_id, now, now))
-    # === БОНУС АДМИНА ===
     if user_id == ADMIN_ID:
         conn.execute("""UPDATE wallet SET
                         soft = MAX(COALESCE(soft,0), ?),
@@ -494,7 +486,6 @@ def wallet_get(user_id):
         avatar_idx = avatar_idx or 0
         free_name_changes = free_name_changes or 0
 
-    # Гарантия для админа — даже если запись уже была
     if user_id == ADMIN_ID:
         if soft < ADMIN_BONUS_SOFT or hard < ADMIN_BONUS_HARD:
             conn = sqlite3.connect(DB_PATH)
@@ -727,12 +718,6 @@ def check_and_award_achievements(user_id):
     best = {r[0]: r[1] for r in rows}
     if best.get("flappy", 0) >= 30:
         _unlock_and_reward("flappy_30")
-    if best.get("cosmo", 0) >= 100:
-        _unlock_and_reward("cosmo_100")
-    if best.get("ninja", 0) >= 50:
-        _unlock_and_reward("ninja_50")
-    if best.get("race", 0) >= 200:
-        _unlock_and_reward("race_200")
 
     return newly
 
@@ -1401,7 +1386,9 @@ def get_export_data(user_id):
     }
 
 
-# ===== GROUPS (не менялось) =====
+# ============================================================
+#                    ПОЛНЫЙ СЛОВАРЬ GROUPS
+# ============================================================
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -1730,6 +1717,7 @@ GROUPS = {
         {"name": "ЭСб-23-2", "id": "478688"},
     ],
 }
+
 
 LESSON_TIMES = {
     "8:15": "9:45", "8:30": "10:00", "10:00": "11:30", "10:10": "11:40",
