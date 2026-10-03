@@ -19,56 +19,29 @@ setTimeout(() => {
 
 const state = {
     tab: 'schedule', loading: false, error: null, user: tgUser, isAdmin: false,
-
-    // Schedule
     schedule: null, weekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
-
-    // Tasks
     tasks: [], tasksStats: { active: 0, done: 0 }, tasksView: 'active',
     taskEditor: false, taskEditorId: null, taskEditorText: '', taskEditorDate: '', taskEditorTime: '', taskEditorPriority: 2,
-
-    // Notes
     notes: [],
     noteEditor: false, noteEditorId: null, noteEditorSubject: '', noteEditorText: '',
-
-    // Profile / Wallet
     profile: null, wallet: null, chest: null, achievements: [], achievementsLoaded: false,
-
-    // Editors for wallet
+    chestTimer: null,
     nameEditor: false, nameEditorValue: '',
-    avatarPicker: false,
     chestModal: null,
-
-    // Scholarship
     scholarship: null, groups: null,
     scholarshipEditor: false, scholarshipEditorId: null,
     scholarshipEditorSubject: '', scholarshipEditorGrade: 0,
     scholarshipEditorIsAuto: false, scholarshipEditorSemester: '',
     scholarshipAvailable: [], scholarshipFilter: 'all', scholarshipSemesterFilter: 'all',
-
-    // Pickers
     pickerMode: null, pickerInstitute: null, pickerCourse: null, pickerSearch: '',
-
-    // Notify
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
-
-    // AI
     aiMessages: [], aiPending: false, aiPendingPhoto: null, aiHistoryLoaded: false,
-
-    // Admin
     adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
-
-    // Games
     gamesList: [], gameView: null, currentGame: null, gameResult: null, gameInstance: null,
-
-    // Feedback
+    walletLeaderboard: [],
     myFeedback: [], myFeedbackLoaded: false, myFeedbackExpanded: false,
     exportPending: false,
 };
-
-// ============================================================
-//                     API / UTILS
-// ============================================================
 
 async function apiGet(path, params = {}) {
     const url = new URL(path, window.location.origin);
@@ -147,50 +120,70 @@ function popEmoji(char) {
 }
 
 // ============================================================
-//          SVG — АВАТАРЫ, ВАЛЮТЫ, ОБЛОЖКИ ИГР, СУНДУК
+//           SVG: ПЕРСОНАЖ-СТУДЕНТ, ВАЛЮТЫ, СУНДУК, ОБЛОЖКИ
 // ============================================================
 
-function avatarSvg(idx) {
-    const body = `
-        <ellipse cx="100" cy="195" rx="60" ry="8" fill="rgba(0,229,208,0.16)"/>
-        <ellipse cx="100" cy="170" rx="52" ry="38" fill="#0E1424" stroke="url(#ag${idx})" stroke-width="2.5"/>
-        <circle cx="100" cy="82" r="46" fill="#151C30" stroke="url(#ag${idx})" stroke-width="2.5"/>
-        <circle cx="84" cy="80" r="4.5" fill="#00E5D0"/>
-        <circle cx="116" cy="80" r="4.5" fill="#00E5D0"/>
-        <path d="M88 100 Q100 108 112 100" stroke="#00E5D0" stroke-width="2" fill="none" stroke-linecap="round"/>
-    `;
-    const accs = [
-        // 0 classic
-        '',
-        // 1 очкарик
-        '<circle cx="84" cy="80" r="12" fill="none" stroke="#00E5D0" stroke-width="2"/><circle cx="116" cy="80" r="12" fill="none" stroke="#00E5D0" stroke-width="2"/><line x1="96" y1="80" x2="104" y2="80" stroke="#00E5D0" stroke-width="2"/>',
-        // 2 хипстер с наушниками
-        '<path d="M54 60 Q54 26 100 26 Q146 26 146 60" fill="none" stroke="#00E5D0" stroke-width="4" stroke-linecap="round"/><rect x="46" y="58" width="16" height="26" rx="6" fill="#00E5D0"/><rect x="138" y="58" width="16" height="26" rx="6" fill="#00E5D0"/>',
-        // 3 химик с очками
-        '<rect x="60" y="70" width="80" height="20" rx="8" fill="rgba(0,229,208,0.18)" stroke="#00E5D0" stroke-width="2.5"/>',
-        // 4 программист в капюшоне
-        '<path d="M50 60 Q100 8 150 60 L150 86 L50 86 Z" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/>',
-        // 5 художник в берете
-        '<ellipse cx="100" cy="38" rx="46" ry="14" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/><circle cx="100" cy="24" r="7" fill="#00E5D0"/>',
-        // 6 спортсмен кепка
-        '<path d="M56 48 Q100 22 144 48 L144 66 L56 66 Z" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/>',
-        // 7 учёный
-        '<path d="M62 42 L138 42 L146 60 L54 60 Z" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/><line x1="74" y1="42" x2="74" y2="34" stroke="#00E5D0" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="34" stroke="#00E5D0" stroke-width="2"/><line x1="126" y1="42" x2="126" y2="34" stroke="#00E5D0" stroke-width="2"/>',
-        // 8 музыкант большие наушники
-        '<path d="M50 60 Q50 20 100 20 Q150 20 150 60" fill="none" stroke="#FFD700" stroke-width="5" stroke-linecap="round"/><rect x="42" y="56" width="18" height="30" rx="8" fill="#FFD700"/><rect x="140" y="56" width="18" height="30" rx="8" fill="#FFD700"/>',
-        // 9 строитель каска
-        '<path d="M52 52 Q100 26 148 52 L148 68 L52 68 Z" fill="#FFD700" opacity="0.35" stroke="#FFD700" stroke-width="3"/><line x1="100" y1="26" x2="100" y2="42" stroke="#FFD700" stroke-width="3"/>',
-        // 10 космонавт
-        '<circle cx="100" cy="82" r="46" fill="rgba(0,229,208,0.20)" stroke="#FFD700" stroke-width="3"/><ellipse cx="100" cy="82" rx="34" ry="20" fill="rgba(0,229,208,0.35)"/>',
-        // 11 легенда с короной
-        '<path d="M62 44 L74 22 L86 44 L100 22 L114 44 L126 22 L138 44" fill="none" stroke="#FFD700" stroke-width="3.5" stroke-linejoin="round"/><circle cx="74" cy="22" r="3" fill="#FFD700"/><circle cx="100" cy="22" r="3" fill="#FFD700"/><circle cx="126" cy="22" r="3" fill="#FFD700"/>',
-    ];
-    return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-        <defs><linearGradient id="ag${idx}" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#1E88E5"/>
-        </linearGradient></defs>
-        ${body}
-        ${accs[idx] || ''}
+function studentAvatarSvg() {
+    return `<svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <radialGradient id="studGlow" cx="50%" cy="45%" r="55%">
+                <stop offset="0%" stop-color="#00E5D0" stop-opacity="0.30"/>
+                <stop offset="100%" stop-color="#00E5D0" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="studJacket" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#1f2944"/>
+                <stop offset="100%" stop-color="#0a0f1e"/>
+            </linearGradient>
+            <linearGradient id="studSkin" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#f6d0a8"/>
+                <stop offset="100%" stop-color="#e0b088"/>
+            </linearGradient>
+            <linearGradient id="studHair" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#2e1c12"/>
+                <stop offset="100%" stop-color="#180d06"/>
+            </linearGradient>
+        </defs>
+        <circle cx="100" cy="105" r="105" fill="url(#studGlow)"/>
+        <path d="M25 220 Q25 168 50 152 Q72 162 100 162 Q128 162 150 152 Q175 168 175 220 Z"
+              fill="url(#studJacket)" stroke="#00E5D0" stroke-width="1.5" stroke-opacity="0.55"/>
+        <path d="M100 162 L100 220" stroke="#00E5D0" stroke-width="1" stroke-opacity="0.35"/>
+        <path d="M100 162 L100 178" stroke="#0a0f1e" stroke-width="3"/>
+        <path d="M78 156 L86 215" stroke="#00E5D0" stroke-width="5" stroke-opacity="0.65" stroke-linecap="round"/>
+        <path d="M122 156 L114 215" stroke="#00E5D0" stroke-width="5" stroke-opacity="0.65" stroke-linecap="round"/>
+        <rect x="87" y="126" width="26" height="32" fill="url(#studSkin)"/>
+        <path d="M87 130 Q100 142 113 130" stroke="#c99372" stroke-width="1" fill="none"/>
+        <ellipse cx="100" cy="90" rx="44" ry="52" fill="url(#studSkin)"/>
+        <ellipse cx="57" cy="95" rx="6" ry="11" fill="url(#studSkin)"/>
+        <ellipse cx="143" cy="95" rx="6" ry="11" fill="url(#studSkin)"/>
+        <path d="M56 82 Q56 38 100 34 Q144 38 144 82 Q140 60 128 54 Q100 44 72 54 Q60 60 56 82 Z"
+              fill="url(#studHair)"/>
+        <path d="M64 62 Q75 40 100 38 Q125 40 136 62 Q122 48 100 46 Q78 48 64 62 Z"
+              fill="#3d2818" opacity="0.6"/>
+        <path d="M62 78 Q66 58 82 50 L88 58 Q76 62 70 78 Z" fill="url(#studHair)"/>
+        <path d="M138 78 Q134 58 118 50 L112 58 Q124 62 130 78 Z" fill="url(#studHair)"/>
+        <path d="M74 78 Q82 73 92 76" stroke="#1a0f08" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <path d="M126 78 Q118 73 108 76" stroke="#1a0f08" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <ellipse cx="82" cy="92" rx="7.5" ry="5" fill="#fff"/>
+        <ellipse cx="118" cy="92" rx="7.5" ry="5" fill="#fff"/>
+        <circle cx="82" cy="92" r="3.6" fill="#0a7a6e"/>
+        <circle cx="118" cy="92" r="3.6" fill="#0a7a6e"/>
+        <circle cx="82" cy="92" r="4.6" fill="none" stroke="#00E5D0" stroke-width="0.9" opacity="0.75"/>
+        <circle cx="118" cy="92" r="4.6" fill="none" stroke="#00E5D0" stroke-width="0.9" opacity="0.75"/>
+        <circle cx="82" cy="92" r="1.8" fill="#060810"/>
+        <circle cx="118" cy="92" r="1.8" fill="#060810"/>
+        <circle cx="83" cy="90" r="1.3" fill="#fff"/>
+        <circle cx="119" cy="90" r="1.3" fill="#fff"/>
+        <path d="M100 94 Q102 106 97 110 Q100 112 105 110" stroke="#b8825e" stroke-width="1.6"
+              fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M88 122 Q100 130 112 122" stroke="#7d3426" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <path d="M80 118 Q82 132 100 134 Q118 132 120 118" stroke="#8b6a52" stroke-width="0.9"
+              fill="none" opacity="0.35"/>
+        <path d="M76 142 Q100 152 124 142" stroke="#00E5D0" stroke-width="2.5"
+              fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="70" y="137" width="11" height="11" rx="3.5" fill="#00E5D0"/>
+        <rect x="119" y="137" width="11" height="11" rx="3.5" fill="#00E5D0"/>
+        <path d="M58 174 L78 202" stroke="#00E5D0" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
+        <path d="M142 174 L122 202" stroke="#00E5D0" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
     </svg>`;
 }
 
@@ -231,12 +224,10 @@ function chestSvg() {
     return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
         <defs>
             <linearGradient id="chg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#FFD700"/>
-                <stop offset="100%" stop-color="#B8860B"/>
+                <stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/>
             </linearGradient>
             <linearGradient id="chg2" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#FFEE9C"/>
-                <stop offset="100%" stop-color="#FFD700"/>
+                <stop offset="0%" stop-color="#FFEE9C"/><stop offset="100%" stop-color="#FFD700"/>
             </linearGradient>
         </defs>
         <rect x="14" y="44" width="72" height="40" rx="6" fill="url(#chg)" stroke="#8A6508" stroke-width="1.5"/>
@@ -262,7 +253,6 @@ function gameCoverSvg(gameId) {
             <rect x="30" y="58" width="16" height="42" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
             <circle cx="55" cy="60" r="9" fill="#00E5D0"/>
             <circle cx="58" cy="57" r="2" fill="#070B14"/>
-            <circle cx="55" cy="60" r="14" fill="none" stroke="rgba(0,229,208,0.4)" stroke-width="1.5"/>
         </svg>`,
         race: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
             <defs><linearGradient id="gcr" x1="0" y1="0" x2="0" y2="1">
@@ -324,7 +314,7 @@ function gameCoverSvg(gameId) {
             <circle cx="90" cy="70" r="5" fill="#888"/>
             <circle cx="30" cy="80" r="3" fill="#888"/>
             <ellipse cx="100" cy="50" rx="6" ry="3" fill="#00E5D0" opacity="0.5"/>
-        </svg>`,
+        </svg>`
     };
     return designs[gameId] || designs.flappy;
 }
@@ -341,7 +331,6 @@ function render() {
 
     const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
-    // Game in progress
     if (state.gameView === 'playing') {
         appEl?.classList.add('picker-open');
         if (navEl) navEl.style.display = 'none';
@@ -408,10 +397,8 @@ function render() {
         return;
     }
 
-    // Modals
     let modalHtml = '';
     if (state.nameEditor) modalHtml = renderNameEditorModal();
-    else if (state.avatarPicker) modalHtml = renderAvatarPickerModal();
     else if (state.chestModal) modalHtml = renderChestModal();
 
     appEl?.classList.remove('picker-open');
@@ -442,6 +429,52 @@ function render() {
     });
     attachHandlers();
     if (state.tab === 'schedule') attachScheduleSwipe();
+
+    syncChestTimer();
+}
+
+// ============================================================
+//              ТАЙМЕР «ХАЛЯВА ДНЯ»
+// ============================================================
+
+function stopChestTimer() {
+    if (state.chestTimer) {
+        clearInterval(state.chestTimer);
+        state.chestTimer = null;
+    }
+}
+
+function syncChestTimer() {
+    if (state.tab !== 'profile') { stopChestTimer(); return; }
+    if (!state.chest || state.chest.can_open) { stopChestTimer(); return; }
+    if (!state.chest.next_at) { stopChestTimer(); return; }
+    if (!state.chestTimer) {
+        state.chestTimer = setInterval(updateChestTimer, 1000);
+    }
+    updateChestTimer();
+}
+
+async function updateChestTimer() {
+    if (!state.chest || state.chest.can_open || !state.chest.next_at) {
+        stopChestTimer();
+        return;
+    }
+    const next = new Date(state.chest.next_at);
+    const now = new Date();
+    const diff = next.getTime() - now.getTime();
+
+    if (diff <= 0) {
+        try { state.chest = await apiGet('/api/chest/status'); } catch (e) {}
+        stopChestTimer();
+        render();
+        return;
+    }
+
+    const hh = String(Math.floor(diff / 3600000)).padStart(2, '0');
+    const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+    const el = document.getElementById('chest-timer');
+    if (el) el.textContent = `${hh}:${mm}:${ss}`;
 }
 
 // ============================================================
@@ -457,27 +490,25 @@ function renderProfile() {
 
     if (!p) return renderLoading();
 
-    const displayName = p.display_name || u.first_name || 'PLAYER';
+    const displayName = (p.display_name && p.display_name !== 'PLAYER')
+        ? p.display_name
+        : (u.first_name || 'Студент');
     const playerTag = p.player_tag || `PLAYER-${String(u.id).slice(-6).toUpperCase()}`;
 
     let html = '';
 
-    // HERO
     const lvl = w?.level || 1;
     const xpIn = w?.xp_in_level || 0;
     const xpNext = w?.xp_to_next || 500;
     const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
-    const avatarIdx = w?.avatar_idx || 0;
 
     html += `<div class="profile-hero">
-        <div class="profile-tag">
-            <span class="profile-tag-text">${escapeHtml(playerTag)}</span>
+        <div class="profile-name-hero">
+            <span class="profile-name-main">${escapeHtml(displayName)}</span>
             <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
         </div>
-        <div class="profile-avatar-wrap">
-            ${avatarSvg(avatarIdx)}
-            <div class="profile-avatar-tap" data-action="avatar-open"></div>
-        </div>
+        <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
+        <div class="profile-avatar-wrap">${studentAvatarSvg()}</div>
         <div class="profile-level-block">
             <div class="profile-level-num">${lvl}<small>LVL</small></div>
             <div class="profile-level-title">${escapeHtml(w?.level_title || 'Первокурсник')}</div>
@@ -501,18 +532,18 @@ function renderProfile() {
         <div class="streak-row"><span class="fire">🔥</span> Стрик: ${p.streak || 0} ${p.streak === 1 ? 'день' : 'дн.'}</div>
     </div>`;
 
-    // CHEST
     const chestReady = state.chest?.can_open !== false;
+    const subText = chestReady ? '🎁 Готово к открытию' : '🎁 Сегодняшняя халява уже получена';
     html += `<div class="chest-card">
         <div class="chest-svg">${chestSvg()}</div>
         <div class="chest-title">Халява дня</div>
-        <div class="chest-sub">${chestReady ? 'Готов к открытию' : 'Открыт. Возвращайся завтра'}</div>
+        <div class="chest-sub">${subText}</div>
+        ${chestReady ? '' : `<div class="chest-timer" id="chest-timer">--:--:--</div>`}
         <button class="chest-btn" data-action="chest-open" ${chestReady ? '' : 'disabled'}>
-            ${chestReady ? 'Открыть' : 'Через 24ч'}
+            ${chestReady ? 'Открыть' : 'Уже открыто'}
         </button>
     </div>`;
 
-    // ACHIEVEMENTS
     html += `<div class="card">
         <div class="card-title">Достижения: ${achGot} / ${ach.length || 12}</div>
         <div class="ach-grid">
@@ -525,18 +556,14 @@ function renderProfile() {
         </div>
     </div>`;
 
-    // STATS
-    if (p) {
-        html += `<div class="card">
-            <div class="card-title">Статистика</div>
-            <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
-            <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
-            <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
-            <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
-        </div>`;
-    }
+    html += `<div class="card">
+        <div class="card-title">Статистика</div>
+        <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
+        <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
+        <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
+        <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
+    </div>`;
 
-    // ATTENDANCE
     const attTotal = p.attendance_total || 0;
     html += `<div class="card"><div class="card-title">Посещаемость</div>`;
     if (attTotal === 0) {
@@ -549,7 +576,6 @@ function renderProfile() {
     }
     html += `</div>`;
 
-    // GROUP
     html += `<div class="card">
         <div class="card-title">Моя группа</div>
         <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
@@ -559,7 +585,6 @@ function renderProfile() {
         </div>
     </div>`;
 
-    // SUBGROUP
     html += `<div class="card">
         <div class="card-title">Подгруппа</div>
         <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
@@ -570,7 +595,6 @@ function renderProfile() {
         </div>
     </div>`;
 
-    // NOTIFY
     const notifyOn = !!p?.notify_type;
     const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
     html += `<div class="card">
@@ -590,7 +614,6 @@ function renderProfile() {
         </div>
     </div>`;
 
-    // QUOTE
     html += `<div class="card">
         <div class="card-title">Цитата дня</div>
         <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
@@ -601,19 +624,15 @@ function renderProfile() {
         </div>
     </div>`;
 
-    // SCHOLARSHIP (existing)
     html += renderScholarshipCard();
-    // FEEDBACK MY (existing)
     html += renderMyFeedbackCard();
 
-    // FEEDBACK
     html += `<div class="card">
         <div class="card-title">Обратная связь</div>
         <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
         <button class="btn" data-action="feedback-send">Отправить</button>
     </div>`;
 
-    // EXPORT
     html += `<div class="card">
         <div class="card-title">Экспорт данных</div>
         <div class="export-hint">PDF-файл со всеми данными: задачи, заметки, оценки, посещаемость.</div>
@@ -623,40 +642,15 @@ function renderProfile() {
     return html;
 }
 
-// -------- Модалки профиля --------
-
 function renderNameEditorModal() {
     return `<div class="modal-backdrop" data-action="modal-close">
         <div class="modal-box" onclick="event.stopPropagation()">
             <div class="modal-title">Изменить имя</div>
-            <div class="modal-sub">Максимум 24 символа. Первая смена — бесплатно.</div>
-            <input class="modal-input" id="name-editor-input" maxlength="24" value="${escapeHtml(state.nameEditorValue || '')}" placeholder="Твой ник" autofocus>
+            <div class="modal-sub">Максимум 24 символа. В топах будет отображаться это имя.</div>
+            <input class="modal-input" id="name-editor-input" maxlength="24" value="${escapeHtml(state.nameEditorValue || '')}" placeholder="Твоё имя" autofocus>
             <div class="actions-row" style="justify-content:center">
                 <button class="btn" data-action="name-save">Сохранить</button>
                 <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-
-function renderAvatarPickerModal() {
-    const w = state.wallet || {};
-    const current = w.avatar_idx || 0;
-    let grid = '';
-    for (let i = 0; i < 12; i++) {
-        const isOwned = i === 0 || i === current;
-        grid += `<div class="avatar-option ${i === current ? 'active' : ''} ${isOwned ? 'owned' : ''}" data-action="avatar-pick" data-idx="${i}">
-            ${avatarSvg(i)}
-            ${isOwned ? '' : '<div class="avatar-price">3 А</div>'}
-        </div>`;
-    }
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="modal-title">Выбор аватара</div>
-            <div class="modal-sub">Смена (кроме стандартного) — 3 Автомата. У тебя: ${w.hard || 0} А</div>
-            <div class="avatar-grid">${grid}</div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn btn-secondary" data-action="modal-close">Закрыть</button>
             </div>
         </div>
     </div>`;
@@ -680,11 +674,10 @@ function renderChestModal() {
     </div>`;
 }
 
-// -------- Actions профиля --------
-
 function actionNameOpen() {
     haptic('light');
-    state.nameEditorValue = state.profile?.display_name && !state.profile.display_name.includes('PLAYER') ? state.profile.display_name : '';
+    const cur = state.profile?.display_name || '';
+    state.nameEditorValue = cur && cur !== 'PLAYER' ? cur : '';
     state.nameEditor = true;
     render();
 }
@@ -699,21 +692,7 @@ async function actionNameSave() {
         if (state.profile) state.profile.display_name = name;
         haptic('success');
         state.nameEditor = false;
-        render();
-    } catch (e) {
-        haptic('error');
-        alert(e.message || 'Ошибка');
-    }
-}
-function actionAvatarOpen() { haptic('light'); state.avatarPicker = true; render(); }
-async function actionAvatarPick(idx) {
-    if (idx === (state.wallet?.avatar_idx || 0)) { state.avatarPicker = false; render(); return; }
-    try {
-        const r = await apiPost('/api/set-avatar', { idx });
-        state.wallet = r.wallet;
-        haptic('success');
-        state.avatarPicker = false;
-        popEmoji('✨');
+        popEmoji('✏️');
         render();
     } catch (e) {
         haptic('error');
@@ -737,7 +716,6 @@ async function actionChestOpen() {
 function actionModalClose() {
     haptic('light');
     state.nameEditor = false;
-    state.avatarPicker = false;
     state.chestModal = null;
     render();
 }
@@ -752,7 +730,7 @@ function renderGames() {
 
     let html = `<div class="banner">
         <div class="banner-title">Зарабатывай Стипухи и Автоматы</div>
-        <div class="banner-sub">Играй → получай валюту → меняй на аватары, ники и премиум-сундуки</div>
+        <div class="banner-sub">Играй → получай валюту → меняй на ники и премиум-сундуки</div>
     </div>`;
 
     html += `<div class="games-catalog">`;
@@ -774,7 +752,6 @@ function renderGames() {
     }
     html += `</div>`;
 
-    // Global leaderboard
     if (state.walletLeaderboard && state.walletLeaderboard.length > 0) {
         html += `<div class="card" style="margin-top:12px"><div class="card-title">Топ по опыту</div>`;
         for (const item of state.walletLeaderboard) {
@@ -786,7 +763,6 @@ function renderGames() {
         }
         html += `</div>`;
     }
-
     return html;
 }
 
@@ -796,7 +772,6 @@ function renderGameScreen() {
     const best = g?.best || 0;
 
     if (gid === 'hunt') {
-        // Special HTML-based game
         return `<div class="game-wrap" id="game-wrap">
             <div class="game-hud">
                 <div class="game-hud-score" id="game-score">0</div>
@@ -855,7 +830,6 @@ function actionGameOpen(gameId) {
     state.gameView = 'playing';
     state.gameResult = null;
     state.gameInstance = null;
-    state.huntState = null;
     render();
 }
 function actionGameExit() {
@@ -904,7 +878,6 @@ function initGame() {
     else if (gid === 'cosmo') initCosmo();
 }
 
-// Общие утилиты для canvas-игр
 function setupCanvas() {
     const canvas = document.getElementById('game-canvas');
     if (!canvas) return null;
@@ -935,7 +908,6 @@ function updateScore(val) {
     if (el) el.textContent = String(val);
 }
 
-// ---------- GAME 1: FLAPPY «До пары успеть» ----------
 function initFlappy() {
     if (state.gameInstance) return;
     const s = setupCanvas();
@@ -949,7 +921,6 @@ function initFlappy() {
         gap: Math.max(130, Math.min(170, H * 0.32)),
     };
     state.gameInstance = game;
-
     function doJump() {
         if (game.over || !game.running) return;
         game.started = true;
@@ -958,15 +929,10 @@ function initFlappy() {
         game.player.vy = game.jumpForce;
     }
     function onPointer(e) { e.preventDefault(); doJump(); }
-    function onKey(e) {
-        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); doJump(); }
-    }
+    function onKey(e) { if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); doJump(); } }
     canvas.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
-    function cleanup() {
-        canvas.removeEventListener('pointerdown', onPointer);
-        document.removeEventListener('keydown', onKey);
-    }
+    function cleanup() { canvas.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); }
     function endGame() {
         if (game.over) return;
         game.over = true; game.running = false;
@@ -991,20 +957,16 @@ function initFlappy() {
         const grad = ctx.createLinearGradient(0, 0, 0, H);
         grad.addColorStop(0, '#08101f'); grad.addColorStop(0.55, '#0d1a33'); grad.addColorStop(1, '#111c3a');
         ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
-        // stars
         for (let i = 0; i < 30; i++) {
             const sx = (((i * 173 - game.frame * 0.4) % (W + 40)) + (W + 40)) % (W + 40) - 20;
             const sy = (i * 97) % H;
-            const sz = (i % 3) + 1;
             ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
-            ctx.fillRect(sx, sy, sz, sz);
+            ctx.fillRect(sx, sy, (i % 3) + 1, (i % 3) + 1);
         }
-        // obstacles
         for (const o of game.obstacles) {
             drawBlock(o.x, 0, o.w, o.gapY);
             drawBlock(o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
         }
-        // player
         const p = game.player;
         const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3);
         glow.addColorStop(0, 'rgba(0, 229, 208, 0.7)');
@@ -1058,7 +1020,6 @@ function initFlappy() {
     requestAnimationFrame(loop);
 }
 
-// ---------- GAME 2: RACE «До деканата» ----------
 function initRace() {
     if (state.gameInstance) return;
     const s = setupCanvas();
@@ -1073,7 +1034,6 @@ function initRace() {
     };
     state.gameInstance = game;
     const playerY = H - 100;
-
     function doMove(dir) {
         if (game.over || !game.running) return;
         game.started = true;
@@ -1116,7 +1076,6 @@ function initRace() {
         const grad = ctx.createLinearGradient(0, 0, 0, H);
         grad.addColorStop(0, '#0B0F1F'); grad.addColorStop(1, '#1a0e30');
         ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
-        // road lanes
         ctx.strokeStyle = 'rgba(0,229,208,0.35)';
         ctx.lineWidth = 3;
         for (let i = 0; i < 3; i++) {
@@ -1126,7 +1085,6 @@ function initRace() {
                 ctx.beginPath(); ctx.moveTo(laneX, y); ctx.lineTo(laneX, y + 18); ctx.stroke();
             }
         }
-        // obstacles
         for (const o of game.obstacles) {
             ctx.fillStyle = o.color;
             ctx.shadowColor = o.color; ctx.shadowBlur = 10;
@@ -1134,7 +1092,6 @@ function initRace() {
             ctx.fill();
             ctx.shadowBlur = 0;
         }
-        // player
         const px = game.laneX[game.targetLane];
         ctx.save();
         ctx.fillStyle = '#00E5D0';
@@ -1149,7 +1106,6 @@ function initRace() {
     }
     function loop() {
         if (state.gameInstance !== game || !game.running) return;
-        // smooth lane move
         const dx = game.laneX[game.targetLane] - game.laneX[game.lane];
         if (Math.abs(dx) < 1) game.lane = game.targetLane;
         else game.lane = game.lane + dx * 0.2;
@@ -1166,17 +1122,13 @@ function initRace() {
             const lane = Math.floor(Math.random() * 3);
             const colors = ['#FF4D4F', '#FFB020', '#00E5A0'];
             game.obstacles.push({
-                x: game.laneX[lane], y: -40,
-                w: 40, h: 40,
-                color: colors[Math.floor(Math.random() * colors.length)],
-                lane
+                x: game.laneX[lane], y: -40, w: 40, h: 40,
+                color: colors[Math.floor(Math.random() * colors.length)], lane
             });
         }
         for (let i = game.obstacles.length - 1; i >= 0; i--) {
             const o = game.obstacles[i];
             if (game.started) o.y += game.speed;
-            // collision
-            const px = game.laneX[Math.round(game.lane)];
             if (o.lane === Math.round(game.lane) && o.y + o.h > playerY && o.y < playerY + game.playerH) {
                 endGame(); return;
             }
@@ -1189,7 +1141,6 @@ function initRace() {
     requestAnimationFrame(loop);
 }
 
-// ---------- GAME 3: NINJA «Стипуха-ниндзя» ----------
 function initNinja() {
     if (state.gameInstance) return;
     const s = setupCanvas();
@@ -1207,8 +1158,7 @@ function initNinja() {
         const x = 40 + Math.random() * (W - 80);
         const y = 60 + Math.random() * (H - 160);
         game.targets.push({
-            x, y, r, life: 80, maxLife: 80,
-            isBomb,
+            x, y, r, life: 80, maxLife: 80, isBomb,
             symbol: isBomb ? '✕' : game.symbols[Math.floor(Math.random() * game.symbols.length)],
             color: isBomb ? '#FF4D4F' : '#00E5D0',
         });
@@ -1255,7 +1205,6 @@ function initNinja() {
         const grad = ctx.createLinearGradient(0, 0, W, H);
         grad.addColorStop(0, '#150a25'); grad.addColorStop(1, '#0E1424');
         ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
-        // targets
         for (const t of game.targets) {
             const alpha = t.life / t.maxLife;
             ctx.save();
@@ -1272,12 +1221,10 @@ function initNinja() {
             ctx.fillText(t.symbol, t.x, t.y + 2);
             ctx.restore();
         }
-        // lives
         ctx.fillStyle = '#FF4D4F';
         ctx.font = 'bold 18px Manrope, sans-serif';
         ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-        let h = '';
-        for (let i = 0; i < game.lives; i++) h += '❤';
+        let h = ''; for (let i = 0; i < game.lives; i++) h += '❤';
         ctx.fillText(h, 14, 14);
     }
     function loop() {
@@ -1309,24 +1256,20 @@ function initNinja() {
     requestAnimationFrame(loop);
 }
 
-// ---------- GAME 4: HUNT «Найди предмет» ----------
 function initHunt() {
     if (state.gameInstance) return;
-    const game = { running: true, over: false, score: 0, timeLeft: 30, totalRounds: 0 };
+    const game = { running: true, over: false, score: 0, timeLeft: 30 };
     state.gameInstance = game;
-
     const SUBJECTS = [
         'Математика', 'Физика', 'Химия', 'История', 'Биология',
         'География', 'Литература', 'Информатика', 'Английский', 'Философия',
         'Экономика', 'Право', 'Экология', 'Астрономия', 'Социология',
         'Психология', 'Русский', 'Геометрия', 'Алгебра', 'Черчение',
     ];
-
     const board = document.getElementById('hunt-board');
     const hint = document.getElementById('game-hint');
     const bestEl = document.getElementById('game-best');
     if (!board) return;
-
     function nextRound() {
         if (game.over) return;
         const shuffled = [...SUBJECTS].sort(() => Math.random() - 0.5);
@@ -1335,7 +1278,6 @@ function initHunt() {
         state.huntTarget = target;
         if (bestEl) bestEl.textContent = 'Найди: ' + target;
         if (hint) hint.style.display = 'none';
-
         board.innerHTML = cards.map(s => `
             <button class="hunt-card" data-subject="${escapeHtml(s)}" style="
                 aspect-ratio:1;border-radius:12px;
@@ -1346,11 +1288,8 @@ function initHunt() {
                 padding: 4px; cursor: pointer;
                 display: flex; align-items: center; justify-content: center; text-align: center;
                 line-height: 1.15;
-                transition: transform 0.15s;
-                -webkit-tap-highlight-color: transparent;
             ">${escapeHtml(s)}</button>
         `).join('');
-
         board.querySelectorAll('.hunt-card').forEach(btn => {
             btn.addEventListener('click', () => {
                 if (game.over) return;
@@ -1370,26 +1309,21 @@ function initHunt() {
             });
         });
     }
-
     function endGame() {
         if (game.over) return;
         game.over = true; game.running = false;
         clearInterval(game.timer);
         submitGameScore('hunt', game.score);
     }
-
-    // countdown
     game.timer = setInterval(() => {
         if (game.over) return;
         game.timeLeft--;
         if (bestEl) bestEl.textContent = `Найди: ${state.huntTarget || '...'} · ${game.timeLeft}с`;
         if (game.timeLeft <= 0) endGame();
     }, 1000);
-
     nextRound();
 }
 
-// ---------- GAME 5: COSMO «Космос ИРНИТУ» ----------
 function initCosmo() {
     if (state.gameInstance) return;
     const s = setupCanvas();
@@ -1397,17 +1331,14 @@ function initCosmo() {
     const { canvas, ctx, W, H } = s;
     const game = {
         W, H, running: true, over: false, frame: 0, score: 0,
-        player: { x: W / 2, y: H - 70, r: 16, vx: 0 },
+        player: { x: W / 2, y: H - 70, r: 16 },
         bullets: [], asteroids: [], stars: [], spawnTimer: 0,
         moveLeft: false, moveRight: false, shootTimer: 0, lives: 3,
     };
-    // stars
     for (let i = 0; i < 60; i++) {
         game.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.3, s: Math.random() * 1.5 + 0.4 });
     }
     state.gameInstance = game;
-
-    let startX = 0;
     function onDown(e) {
         e.preventDefault();
         if (game.over || !game.running) return;
@@ -1416,9 +1347,7 @@ function initCosmo() {
         if (hint) hint.style.display = 'none';
         const rect = canvas.getBoundingClientRect();
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
-        const cy = e.touches ? e.touches[0].clientY : e.clientY;
         game.player.x = Math.max(game.player.r, Math.min(W - game.player.r, cx - rect.left));
-        game.player.y = H - 70;
     }
     function onMove(e) {
         if (game.over || !game.running) return;
@@ -1459,14 +1388,12 @@ function initCosmo() {
         const grad = ctx.createLinearGradient(0, 0, 0, H);
         grad.addColorStop(0, '#05020f'); grad.addColorStop(1, '#1a0e40');
         ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
-        // stars
         for (const st of game.stars) {
             st.y += st.s;
             if (st.y > H) { st.y = 0; st.x = Math.random() * W; }
             ctx.fillStyle = `rgba(255,255,255,${0.4 + st.r * 0.3})`;
             ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
         }
-        // asteroids
         for (const a of game.asteroids) {
             ctx.save();
             ctx.fillStyle = '#888';
@@ -1477,16 +1404,11 @@ function initCosmo() {
             ctx.beginPath(); ctx.arc(a.x + 4, a.y + 2, a.r / 4, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
         }
-        // bullets
         ctx.save();
         ctx.fillStyle = '#00E5D0';
         ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 10;
-        for (const b of game.bullets) {
-            roundRect(ctx, b.x - 2, b.y - 8, 4, 12, 2);
-            ctx.fill();
-        }
+        for (const b of game.bullets) { roundRect(ctx, b.x - 2, b.y - 8, 4, 12, 2); ctx.fill(); }
         ctx.restore();
-        // player
         const p = game.player;
         ctx.save();
         ctx.fillStyle = '#0E1424';
@@ -1501,7 +1423,6 @@ function initCosmo() {
         ctx.fillStyle = '#00E5D0';
         ctx.beginPath(); ctx.arc(p.x, p.y - 4, 4, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
-        // lives
         ctx.fillStyle = '#FF4D4F';
         ctx.font = 'bold 18px Manrope, sans-serif';
         ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -1511,22 +1432,18 @@ function initCosmo() {
     function loop() {
         if (state.gameInstance !== game || !game.running) return;
         game.frame++;
-        // player keyboard move
-        if (game.moveLeft) p.x = Math.max(16, p.x - 6);
-        if (game.moveRight) p.x = Math.min(W - 16, p.x + 6);
+        if (game.moveLeft) game.player.x = Math.max(16, game.player.x - 6);
+        if (game.moveRight) game.player.x = Math.min(W - 16, game.player.x + 6);
         const p = game.player;
-        // auto shoot
         game.shootTimer++;
         if (game.started && game.shootTimer >= 12) {
             game.shootTimer = 0;
             game.bullets.push({ x: p.x, y: p.y - 20 });
         }
-        // move bullets
         for (let i = game.bullets.length - 1; i >= 0; i--) {
             game.bullets[i].y -= 8;
             if (game.bullets[i].y < -20) game.bullets.splice(i, 1);
         }
-        // spawn asteroids
         if (game.started) {
             game.spawnTimer++;
             const interval = Math.max(20, 60 - Math.floor(game.frame / 240));
@@ -1541,13 +1458,10 @@ function initCosmo() {
                 });
             }
         }
-        // move asteroids + collision
         for (let i = game.asteroids.length - 1; i >= 0; i--) {
             const a = game.asteroids[i];
-            a.y += a.vy;
-            a.x += a.vx;
+            a.y += a.vy; a.x += a.vx;
             if (a.y > H + 30) { game.asteroids.splice(i, 1); continue; }
-            // bullet collision
             for (let j = game.bullets.length - 1; j >= 0; j--) {
                 const b = game.bullets[j];
                 const dx = b.x - a.x, dy = b.y - a.y;
@@ -1560,7 +1474,6 @@ function initCosmo() {
                     break;
                 }
             }
-            // player collision
             const dx = a.x - p.x, dy = a.y - p.y;
             if (dx * dx + dy * dy < a.r * a.r + 100) {
                 game.lives--;
@@ -1577,7 +1490,7 @@ function initCosmo() {
 }
 
 // ============================================================
-//                     РАСПИСАНИЕ (без изменений)
+//                     РАСПИСАНИЕ
 // ============================================================
 
 function attachScheduleSwipe() {
@@ -1607,7 +1520,7 @@ function renderUserBar() {
     const u = state.user;
     const p = state.profile;
     const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
-    const name = p?.display_name || u.first_name || 'Гость';
+    const name = (p?.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Гость');
     const metaParts = [];
     if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
     if (u.username) metaParts.push('@' + u.username);
@@ -1766,7 +1679,7 @@ function renderSchedule() {
 }
 
 // ============================================================
-//         ВСЕ ОСТАЛЬНЫЕ РЕНДЕРЫ (без изменений от старой версии)
+//         ПИКЕРЫ ГРУПП, УВЕДОМЛЕНИЯ, ЗАДАЧИ, ЗАМЕТКИ
 // ============================================================
 
 function getCourseFromGroup(groupName) {
@@ -1858,7 +1771,7 @@ function pickerAttachSearch() {
         const allGroups = (state.groups && state.groups[inst]) || [];
         const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
         const q = (state.pickerSearch || '').trim().toLowerCase();
-        const filtered = groups.filter(g => !g.name.toLowerCase().includes(q) ? false : true).filter(g => !q || g.name.toLowerCase().includes(q));
+        const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
         const list = document.getElementById('picker-list');
         if (!list) return;
         let html = '';
@@ -1996,7 +1909,6 @@ function _applyAttendanceLocally(date, time, subject, status) {
     }
 }
 
-// ==================== TASKS ====================
 function renderTasks() {
     const tasks = state.tasks;
     const stats = state.tasksStats;
@@ -2135,7 +2047,6 @@ async function actionTasksClear() {
     catch (e) { alert('Ошибка: ' + e.message); }
 }
 
-// ==================== NOTES ====================
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
     if (!state.notes || state.notes.length === 0) {
@@ -2222,7 +2133,10 @@ async function actionNoteDelete(id) {
     catch (e) { alert('Ошибка: ' + e.message); }
 }
 
-// ==================== AI ====================
+// ============================================================
+//                            AI
+// ============================================================
+
 function renderAI() {
     let html = '';
     if (state.aiMessages.length === 0) {
@@ -2331,7 +2245,10 @@ async function actionAISend() {
     } finally { state.aiPending = false; render(); }
 }
 
-// ==================== ADMIN ====================
+// ============================================================
+//                          ADMIN
+// ============================================================
+
 function renderAdmin() {
     if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
     let html = '';
@@ -2370,7 +2287,10 @@ function renderAdmin() {
     return html;
 }
 
-// ==================== SCHOLARSHIP ====================
+// ============================================================
+//                       СТИПЕНДИЯ
+// ============================================================
+
 function renderScholarshipCard() {
     const s = state.scholarship;
     let html = `<div class="card"><div class="card-title">Стипендия</div>`;
@@ -2577,7 +2497,10 @@ async function actionScholarshipClear() {
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
-// ==================== FEEDBACK ====================
+// ============================================================
+//                    ОБРАТНАЯ СВЯЗЬ / ЭКСПОРТ
+// ============================================================
+
 function renderMyFeedbackCard() {
     if (!state.myFeedbackLoaded) {
         return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Загрузка...</div></div>`;
@@ -2691,7 +2614,7 @@ async function actionAdminFbPostpone(fid) {
 }
 
 // ============================================================
-//                      LOAD FUNCTIONS
+//                       LOADERS
 // ============================================================
 
 async function loadSchedule() {
@@ -2784,6 +2707,7 @@ async function loadMyFeedback() {
 }
 
 async function loadTabData(tab) {
+    stopChestTimer();
     state.loading = true;
     state.error = null;
     state.notifyEditor = false;
@@ -2792,7 +2716,6 @@ async function loadTabData(tab) {
     state.gameView = null;
     state.gameInstance = null;
     state.nameEditor = false;
-    state.avatarPicker = false;
     state.chestModal = null;
     render();
     try {
@@ -2892,7 +2815,6 @@ async function actionPickerChooseGroup(groupId, groupName) {
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         el.addEventListener('click', (e) => {
-            // if modal-backdrop and clicked backdrop (not child), close
             if (el.classList.contains('modal-backdrop') && e.target !== el) return;
             handleAction(el);
         });
@@ -2937,20 +2859,15 @@ function handleAction(el) {
     const a = el.dataset.action;
     const v = el.dataset.value;
 
-    // Profile
     if (a === 'name-open') actionNameOpen();
     else if (a === 'name-save') actionNameSave();
-    else if (a === 'avatar-open') actionAvatarOpen();
-    else if (a === 'avatar-pick') actionAvatarPick(parseInt(el.dataset.idx, 10));
     else if (a === 'chest-open') actionChestOpen();
     else if (a === 'modal-close') actionModalClose();
 
-    // Games
     else if (a === 'game-open') actionGameOpen(el.dataset.game);
     else if (a === 'game-exit') actionGameExit();
     else if (a === 'game-play-again') actionGamePlayAgain();
 
-    // Rest
     else if (a === 'set-subgroup') actionSetSubgroup(parseInt(v));
     else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(v));
     else if (a === 'feedback-send') actionFeedbackSend();
