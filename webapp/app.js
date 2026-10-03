@@ -43,6 +43,10 @@ const state = {
     exportPending: false,
 };
 
+// ============================================================
+//                     API / UTILS
+// ============================================================
+
 async function apiGet(path, params = {}) {
     const url = new URL(path, window.location.origin);
     url.searchParams.set('initData', INIT_DATA);
@@ -120,70 +124,50 @@ function popEmoji(char) {
 }
 
 // ============================================================
-//           SVG: ПЕРСОНАЖ-СТУДЕНТ, ВАЛЮТЫ, СУНДУК, ОБЛОЖКИ
+//     SVG: ПЕРСОНАЖ (PNG), ВАЛЮТЫ, СУНДУК, ОБЛОЖКИ ИГР
 // ============================================================
 
+// Аватар профиля: сначала пробуем PNG, если не нашёлся — SVG-заглушка
 function studentAvatarSvg() {
-    return `<svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
+    return `<img src="assets/student.webp" alt="Студент" class="profile-avatar-img"
+        onerror="this.outerHTML = studentAvatarFallback();">`;
+}
+
+function studentAvatarFallback() {
+    return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
         <defs>
-            <radialGradient id="studGlow" cx="50%" cy="45%" r="55%">
-                <stop offset="0%" stop-color="#00E5D0" stop-opacity="0.30"/>
+            <radialGradient id="fbGlow" cx="50%" cy="45%" r="60%">
+                <stop offset="0%" stop-color="#00E5D0" stop-opacity="0.35"/>
                 <stop offset="100%" stop-color="#00E5D0" stop-opacity="0"/>
             </radialGradient>
-            <linearGradient id="studJacket" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#1f2944"/>
-                <stop offset="100%" stop-color="#0a0f1e"/>
+            <linearGradient id="fbSkin" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#eec096"/><stop offset="100%" stop-color="#c99568"/>
             </linearGradient>
-            <linearGradient id="studSkin" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#f6d0a8"/>
-                <stop offset="100%" stop-color="#e0b088"/>
+            <linearGradient id="fbHood" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#1b2540"/><stop offset="100%" stop-color="#060a12"/>
             </linearGradient>
-            <linearGradient id="studHair" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#2e1c12"/>
-                <stop offset="100%" stop-color="#180d06"/>
-            </linearGradient>
+            <radialGradient id="fbEye" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#fff"/>
+                <stop offset="40%" stop-color="#7CFFEE"/>
+                <stop offset="100%" stop-color="#00E5D0" stop-opacity="0"/>
+            </radialGradient>
         </defs>
-        <circle cx="100" cy="105" r="105" fill="url(#studGlow)"/>
-        <path d="M25 220 Q25 168 50 152 Q72 162 100 162 Q128 162 150 152 Q175 168 175 220 Z"
-              fill="url(#studJacket)" stroke="#00E5D0" stroke-width="1.5" stroke-opacity="0.55"/>
-        <path d="M100 162 L100 220" stroke="#00E5D0" stroke-width="1" stroke-opacity="0.35"/>
-        <path d="M100 162 L100 178" stroke="#0a0f1e" stroke-width="3"/>
-        <path d="M78 156 L86 215" stroke="#00E5D0" stroke-width="5" stroke-opacity="0.65" stroke-linecap="round"/>
-        <path d="M122 156 L114 215" stroke="#00E5D0" stroke-width="5" stroke-opacity="0.65" stroke-linecap="round"/>
-        <rect x="87" y="126" width="26" height="32" fill="url(#studSkin)"/>
-        <path d="M87 130 Q100 142 113 130" stroke="#c99372" stroke-width="1" fill="none"/>
-        <ellipse cx="100" cy="90" rx="44" ry="52" fill="url(#studSkin)"/>
-        <ellipse cx="57" cy="95" rx="6" ry="11" fill="url(#studSkin)"/>
-        <ellipse cx="143" cy="95" rx="6" ry="11" fill="url(#studSkin)"/>
-        <path d="M56 82 Q56 38 100 34 Q144 38 144 82 Q140 60 128 54 Q100 44 72 54 Q60 60 56 82 Z"
-              fill="url(#studHair)"/>
-        <path d="M64 62 Q75 40 100 38 Q125 40 136 62 Q122 48 100 46 Q78 48 64 62 Z"
-              fill="#3d2818" opacity="0.6"/>
-        <path d="M62 78 Q66 58 82 50 L88 58 Q76 62 70 78 Z" fill="url(#studHair)"/>
-        <path d="M138 78 Q134 58 118 50 L112 58 Q124 62 130 78 Z" fill="url(#studHair)"/>
-        <path d="M74 78 Q82 73 92 76" stroke="#1a0f08" stroke-width="3" fill="none" stroke-linecap="round"/>
-        <path d="M126 78 Q118 73 108 76" stroke="#1a0f08" stroke-width="3" fill="none" stroke-linecap="round"/>
-        <ellipse cx="82" cy="92" rx="7.5" ry="5" fill="#fff"/>
-        <ellipse cx="118" cy="92" rx="7.5" ry="5" fill="#fff"/>
-        <circle cx="82" cy="92" r="3.6" fill="#0a7a6e"/>
-        <circle cx="118" cy="92" r="3.6" fill="#0a7a6e"/>
-        <circle cx="82" cy="92" r="4.6" fill="none" stroke="#00E5D0" stroke-width="0.9" opacity="0.75"/>
-        <circle cx="118" cy="92" r="4.6" fill="none" stroke="#00E5D0" stroke-width="0.9" opacity="0.75"/>
-        <circle cx="82" cy="92" r="1.8" fill="#060810"/>
-        <circle cx="118" cy="92" r="1.8" fill="#060810"/>
-        <circle cx="83" cy="90" r="1.3" fill="#fff"/>
-        <circle cx="119" cy="90" r="1.3" fill="#fff"/>
-        <path d="M100 94 Q102 106 97 110 Q100 112 105 110" stroke="#b8825e" stroke-width="1.6"
-              fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M88 122 Q100 130 112 122" stroke="#7d3426" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-        <path d="M80 118 Q82 132 100 134 Q118 132 120 118" stroke="#8b6a52" stroke-width="0.9"
-              fill="none" opacity="0.35"/>
-        <path d="M76 142 Q100 152 124 142" stroke="#00E5D0" stroke-width="2.5"
-              fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect x="70" y="137" width="11" height="11" rx="3.5" fill="#00E5D0"/>
-        <rect x="119" y="137" width="11" height="11" rx="3.5" fill="#00E5D0"/>
-        <path d="M58 174 L78 202" stroke="#00E5D0" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
-        <path d="M142 174 L122 202" stroke="#00E5D0" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
+        <circle cx="100" cy="100" r="98" fill="url(#fbGlow)"/>
+        <path d="M20 200 Q20 155 55 145 Q75 152 100 152 Q125 152 145 145 Q180 155 180 200 Z" fill="url(#fbHood)"/>
+        <path d="M55 145 Q75 132 100 132 Q125 132 145 145" stroke="#00E5D0" stroke-width="1.2" fill="none" opacity="0.55"/>
+        <rect x="85" y="115" width="30" height="28" fill="url(#fbSkin)"/>
+        <ellipse cx="100" cy="88" rx="42" ry="50" fill="url(#fbSkin)"/>
+        <path d="M58 62 Q60 30 100 24 Q140 30 142 62 Q138 48 128 42 Q100 34 72 42 Q62 48 58 62 Z" fill="#3a2418"/>
+        <path d="M60 78 Q70 74 82 76" stroke="#0a0808" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <path d="M140 78 Q130 74 118 76" stroke="#0a0808" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <ellipse cx="82" cy="88" rx="9" ry="6" fill="#0a0d16"/>
+        <ellipse cx="118" cy="88" rx="9" ry="6" fill="#0a0d16"/>
+        <circle cx="82" cy="88" r="14" fill="url(#fbEye)"/>
+        <circle cx="118" cy="88" r="14" fill="url(#fbEye)"/>
+        <circle cx="82" cy="88" r="3" fill="#fff"/>
+        <circle cx="118" cy="88" r="3" fill="#fff"/>
+        <path d="M100 92 Q104 106 98 112 Q101 114 106 112" stroke="#a87a58" stroke-width="1.6" fill="none"/>
+        <path d="M88 120 Q100 127 112 120" stroke="#5c2a1c" stroke-width="2.4" fill="none" stroke-linecap="round"/>
     </svg>`;
 }
 
