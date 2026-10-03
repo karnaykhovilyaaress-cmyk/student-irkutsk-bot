@@ -29,10 +29,6 @@ except Exception:
     _FPDF_AVAILABLE = False
 
 
-# ============================================================
-#                      UTILITIES
-# ============================================================
-
 def clean_latex(text: str) -> str:
     if not text:
         return text
@@ -177,10 +173,6 @@ DAILY_QUOTES = [
 ]
 
 
-# ============================================================
-#                        GAMES & ACHIEVEMENTS
-# ============================================================
-
 GAMES = {
     "flappy": {"name": "До пары успеть", "desc": "Пролетай между парами, не задень стены"},
     "race":   {"name": "До деканата",    "desc": "Проедь по коридорам универа"},
@@ -206,7 +198,6 @@ ACHIEVEMENTS = {
 
 
 def calc_level(xp):
-    """Level 1: 500 XP → Lvl2; Lvl2: ещё 1000 → Lvl3 и т.д."""
     lvl = 1
     left = int(xp or 0)
     while lvl <= 30:
@@ -229,7 +220,6 @@ def level_title(lvl):
 
 
 def roll_chest_reward():
-    """Возвращает случайную награду из 'Халявы дня'."""
     r = random.random()
     if r < 0.60:
         amount = random.randint(10, 30)
@@ -244,10 +234,6 @@ def roll_chest_reward():
     else:
         return {"type": "hard", "amount": 5, "label": "+5 Автоматов (JACKPOT)"}
 
-
-# ============================================================
-#                          DATABASE
-# ============================================================
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -336,7 +322,6 @@ def init_db():
         time TEXT, subject TEXT, status TEXT, updated_at TEXT,
         UNIQUE(user_id, date, time, subject))""")
 
-    # --- Миграция старой game_scores (одиночная игра) → мультиигровая ---
     try:
         cur = conn.execute("PRAGMA table_info(game_scores)")
         cols = [r[1] for r in cur.fetchall()]
@@ -361,7 +346,6 @@ def init_db():
         plays_count INTEGER DEFAULT 0, updated_at TEXT,
         PRIMARY KEY (user_id, game_id))""")
 
-    # --- WALLET ---
     conn.execute("""CREATE TABLE IF NOT EXISTS wallet (
         user_id INTEGER PRIMARY KEY,
         xp INTEGER DEFAULT 0,
@@ -431,10 +415,6 @@ def _update_user_meta(user_id, username, first_name):
     conn.commit()
     conn.close()
 
-
-# ============================================================
-#                 WALLET / STATS / ACHIEVEMENTS
-# ============================================================
 
 def wallet_get(user_id):
     _ensure_user(user_id)
@@ -635,7 +615,6 @@ def achievement_unlock(user_id, ach_id):
 
 
 def check_and_award_achievements(user_id):
-    """Проверяет все условия, возвращает список новых достижений."""
     newly = []
     wallet = wallet_get(user_id)
     stats = stats_get(user_id)
@@ -658,7 +637,6 @@ def check_and_award_achievements(user_id):
         if achievement_unlock(user_id, "legend_30"):
             newly.append("legend_30")
 
-    # Отличник — средний 5.0 при >=3 предметах
     try:
         grades = get_grades(user_id)
         if grades and len(grades) >= 3:
@@ -669,7 +647,6 @@ def check_and_award_achievements(user_id):
     except Exception:
         pass
 
-    # Игровые ачивки
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT game_id, best_score FROM game_scores WHERE user_id=?",
                         (user_id,)).fetchall()
@@ -702,10 +679,6 @@ def wallet_leaderboard(limit=10):
     conn.close()
     return rows
 
-
-# ============================================================
-#                          CHEST
-# ============================================================
 
 def chest_status(user_id):
     wallet = wallet_get(user_id)
@@ -751,10 +724,6 @@ def chest_open(user_id):
     return reward
 
 
-# ============================================================
-#                    GAME (multi-game)
-# ============================================================
-
 def game_get_scores(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("""SELECT game_id, best_score, plays_count
@@ -799,22 +768,28 @@ def game_save_score(user_id, game_id, score):
 
 
 def game_leaderboard(game_id, limit=10):
+    """Возвращает (user_id, score, display_name, username).
+    display_name = custom_name из wallet, иначе first_name из users."""
     if game_id not in GAMES:
         return []
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("""SELECT g.user_id, g.best_score,
-                                  COALESCE(u.first_name, ''), COALESCE(u.username, '')
-                           FROM game_scores g LEFT JOIN users u ON u.user_id = g.user_id
+                                  COALESCE(u.first_name, ''),
+                                  COALESCE(u.username, ''),
+                                  COALESCE(w.custom_name, '')
+                           FROM game_scores g
+                           LEFT JOIN users u ON u.user_id = g.user_id
+                           LEFT JOIN wallet w ON w.user_id = g.user_id
                            WHERE g.game_id = ? AND g.best_score > 0
                            ORDER BY g.best_score DESC LIMIT ?""",
                         (game_id, limit)).fetchall()
     conn.close()
-    return rows
+    result = []
+    for uid, score, first_name, username, custom_name in rows:
+        display = custom_name or first_name or ''
+        result.append((uid, score, display, username))
+    return result
 
-
-# ============================================================
-#              БАЗОВЫЕ ФУНКЦИИ (без изменений)
-# ============================================================
 
 def user_exists(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -1359,10 +1334,6 @@ def get_export_data(user_id):
     }
 
 
-# ============================================================
-#                ПОЛНЫЙ СЛОВАРЬ GROUPS (все институты)
-# ============================================================
-
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -1815,10 +1786,6 @@ def _verify_webapp_init(init_data: str):
     return u.id if u else None
 
 
-# ============================================================
-#                            API
-# ============================================================
-
 async def api_schedule(request: web.Request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -2095,11 +2062,15 @@ async def api_game_info(request: web.Request):
     for gid in GAMES:
         rows = game_leaderboard(gid, 5)
         items = []
-        for i, (uid, score, first_name, username) in enumerate(rows):
-            if first_name and username: display = f"{first_name} (@{username})"
-            elif first_name: display = first_name
-            elif username: display = "@" + username
-            else: display = f"PLAYER-{str(uid)[-6:].upper()}"
+        for i, (uid, score, display_name, username) in enumerate(rows):
+            if display_name and username:
+                display = f"{display_name} (@{username})"
+            elif display_name:
+                display = display_name
+            elif username:
+                display = "@" + username
+            else:
+                display = f"PLAYER-{str(uid)[-6:].upper()}"
             items.append({
                 "rank": i + 1, "user_id": uid, "score": score,
                 "display": display, "is_me": uid == user_id,
@@ -2139,7 +2110,6 @@ async def api_game_submit(request: web.Request):
         score = 0
     result = game_save_score(user_id, game_id, score)
 
-    # Награда
     soft_reward = max(1, score // 2)
     xp_reward = max(1, score * 2)
     hard_reward = 0
@@ -2147,7 +2117,6 @@ async def api_game_submit(request: web.Request):
         hard_reward += 1
     wallet_add(user_id, xp=xp_reward, soft=soft_reward, hard=hard_reward)
 
-    # Топ-1?
     rows = game_leaderboard(game_id, 1)
     if rows and rows[0][0] == user_id and score > 0:
         wallet_add(user_id, hard=5)
@@ -2157,11 +2126,15 @@ async def api_game_submit(request: web.Request):
 
     lb_rows = game_leaderboard(game_id, 10)
     items = []
-    for i, (uid, s, first_name, username) in enumerate(lb_rows):
-        if first_name and username: display = f"{first_name} (@{username})"
-        elif first_name: display = first_name
-        elif username: display = "@" + username
-        else: display = f"PLAYER-{str(uid)[-6:].upper()}"
+    for i, (uid, s, display_name, username) in enumerate(lb_rows):
+        if display_name and username:
+            display = f"{display_name} (@{username})"
+        elif display_name:
+            display = display_name
+        elif username:
+            display = "@" + username
+        else:
+            display = f"PLAYER-{str(uid)[-6:].upper()}"
         items.append({
             "rank": i + 1, "user_id": uid, "score": s,
             "display": display, "is_me": uid == user_id,
@@ -3127,7 +3100,6 @@ async def start_webapp():
 
     app = web.Application()
 
-    # === Существующие эндпоинты ===
     app.router.add_get("/api/schedule", api_schedule)
     app.router.add_get("/api/week", api_week)
     app.router.add_get("/api/me", api_me)
@@ -3164,7 +3136,6 @@ async def start_webapp():
     app.router.add_post("/api/export", api_export)
     app.router.add_get("/api/vip", api_vip)
 
-    # === НОВЫЕ эндпоинты игры/валюты ===
     app.router.add_get("/api/wallet", api_wallet)
     app.router.add_get("/api/wallet/leaderboard", api_wallet_leaderboard)
     app.router.add_post("/api/set-name", api_set_name)
@@ -3173,7 +3144,6 @@ async def start_webapp():
     app.router.add_post("/api/chest/open", api_chest_open)
     app.router.add_get("/api/achievements", api_achievements)
 
-    # === Админ ===
     app.router.add_get("/api/admin/stats", api_admin_stats)
     app.router.add_get("/api/admin/feedback-list", api_admin_feedback_list)
     app.router.add_post("/api/admin/feedback-reply", api_admin_feedback_reply)
