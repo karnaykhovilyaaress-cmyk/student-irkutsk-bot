@@ -121,6 +121,10 @@ ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
+# === БОНУСЫ АДМИНА ===
+ADMIN_BONUS_SOFT = 1000000
+ADMIN_BONUS_HARD = 10000
+
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!")
     sys.exit(1)
@@ -196,6 +200,23 @@ ACHIEVEMENTS = {
     "legend_30":    {"name": "Легенда",          "icon": "💎", "desc": "30 уровень"},
 }
 
+ACHIEVEMENT_REWARDS = {
+    "first_day":    {"xp": 10,   "soft": 5,    "hard": 0},
+    "first_note":   {"xp": 20,   "soft": 10,   "hard": 0},
+    "first_task":   {"xp": 30,   "soft": 15,   "hard": 0},
+    "flappy_30":    {"xp": 50,   "soft": 30,   "hard": 0},
+    "ninja_50":     {"xp": 100,  "soft": 50,   "hard": 1},
+    "race_200":     {"xp": 100,  "soft": 50,   "hard": 1},
+    "hunt_perfect": {"xp": 100,  "soft": 50,   "hard": 1},
+    "cosmo_100":    {"xp": 150,  "soft": 80,   "hard": 2},
+    "week_visit":   {"xp": 100,  "soft": 50,   "hard": 1},
+    "prod_50":      {"xp": 200,  "soft": 100,  "hard": 2},
+    "excellent":    {"xp": 300,  "soft": 150,  "hard": 3},
+    "legend_30":    {"xp": 1000, "soft": 500,  "hard": 10},
+}
+
+PREMIUM_CHEST_COST = 10
+
 
 def calc_level(xp):
     lvl = 1
@@ -233,6 +254,34 @@ def roll_chest_reward():
         return {"type": "free_name", "amount": 0, "label": "Бесплатная смена ника"}
     else:
         return {"type": "hard", "amount": 5, "label": "+5 Автоматов (JACKPOT)"}
+
+
+def roll_premium_chest_reward():
+    soft_reward = 500
+    xp_reward = 1000
+    hard_reward = 0
+    bonus_label = ""
+    r = random.random()
+    if r < 0.40:
+        hard_reward = 3
+        bonus_label = "+3 Автомата"
+    elif r < 0.70:
+        hard_reward = 5
+        bonus_label = "+5 Автоматов"
+    elif r < 0.90:
+        hard_reward = 10
+        bonus_label = "+10 Автоматов"
+    else:
+        hard_reward = 25
+        bonus_label = "+25 Автоматов 🔥 JACKPOT"
+    return {
+        "type": "premium",
+        "soft": soft_reward,
+        "xp": xp_reward,
+        "hard": hard_reward,
+        "label": f"500 Стипух · 1000 XP · {bonus_label}",
+        "bonus_label": bonus_label,
+    }
 
 
 def init_db():
@@ -402,6 +451,14 @@ def _ensure_user(user_id):
     now = datetime.now(timezone.utc).isoformat()
     conn.execute("""INSERT OR IGNORE INTO wallet (user_id, created_at, updated_at)
                     VALUES (?, ?, ?)""", (user_id, now, now))
+    # === БОНУС АДМИНА ===
+    if user_id == ADMIN_ID:
+        conn.execute("""UPDATE wallet SET
+                        soft = MAX(COALESCE(soft,0), ?),
+                        hard = MAX(COALESCE(hard,0), ?),
+                        updated_at = ?
+                        WHERE user_id = ?""",
+                     (ADMIN_BONUS_SOFT, ADMIN_BONUS_HARD, now, user_id))
     conn.execute("""INSERT OR IGNORE INTO user_stats (user_id, first_seen, last_seen)
                     VALUES (?, ?, ?)""", (user_id, now, now))
     conn.commit()
@@ -436,6 +493,20 @@ def wallet_get(user_id):
         hard = hard or 0
         avatar_idx = avatar_idx or 0
         free_name_changes = free_name_changes or 0
+
+    # Гарантия для админа — даже если запись уже была
+    if user_id == ADMIN_ID:
+        if soft < ADMIN_BONUS_SOFT or hard < ADMIN_BONUS_HARD:
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute("""UPDATE wallet SET
+                            soft = MAX(soft, ?),
+                            hard = MAX(hard, ?)
+                            WHERE user_id = ?""",
+                         (ADMIN_BONUS_SOFT, ADMIN_BONUS_HARD, user_id))
+            conn.commit()
+            conn.close()
+            soft = max(soft, ADMIN_BONUS_SOFT)
+            hard = max(hard, ADMIN_BONUS_HARD)
 
     lvl, in_lvl, to_next = calc_level(xp)
     return {
@@ -619,31 +690,33 @@ def check_and_award_achievements(user_id):
     wallet = wallet_get(user_id)
     stats = stats_get(user_id)
 
-    if achievement_unlock(user_id, "first_day"):
-        newly.append("first_day")
+    def _unlock_and_reward(ach_id):
+        if not achievement_unlock(user_id, ach_id):
+            return False
+        newly.append(ach_id)
+        rw = ACHIEVEMENT_REWARDS.get(ach_id)
+        if rw:
+            wallet_add(user_id, xp=rw["xp"], soft=rw["soft"], hard=rw["hard"])
+        return True
+
+    _unlock_and_reward("first_day")
     if stats["streak"] >= 7:
-        if achievement_unlock(user_id, "week_visit"):
-            newly.append("week_visit")
+        _unlock_and_reward("week_visit")
     if stats["notes_added"] >= 1:
-        if achievement_unlock(user_id, "first_note"):
-            newly.append("first_note")
+        _unlock_and_reward("first_note")
     if stats["tasks_done"] >= 1:
-        if achievement_unlock(user_id, "first_task"):
-            newly.append("first_task")
+        _unlock_and_reward("first_task")
     if stats["tasks_done"] >= 50:
-        if achievement_unlock(user_id, "prod_50"):
-            newly.append("prod_50")
+        _unlock_and_reward("prod_50")
     if wallet["level"] >= 30:
-        if achievement_unlock(user_id, "legend_30"):
-            newly.append("legend_30")
+        _unlock_and_reward("legend_30")
 
     try:
         grades = get_grades(user_id)
         if grades and len(grades) >= 3:
             avg = sum(g[2] for g in grades) / len(grades)
             if avg >= 5.0:
-                if achievement_unlock(user_id, "excellent"):
-                    newly.append("excellent")
+                _unlock_and_reward("excellent")
     except Exception:
         pass
 
@@ -653,17 +726,13 @@ def check_and_award_achievements(user_id):
     conn.close()
     best = {r[0]: r[1] for r in rows}
     if best.get("flappy", 0) >= 30:
-        if achievement_unlock(user_id, "flappy_30"):
-            newly.append("flappy_30")
+        _unlock_and_reward("flappy_30")
     if best.get("cosmo", 0) >= 100:
-        if achievement_unlock(user_id, "cosmo_100"):
-            newly.append("cosmo_100")
+        _unlock_and_reward("cosmo_100")
     if best.get("ninja", 0) >= 50:
-        if achievement_unlock(user_id, "ninja_50"):
-            newly.append("ninja_50")
+        _unlock_and_reward("ninja_50")
     if best.get("race", 0) >= 200:
-        if achievement_unlock(user_id, "race_200"):
-            newly.append("race_200")
+        _unlock_and_reward("race_200")
 
     return newly
 
@@ -768,8 +837,6 @@ def game_save_score(user_id, game_id, score):
 
 
 def game_leaderboard(game_id, limit=10):
-    """Возвращает (user_id, score, display_name, username).
-    display_name = custom_name из wallet, иначе first_name из users."""
     if game_id not in GAMES:
         return []
     conn = sqlite3.connect(DB_PATH)
@@ -1334,6 +1401,7 @@ def get_export_data(user_id):
     }
 
 
+# ===== GROUPS (не менялось) =====
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -2008,6 +2076,37 @@ async def api_chest_open(request: web.Request):
     return web.json_response({"ok": True, "reward": reward, "wallet": wallet_get(user_id)})
 
 
+async def api_premium_chest_open(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    wallet = wallet_get(user_id)
+    if (wallet.get("hard") or 0) < PREMIUM_CHEST_COST:
+        return web.json_response({
+            "error": "need_hard",
+            "message": f"Нужно {PREMIUM_CHEST_COST} Автоматов",
+            "have": wallet.get("hard") or 0,
+        }, status=400)
+
+    if not wallet_consume_hard(user_id, PREMIUM_CHEST_COST):
+        return web.json_response({"error": "consume_failed"}, status=500)
+
+    reward = roll_premium_chest_reward()
+    wallet_add(user_id, xp=reward["xp"], soft=reward["soft"], hard=reward["hard"])
+
+    check_and_award_achievements(user_id)
+    return web.json_response({
+        "ok": True,
+        "reward": reward,
+        "wallet": wallet_get(user_id),
+    })
+
+
 async def api_achievements(request: web.Request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -2021,6 +2120,7 @@ async def api_achievements(request: web.Request):
         items.append({
             "id": aid, "name": meta["name"], "icon": meta["icon"], "desc": meta["desc"],
             "unlocked": aid in unlocked, "unlocked_at": unlocked.get(aid),
+            "reward": ACHIEVEMENT_REWARDS.get(aid, {"xp": 0, "soft": 0, "hard": 0}),
         })
     return web.json_response({"items": items, "total": len(ACHIEVEMENTS), "got": len(unlocked)})
 
@@ -3142,6 +3242,7 @@ async def start_webapp():
     app.router.add_post("/api/set-avatar", api_set_avatar)
     app.router.add_get("/api/chest/status", api_chest_status)
     app.router.add_post("/api/chest/open", api_chest_open)
+    app.router.add_post("/api/premium-chest/open", api_premium_chest_open)
     app.router.add_get("/api/achievements", api_achievements)
 
     app.router.add_get("/api/admin/stats", api_admin_stats)
