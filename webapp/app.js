@@ -1028,7 +1028,7 @@ function initFlappy() {
     canvas.height = Math.floor(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // ============ ЗВЁЗДНЫЙ ФОН (pre-render один раз) ============
+    // ============ ЗВЁЗДНЫЙ ФОН ============
     const starCanvas = document.createElement('canvas');
     starCanvas.width = Math.floor(W * dpr);
     starCanvas.height = Math.floor(H * dpr);
@@ -1065,10 +1065,10 @@ function initFlappy() {
     }
 
     // ============ ПАРАМЕТРЫ ============
-    const GAP = 145;
-    const MIN_GAP = 118;
+    const GAP = 138;
+    const MIN_GAP = 112;
     const COL_W = 58;
-    const SPAWN_INTERVAL = 78;
+    const SPAWN_INTERVAL = 80;
     const MIN_SPAWN_INTERVAL = 60;
 
     const game = {
@@ -1083,8 +1083,8 @@ function initFlappy() {
         gravity: 0.55,
         jumpForce: -8.0,
         maxFallSpeed: 10.5,
-        speed: 2.9,
-        maxSpeed: 5.8,
+        speed: 4.0,
+        maxSpeed: 8.2,
         gap: GAP,
         minGap: MIN_GAP,
         lastFrameTime: 0,
@@ -1182,8 +1182,8 @@ function initFlappy() {
 
     function updateDifficulty() {
         const s = game.score;
-        game.speed = Math.min(game.maxSpeed, 2.9 + Math.floor(s / 6) * 0.18);
-        game.spawnInterval = Math.max(game.minSpawnInterval, SPAWN_INTERVAL - Math.floor(s / 4) * 1.5);
+        game.speed = Math.min(game.maxSpeed, 4.0 + Math.floor(s / 5) * 0.25);
+        game.spawnInterval = Math.max(game.minSpawnInterval, SPAWN_INTERVAL - Math.floor(s / 4) * 2);
         game.gap = Math.max(game.minGap, GAP - Math.floor(s / 8) * 2);
     }
 
