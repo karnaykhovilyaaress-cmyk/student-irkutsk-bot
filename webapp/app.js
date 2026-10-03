@@ -28,6 +28,10 @@ const state = {
     chestTimer: null,
     nameEditor: false, nameEditorValue: '',
     chestModal: null,
+    achModal: null,
+    levelInfoModal: false,
+    premiumModal: null,
+    newAchToast: null,
     scholarship: null, groups: null,
     scholarshipEditor: false, scholarshipEditorId: null,
     scholarshipEditorSubject: '', scholarshipEditorGrade: 0,
@@ -42,10 +46,6 @@ const state = {
     myFeedback: [], myFeedbackLoaded: false, myFeedbackExpanded: false,
     exportPending: false,
 };
-
-// ============================================================
-//                     API / UTILS
-// ============================================================
 
 async function apiGet(path, params = {}) {
     const url = new URL(path, window.location.origin);
@@ -124,10 +124,9 @@ function popEmoji(char) {
 }
 
 // ============================================================
-//     SVG: ПЕРСОНАЖ (PNG), ВАЛЮТЫ, СУНДУК, ОБЛОЖКИ ИГР
+//          SVG: ПЕРСОНАЖ (PNG), ВАЛЮТЫ, СУНДУК, ОБЛОЖКИ
 // ============================================================
 
-// Аватар профиля: сначала пробуем PNG, если не нашёлся — SVG-заглушка
 function studentAvatarSvg() {
     return `<img src="assets/student.webp" alt="Студент" class="profile-avatar-img"
         onerror="this.outerHTML = studentAvatarFallback();">`;
@@ -384,6 +383,10 @@ function render() {
     let modalHtml = '';
     if (state.nameEditor) modalHtml = renderNameEditorModal();
     else if (state.chestModal) modalHtml = renderChestModal();
+    else if (state.premiumModal) modalHtml = renderPremiumModal();
+    else if (state.achModal) modalHtml = renderAchModal();
+    else if (state.levelInfoModal) modalHtml = renderLevelInfoModal();
+    else if (state.newAchToast) modalHtml = renderNewAchToast();
 
     appEl?.classList.remove('picker-open');
     if (navEl) navEl.style.display = '';
@@ -493,9 +496,10 @@ function renderProfile() {
         </div>
         <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
         <div class="profile-avatar-wrap">${studentAvatarSvg()}</div>
-        <div class="profile-level-block">
+        <div class="profile-level-block" data-action="level-info-open">
             <div class="profile-level-num">${lvl}<small>LVL</small></div>
             <div class="profile-level-title">${escapeHtml(w?.level_title || 'Первокурсник')}</div>
+            <div class="profile-level-hint">Как получать XP?</div>
         </div>
         <div class="xp-bar-wrap">
             <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
@@ -528,11 +532,29 @@ function renderProfile() {
         </button>
     </div>`;
 
+    const hardHave = w?.hard || 0;
+    const canPremium = hardHave >= 10;
+    html += `<div class="premium-chest-card">
+        <div class="premium-chest-crown">👑</div>
+        <div class="premium-chest-title">Премиум сундук</div>
+        <div class="premium-chest-sub">Стоимость: <strong>10 Автоматов</strong> · у тебя: ${hardHave}</div>
+        <div class="premium-chest-preview">
+            <div class="premium-chest-item">💰 500 Стипух · ⚡ 1000 XP</div>
+            <div class="premium-chest-item">🎁 Бонус: 3 / 5 / 10 / 25 Автоматов</div>
+        </div>
+        <button class="premium-chest-btn" data-action="premium-open" ${canPremium ? '' : 'disabled'}>
+            ${canPremium ? 'Открыть за 10 Автоматов' : 'Нужно 10 Автоматов'}
+        </button>
+    </div>`;
+
     html += `<div class="card">
         <div class="card-title">Достижения: ${achGot} / ${ach.length || 12}</div>
         <div class="ach-grid">
             ${ach.length === 0 ? '<div class="card-subtitle">Загрузка...</div>' : ach.map(a => `
-                <div class="ach-item ${a.unlocked ? 'unlocked' : ''}" title="${escapeHtml(a.name)} — ${escapeHtml(a.desc)}">
+                <div class="ach-item ${a.unlocked ? 'unlocked' : ''}"
+                     data-action="ach-open"
+                     data-id="${escapeHtml(a.id)}"
+                     title="${escapeHtml(a.name)} — ${escapeHtml(a.desc)}">
                     <div class="ach-emoji">${a.icon}</div>
                     <div class="ach-name">${escapeHtml(a.name)}</div>
                 </div>
@@ -658,6 +680,182 @@ function renderChestModal() {
     </div>`;
 }
 
+function renderPremiumModal() {
+    const r = state.premiumModal;
+    if (!r) return '';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="reward-reveal" style="padding-top:14px">
+                <div class="reward-icon">👑</div>
+                <div class="reward-premium-label">ПРЕМИУМ СУНДУК</div>
+            </div>
+            <div class="reward-premium-list">
+                <div class="reward-premium-row">
+                    <span>💰 Стипухи</span>
+                    <span class="val">+${r.soft || 0}</span>
+                </div>
+                <div class="reward-premium-row">
+                    <span>⚡ Опыт</span>
+                    <span class="val">+${r.xp || 0} XP</span>
+                </div>
+                <div class="reward-premium-row">
+                    <span>🏅 Бонус</span>
+                    <span class="val gold">${escapeHtml(r.bonus_label || '—')}</span>
+                </div>
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Круто!</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderNewAchToast() {
+    const list = state.newAchToast || [];
+    if (list.length === 0) return '';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">🎉 Новое достижение!</div>
+            <div class="info-modal-sub">${list.length > 1 ? `Открыто сразу ${list.length}:` : 'Ты только что получил:'}</div>
+            <div class="ach-toast-list">
+                ${list.map(a => `
+                    <div class="ach-toast-item">
+                        <div class="ach-toast-icon">${a.icon}</div>
+                        <div class="ach-toast-body">
+                            <div class="ach-toast-name">${escapeHtml(a.name)}</div>
+                            <div class="ach-toast-reward">${escapeHtml(a.rewardText)}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Отлично!</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderLevelInfoModal() {
+    const w = state.wallet || {};
+    const lvl = w.level || 1;
+    const xpIn = w.xp_in_level || 0;
+    const xpNext = w.xp_to_next || 500;
+    const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
+
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Уровни и опыт</div>
+            <div class="info-modal-sub">Как растёт уровень и за что дают XP</div>
+
+            <div class="info-current">
+                <div class="info-current-lvl">${lvl}<small>LVL</small></div>
+                <div class="info-current-info">
+                    <div class="info-current-name">${escapeHtml(w.level_title || 'Первокурсник')}</div>
+                    <div class="info-current-xp">${xpIn} / ${xpNext} XP</div>
+                </div>
+            </div>
+
+            <div class="info-xp-bar"><div class="info-xp-fill" style="width:${xpPct}%"></div></div>
+
+            <div class="info-section">
+                <div class="info-section-title">За что дают опыт</div>
+                <div class="info-row"><span class="info-row-label">Задача добавлена</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Задача выполнена</span><span class="info-row-value">+20 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Заметка</span><span class="info-row-value">+3 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Оценка в стипендию</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Отметка посещаемости</span><span class="info-row-value">+3 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+2 XP</span></div>
+                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Игра: 1 очко</span><span class="info-row-value">+2 XP</span></div>
+            </div>
+
+            <div class="info-section">
+                <div class="info-section-title">Формула уровня</div>
+                <div class="info-row"><span class="info-row-label">1 → 2 уровень</span><span class="info-row-value muted">500 XP</span></div>
+                <div class="info-row"><span class="info-row-label">2 → 3 уровень</span><span class="info-row-value muted">1000 XP</span></div>
+                <div class="info-row"><span class="info-row-label">3 → 4 уровень</span><span class="info-row-value muted">1500 XP</span></div>
+                <div class="info-row"><span class="info-row-label">N → N+1 уровень</span><span class="info-row-value">N × 500 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Максимум</span><span class="info-row-value gold">30 LVL</span></div>
+            </div>
+
+            <div class="info-section">
+                <div class="info-section-title">Титулы</div>
+                <div class="info-row"><span class="info-row-label">1–5 уровень</span><span class="info-row-value muted">Первокурсник</span></div>
+                <div class="info-row"><span class="info-row-label">6–10 уровень</span><span class="info-row-value muted">Второкурсник</span></div>
+                <div class="info-row"><span class="info-row-label">11–15 уровень</span><span class="info-row-value muted">Третьекурсник</span></div>
+                <div class="info-row"><span class="info-row-label">16–20 уровень</span><span class="info-row-value muted">Старшекурсник</span></div>
+                <div class="info-row"><span class="info-row-label">21–25 уровень</span><span class="info-row-value muted">Магистрант</span></div>
+                <div class="info-row"><span class="info-row-label">26–29 уровень</span><span class="info-row-value muted">Аспирант</span></div>
+                <div class="info-row"><span class="info-row-label">30 уровень</span><span class="info-row-value gold">Легенда ИРНИТУ</span></div>
+            </div>
+
+            <div class="actions-row" style="justify-content:center;margin-top:20px">
+                <button class="btn" data-action="modal-close">Понятно</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderAchModal() {
+    const achId = state.achModal;
+    if (!achId) return '';
+    const item = (state.achievements || []).find(a => a.id === achId);
+    if (!item) return '';
+
+    const status = item.unlocked
+        ? '<span class="info-ach-badge unlocked">Получено</span>'
+        : '<span class="info-ach-badge locked">Ещё не открыто</span>';
+
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-ach-hero">
+                <div class="info-ach-icon ${item.unlocked ? '' : 'locked'}">${item.icon}</div>
+                <div class="info-ach-name">${escapeHtml(item.name)}</div>
+                ${status}
+            </div>
+            <div class="info-ach-desc">${escapeHtml(item.desc)}</div>
+            ${item.reward && (item.reward.xp || item.reward.soft || item.reward.hard) ? `
+                <div class="info-section" style="margin-top:14px">
+                    <div class="info-section-title">Награда за достижение</div>
+                    ${item.reward.xp ? `<div class="info-row"><span class="info-row-label">⚡ Опыт</span><span class="info-row-value">+${item.reward.xp} XP</span></div>` : ''}
+                    ${item.reward.soft ? `<div class="info-row"><span class="info-row-label">💰 Стипухи</span><span class="info-row-value">+${item.reward.soft}</span></div>` : ''}
+                    ${item.reward.hard ? `<div class="info-row"><span class="info-row-label">🏅 Автоматы</span><span class="info-row-value gold">+${item.reward.hard}</span></div>` : ''}
+                </div>
+            ` : ''}
+            ${item.unlocked ? '' : `
+                <div class="info-ach-hint">Продолжай пользоваться приложением — достижение откроется автоматически, когда выполнишь условие. Награда зачислится сразу.</div>
+            `}
+            <div class="actions-row" style="justify-content:center;margin-top:18px">
+                <button class="btn" data-action="modal-close">Закрыть</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function showNewAchievements(newIds) {
+    if (!newIds || newIds.length === 0) return;
+    const achList = state.achievements || [];
+    const items = [];
+    for (const id of newIds) {
+        const meta = achList.find(a => a.id === id);
+        if (!meta) continue;
+        const rw = meta.reward || {};
+        const parts = [];
+        if (rw.xp) parts.push(`+${rw.xp} XP`);
+        if (rw.soft) parts.push(`+${rw.soft} 💰`);
+        if (rw.hard) parts.push(`+${rw.hard} 🏅`);
+        items.push({
+            name: meta.name,
+            icon: meta.icon,
+            rewardText: parts.length > 0 ? `Награда: ${parts.join(' · ')}` : 'Без награды',
+        });
+    }
+    if (items.length === 0) return;
+    state.newAchToast = items;
+    haptic('success');
+    popEmoji('🏆');
+}
+
 function actionNameOpen() {
     haptic('light');
     const cur = state.profile?.display_name || '';
@@ -697,10 +895,39 @@ async function actionChestOpen() {
         alert(e.message || 'Сундук уже открыт');
     }
 }
+async function actionPremiumOpen() {
+    haptic('light');
+    try {
+        const r = await apiPost('/api/premium-chest/open');
+        state.wallet = r.wallet;
+        state.premiumModal = r.reward;
+        haptic('success');
+        popEmoji('👑');
+        await loadAchievements();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert(e.message || 'Не хватает автоматов');
+    }
+}
+function actionLevelInfoOpen() {
+    haptic('light');
+    state.levelInfoModal = true;
+    render();
+}
+function actionAchOpen(achId) {
+    haptic('light');
+    state.achModal = achId;
+    render();
+}
 function actionModalClose() {
     haptic('light');
     state.nameEditor = false;
     state.chestModal = null;
+    state.achModal = null;
+    state.levelInfoModal = false;
+    state.premiumModal = null;
+    state.newAchToast = null;
     render();
 }
 
@@ -1503,16 +1730,19 @@ function attachScheduleSwipe() {
 function renderUserBar() {
     const u = state.user;
     const p = state.profile;
-    const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
     const name = (p?.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Гость');
     const metaParts = [];
     if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
     if (u.username) metaParts.push('@' + u.username);
     const meta = metaParts.join(' · ') || 'профиль не заполнен';
     const tasks = p?.tasks_active ?? 0;
+    const firstLetter = (u.first_name?.[0] || '?').toUpperCase();
     return `
         <div class="user-bar" data-action="go-profile">
-            <div class="user-bar-avatar">${escapeHtml(initials)}</div>
+            <div class="user-bar-avatar">
+                <img src="assets/student.webp" alt=""
+                     onerror="this.outerHTML='${escapeHtml(firstLetter)}'">
+            </div>
             <div class="user-bar-info">
                 <div class="user-bar-name">${escapeHtml(name)}</div>
                 <div class="user-bar-meta">${escapeHtml(meta)}</div>
@@ -1663,7 +1893,7 @@ function renderSchedule() {
 }
 
 // ============================================================
-//         ПИКЕРЫ ГРУПП, УВЕДОМЛЕНИЯ, ЗАДАЧИ, ЗАМЕТКИ
+//         ПИКЕРЫ ГРУПП / УВЕДОМЛЕНИЯ / ЗАДАЧИ / ЗАМЕТКИ
 // ============================================================
 
 function getCourseFromGroup(groupName) {
@@ -2017,7 +2247,12 @@ async function actionTaskDone(id) {
         const r = await apiPost('/api/task-update', { id, done: true });
         haptic('success'); popEmoji('✅');
         if (r.wallet) state.wallet = r.wallet;
-        await loadTasks(); render();
+        await loadTasks();
+        if (r.new_achievements && r.new_achievements.length > 0) {
+            await loadAchievements();
+            showNewAchievements(r.new_achievements);
+        }
+        render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionTaskDelete(id) {
@@ -2094,10 +2329,15 @@ async function actionNoteEditorSave() {
     if (!subject) { alert('Введи название предмета'); return; }
     if (!text) { alert('Введи текст заметки'); return; }
     try {
-        await apiPost('/api/note-save', { subject, text });
+        const r = await apiPost('/api/note-save', { subject, text });
         haptic('success');
         state.noteEditor = false; state.noteEditorId = null;
-        await loadNotes(); await loadWallet();
+        if (r.wallet) state.wallet = r.wallet;
+        await loadNotes();
+        if (r.new_achievements && r.new_achievements.length > 0) {
+            await loadAchievements();
+            showNewAchievements(r.new_achievements);
+        }
         render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
@@ -2447,7 +2687,9 @@ async function actionScholarshipSave() {
         }
         haptic('success');
         state.scholarshipEditor = false; state.scholarshipEditorId = null;
-        await loadScholarship(); await loadWallet();
+        await loadScholarship();
+        await loadWallet();
+        await loadAchievements();
         render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
@@ -2701,6 +2943,10 @@ async function loadTabData(tab) {
     state.gameInstance = null;
     state.nameEditor = false;
     state.chestModal = null;
+    state.achModal = null;
+    state.levelInfoModal = false;
+    state.premiumModal = null;
+    state.newAchToast = null;
     render();
     try {
         if (tab === 'schedule') {
@@ -2844,6 +3090,9 @@ function handleAction(el) {
     const v = el.dataset.value;
 
     if (a === 'name-open') actionNameOpen();
+    else if (a === 'level-info-open') actionLevelInfoOpen();
+    else if (a === 'ach-open') actionAchOpen(el.dataset.id);
+    else if (a === 'premium-open') actionPremiumOpen();
     else if (a === 'name-save') actionNameSave();
     else if (a === 'chest-open') actionChestOpen();
     else if (a === 'modal-close') actionModalClose();
