@@ -3175,11 +3175,22 @@ async def start_webapp():
         async def favicon_handler(request):
             return web.Response(status=204)
 
+        async def asset_handler(request):
+            name = request.match_info.get("name", "")
+            safe_name = os.path.basename(name)
+            if not safe_name or safe_name.startswith("."):
+                return web.Response(status=404)
+            path = os.path.join(webapp_dir, "assets", safe_name)
+            if os.path.isfile(path):
+                return web.FileResponse(path)
+            return web.Response(status=404)
+
         app.router.add_get("/", index_handler)
         app.router.add_get("/index.html", index_handler)
         app.router.add_get("/style.css", style_handler)
         app.router.add_get("/app.js", appjs_handler)
         app.router.add_get("/favicon.ico", favicon_handler)
+        app.router.add_get("/assets/{name}", asset_handler)
     else:
         logging.warning("[WEB] папка webapp не найдена")
         async def root(request):
