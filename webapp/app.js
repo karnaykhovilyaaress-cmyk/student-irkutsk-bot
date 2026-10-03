@@ -19,24 +19,56 @@ setTimeout(() => {
 
 const state = {
     tab: 'schedule', loading: false, error: null, user: tgUser, isAdmin: false,
+
+    // Schedule
     schedule: null, weekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
+
+    // Tasks
     tasks: [], tasksStats: { active: 0, done: 0 }, tasksView: 'active',
     taskEditor: false, taskEditorId: null, taskEditorText: '', taskEditorDate: '', taskEditorTime: '', taskEditorPriority: 2,
+
+    // Notes
     notes: [],
     noteEditor: false, noteEditorId: null, noteEditorSubject: '', noteEditorText: '',
-    profile: null, scholarship: null, groups: null,
+
+    // Profile / Wallet
+    profile: null, wallet: null, chest: null, achievements: [], achievementsLoaded: false,
+
+    // Editors for wallet
+    nameEditor: false, nameEditorValue: '',
+    avatarPicker: false,
+    chestModal: null,
+
+    // Scholarship
+    scholarship: null, groups: null,
     scholarshipEditor: false, scholarshipEditorId: null,
     scholarshipEditorSubject: '', scholarshipEditorGrade: 0,
     scholarshipEditorIsAuto: false, scholarshipEditorSemester: '',
     scholarshipAvailable: [], scholarshipFilter: 'all', scholarshipSemesterFilter: 'all',
+
+    // Pickers
     pickerMode: null, pickerInstitute: null, pickerCourse: null, pickerSearch: '',
+
+    // Notify
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
+
+    // AI
     aiMessages: [], aiPending: false, aiPendingPhoto: null, aiHistoryLoaded: false,
+
+    // Admin
     adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
-    gameView: null, gameInfo: null, gameResult: null, gameInstance: null,
+
+    // Games
+    gamesList: [], gameView: null, currentGame: null, gameResult: null, gameInstance: null,
+
+    // Feedback
     myFeedback: [], myFeedbackLoaded: false, myFeedbackExpanded: false,
     exportPending: false,
 };
+
+// ============================================================
+//                     API / UTILS
+// ============================================================
 
 async function apiGet(path, params = {}) {
     const url = new URL(path, window.location.origin);
@@ -71,7 +103,6 @@ function escapeHtml(s) {
 }
 function renderEmpty(text) { return `<div class="empty">${escapeHtml(text)}</div>`; }
 function renderLoading() { return `<div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>`; }
-
 function priorityLabel(p) {
     if (p === 3) return '<span class="priority priority-high">Высокий</span>';
     if (p === 2) return '<span class="priority priority-medium">Средний</span>';
@@ -86,7 +117,6 @@ function haptic(type = 'light') {
     } catch (e) {}
 }
 function formatNotifyTime(hh, mm) { return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; }
-
 function displayToISO(display) {
     if (!display) return '';
     const parts = String(display).split('.');
@@ -102,15 +132,206 @@ function isoToDisplay(iso) {
     const [yyyy, mm, dd] = parts;
     return `${dd}.${mm}.${yyyy}`;
 }
-
 function currentSemester() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const now = new Date(); const year = now.getFullYear(); const month = now.getMonth();
     if (month >= 8) return `Осень ${year}`;
     if (month === 0) return `Осень ${year - 1}`;
     return `Весна ${year}`;
 }
+function popEmoji(char) {
+    const el = document.createElement('div');
+    el.textContent = char;
+    el.style.cssText = 'position:fixed;top:50%;left:50%;font-size:56px;transform:translate(-50%,-50%);animation:pop 0.6s ease-out;z-index:99999;pointer-events:none';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 600);
+}
+
+// ============================================================
+//          SVG — АВАТАРЫ, ВАЛЮТЫ, ОБЛОЖКИ ИГР, СУНДУК
+// ============================================================
+
+function avatarSvg(idx) {
+    const body = `
+        <ellipse cx="100" cy="195" rx="60" ry="8" fill="rgba(0,229,208,0.16)"/>
+        <ellipse cx="100" cy="170" rx="52" ry="38" fill="#0E1424" stroke="url(#ag${idx})" stroke-width="2.5"/>
+        <circle cx="100" cy="82" r="46" fill="#151C30" stroke="url(#ag${idx})" stroke-width="2.5"/>
+        <circle cx="84" cy="80" r="4.5" fill="#00E5D0"/>
+        <circle cx="116" cy="80" r="4.5" fill="#00E5D0"/>
+        <path d="M88 100 Q100 108 112 100" stroke="#00E5D0" stroke-width="2" fill="none" stroke-linecap="round"/>
+    `;
+    const accs = [
+        // 0 classic
+        '',
+        // 1 очкарик
+        '<circle cx="84" cy="80" r="12" fill="none" stroke="#00E5D0" stroke-width="2"/><circle cx="116" cy="80" r="12" fill="none" stroke="#00E5D0" stroke-width="2"/><line x1="96" y1="80" x2="104" y2="80" stroke="#00E5D0" stroke-width="2"/>',
+        // 2 хипстер с наушниками
+        '<path d="M54 60 Q54 26 100 26 Q146 26 146 60" fill="none" stroke="#00E5D0" stroke-width="4" stroke-linecap="round"/><rect x="46" y="58" width="16" height="26" rx="6" fill="#00E5D0"/><rect x="138" y="58" width="16" height="26" rx="6" fill="#00E5D0"/>',
+        // 3 химик с очками
+        '<rect x="60" y="70" width="80" height="20" rx="8" fill="rgba(0,229,208,0.18)" stroke="#00E5D0" stroke-width="2.5"/>',
+        // 4 программист в капюшоне
+        '<path d="M50 60 Q100 8 150 60 L150 86 L50 86 Z" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/>',
+        // 5 художник в берете
+        '<ellipse cx="100" cy="38" rx="46" ry="14" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/><circle cx="100" cy="24" r="7" fill="#00E5D0"/>',
+        // 6 спортсмен кепка
+        '<path d="M56 48 Q100 22 144 48 L144 66 L56 66 Z" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/>',
+        // 7 учёный
+        '<path d="M62 42 L138 42 L146 60 L54 60 Z" fill="#0E1424" stroke="url(#ag'+idx+')" stroke-width="2.5"/><line x1="74" y1="42" x2="74" y2="34" stroke="#00E5D0" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="34" stroke="#00E5D0" stroke-width="2"/><line x1="126" y1="42" x2="126" y2="34" stroke="#00E5D0" stroke-width="2"/>',
+        // 8 музыкант большие наушники
+        '<path d="M50 60 Q50 20 100 20 Q150 20 150 60" fill="none" stroke="#FFD700" stroke-width="5" stroke-linecap="round"/><rect x="42" y="56" width="18" height="30" rx="8" fill="#FFD700"/><rect x="140" y="56" width="18" height="30" rx="8" fill="#FFD700"/>',
+        // 9 строитель каска
+        '<path d="M52 52 Q100 26 148 52 L148 68 L52 68 Z" fill="#FFD700" opacity="0.35" stroke="#FFD700" stroke-width="3"/><line x1="100" y1="26" x2="100" y2="42" stroke="#FFD700" stroke-width="3"/>',
+        // 10 космонавт
+        '<circle cx="100" cy="82" r="46" fill="rgba(0,229,208,0.20)" stroke="#FFD700" stroke-width="3"/><ellipse cx="100" cy="82" rx="34" ry="20" fill="rgba(0,229,208,0.35)"/>',
+        // 11 легенда с короной
+        '<path d="M62 44 L74 22 L86 44 L100 22 L114 44 L126 22 L138 44" fill="none" stroke="#FFD700" stroke-width="3.5" stroke-linejoin="round"/><circle cx="74" cy="22" r="3" fill="#FFD700"/><circle cx="100" cy="22" r="3" fill="#FFD700"/><circle cx="126" cy="22" r="3" fill="#FFD700"/>',
+    ];
+    return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="ag${idx}" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#1E88E5"/>
+        </linearGradient></defs>
+        ${body}
+        ${accs[idx] || ''}
+    </svg>`;
+}
+
+function softIconSvg() {
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <defs><radialGradient id="sfi" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#7CFFEE"/>
+            <stop offset="55%" stop-color="#00E5D0"/>
+            <stop offset="100%" stop-color="#0A9B8E"/>
+        </radialGradient></defs>
+        <circle cx="32" cy="32" r="26" fill="url(#sfi)" stroke="#00B8A8" stroke-width="2"/>
+        <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.2"/>
+        <text x="32" y="38" font-family="Manrope, sans-serif" font-size="22" font-weight="900" fill="#070B14" text-anchor="middle">₽</text>
+        <circle cx="14" cy="20" r="2" fill="#7CFFEE"/>
+        <circle cx="50" cy="22" r="1.6" fill="#7CFFEE"/>
+        <circle cx="16" cy="46" r="1.6" fill="#7CFFEE"/>
+        <circle cx="48" cy="44" r="2" fill="#7CFFEE"/>
+    </svg>`;
+}
+
+function hardIconSvg() {
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <defs><radialGradient id="hri" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#FFEE9C"/>
+            <stop offset="55%" stop-color="#FFD700"/>
+            <stop offset="100%" stop-color="#B8860B"/>
+        </radialGradient></defs>
+        <circle cx="32" cy="32" r="26" fill="url(#hri)" stroke="#8A6508" stroke-width="2"/>
+        <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.4"/>
+        <text x="32" y="41" font-family="Manrope, sans-serif" font-size="26" font-weight="900" fill="#3D2600" text-anchor="middle">A</text>
+        <path d="M10 20 Q6 32 10 44" stroke="#FFEE9C" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M54 20 Q58 32 54 44" stroke="#FFEE9C" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M24 8 L28 4 L32 8 L36 4 L40 8" stroke="#FFEE9C" stroke-width="1.8" fill="none" stroke-linejoin="round"/>
+    </svg>`;
+}
+
+function chestSvg() {
+    return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="chg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#FFD700"/>
+                <stop offset="100%" stop-color="#B8860B"/>
+            </linearGradient>
+            <linearGradient id="chg2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#FFEE9C"/>
+                <stop offset="100%" stop-color="#FFD700"/>
+            </linearGradient>
+        </defs>
+        <rect x="14" y="44" width="72" height="40" rx="6" fill="url(#chg)" stroke="#8A6508" stroke-width="1.5"/>
+        <path d="M14 48 Q14 22 50 22 Q86 22 86 48 L86 52 L14 52 Z" fill="url(#chg2)" stroke="#8A6508" stroke-width="1.5"/>
+        <rect x="14" y="42" width="72" height="6" fill="#8A6508"/>
+        <rect x="44" y="38" width="12" height="20" rx="2" fill="#FFEE9C" stroke="#8A6508" stroke-width="1"/>
+        <circle cx="50" cy="48" r="2.5" fill="#B8860B"/>
+        <path d="M32 48 L32 82 M68 48 L68 82" stroke="rgba(138,101,8,0.5)" stroke-width="1"/>
+        <path d="M22 34 Q26 26 34 24 M78 34 Q74 26 66 24" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </svg>`;
+}
+
+function gameCoverSvg(gameId) {
+    const designs = {
+        flappy: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gcf" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#0E1424"/><stop offset="100%" stop-color="#1E88E5"/>
+            </linearGradient></defs>
+            <rect width="120" height="120" fill="url(#gcf)"/>
+            <rect x="76" y="20" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+            <rect x="76" y="66" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+            <rect x="30" y="20" width="16" height="26" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+            <rect x="30" y="58" width="16" height="42" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+            <circle cx="55" cy="60" r="9" fill="#00E5D0"/>
+            <circle cx="58" cy="57" r="2" fill="#070B14"/>
+            <circle cx="55" cy="60" r="14" fill="none" stroke="rgba(0,229,208,0.4)" stroke-width="1.5"/>
+        </svg>`,
+        race: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gcr" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#0B0F1F"/><stop offset="100%" stop-color="#1a0e30"/>
+            </linearGradient></defs>
+            <rect width="120" height="120" fill="url(#gcr)"/>
+            <rect x="14" y="0" width="4" height="120" fill="rgba(0,229,208,0.4)"/>
+            <rect x="58" y="0" width="4" height="120" fill="rgba(0,229,208,0.4)"/>
+            <rect x="102" y="0" width="4" height="120" fill="rgba(0,229,208,0.4)"/>
+            <rect x="46" y="20" width="28" height="20" rx="4" fill="#FF4D4F" opacity="0.6"/>
+            <rect x="46" y="60" width="28" height="20" rx="4" fill="#FFB020" opacity="0.6"/>
+            <rect x="46" y="90" width="28" height="20" rx="4" fill="#00E5A0" opacity="0.6"/>
+            <path d="M60 46 L52 58 L58 58 L54 70 L68 52 L62 52 L66 46 Z" fill="#00E5D0" stroke="#fff" stroke-width="1"/>
+        </svg>`,
+        ninja: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gcn" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#150a25"/><stop offset="100%" stop-color="#0E1424"/>
+            </linearGradient></defs>
+            <rect width="120" height="120" fill="url(#gcn)"/>
+            <circle cx="40" cy="40" r="14" fill="none" stroke="#00E5D0" stroke-width="2.5"/>
+            <text x="40" y="46" font-size="16" font-weight="900" fill="#00E5D0" text-anchor="middle">π</text>
+            <circle cx="80" cy="60" r="14" fill="none" stroke="#FFD700" stroke-width="2.5"/>
+            <text x="80" y="66" font-size="16" font-weight="900" fill="#FFD700" text-anchor="middle">Σ</text>
+            <circle cx="40" cy="92" r="14" fill="none" stroke="#00E5A0" stroke-width="2.5"/>
+            <text x="40" y="98" font-size="16" font-weight="900" fill="#00E5A0" text-anchor="middle">e</text>
+            <circle cx="86" cy="28" r="10" fill="#FF4D4F" opacity="0.7"/>
+            <text x="86" y="33" font-size="14" font-weight="900" fill="#fff" text-anchor="middle">✕</text>
+        </svg>`,
+        hunt: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gch" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#0E1424"/><stop offset="100%" stop-color="#1a1f3a"/>
+            </linearGradient></defs>
+            <rect width="120" height="120" fill="url(#gch)"/>
+            <rect x="10" y="10" width="30" height="30" rx="4" fill="rgba(0,229,208,0.20)" stroke="#00E5D0" stroke-width="1.5"/>
+            <rect x="45" y="10" width="30" height="30" rx="4" fill="rgba(255,215,0,0.20)" stroke="#FFD700" stroke-width="1.5"/>
+            <rect x="80" y="10" width="30" height="30" rx="4" fill="rgba(255,77,79,0.20)" stroke="#FF4D4F" stroke-width="1.5"/>
+            <rect x="10" y="45" width="30" height="30" rx="4" fill="rgba(0,229,160,0.25)" stroke="#00E5A0" stroke-width="2.5"/>
+            <text x="25" y="65" font-size="16" font-weight="900" fill="#00E5A0" text-anchor="middle">✓</text>
+            <rect x="45" y="45" width="30" height="30" rx="4" fill="rgba(0,229,208,0.20)" stroke="#00E5D0" stroke-width="1.5"/>
+            <rect x="80" y="45" width="30" height="30" rx="4" fill="rgba(255,215,0,0.20)" stroke="#FFD700" stroke-width="1.5"/>
+            <rect x="10" y="80" width="30" height="30" rx="4" fill="rgba(255,77,79,0.20)" stroke="#FF4D4F" stroke-width="1.5"/>
+            <rect x="45" y="80" width="30" height="30" rx="4" fill="rgba(0,229,208,0.20)" stroke="#00E5D0" stroke-width="1.5"/>
+            <rect x="80" y="80" width="30" height="30" rx="4" fill="rgba(0,229,160,0.20)" stroke="#00E5A0" stroke-width="1.5"/>
+        </svg>`,
+        cosmo: `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gcc" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#05020f"/><stop offset="100%" stop-color="#1a0e40"/>
+            </linearGradient></defs>
+            <rect width="120" height="120" fill="url(#gcc)"/>
+            <circle cx="20" cy="20" r="1.5" fill="#fff" opacity="0.7"/>
+            <circle cx="100" cy="30" r="1" fill="#fff" opacity="0.6"/>
+            <circle cx="30" cy="100" r="1.2" fill="#fff" opacity="0.7"/>
+            <circle cx="95" cy="95" r="1.4" fill="#fff" opacity="0.6"/>
+            <circle cx="60" cy="40" r="14" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+            <ellipse cx="60" cy="40" rx="10" ry="6" fill="rgba(0,229,208,0.5)"/>
+            <path d="M52 54 L60 64 L68 54" fill="#FF4D4F"/>
+            <path d="M56 60 L60 76 L64 60" fill="#FFB020"/>
+            <circle cx="20" cy="50" r="4" fill="#888"/>
+            <circle cx="90" cy="70" r="5" fill="#888"/>
+            <circle cx="30" cy="80" r="3" fill="#888"/>
+            <ellipse cx="100" cy="50" rx="6" ry="3" fill="#00E5D0" opacity="0.5"/>
+        </svg>`,
+    };
+    return designs[gameId] || designs.flappy;
+}
+
+// ============================================================
+//                        RENDER
+// ============================================================
 
 function render() {
     const content = document.getElementById('content');
@@ -120,6 +341,7 @@ function render() {
 
     const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
+    // Game in progress
     if (state.gameView === 'playing') {
         appEl?.classList.add('picker-open');
         if (navEl) navEl.style.display = 'none';
@@ -186,6 +408,12 @@ function render() {
         return;
     }
 
+    // Modals
+    let modalHtml = '';
+    if (state.nameEditor) modalHtml = renderNameEditorModal();
+    else if (state.avatarPicker) modalHtml = renderAvatarPickerModal();
+    else if (state.chestModal) modalHtml = renderChestModal();
+
     appEl?.classList.remove('picker-open');
     if (navEl) navEl.style.display = '';
 
@@ -206,7 +434,7 @@ function render() {
         }
     }
 
-    content.innerHTML = html;
+    content.innerHTML = html + modalHtml;
     document.querySelectorAll('.nav-btn').forEach((btn) => {
         const isAdmin = btn.dataset.tab === 'admin';
         btn.style.display = (isAdmin && !state.isAdmin) ? 'none' : '';
@@ -215,6 +443,1142 @@ function render() {
     attachHandlers();
     if (state.tab === 'schedule') attachScheduleSwipe();
 }
+
+// ============================================================
+//                         ПРОФИЛЬ
+// ============================================================
+
+function renderProfile() {
+    const p = state.profile;
+    const w = state.wallet;
+    const u = state.user;
+    const ach = state.achievements || [];
+    const achGot = ach.filter(a => a.unlocked).length;
+
+    if (!p) return renderLoading();
+
+    const displayName = p.display_name || u.first_name || 'PLAYER';
+    const playerTag = p.player_tag || `PLAYER-${String(u.id).slice(-6).toUpperCase()}`;
+
+    let html = '';
+
+    // HERO
+    const lvl = w?.level || 1;
+    const xpIn = w?.xp_in_level || 0;
+    const xpNext = w?.xp_to_next || 500;
+    const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
+    const avatarIdx = w?.avatar_idx || 0;
+
+    html += `<div class="profile-hero">
+        <div class="profile-tag">
+            <span class="profile-tag-text">${escapeHtml(playerTag)}</span>
+            <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
+        </div>
+        <div class="profile-avatar-wrap">
+            ${avatarSvg(avatarIdx)}
+            <div class="profile-avatar-tap" data-action="avatar-open"></div>
+        </div>
+        <div class="profile-level-block">
+            <div class="profile-level-num">${lvl}<small>LVL</small></div>
+            <div class="profile-level-title">${escapeHtml(w?.level_title || 'Первокурсник')}</div>
+        </div>
+        <div class="xp-bar-wrap">
+            <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
+            <div class="xp-text">${xpIn} / ${xpNext} XP</div>
+        </div>
+        <div class="currency-row">
+            <div class="currency-card soft">
+                <div class="currency-icon">${softIconSvg()}</div>
+                <div class="currency-value">${w?.soft || 0}</div>
+                <div class="currency-label">Стипух</div>
+            </div>
+            <div class="currency-card hard">
+                <div class="currency-icon">${hardIconSvg()}</div>
+                <div class="currency-value">${w?.hard || 0}</div>
+                <div class="currency-label">Автоматов</div>
+            </div>
+        </div>
+        <div class="streak-row"><span class="fire">🔥</span> Стрик: ${p.streak || 0} ${p.streak === 1 ? 'день' : 'дн.'}</div>
+    </div>`;
+
+    // CHEST
+    const chestReady = state.chest?.can_open !== false;
+    html += `<div class="chest-card">
+        <div class="chest-svg">${chestSvg()}</div>
+        <div class="chest-title">Халява дня</div>
+        <div class="chest-sub">${chestReady ? 'Готов к открытию' : 'Открыт. Возвращайся завтра'}</div>
+        <button class="chest-btn" data-action="chest-open" ${chestReady ? '' : 'disabled'}>
+            ${chestReady ? 'Открыть' : 'Через 24ч'}
+        </button>
+    </div>`;
+
+    // ACHIEVEMENTS
+    html += `<div class="card">
+        <div class="card-title">Достижения: ${achGot} / ${ach.length || 12}</div>
+        <div class="ach-grid">
+            ${ach.length === 0 ? '<div class="card-subtitle">Загрузка...</div>' : ach.map(a => `
+                <div class="ach-item ${a.unlocked ? 'unlocked' : ''}" title="${escapeHtml(a.name)} — ${escapeHtml(a.desc)}">
+                    <div class="ach-emoji">${a.icon}</div>
+                    <div class="ach-name">${escapeHtml(a.name)}</div>
+                </div>
+            `).join('')}
+        </div>
+    </div>`;
+
+    // STATS
+    if (p) {
+        html += `<div class="card">
+            <div class="card-title">Статистика</div>
+            <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
+            <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
+            <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
+            <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
+        </div>`;
+    }
+
+    // ATTENDANCE
+    const attTotal = p.attendance_total || 0;
+    html += `<div class="card"><div class="card-title">Посещаемость</div>`;
+    if (attTotal === 0) {
+        html += `<div class="card-subtitle">Отмечай пары в расписании — здесь появится статистика.</div>`;
+    } else {
+        html += `<div class="att-stat-row"><span class="att-stat-label">Всего отмечено</span><span class="att-stat-value">${attTotal}</span></div>`;
+        html += `<div class="att-stat-row"><span class="att-stat-label">Посещено</span><span class="att-stat-value green">${p.attendance_was || 0}</span></div>`;
+        html += `<div class="att-stat-row"><span class="att-stat-label">Пропущено</span><span class="att-stat-value red">${p.attendance_missed || 0}</span></div>`;
+        html += `<div class="att-stat-row"><span class="att-stat-label">По болезни</span><span class="att-stat-value yellow">${p.attendance_sick || 0}</span></div>`;
+    }
+    html += `</div>`;
+
+    // GROUP
+    html += `<div class="card">
+        <div class="card-title">Моя группа</div>
+        <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="choose-group">${p?.group ? 'Изменить' : 'Выбрать группу'}</button>
+            ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
+        </div>
+    </div>`;
+
+    // SUBGROUP
+    html += `<div class="card">
+        <div class="card-title">Подгруппа</div>
+        <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">—</button>
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
+        </div>
+    </div>`;
+
+    // NOTIFY
+    const notifyOn = !!p?.notify_type;
+    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
+    html += `<div class="card">
+        <div class="card-title">Уведомления о расписании</div>
+        <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
+        <div class="actions-row"><button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button></div>
+        <label class="checkbox-row">
+            <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
+            <span>Следить за изменениями в расписании</span>
+        </label>
+        <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
+        <div class="nbf-buttons">
+            ${[0, 10, 15, 30].map(m => `
+                <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
+                        data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
+            `).join('')}
+        </div>
+    </div>`;
+
+    // QUOTE
+    html += `<div class="card">
+        <div class="card-title">Цитата дня</div>
+        <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
+        <div class="actions-row">
+            ${p?.daily_subscribed
+                ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
+                : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
+        </div>
+    </div>`;
+
+    // SCHOLARSHIP (existing)
+    html += renderScholarshipCard();
+    // FEEDBACK MY (existing)
+    html += renderMyFeedbackCard();
+
+    // FEEDBACK
+    html += `<div class="card">
+        <div class="card-title">Обратная связь</div>
+        <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
+        <button class="btn" data-action="feedback-send">Отправить</button>
+    </div>`;
+
+    // EXPORT
+    html += `<div class="card">
+        <div class="card-title">Экспорт данных</div>
+        <div class="export-hint">PDF-файл со всеми данными: задачи, заметки, оценки, посещаемость.</div>
+        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Готовлю PDF...' : 'Скачать PDF'}</button>
+    </div>`;
+
+    return html;
+}
+
+// -------- Модалки профиля --------
+
+function renderNameEditorModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-title">Изменить имя</div>
+            <div class="modal-sub">Максимум 24 символа. Первая смена — бесплатно.</div>
+            <input class="modal-input" id="name-editor-input" maxlength="24" value="${escapeHtml(state.nameEditorValue || '')}" placeholder="Твой ник" autofocus>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="name-save">Сохранить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderAvatarPickerModal() {
+    const w = state.wallet || {};
+    const current = w.avatar_idx || 0;
+    let grid = '';
+    for (let i = 0; i < 12; i++) {
+        const isOwned = i === 0 || i === current;
+        grid += `<div class="avatar-option ${i === current ? 'active' : ''} ${isOwned ? 'owned' : ''}" data-action="avatar-pick" data-idx="${i}">
+            ${avatarSvg(i)}
+            ${isOwned ? '' : '<div class="avatar-price">3 А</div>'}
+        </div>`;
+    }
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-title">Выбор аватара</div>
+            <div class="modal-sub">Смена (кроме стандартного) — 3 Автомата. У тебя: ${w.hard || 0} А</div>
+            <div class="avatar-grid">${grid}</div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn btn-secondary" data-action="modal-close">Закрыть</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderChestModal() {
+    const r = state.chestModal;
+    if (!r) return '';
+    const emojiMap = { soft: '💰', xp: '⚡', hard: '🏅', free_name: '✏️' };
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="reward-reveal">
+                <div class="reward-icon">${emojiMap[r.type] || '🎁'}</div>
+                <div class="reward-label">${escapeHtml(r.label || '')}</div>
+                <div class="reward-desc">${r.type === 'soft' ? 'Стипухи зачислены' : r.type === 'xp' ? 'Опыт добавлен' : r.type === 'hard' ? 'Автомат твой!' : 'Смена ника бесплатно'}</div>
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Круто!</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// -------- Actions профиля --------
+
+function actionNameOpen() {
+    haptic('light');
+    state.nameEditorValue = state.profile?.display_name && !state.profile.display_name.includes('PLAYER') ? state.profile.display_name : '';
+    state.nameEditor = true;
+    render();
+}
+async function actionNameSave() {
+    const el = document.getElementById('name-editor-input');
+    if (!el) return;
+    const name = (el.value || '').trim();
+    if (!name) { alert('Введи имя'); return; }
+    try {
+        const r = await apiPost('/api/set-name', { name });
+        state.wallet = r.wallet;
+        if (state.profile) state.profile.display_name = name;
+        haptic('success');
+        state.nameEditor = false;
+        render();
+    } catch (e) {
+        haptic('error');
+        alert(e.message || 'Ошибка');
+    }
+}
+function actionAvatarOpen() { haptic('light'); state.avatarPicker = true; render(); }
+async function actionAvatarPick(idx) {
+    if (idx === (state.wallet?.avatar_idx || 0)) { state.avatarPicker = false; render(); return; }
+    try {
+        const r = await apiPost('/api/set-avatar', { idx });
+        state.wallet = r.wallet;
+        haptic('success');
+        state.avatarPicker = false;
+        popEmoji('✨');
+        render();
+    } catch (e) {
+        haptic('error');
+        alert(e.message || 'Ошибка');
+    }
+}
+async function actionChestOpen() {
+    try {
+        const r = await apiPost('/api/chest/open');
+        state.wallet = r.wallet;
+        state.chestModal = r.reward;
+        haptic('success');
+        popEmoji('🎁');
+        await loadChestStatus();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert(e.message || 'Сундук уже открыт');
+    }
+}
+function actionModalClose() {
+    haptic('light');
+    state.nameEditor = false;
+    state.avatarPicker = false;
+    state.chestModal = null;
+    render();
+}
+
+// ============================================================
+//                        ИГРЫ
+// ============================================================
+
+function renderGames() {
+    const games = state.gamesList || [];
+    if (games.length === 0) return renderLoading();
+
+    let html = `<div class="banner">
+        <div class="banner-title">Зарабатывай Стипухи и Автоматы</div>
+        <div class="banner-sub">Играй → получай валюту → меняй на аватары, ники и премиум-сундуки</div>
+    </div>`;
+
+    html += `<div class="games-catalog">`;
+    for (const g of games) {
+        html += `<button class="game-catalog-card" data-action="game-open" data-game="${escapeHtml(g.id)}">
+            <div class="game-cover">${gameCoverSvg(g.id)}</div>
+            <div class="game-body">
+                <div>
+                    <div class="game-name">${escapeHtml(g.name)}</div>
+                    <div class="game-desc">${escapeHtml(g.desc)}</div>
+                </div>
+                <div class="game-best-line">
+                    <span>Рекорд: <strong>${g.best || 0}</strong></span>
+                    <span>Игр: <strong>${g.plays || 0}</strong></span>
+                </div>
+                <div class="game-play-btn">Играть</div>
+            </div>
+        </button>`;
+    }
+    html += `</div>`;
+
+    // Global leaderboard
+    if (state.walletLeaderboard && state.walletLeaderboard.length > 0) {
+        html += `<div class="card" style="margin-top:12px"><div class="card-title">Топ по опыту</div>`;
+        for (const item of state.walletLeaderboard) {
+            const cls = item.is_me ? 'game-top-me' : '';
+            html += `<div class="grade-row ${cls}">
+                <span>${item.rank}. ${escapeHtml(item.display)} <span style="color:var(--text-2);font-weight:600;font-size:12px">· LVL ${item.level}</span></span>
+                <span class="grade-value">${item.xp} XP</span>
+            </div>`;
+        }
+        html += `</div>`;
+    }
+
+    return html;
+}
+
+function renderGameScreen() {
+    const gid = state.currentGame;
+    const g = state.gamesList.find(x => x.id === gid);
+    const best = g?.best || 0;
+
+    if (gid === 'hunt') {
+        // Special HTML-based game
+        return `<div class="game-wrap" id="game-wrap">
+            <div class="game-hud">
+                <div class="game-hud-score" id="game-score">0</div>
+                <div class="game-hud-best" id="game-best">${escapeHtml(state.huntTarget || '')}</div>
+            </div>
+            <div id="hunt-board" style="flex:1;padding:80px 14px 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;overflow-y:auto"></div>
+            <div class="game-hint" id="game-hint">Нажми «Старт»</div>
+            <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
+        </div>`;
+    }
+
+    return `<div class="game-wrap" id="game-wrap">
+        <div class="game-hud">
+            <div class="game-hud-score" id="game-score">0</div>
+            <div class="game-hud-best">Рекорд: ${best}</div>
+        </div>
+        <canvas id="game-canvas" class="game-canvas"></canvas>
+        <div class="game-hint" id="game-hint">Тапни, чтобы начать</div>
+        <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
+    </div>`;
+}
+
+function renderGameResult() {
+    const r = state.gameResult;
+    if (!r) return renderEmpty('Нет данных');
+    let html = `<div class="game-result-wrap">
+        <div class="game-result-score-block">
+            <div class="game-result-label">Результат</div>
+            <div class="game-result-score">${r.score}</div>
+            ${r.is_record ? '<div class="game-result-record">НОВЫЙ РЕКОРД</div>' : ''}
+        </div>
+        <div class="game-result-best">Лучший результат: ${r.best}</div>
+        <div class="card" style="background:var(--grad-neon-soft);border-color:rgba(0,229,208,0.3)">
+            <div class="card-title">Награда</div>
+            <div class="card-subtitle">+${r.soft_reward || 0} Стипух · +${r.xp_reward || 0} XP ${r.hard_reward ? '· +' + r.hard_reward + ' Автоматов' : ''}</div>
+        </div>`;
+    if (r.top && r.top.length > 0) {
+        html += `<div class="card"><div class="card-title">Топ игроков</div>`;
+        for (const item of r.top) {
+            const cls = item.is_me ? 'game-top-me' : '';
+            html += `<div class="grade-row ${cls}"><span>${item.rank}. ${escapeHtml(item.display)}</span><span class="grade-value">${item.score}</span></div>`;
+        }
+        html += `</div>`;
+    }
+    html += `<div class="actions-row" style="margin-top:16px">
+        <button class="btn" data-action="game-play-again" style="flex:1">Ещё раз</button>
+        <button class="btn btn-secondary" data-action="game-exit" style="flex:1">К играм</button>
+    </div>
+    </div>`;
+    return html;
+}
+
+function actionGameOpen(gameId) {
+    haptic('light');
+    state.currentGame = gameId;
+    state.gameView = 'playing';
+    state.gameResult = null;
+    state.gameInstance = null;
+    state.huntState = null;
+    render();
+}
+function actionGameExit() {
+    haptic('light');
+    if (state.gameInstance) state.gameInstance.running = false;
+    state.gameInstance = null;
+    state.gameView = null;
+    state.gameResult = null;
+    state.currentGame = null;
+    render();
+}
+function actionGamePlayAgain() {
+    haptic('light');
+    state.gameView = 'playing';
+    state.gameResult = null;
+    state.gameInstance = null;
+    render();
+}
+
+async function submitGameScore(gameId, score) {
+    try {
+        const r = await apiPost('/api/game/submit', { game_id: gameId, score });
+        state.gameResult = {
+            score, best: r.best, is_record: r.is_record,
+            soft_reward: r.soft_reward, xp_reward: r.xp_reward, hard_reward: r.hard_reward,
+            top: r.top || []
+        };
+        if (state.wallet) state.wallet = r.wallet;
+        const g = state.gamesList.find(x => x.id === gameId);
+        if (g) { g.best = r.best; g.plays = r.plays; }
+    } catch (e) {
+        state.gameResult = { score, best: score, is_record: false, soft_reward: 0, xp_reward: 0, hard_reward: 0, top: [] };
+    }
+    state.gameInstance = null;
+    state.gameView = 'result';
+    render();
+}
+
+function initGame() {
+    const gid = state.currentGame;
+    if (!gid) return;
+    if (gid === 'flappy') initFlappy();
+    else if (gid === 'race') initRace();
+    else if (gid === 'ninja') initNinja();
+    else if (gid === 'hunt') initHunt();
+    else if (gid === 'cosmo') initCosmo();
+}
+
+// Общие утилиты для canvas-игр
+function setupCanvas() {
+    const canvas = document.getElementById('game-canvas');
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const W = Math.max(100, rect.width);
+    const H = Math.max(100, rect.height);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { canvas, ctx, W, H };
+}
+function roundRect(ctx, x, y, w, h, r) {
+    if (h < 2 * r) r = h / 2;
+    if (w < 2 * r) r = w / 2;
+    if (r < 0) r = 0;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
+function updateScore(val) {
+    const el = document.getElementById('game-score');
+    if (el) el.textContent = String(val);
+}
+
+// ---------- GAME 1: FLAPPY «До пары успеть» ----------
+function initFlappy() {
+    if (state.gameInstance) return;
+    const s = setupCanvas();
+    if (!s) return;
+    const { canvas, ctx, W, H } = s;
+    const game = {
+        W, H, running: true, over: false, started: false, score: 0, frame: 0,
+        player: { x: W * 0.28, y: H * 0.45, r: 16, vy: 0 },
+        obstacles: [], spawnTimer: 0, spawnInterval: 95,
+        gravity: 0.55, jumpForce: -8.3, speed: 3.1,
+        gap: Math.max(130, Math.min(170, H * 0.32)),
+    };
+    state.gameInstance = game;
+
+    function doJump() {
+        if (game.over || !game.running) return;
+        game.started = true;
+        const hint = document.getElementById('game-hint');
+        if (hint) hint.style.display = 'none';
+        game.player.vy = game.jumpForce;
+    }
+    function onPointer(e) { e.preventDefault(); doJump(); }
+    function onKey(e) {
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); doJump(); }
+    }
+    canvas.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    function cleanup() {
+        canvas.removeEventListener('pointerdown', onPointer);
+        document.removeEventListener('keydown', onKey);
+    }
+    function endGame() {
+        if (game.over) return;
+        game.over = true; game.running = false;
+        cleanup();
+        haptic('error');
+        submitGameScore('flappy', game.score);
+    }
+    function drawBlock(x, y, w, h) {
+        if (h <= 0 || w <= 0) return;
+        const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+        grad.addColorStop(0, 'rgba(30, 136, 229, 0.35)');
+        grad.addColorStop(0.5, 'rgba(0, 229, 208, 0.35)');
+        grad.addColorStop(1, 'rgba(30, 136, 229, 0.35)');
+        ctx.fillStyle = grad;
+        roundRect(ctx, x, y, w, h, 10); ctx.fill();
+        ctx.strokeStyle = '#00E5D0'; ctx.lineWidth = 2;
+        ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 12;
+        roundRect(ctx, x, y, w, h, 10); ctx.stroke();
+        ctx.shadowBlur = 0;
+    }
+    function draw() {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#08101f'); grad.addColorStop(0.55, '#0d1a33'); grad.addColorStop(1, '#111c3a');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+        // stars
+        for (let i = 0; i < 30; i++) {
+            const sx = (((i * 173 - game.frame * 0.4) % (W + 40)) + (W + 40)) % (W + 40) - 20;
+            const sy = (i * 97) % H;
+            const sz = (i % 3) + 1;
+            ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
+            ctx.fillRect(sx, sy, sz, sz);
+        }
+        // obstacles
+        for (const o of game.obstacles) {
+            drawBlock(o.x, 0, o.w, o.gapY);
+            drawBlock(o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
+        }
+        // player
+        const p = game.player;
+        const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3);
+        glow.addColorStop(0, 'rgba(0, 229, 208, 0.7)');
+        glow.addColorStop(1, 'rgba(0, 229, 208, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#00E5D0'; ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 18;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#070B14';
+        ctx.beginPath();
+        ctx.arc(p.x + 5, p.y - 4, 3, 0, Math.PI * 2);
+        ctx.arc(p.x + 12, p.y - 4, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    function loop() {
+        if (state.gameInstance !== game || !game.running) return;
+        if (game.started) {
+            game.player.vy += game.gravity;
+            if (game.player.vy > 11) game.player.vy = 11;
+            game.player.y += game.player.vy;
+        }
+        if (game.player.y - game.player.r < 0) { game.player.y = game.player.r; game.player.vy = 0; }
+        if (game.player.y + game.player.r > H) { game.player.y = H - game.player.r; endGame(); return; }
+        game.spawnTimer++;
+        if (game.started && game.spawnTimer >= game.spawnInterval) {
+            game.spawnTimer = 0;
+            const minGapY = 40;
+            const maxGapY = H - game.gap - 40;
+            const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
+            game.obstacles.push({ x: W + 40, w: 62, gapY, gapH: game.gap, passed: false });
+        }
+        for (let i = game.obstacles.length - 1; i >= 0; i--) {
+            const o = game.obstacles[i];
+            if (game.started) o.x -= game.speed;
+            const px = game.player.x, py = game.player.y, pr = game.player.r;
+            if (px + pr > o.x && px - pr < o.x + o.w) {
+                if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) { endGame(); return; }
+            }
+            if (!o.passed && o.x + o.w < px) {
+                o.passed = true; game.score++;
+                haptic('light');
+                updateScore(game.score);
+            }
+            if (o.x + o.w < -60) game.obstacles.splice(i, 1);
+        }
+        draw();
+        game.frame++;
+        requestAnimationFrame(loop);
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// ---------- GAME 2: RACE «До деканата» ----------
+function initRace() {
+    if (state.gameInstance) return;
+    const s = setupCanvas();
+    if (!s) return;
+    const { canvas, ctx, W, H } = s;
+    const game = {
+        W, H, running: true, over: false, started: false, frame: 0,
+        score: 0, meters: 0, speed: 3,
+        lane: 1, targetLane: 1, laneX: [W * 0.2, W * 0.5, W * 0.8],
+        obstacles: [], spawnTimer: 0, spawnInterval: 60,
+        playerW: 34, playerH: 44,
+    };
+    state.gameInstance = game;
+    const playerY = H - 100;
+
+    function doMove(dir) {
+        if (game.over || !game.running) return;
+        game.started = true;
+        const hint = document.getElementById('game-hint');
+        if (hint) hint.style.display = 'none';
+        game.targetLane = Math.max(0, Math.min(2, game.targetLane + dir));
+        haptic('light');
+    }
+    let startX = 0;
+    function onDown(e) { startX = (e.touches ? e.touches[0].clientX : e.clientX); }
+    function onUp(e) {
+        const endX = (e.changedTouches ? e.changedTouches[0].clientX : e.clientX);
+        const dx = endX - startX;
+        if (Math.abs(dx) > 20) doMove(dx > 0 ? 1 : -1);
+    }
+    function onKey(e) {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); doMove(-1); }
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); doMove(1); }
+    }
+    canvas.addEventListener('touchstart', onDown, { passive: true });
+    canvas.addEventListener('touchend', onUp, { passive: true });
+    canvas.addEventListener('mousedown', onDown);
+    canvas.addEventListener('mouseup', onUp);
+    document.addEventListener('keydown', onKey);
+    function cleanup() {
+        canvas.removeEventListener('touchstart', onDown);
+        canvas.removeEventListener('touchend', onUp);
+        canvas.removeEventListener('mousedown', onDown);
+        canvas.removeEventListener('mouseup', onUp);
+        document.removeEventListener('keydown', onKey);
+    }
+    function endGame() {
+        if (game.over) return;
+        game.over = true; game.running = false;
+        cleanup();
+        haptic('error');
+        submitGameScore('race', game.meters);
+    }
+    function draw() {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#0B0F1F'); grad.addColorStop(1, '#1a0e30');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+        // road lanes
+        ctx.strokeStyle = 'rgba(0,229,208,0.35)';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 3; i++) {
+            const laneX = game.laneX[i];
+            const dash = (game.frame * game.speed) % 40;
+            for (let y = -40 + dash; y < H; y += 40) {
+                ctx.beginPath(); ctx.moveTo(laneX, y); ctx.lineTo(laneX, y + 18); ctx.stroke();
+            }
+        }
+        // obstacles
+        for (const o of game.obstacles) {
+            ctx.fillStyle = o.color;
+            ctx.shadowColor = o.color; ctx.shadowBlur = 10;
+            roundRect(ctx, o.x - o.w / 2, o.y, o.w, o.h, 6);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        // player
+        const px = game.laneX[game.targetLane];
+        ctx.save();
+        ctx.fillStyle = '#00E5D0';
+        ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 20;
+        roundRect(ctx, px - game.playerW / 2, playerY, game.playerW, game.playerH, 8);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#070B14';
+        ctx.fillRect(px - 8, playerY + 10, 16, 6);
+        ctx.fillRect(px - 8, playerY + 24, 16, 6);
+        ctx.restore();
+    }
+    function loop() {
+        if (state.gameInstance !== game || !game.running) return;
+        // smooth lane move
+        const dx = game.laneX[game.targetLane] - game.laneX[game.lane];
+        if (Math.abs(dx) < 1) game.lane = game.targetLane;
+        else game.lane = game.lane + dx * 0.2;
+        if (game.started) {
+            game.frame++;
+            game.meters += game.speed;
+            game.score = Math.floor(game.meters / 10);
+            updateScore(game.score);
+            if (game.frame % 60 === 0) game.speed = Math.min(9, game.speed + 0.25);
+        }
+        game.spawnTimer++;
+        if (game.started && game.spawnTimer >= game.spawnInterval - Math.floor(game.speed)) {
+            game.spawnTimer = 0;
+            const lane = Math.floor(Math.random() * 3);
+            const colors = ['#FF4D4F', '#FFB020', '#00E5A0'];
+            game.obstacles.push({
+                x: game.laneX[lane], y: -40,
+                w: 40, h: 40,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                lane
+            });
+        }
+        for (let i = game.obstacles.length - 1; i >= 0; i--) {
+            const o = game.obstacles[i];
+            if (game.started) o.y += game.speed;
+            // collision
+            const px = game.laneX[Math.round(game.lane)];
+            if (o.lane === Math.round(game.lane) && o.y + o.h > playerY && o.y < playerY + game.playerH) {
+                endGame(); return;
+            }
+            if (o.y > H + 40) game.obstacles.splice(i, 1);
+        }
+        draw();
+        requestAnimationFrame(loop);
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// ---------- GAME 3: NINJA «Стипуха-ниндзя» ----------
+function initNinja() {
+    if (state.gameInstance) return;
+    const s = setupCanvas();
+    if (!s) return;
+    const { canvas, ctx, W, H } = s;
+    const game = {
+        W, H, running: true, over: false, frame: 0, score: 0, lives: 3,
+        targets: [], spawnTimer: 0, spawnInterval: 45,
+        symbols: ['π', 'Σ', 'e', 'α', '∫', '∞', '√'],
+    };
+    state.gameInstance = game;
+    function spawn() {
+        const isBomb = Math.random() < 0.2;
+        const r = 30;
+        const x = 40 + Math.random() * (W - 80);
+        const y = 60 + Math.random() * (H - 160);
+        game.targets.push({
+            x, y, r, life: 80, maxLife: 80,
+            isBomb,
+            symbol: isBomb ? '✕' : game.symbols[Math.floor(Math.random() * game.symbols.length)],
+            color: isBomb ? '#FF4D4F' : '#00E5D0',
+        });
+    }
+    function onTap(e) {
+        e.preventDefault();
+        if (game.over || !game.running) return;
+        const rect = canvas.getBoundingClientRect();
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        const x = cx - rect.left;
+        const y = cy - rect.top;
+        for (let i = game.targets.length - 1; i >= 0; i--) {
+            const t = game.targets[i];
+            const dx = x - t.x, dy = y - t.y;
+            if (dx * dx + dy * dy < t.r * t.r) {
+                if (t.isBomb) {
+                    game.lives--;
+                    haptic('error');
+                    if (game.lives <= 0) { endGame(); return; }
+                } else {
+                    game.score++;
+                    haptic('light');
+                    updateScore(game.score);
+                }
+                game.targets.splice(i, 1);
+                return;
+            }
+        }
+    }
+    canvas.addEventListener('touchstart', onTap, { passive: false });
+    canvas.addEventListener('mousedown', onTap);
+    function cleanup() {
+        canvas.removeEventListener('touchstart', onTap);
+        canvas.removeEventListener('mousedown', onTap);
+    }
+    function endGame() {
+        if (game.over) return;
+        game.over = true; game.running = false;
+        cleanup();
+        submitGameScore('ninja', game.score);
+    }
+    function draw() {
+        const grad = ctx.createLinearGradient(0, 0, W, H);
+        grad.addColorStop(0, '#150a25'); grad.addColorStop(1, '#0E1424');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+        // targets
+        for (const t of game.targets) {
+            const alpha = t.life / t.maxLife;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = t.color + '33';
+            ctx.beginPath(); ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = t.color;
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = t.color; ctx.shadowBlur = 15;
+            ctx.beginPath(); ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2); ctx.stroke();
+            ctx.fillStyle = t.color;
+            ctx.font = 'bold 26px Manrope, sans-serif';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(t.symbol, t.x, t.y + 2);
+            ctx.restore();
+        }
+        // lives
+        ctx.fillStyle = '#FF4D4F';
+        ctx.font = 'bold 18px Manrope, sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        let h = '';
+        for (let i = 0; i < game.lives; i++) h += '❤';
+        ctx.fillText(h, 14, 14);
+    }
+    function loop() {
+        if (state.gameInstance !== game || !game.running) return;
+        game.frame++;
+        if (game.frame > 60) {
+            game.spawnTimer++;
+            if (game.spawnTimer >= game.spawnInterval) {
+                game.spawnTimer = 0;
+                spawn();
+                if (game.spawnInterval > 22) game.spawnInterval -= 0.5;
+            }
+        }
+        for (let i = game.targets.length - 1; i >= 0; i--) {
+            const t = game.targets[i];
+            t.life--;
+            if (t.life <= 0) {
+                if (!t.isBomb) {
+                    game.lives--;
+                    if (game.lives <= 0) { endGame(); return; }
+                }
+                game.targets.splice(i, 1);
+            }
+        }
+        draw();
+        requestAnimationFrame(loop);
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// ---------- GAME 4: HUNT «Найди предмет» ----------
+function initHunt() {
+    if (state.gameInstance) return;
+    const game = { running: true, over: false, score: 0, timeLeft: 30, totalRounds: 0 };
+    state.gameInstance = game;
+
+    const SUBJECTS = [
+        'Математика', 'Физика', 'Химия', 'История', 'Биология',
+        'География', 'Литература', 'Информатика', 'Английский', 'Философия',
+        'Экономика', 'Право', 'Экология', 'Астрономия', 'Социология',
+        'Психология', 'Русский', 'Геометрия', 'Алгебра', 'Черчение',
+    ];
+
+    const board = document.getElementById('hunt-board');
+    const hint = document.getElementById('game-hint');
+    const bestEl = document.getElementById('game-best');
+    if (!board) return;
+
+    function nextRound() {
+        if (game.over) return;
+        const shuffled = [...SUBJECTS].sort(() => Math.random() - 0.5);
+        const cards = shuffled.slice(0, 12);
+        const target = cards[Math.floor(Math.random() * cards.length)];
+        state.huntTarget = target;
+        if (bestEl) bestEl.textContent = 'Найди: ' + target;
+        if (hint) hint.style.display = 'none';
+
+        board.innerHTML = cards.map(s => `
+            <button class="hunt-card" data-subject="${escapeHtml(s)}" style="
+                aspect-ratio:1;border-radius:12px;
+                background: rgba(0,229,208,0.10);
+                border:1.5px solid rgba(0,229,208,0.25);
+                color: #F2F6FF;
+                font-family: inherit; font-size: 11px; font-weight: 800;
+                padding: 4px; cursor: pointer;
+                display: flex; align-items: center; justify-content: center; text-align: center;
+                line-height: 1.15;
+                transition: transform 0.15s;
+                -webkit-tap-highlight-color: transparent;
+            ">${escapeHtml(s)}</button>
+        `).join('');
+
+        board.querySelectorAll('.hunt-card').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (game.over) return;
+                if (btn.dataset.subject === target) {
+                    game.score++;
+                    updateScore(game.score);
+                    haptic('light');
+                    btn.style.background = 'rgba(0,229,160,0.4)';
+                    btn.style.borderColor = '#00E5A0';
+                    setTimeout(nextRound, 200);
+                } else {
+                    haptic('error');
+                    game.timeLeft = Math.max(0, game.timeLeft - 2);
+                    btn.style.background = 'rgba(255,77,79,0.4)';
+                    btn.style.borderColor = '#FF4D4F';
+                }
+            });
+        });
+    }
+
+    function endGame() {
+        if (game.over) return;
+        game.over = true; game.running = false;
+        clearInterval(game.timer);
+        submitGameScore('hunt', game.score);
+    }
+
+    // countdown
+    game.timer = setInterval(() => {
+        if (game.over) return;
+        game.timeLeft--;
+        if (bestEl) bestEl.textContent = `Найди: ${state.huntTarget || '...'} · ${game.timeLeft}с`;
+        if (game.timeLeft <= 0) endGame();
+    }, 1000);
+
+    nextRound();
+}
+
+// ---------- GAME 5: COSMO «Космос ИРНИТУ» ----------
+function initCosmo() {
+    if (state.gameInstance) return;
+    const s = setupCanvas();
+    if (!s) return;
+    const { canvas, ctx, W, H } = s;
+    const game = {
+        W, H, running: true, over: false, frame: 0, score: 0,
+        player: { x: W / 2, y: H - 70, r: 16, vx: 0 },
+        bullets: [], asteroids: [], stars: [], spawnTimer: 0,
+        moveLeft: false, moveRight: false, shootTimer: 0, lives: 3,
+    };
+    // stars
+    for (let i = 0; i < 60; i++) {
+        game.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.3, s: Math.random() * 1.5 + 0.4 });
+    }
+    state.gameInstance = game;
+
+    let startX = 0;
+    function onDown(e) {
+        e.preventDefault();
+        if (game.over || !game.running) return;
+        game.started = true;
+        const hint = document.getElementById('game-hint');
+        if (hint) hint.style.display = 'none';
+        const rect = canvas.getBoundingClientRect();
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        game.player.x = Math.max(game.player.r, Math.min(W - game.player.r, cx - rect.left));
+        game.player.y = H - 70;
+    }
+    function onMove(e) {
+        if (game.over || !game.running) return;
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        game.player.x = Math.max(game.player.r, Math.min(W - game.player.r, cx - rect.left));
+    }
+    function onKey(e) {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') game.moveLeft = true;
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') game.moveRight = true;
+    }
+    function onKeyUp(e) {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') game.moveLeft = false;
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') game.moveRight = false;
+    }
+    canvas.addEventListener('touchstart', onDown, { passive: false });
+    canvas.addEventListener('touchmove', onMove, { passive: false });
+    canvas.addEventListener('mousedown', onDown);
+    canvas.addEventListener('mousemove', (e) => { if (e.buttons) onMove(e); });
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('keyup', onKeyUp);
+    function cleanup() {
+        canvas.removeEventListener('touchstart', onDown);
+        canvas.removeEventListener('touchmove', onMove);
+        canvas.removeEventListener('mousedown', onDown);
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('keyup', onKeyUp);
+    }
+    function endGame() {
+        if (game.over) return;
+        game.over = true; game.running = false;
+        cleanup();
+        haptic('error');
+        submitGameScore('cosmo', game.score);
+    }
+    function draw() {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#05020f'); grad.addColorStop(1, '#1a0e40');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+        // stars
+        for (const st of game.stars) {
+            st.y += st.s;
+            if (st.y > H) { st.y = 0; st.x = Math.random() * W; }
+            ctx.fillStyle = `rgba(255,255,255,${0.4 + st.r * 0.3})`;
+            ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
+        }
+        // asteroids
+        for (const a of game.asteroids) {
+            ctx.save();
+            ctx.fillStyle = '#888';
+            ctx.shadowColor = '#FF4D4F'; ctx.shadowBlur = 10;
+            ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#444';
+            ctx.beginPath(); ctx.arc(a.x - 3, a.y - 3, a.r / 3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(a.x + 4, a.y + 2, a.r / 4, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
+        // bullets
+        ctx.save();
+        ctx.fillStyle = '#00E5D0';
+        ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 10;
+        for (const b of game.bullets) {
+            roundRect(ctx, b.x - 2, b.y - 8, 4, 12, 2);
+            ctx.fill();
+        }
+        ctx.restore();
+        // player
+        const p = game.player;
+        ctx.save();
+        ctx.fillStyle = '#0E1424';
+        ctx.strokeStyle = '#00E5D0'; ctx.lineWidth = 2;
+        ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - 16);
+        ctx.lineTo(p.x - 12, p.y + 12);
+        ctx.lineTo(p.x + 12, p.y + 12);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#00E5D0';
+        ctx.beginPath(); ctx.arc(p.x, p.y - 4, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        // lives
+        ctx.fillStyle = '#FF4D4F';
+        ctx.font = 'bold 18px Manrope, sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        let h = ''; for (let i = 0; i < game.lives; i++) h += '❤';
+        ctx.fillText(h, 14, 14);
+    }
+    function loop() {
+        if (state.gameInstance !== game || !game.running) return;
+        game.frame++;
+        // player keyboard move
+        if (game.moveLeft) p.x = Math.max(16, p.x - 6);
+        if (game.moveRight) p.x = Math.min(W - 16, p.x + 6);
+        const p = game.player;
+        // auto shoot
+        game.shootTimer++;
+        if (game.started && game.shootTimer >= 12) {
+            game.shootTimer = 0;
+            game.bullets.push({ x: p.x, y: p.y - 20 });
+        }
+        // move bullets
+        for (let i = game.bullets.length - 1; i >= 0; i--) {
+            game.bullets[i].y -= 8;
+            if (game.bullets[i].y < -20) game.bullets.splice(i, 1);
+        }
+        // spawn asteroids
+        if (game.started) {
+            game.spawnTimer++;
+            const interval = Math.max(20, 60 - Math.floor(game.frame / 240));
+            if (game.spawnTimer >= interval) {
+                game.spawnTimer = 0;
+                game.asteroids.push({
+                    x: 30 + Math.random() * (W - 60),
+                    y: -20,
+                    r: 14 + Math.random() * 12,
+                    vy: 1.8 + Math.random() * 1.4,
+                    vx: (Math.random() - 0.5) * 0.8,
+                });
+            }
+        }
+        // move asteroids + collision
+        for (let i = game.asteroids.length - 1; i >= 0; i--) {
+            const a = game.asteroids[i];
+            a.y += a.vy;
+            a.x += a.vx;
+            if (a.y > H + 30) { game.asteroids.splice(i, 1); continue; }
+            // bullet collision
+            for (let j = game.bullets.length - 1; j >= 0; j--) {
+                const b = game.bullets[j];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                if (dx * dx + dy * dy < a.r * a.r + 20) {
+                    game.asteroids.splice(i, 1);
+                    game.bullets.splice(j, 1);
+                    game.score++;
+                    updateScore(game.score);
+                    haptic('light');
+                    break;
+                }
+            }
+            // player collision
+            const dx = a.x - p.x, dy = a.y - p.y;
+            if (dx * dx + dy * dy < a.r * a.r + 100) {
+                game.lives--;
+                haptic('error');
+                game.asteroids.splice(i, 1);
+                if (game.lives <= 0) { endGame(); return; }
+            }
+        }
+        draw();
+        requestAnimationFrame(loop);
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// ============================================================
+//                     РАСПИСАНИЕ (без изменений)
+// ============================================================
 
 function attachScheduleSwipe() {
     const content = document.getElementById('content');
@@ -243,7 +1607,7 @@ function renderUserBar() {
     const u = state.user;
     const p = state.profile;
     const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
-    const name = u.first_name || 'Гость';
+    const name = p?.display_name || u.first_name || 'Гость';
     const metaParts = [];
     if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
     if (u.username) metaParts.push('@' + u.username);
@@ -274,11 +1638,8 @@ function renderLesson(les) {
     const details = [];
     if (les.teacher) details.push(escapeHtml(les.teacher));
     if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
-
     const att = les.attendance || '';
     const attLabel = att === 'was' ? '✓' : att === 'missed' ? '✗' : att === 'sick' ? 'Б' : '';
-    const attCls = att || '';
-
     return `
         <div class="lesson">
             <div class="lesson-time">${escapeHtml(timeRange)}</div>
@@ -287,13 +1648,12 @@ function renderLesson(les) {
                 ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
                 ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
             </div>
-            <button class="lesson-status ${attCls}"
+            <button class="lesson-status ${att}"
                     data-action="lesson-status"
                     data-date="${escapeHtml(les.date || '')}"
                     data-time="${escapeHtml(les.time || '')}"
                     data-subject="${escapeHtml(les.subject || '')}"
-                    data-status="${att}"
-                    title="Отметить посещаемость">${attLabel}</button>
+                    data-status="${att}">${attLabel}</button>
         </div>
     `;
 }
@@ -405,6 +1765,10 @@ function renderSchedule() {
     return html;
 }
 
+// ============================================================
+//         ВСЕ ОСТАЛЬНЫЕ РЕНДЕРЫ (без изменений от старой версии)
+// ============================================================
+
 function getCourseFromGroup(groupName) {
     const m = String(groupName).match(/-(\d{2})-/);
     if (!m) return null;
@@ -494,7 +1858,7 @@ function pickerAttachSearch() {
         const allGroups = (state.groups && state.groups[inst]) || [];
         const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
         const q = (state.pickerSearch || '').trim().toLowerCase();
-        const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+        const filtered = groups.filter(g => !g.name.toLowerCase().includes(q) ? false : true).filter(g => !q || g.name.toLowerCase().includes(q));
         const list = document.getElementById('picker-list');
         if (!list) return;
         let html = '';
@@ -604,25 +1968,19 @@ function actionLessonStatus(el) {
     const subject = el.dataset.subject || '';
     const cur = el.dataset.status || '';
     if (!date || !time || !subject) return;
-
     let next = '';
     if (cur === '') next = 'was';
     else if (cur === 'was') next = 'missed';
     else if (cur === 'missed') next = 'sick';
     else if (cur === 'sick') next = '';
-
     el.dataset.status = next;
     el.classList.remove('was', 'missed', 'sick');
     if (next) el.classList.add(next);
     el.textContent = next === 'was' ? '✓' : next === 'missed' ? '✗' : next === 'sick' ? 'Б' : '';
-
     haptic(next === 'was' ? 'light' : next === 'missed' ? 'error' : 'light');
     _applyAttendanceLocally(date, time, subject, next);
-
-    apiPost('/api/attendance-set', { date, time, subject, status: next })
-        .catch(() => { haptic('error'); });
+    apiPost('/api/attendance-set', { date, time, subject, status: next }).catch(() => {});
 }
-
 function _applyAttendanceLocally(date, time, subject, status) {
     const upd = (lessons) => {
         if (!lessons) return;
@@ -634,12 +1992,11 @@ function _applyAttendanceLocally(date, time, subject, status) {
     };
     if (state.schedule?.lessons) upd(state.schedule.lessons);
     if (state.weekDays?.days) {
-        for (const d of state.weekDays.days) {
-            if (d.date === date) upd(d.lessons);
-        }
+        for (const d of state.weekDays.days) if (d.date === date) upd(d.lessons);
     }
 }
 
+// ==================== TASKS ====================
 function renderTasks() {
     const tasks = state.tasks;
     const stats = state.tasksStats;
@@ -649,9 +2006,8 @@ function renderTasks() {
     </div>`;
     if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
     if (!tasks || tasks.length === 0) {
-        if (state.tasksView === 'active') {
-            html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу» — укажи текст, срок и приоритет.</div></div>`;
-        } else html += renderEmpty('Нет выполненных задач');
+        if (state.tasksView === 'active') html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу».</div></div>`;
+        else html += renderEmpty('Нет выполненных задач');
         return html;
     }
     for (const t of tasks) {
@@ -666,9 +2022,7 @@ function renderTasks() {
             </div>
         </div>`;
     }
-    if (state.tasksView === 'done' && tasks.length > 0) {
-        html += `<button class="btn btn-secondary" data-action="tasks-clear" style="width:100%;margin-top:8px">Очистить выполненные</button>`;
-    }
+    if (state.tasksView === 'done' && tasks.length > 0) html += `<button class="btn btn-secondary" data-action="tasks-clear" style="width:100%;margin-top:8px">Очистить выполненные</button>`;
     return html;
 }
 
@@ -748,7 +2102,8 @@ async function actionTaskEditorSave() {
         }
         haptic('success');
         state.taskEditor = false; state.taskEditorId = null;
-        await loadTasks(); render();
+        await loadTasks(); await loadWallet();
+        render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 async function actionTaskEditorDelete() {
@@ -761,11 +2116,30 @@ async function actionTaskEditorDelete() {
         await loadTasks(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
+async function actionTaskDone(id) {
+    try {
+        const r = await apiPost('/api/task-update', { id, done: true });
+        haptic('success'); popEmoji('✅');
+        if (r.wallet) state.wallet = r.wallet;
+        await loadTasks(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTaskDelete(id) {
+    if (!confirm('Удалить задачу?')) return;
+    try { await apiPost('/api/task-delete', { id }); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTasksClear() {
+    if (!confirm('Очистить все выполненные?')) return;
+    try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
 
+// ==================== NOTES ====================
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
     if (!state.notes || state.notes.length === 0) {
-        html += `<div class="banner"><div class="banner-title">Заметки</div><div class="banner-sub">Короткие записи по предметам. Название предмета — ключ.</div></div>`;
+        html += `<div class="banner"><div class="banner-title">Заметки</div><div class="banner-sub">Короткие записи по предметам.</div></div>`;
         return html;
     }
     for (const n of state.notes) {
@@ -828,7 +2202,8 @@ async function actionNoteEditorSave() {
         await apiPost('/api/note-save', { subject, text });
         haptic('success');
         state.noteEditor = false; state.noteEditorId = null;
-        await loadNotes(); render();
+        await loadNotes(); await loadWallet();
+        render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 async function actionNoteEditorDelete() {
@@ -841,308 +2216,17 @@ async function actionNoteEditorDelete() {
         await loadNotes(); render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
-function renderGames() {
-    const info = state.gameInfo;
-    const best = info?.best ?? 0;
-    const plays = info?.plays ?? 0;
-
-    let html = `<div class="games-grid">`;
-
-    html += `<div class="game-tile" data-action="game-open">
-        <div class="game-tile-header">
-            <div class="game-tile-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <path d="M8 12l3 3 5-6"></path>
-                </svg>
-            </div>
-            <div style="flex:1;min-width:0">
-                <div class="game-tile-title">До пары успеть</div>
-                <div class="game-tile-tagline">Flappy-стиль · реакция</div>
-            </div>
-        </div>
-        <div class="game-tile-desc">
-            Пролетай между парами, не задень стены. Тапни — прыжок. Чем дальше — тем больше очков.
-        </div>
-        <div class="game-tile-stats">
-            <div class="game-tile-stat"><div class="game-tile-stat-value">${best}</div><div class="game-tile-stat-label">Рекорд</div></div>
-            <div class="game-tile-stat"><div class="game-tile-stat-value">${plays}</div><div class="game-tile-stat-label">Игр</div></div>
-        </div>
-        <div class="game-tile-play">Играть</div>
-    </div>`;
-
-    html += `<div class="game-tile" style="cursor:default;pointer-events:none;opacity:0.6;">
-        <div class="game-tile-header">
-            <div class="game-tile-icon" style="background:var(--bg-3);color:var(--text-2);box-shadow:none;">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-            </div>
-            <div style="flex:1;min-width:0">
-                <div class="game-tile-title">Скоро</div>
-                <div class="game-tile-tagline">Новые игры в разработке</div>
-            </div>
-        </div>
-        <div class="game-tile-desc">Здесь появятся новые игры. Следи за обновлениями.</div>
-    </div>`;
-
-    html += `</div>`;
-
-    if (state.gameInfo?.top && state.gameInfo.top.length > 0) {
-        html += `<div class="card" style="margin-top:12px"><div class="card-title">Топ игроков</div>`;
-        for (const item of state.gameInfo.top) {
-            const cls = item.is_me ? 'game-top-me' : '';
-            const name = item.display || `Игрок #${String(item.user_id).slice(-4)}`;
-            html += `<div class="grade-row ${cls}"><span>${item.rank}. ${escapeHtml(name)}</span><span class="grade-value">${item.score}</span></div>`;
-        }
-        html += `</div>`;
-    }
-    return html;
+async function actionNoteDelete(id) {
+    if (!confirm('Удалить заметку?')) return;
+    try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
 }
 
-function renderGameScreen() {
-    const best = state.gameInfo?.best ?? 0;
-    return `
-        <div class="game-wrap" id="game-wrap">
-            <div class="game-hud">
-                <div class="game-hud-score" id="game-score">0</div>
-                <div class="game-hud-best">Рекорд: ${best}</div>
-            </div>
-            <canvas id="game-canvas" class="game-canvas"></canvas>
-            <div class="game-hint" id="game-hint">Тапни, чтобы начать</div>
-            <button class="game-exit" data-action="game-exit" title="Выйти">✕</button>
-        </div>
-    `;
-}
-
-function renderGameResult() {
-    const r = state.gameResult;
-    if (!r) return renderEmpty('Нет данных');
-    let html = `<div class="game-result-wrap">
-        <div class="game-result-score-block">
-            <div class="game-result-label">Очки</div>
-            <div class="game-result-score">${r.score}</div>
-            ${r.is_record ? '<div class="game-result-record">НОВЫЙ РЕКОРД</div>' : ''}
-        </div>
-        <div class="game-result-best">Рекорд: ${r.best}</div>
-    `;
-    if (r.top && r.top.length > 0) {
-        html += `<div class="card"><div class="card-title">Топ игроков</div>`;
-        for (const item of r.top) {
-            const cls = item.is_me ? 'game-top-me' : '';
-            const name = item.display || `Игрок #${String(item.user_id).slice(-4)}`;
-            html += `<div class="grade-row ${cls}"><span>${item.rank}. ${escapeHtml(name)}</span><span class="grade-value">${item.score}</span></div>`;
-        }
-        html += `</div>`;
-    }
-    html += `<div class="actions-row" style="margin-top:16px">
-        <button class="btn" data-action="game-play-again" style="flex:1">Ещё раз</button>
-        <button class="btn btn-secondary" data-action="game-exit" style="flex:1">В меню</button>
-    </div>
-    </div>`;
-    return html;
-}
-function actionGameOpen() {
-    haptic('light');
-    state.gameView = 'playing'; state.gameResult = null; state.gameInstance = null;
-    render();
-}
-function actionGameExit() {
-    haptic('light');
-    if (state.gameInstance) state.gameInstance.running = false;
-    state.gameInstance = null; state.gameView = null; state.gameResult = null;
-    render();
-}
-function actionGamePlayAgain() {
-    haptic('light');
-    state.gameView = 'playing'; state.gameResult = null; state.gameInstance = null;
-    render();
-}
-async function submitGameScore(score) {
-    try {
-        const r = await apiPost('/api/game/submit', { score });
-        state.gameResult = { score, best: r.best, is_record: r.is_record, top: r.top || [] };
-        state.gameInfo = { best: r.best, plays: r.plays, top: r.top || [] };
-    } catch (e) {
-        state.gameResult = { score, best: score, is_record: false, top: [] };
-    }
-    state.gameInstance = null;
-    state.gameView = 'result';
-    render();
-}
-function roundRect(ctx, x, y, w, h, r) {
-    if (h < 2 * r) r = h / 2;
-    if (w < 2 * r) r = w / 2;
-    if (r < 0) r = 0;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-}
-function drawBlock(ctx, x, y, w, h) {
-    if (h <= 0 || w <= 0) return;
-    ctx.save();
-    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-    grad.addColorStop(0, 'rgba(30, 136, 229, 0.35)');
-    grad.addColorStop(0.5, 'rgba(0, 229, 208, 0.35)');
-    grad.addColorStop(1, 'rgba(30, 136, 229, 0.35)');
-    ctx.fillStyle = grad;
-    roundRect(ctx, x, y, w, h, 10); ctx.fill();
-    ctx.strokeStyle = '#00E5D0'; ctx.lineWidth = 2;
-    ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 12;
-    roundRect(ctx, x, y, w, h, 10); ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(0, 229, 208, 0.85)';
-    ctx.font = 'bold 11px Manrope, -apple-system, sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const cx = x + w / 2;
-    for (let ty = y + 34; ty < y + h - 16; ty += 44) ctx.fillText('ПАРА', cx, ty);
-    ctx.restore();
-}
-function drawObstacle(ctx, o, H) {
-    drawBlock(ctx, o.x, 0, o.w, o.gapY);
-    drawBlock(ctx, o.x, o.gapY + o.gapH, o.w, H - o.gapY - o.gapH);
-    ctx.save();
-    ctx.strokeStyle = 'rgba(0, 229, 208, 0.55)';
-    ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
-    ctx.beginPath();
-    ctx.moveTo(o.x - 4, o.gapY); ctx.lineTo(o.x + o.w + 4, o.gapY);
-    ctx.moveTo(o.x - 4, o.gapY + o.gapH); ctx.lineTo(o.x + o.w + 4, o.gapY + o.gapH);
-    ctx.stroke(); ctx.restore();
-}
-function drawPlayer(ctx, p) {
-    ctx.save();
-    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3);
-    glow.addColorStop(0, 'rgba(0, 229, 208, 0.7)');
-    glow.addColorStop(1, 'rgba(0, 229, 208, 0)');
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#00E5D0'; ctx.shadowColor = '#00E5D0'; ctx.shadowBlur = 18;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#070B14';
-    ctx.beginPath();
-    ctx.arc(p.x + 5, p.y - 4, 3, 0, Math.PI * 2);
-    ctx.arc(p.x + 12, p.y - 4, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.beginPath(); ctx.arc(p.x - 4, p.y - 6, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-}
-function drawGame(ctx, game) {
-    const W = game.W, H = game.H, frame = game.frame;
-    const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#08101f'); grad.addColorStop(0.55, '#0d1a33'); grad.addColorStop(1, '#111c3a');
-    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
-    ctx.save(); ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
-    for (let i = 0; i < 30; i++) {
-        const sx = (((i * 173 - frame * 0.4) % (W + 40)) + (W + 40)) % (W + 40) - 20;
-        const sy = (i * 97) % H;
-        const sz = (i % 3) + 1;
-        ctx.fillRect(sx, sy, sz, sz);
-    }
-    ctx.restore();
-    ctx.save();
-    ctx.strokeStyle = 'rgba(0, 229, 208, 0.25)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, H - 1); ctx.lineTo(W, H - 1); ctx.stroke();
-    ctx.restore();
-    for (const o of game.obstacles) drawObstacle(ctx, o, H);
-    drawPlayer(ctx, game.player);
-}
-function initGame() {
-    if (state.gameInstance) return;
-    const canvas = document.getElementById('game-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const W = Math.max(100, rect.width);
-    const H = Math.max(100, rect.height);
-    canvas.width = Math.floor(W * dpr);
-    canvas.height = Math.floor(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const game = {
-        W, H, running: true, over: false, started: false, score: 0, frame: 0,
-        player: { x: W * 0.28, y: H * 0.45, r: 16, vy: 0 },
-        obstacles: [], spawnTimer: 0, spawnInterval: 95,
-        gravity: 0.55, jumpForce: -8.3, speed: 3.1,
-        gap: Math.max(130, Math.min(170, H * 0.32)),
-    };
-    state.gameInstance = game;
-    function doJump() {
-        if (game.over || !game.running) return;
-        game.started = true;
-        const hint = document.getElementById('game-hint');
-        if (hint) hint.style.display = 'none';
-        game.player.vy = game.jumpForce;
-    }
-    function onPointer(e) { e.preventDefault(); doJump(); }
-    function onKey(e) {
-        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            e.preventDefault(); doJump();
-        }
-    }
-    canvas.addEventListener('pointerdown', onPointer);
-    document.addEventListener('keydown', onKey);
-    function cleanup() {
-        canvas.removeEventListener('pointerdown', onPointer);
-        document.removeEventListener('keydown', onKey);
-    }
-    function gameEnd() {
-        if (game.over) return;
-        game.over = true; game.running = false;
-        cleanup();
-        haptic('error');
-        submitGameScore(game.score);
-    }
-    function loop() {
-        if (state.gameInstance !== game || !game.running) return;
-        if (game.started) {
-            game.player.vy += game.gravity;
-            if (game.player.vy > 11) game.player.vy = 11;
-            game.player.y += game.player.vy;
-        }
-        if (game.player.y - game.player.r < 0) { game.player.y = game.player.r; game.player.vy = 0; }
-        if (game.player.y + game.player.r > H) { game.player.y = H - game.player.r; gameEnd(); return; }
-        game.spawnTimer++;
-        if (game.started && game.spawnTimer >= game.spawnInterval) {
-            game.spawnTimer = 0;
-            const minGapY = 40;
-            const maxGapY = H - game.gap - 40;
-            const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
-            game.obstacles.push({ x: W + 40, w: 62, gapY, gapH: game.gap, passed: false });
-        }
-        for (let i = game.obstacles.length - 1; i >= 0; i--) {
-            const o = game.obstacles[i];
-            if (game.started) o.x -= game.speed;
-            const px = game.player.x, py = game.player.y, pr = game.player.r;
-            if (px + pr > o.x && px - pr < o.x + o.w) {
-                if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) { gameEnd(); return; }
-            }
-            if (!o.passed && o.x + o.w < px) {
-                o.passed = true; game.score++;
-                haptic('light');
-                const scoreEl = document.getElementById('game-score');
-                if (scoreEl) scoreEl.textContent = String(game.score);
-            }
-            if (o.x + o.w < -60) game.obstacles.splice(i, 1);
-        }
-        drawGame(ctx, game);
-        game.frame++;
-        requestAnimationFrame(loop);
-    }
-    drawGame(ctx, game);
-    requestAnimationFrame(loop);
-}
-
+// ==================== AI ====================
 function renderAI() {
     let html = '';
     if (state.aiMessages.length === 0) {
-        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото и напиши, что с ним сделать.</div></div>`;
+        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото.</div></div>`;
     } else {
         for (const m of state.aiMessages) {
             if (m.role === 'user') {
@@ -1168,7 +2252,7 @@ function renderAI() {
         : '';
     html += `<div style="margin-top:12px">
         ${photoPreview}
-        <textarea class="input" id="ai-input" placeholder="Напиши вопрос или что сделать с фото..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
+        <textarea class="input" id="ai-input" placeholder="Напиши вопрос..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
         <button class="btn" data-action="ai-send" style="width:100%" ${state.aiPending ? 'disabled' : ''}>Отправить</button>
         <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>Прикрепить фото</button>
         <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
@@ -1227,6 +2311,7 @@ async function actionAISend() {
             const r = await apiPost('/api/ai-photo', { photo, question });
             state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
             haptic('success');
+            await loadWallet();
         } catch (err) {
             state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
             haptic('error');
@@ -1239,12 +2324,14 @@ async function actionAISend() {
         const r = await apiPost('/api/ai', { question });
         state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
         haptic('success');
+        await loadWallet();
     } catch (e) {
         state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
         haptic('error');
     } finally { state.aiPending = false; render(); }
 }
 
+// ==================== ADMIN ====================
 function renderAdmin() {
     if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
     let html = '';
@@ -1263,7 +2350,6 @@ function renderAdmin() {
     </div>`;
     html += `<div class="card">
         <div class="card-title">Рассылка</div>
-        <div class="card-subtitle">Уйдёт всем пользователям бота.</div>
         <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
         <button class="btn" data-action="admin-broadcast">Отправить всем</button>
     </div>`;
@@ -1284,168 +2370,12 @@ function renderAdmin() {
     return html;
 }
 
-function renderProfile() {
-    const p = state.profile;
-    const u = state.user;
-    const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
-    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Гость';
-    const metaParts = [];
-    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` (подгр. ${p.subgroup})` : ''));
-    if (u.username) metaParts.push('@' + u.username);
-
-    let html = `<div class="profile-header">
-        <div class="profile-avatar">${escapeHtml(initials)}</div>
-        <div class="profile-name">${escapeHtml(fullName)}</div>
-        ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
-        ${p?.is_admin ? '<div class="badge" style="background:linear-gradient(135deg,#e53935,#b71c1c);color:#fff">ADMIN</div>' : ''}
-    </div>`;
-
-    if (p) {
-        html += `<div class="card">
-            <div class="card-title">Статистика</div>
-            <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
-            <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
-            <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
-            <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
-        </div>`;
-
-        const attTotal = p.attendance_total || 0;
-        html += `<div class="card">
-            <div class="card-title">Посещаемость</div>`;
-        if (attTotal === 0) {
-            html += `<div class="card-subtitle">Отмечай пары в расписании — здесь появится статистика.</div>`;
-        } else {
-            html += `<div class="att-stat-row"><span class="att-stat-label">Всего отмечено</span><span class="att-stat-value">${attTotal}</span></div>`;
-            html += `<div class="att-stat-row"><span class="att-stat-label">Посещено</span><span class="att-stat-value green">${p.attendance_was || 0}</span></div>`;
-            html += `<div class="att-stat-row"><span class="att-stat-label">Пропущено</span><span class="att-stat-value red">${p.attendance_missed || 0}</span></div>`;
-            html += `<div class="att-stat-row"><span class="att-stat-label">По болезни</span><span class="att-stat-value yellow">${p.attendance_sick || 0}</span></div>`;
-        }
-        html += `</div>`;
-    }
-
-    html += `<div class="card">
-        <div class="card-title">Мой ID</div>
-        <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
-        <div class="actions-row"><button class="btn btn-secondary" data-action="copy-my-id">Скопировать ID</button></div>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Моя группа</div>
-        <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="choose-group">${p?.group ? 'Изменить' : 'Выбрать группу'}</button>
-            ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
-        </div>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Подгруппа</div>
-        <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">—</button>
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
-        </div>
-    </div>`;
-
-    const notifyOn = !!p?.notify_type;
-    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
-    html += `<div class="card">
-        <div class="card-title">Уведомления о расписании</div>
-        <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
-        <div class="actions-row">
-            <button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button>
-        </div>
-        <label class="checkbox-row">
-            <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
-            <span>Следить за изменениями в расписании</span>
-        </label>
-        <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
-        <div class="nbf-buttons">
-            ${[0, 10, 15, 30].map(m => `
-                <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
-                        data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
-            `).join('')}
-        </div>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Цитата дня</div>
-        <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
-        <div class="actions-row">
-            ${p?.daily_subscribed
-                ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
-                : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
-        </div>
-    </div>`;
-
-    html += renderScholarshipCard();
-    html += renderMyFeedbackCard();
-
-    html += `<div class="card">
-        <div class="card-title">Обратная связь</div>
-        <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
-        <button class="btn" data-action="feedback-send">Отправить</button>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Экспорт данных</div>
-        <div class="export-hint">PDF-файл со всеми данными: задачи, заметки, оценки, посещаемость. Бот пришлёт его в чат.</div>
-        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Готовлю PDF...' : 'Скачать PDF'}</button>
-    </div>`;
-
-    return html;
-}
-
-function renderMyFeedbackCard() {
-    if (!state.myFeedbackLoaded) {
-        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Загрузка...</div></div>`;
-    }
-    if (!state.myFeedback || state.myFeedback.length === 0) {
-        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Ты ещё не писал админу.</div></div>`;
-    }
-    const total = state.myFeedback.length;
-    const previewLimit = 3;
-    const showAll = state.myFeedbackExpanded;
-    const items = showAll ? state.myFeedback : state.myFeedback.slice(0, previewLimit);
-
-    let html = `<div class="card"><div class="card-title">Мои обращения <span style="color:var(--text-2);font-weight:600;font-size:13px">${total > previewLimit && !showAll ? `· показаны ${previewLimit} из ${total}` : `· ${total}`}</span></div>`;
-
-    for (const f of items) {
-        let statusLabel = 'В обработке';
-        let statusCls = 'new';
-        if (f.status === 'answered') { statusLabel = 'Отвечено'; statusCls = 'answered'; }
-        else if (f.status === 'postponed') { statusLabel = 'Отложено'; statusCls = 'postponed'; }
-        const dateStr = (f.created_at || '').slice(0, 10);
-        html += `<div class="fb-item">
-            <div class="fb-item-head">
-                <span class="fb-date">${escapeHtml(dateStr)}</span>
-                <span class="fb-status ${statusCls}">${statusLabel}</span>
-            </div>
-            <div class="fb-text">${escapeHtml(f.text)}</div>
-            ${f.admin_reply ? `<div class="fb-reply"><div class="fb-reply-label">Ответ</div>${escapeHtml(f.admin_reply)}</div>` : ''}
-        </div>`;
-    }
-    if (total > previewLimit && !showAll) {
-        html += `<button class="fb-show-more" data-action="fb-toggle">Показать все (${total})</button>`;
-    } else if (showAll && total > previewLimit) {
-        html += `<button class="fb-show-more" data-action="fb-toggle">Свернуть</button>`;
-    }
-    html += `</div>`;
-    return html;
-}
-function actionFbToggle() {
-    haptic('light');
-    state.myFeedbackExpanded = !state.myFeedbackExpanded;
-    render();
-}
-
+// ==================== SCHOLARSHIP ====================
 function renderScholarshipCard() {
     const s = state.scholarship;
     let html = `<div class="card"><div class="card-title">Стипендия</div>`;
     if (!s) { html += `<div class="card-subtitle">Загрузка...</div></div>`; return html; }
     html += `<div class="card-subtitle">Текущая сумма: ${s.amount !== null && s.amount !== undefined ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
-
     const semesters = s.semesters || [];
     if (semesters.length > 0) {
         html += `<div class="sem-selector">
@@ -1459,9 +2389,8 @@ function renderScholarshipCard() {
     const grades = state.scholarshipSemesterFilter === 'all'
         ? allGrades
         : allGrades.filter(g => (g.semester || '') === state.scholarshipSemesterFilter);
-
     if (allGrades.length === 0) {
-        html += `<div class="sch-empty">Оценок пока нет. Добавь первую — увидишь средний балл и прогноз по стипендии.</div>`;
+        html += `<div class="sch-empty">Оценок пока нет.</div>`;
         html += `<div class="actions-row" style="margin-top:12px">
             <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
             <button class="btn" data-action="sch-add-new" style="flex:1">+ Добавить оценку</button>
@@ -1474,7 +2403,6 @@ function renderScholarshipCard() {
     const cnt2 = grades.filter(g => g.grade === 2).length;
     const cntAuto = grades.filter(g => g.is_auto).length;
     const avg = grades.length > 0 ? grades.reduce((a, g) => a + g.grade, 0) / grades.length : 0;
-
     html += `<div class="sch-avg-block">
         <div class="sch-avg-value">${avg.toFixed(2)}</div>
         <div class="sch-avg-label">средний балл · ${grades.length} ${pluralSubjects(grades.length)}${cntAuto > 0 ? ` · автоматов: ${cntAuto}` : ''}</div>
@@ -1494,7 +2422,6 @@ function renderScholarshipCard() {
     let filtered = grades;
     if (state.scholarshipFilter === 'auto') filtered = grades.filter(g => g.is_auto);
     else if (state.scholarshipFilter !== 'all') filtered = grades.filter(g => String(g.grade) === state.scholarshipFilter);
-
     html += `<div class="sch-list">`;
     if (filtered.length === 0) html += `<div class="sch-empty">Нет оценок с таким фильтром</div>`;
     else for (const g of filtered) {
@@ -1616,7 +2543,8 @@ async function actionScholarshipSave() {
         }
         haptic('success');
         state.scholarshipEditor = false; state.scholarshipEditorId = null;
-        await loadScholarship(); render();
+        await loadScholarship(); await loadWallet();
+        render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 async function actionScholarshipDeleteGrade() {
@@ -1641,13 +2569,130 @@ async function actionScholarshipSetAmount() {
 }
 async function actionScholarshipClear() {
     const sem = state.scholarshipSemesterFilter === 'all' ? null : state.scholarshipSemesterFilter;
-    const msg = sem ? `Очистить оценки за «${sem}»?` : 'Очистить ВСЕ оценки (за все семестры)?';
+    const msg = sem ? `Очистить оценки за «${sem}»?` : 'Очистить ВСЕ оценки?';
     if (!confirm(msg)) return;
     try {
         await apiPost('/api/scholarship-clear', { semester: sem });
         haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
+
+// ==================== FEEDBACK ====================
+function renderMyFeedbackCard() {
+    if (!state.myFeedbackLoaded) {
+        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Загрузка...</div></div>`;
+    }
+    if (!state.myFeedback || state.myFeedback.length === 0) {
+        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Ты ещё не писал админу.</div></div>`;
+    }
+    const total = state.myFeedback.length;
+    const previewLimit = 3;
+    const showAll = state.myFeedbackExpanded;
+    const items = showAll ? state.myFeedback : state.myFeedback.slice(0, previewLimit);
+    let html = `<div class="card"><div class="card-title">Мои обращения <span style="color:var(--text-2);font-weight:600;font-size:13px">${total > previewLimit && !showAll ? `· показаны ${previewLimit} из ${total}` : `· ${total}`}</span></div>`;
+    for (const f of items) {
+        let statusLabel = 'В обработке';
+        let statusCls = 'new';
+        if (f.status === 'answered') { statusLabel = 'Отвечено'; statusCls = 'answered'; }
+        else if (f.status === 'postponed') { statusLabel = 'Отложено'; statusCls = 'postponed'; }
+        const dateStr = (f.created_at || '').slice(0, 10);
+        html += `<div class="fb-item">
+            <div class="fb-item-head">
+                <span class="fb-date">${escapeHtml(dateStr)}</span>
+                <span class="fb-status ${statusCls}">${statusLabel}</span>
+            </div>
+            <div class="fb-text">${escapeHtml(f.text)}</div>
+            ${f.admin_reply ? `<div class="fb-reply"><div class="fb-reply-label">Ответ</div>${escapeHtml(f.admin_reply)}</div>` : ''}
+        </div>`;
+    }
+    if (total > previewLimit && !showAll) html += `<button class="fb-show-more" data-action="fb-toggle">Показать все (${total})</button>`;
+    else if (showAll && total > previewLimit) html += `<button class="fb-show-more" data-action="fb-toggle">Свернуть</button>`;
+    html += `</div>`;
+    return html;
+}
+function actionFbToggle() {
+    haptic('light');
+    state.myFeedbackExpanded = !state.myFeedbackExpanded;
+    render();
+}
+async function actionFeedbackSend() {
+    const el = document.getElementById('feedback-text');
+    if (!el) return;
+    const text = (el.value || '').trim();
+    if (!text) return;
+    try {
+        await apiPost('/api/feedback', { text });
+        el.value = ''; haptic('success'); alert('Отправлено');
+        state.myFeedbackLoaded = false; state.myFeedbackExpanded = false;
+        await loadMyFeedback(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionExportData() {
+    if (state.exportPending) return;
+    state.exportPending = true; render();
+    haptic('light');
+    try {
+        await apiPost('/api/export');
+        haptic('success');
+        alert('PDF отправлен в чат с ботом');
+    } catch (e) {
+        haptic('error');
+        alert('Ошибка: ' + e.message);
+    } finally {
+        state.exportPending = false; render();
+    }
+}
+async function actionForgetGroup() {
+    if (!confirm('Забыть группу?')) return;
+    try {
+        await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
+        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
+        haptic('success'); await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionSetSubgroup(value) {
+    try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionQuoteSubscribe(value) {
+    try { await apiPost('/api/quote-subscribe', { subscribe: value === 1 }); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionAdminMonitor() {
+    state.adminBusy = true;
+    try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
+    catch (e) { state.adminMonitor = { ok: false, status: 0, error: e.message }; }
+    state.adminBusy = false; render();
+}
+async function actionAdminBroadcast() {
+    const el = document.getElementById('admin-broadcast-text');
+    if (!el) return;
+    const text = (el.value || '').trim();
+    if (!text) { alert('Пустое сообщение'); return; }
+    if (!confirm('Отправить всем пользователям?')) return;
+    try { await apiPost('/api/admin/broadcast', { text }); el.value = ''; haptic('success'); alert('Рассылка запущена'); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionAdminFbReply(fid) {
+    const reply = prompt('Текст ответа:');
+    if (!reply) return;
+    try {
+        await apiPost('/api/admin/feedback-reply', { id: fid, text: reply });
+        haptic('success');
+        await loadAdminFeedback(); await loadAdminStats(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionAdminFbPostpone(fid) {
+    try {
+        await apiPost('/api/admin/feedback-postpone', { id: fid });
+        haptic('success');
+        await loadAdminFeedback(); await loadAdminStats(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+// ============================================================
+//                      LOAD FUNCTIONS
+// ============================================================
 
 async function loadSchedule() {
     try { state.schedule = await apiGet('/api/schedule'); }
@@ -1669,7 +2714,23 @@ async function loadProfile() {
     try {
         state.profile = await apiGet('/api/me');
         state.isAdmin = !!state.profile.is_admin;
+        if (state.profile.wallet) state.wallet = state.profile.wallet;
     } catch (e) { state.profile = { error: e.message }; }
+}
+async function loadWallet() {
+    try { const r = await apiGet('/api/wallet'); state.wallet = r.wallet; }
+    catch (e) {}
+}
+async function loadChestStatus() {
+    try { state.chest = await apiGet('/api/chest/status'); }
+    catch (e) { state.chest = { can_open: true }; }
+}
+async function loadAchievements() {
+    try {
+        const r = await apiGet('/api/achievements');
+        state.achievements = r.items || [];
+        state.achievementsLoaded = true;
+    } catch (e) { state.achievements = []; state.achievementsLoaded = true; }
 }
 async function loadScholarship() {
     try {
@@ -1694,9 +2755,17 @@ async function loadAdminFeedback() {
     try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
     catch (e) { state.adminFeedback = []; }
 }
-async function loadGameInfo() {
-    try { state.gameInfo = await apiGet('/api/game/info'); }
-    catch (e) { state.gameInfo = { best: 0, plays: 0, top: [] }; }
+async function loadGames() {
+    try {
+        const r = await apiGet('/api/game/info');
+        state.gamesList = r.games || [];
+    } catch (e) { state.gamesList = []; }
+}
+async function loadWalletLeaderboard() {
+    try {
+        const r = await apiGet('/api/wallet/leaderboard');
+        state.walletLeaderboard = r.items || [];
+    } catch (e) { state.walletLeaderboard = []; }
 }
 async function loadAiHistory() {
     try {
@@ -1722,6 +2791,9 @@ async function loadTabData(tab) {
     state.noteEditor = false;
     state.gameView = null;
     state.gameInstance = null;
+    state.nameEditor = false;
+    state.avatarPicker = false;
+    state.chestModal = null;
     render();
     try {
         if (tab === 'schedule') {
@@ -1734,7 +2806,11 @@ async function loadTabData(tab) {
             ensureWeekLoaded().catch(() => {});
         } else if (tab === 'tasks') await loadTasks();
         else if (tab === 'notes') await loadNotes();
-        else if (tab === 'games') { await loadProfile(); await loadGameInfo(); }
+        else if (tab === 'games') {
+            await loadProfile();
+            await loadGames();
+            await loadWalletLeaderboard();
+        }
         else if (tab === 'ai') { await loadProfile(); await loadAiHistory(); }
         else if (tab === 'admin') {
             await loadProfile();
@@ -1746,7 +2822,9 @@ async function loadTabData(tab) {
             state.scholarshipEditorId = null;
             state.myFeedbackLoaded = false;
             state.myFeedbackExpanded = false;
-            await Promise.all([loadProfile(), loadScholarship(), loadMyFeedback()]);
+            state.achievements = [];
+            state.achievementsLoaded = false;
+            await Promise.all([loadProfile(), loadWallet(), loadChestStatus(), loadAchievements(), loadScholarship(), loadMyFeedback()]);
         }
     } catch (e) { console.error(e); state.error = e.message; }
     state.loading = false;
@@ -1767,13 +2845,12 @@ async function loadTodayAndRender() {
     await loadSchedule();
     render();
 }
-async function actionDayToday() { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
+function actionDayToday() { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
 async function actionDayTomorrow() {
     state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today'; haptic('light');
     if (!state.weekDays) { render(); await ensureWeekLoaded(); }
     render();
 }
-
 async function actionChooseGroup() {
     haptic('light');
     await loadGroups(true);
@@ -1808,118 +2885,17 @@ async function actionPickerChooseGroup(groupId, groupName) {
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
-async function actionSetSubgroup(value) {
-    try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionQuoteSubscribe(value) {
-    try { await apiPost('/api/quote-subscribe', { subscribe: value === 1 }); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionFeedbackSend() {
-    const el = document.getElementById('feedback-text');
-    if (!el) return;
-    const text = (el.value || '').trim();
-    if (!text) return;
-    try {
-        await apiPost('/api/feedback', { text });
-        el.value = ''; haptic('success'); alert('Отправлено');
-        state.myFeedbackLoaded = false; state.myFeedbackExpanded = false;
-        await loadMyFeedback(); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionTaskDone(id) {
-    try { await apiPost('/api/task-update', { id, done: true }); haptic('success'); popEmoji('✅'); await loadTasks(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-function popEmoji(char) {
-    const el = document.createElement('div');
-    el.textContent = char;
-    el.style.cssText = 'position:fixed;top:50%;left:50%;font-size:56px;transform:translate(-50%,-50%);animation:pop 0.6s ease-out;z-index:99999;pointer-events:none';
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 600);
-}
-async function actionTaskDelete(id) {
-    if (!confirm('Удалить задачу?')) return;
-    try { await apiPost('/api/task-delete', { id }); haptic('success'); await loadTasks(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionTasksClear() {
-    if (!confirm('Очистить все выполненные?')) return;
-    try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionNoteDelete(id) {
-    if (!confirm('Удалить заметку?')) return;
-    try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionExportData() {
-    if (state.exportPending) return;
-    state.exportPending = true;
-    render();
-    haptic('light');
-    try {
-        await apiPost('/api/export');
-        haptic('success');
-        alert('PDF отправлен в чат с ботом');
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + e.message);
-    } finally {
-        state.exportPending = false;
-        render();
-    }
-}
-async function actionForgetGroup() {
-    if (!confirm('Забыть группу?')) return;
-    try {
-        await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
-        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
-        haptic('success'); await loadProfile(); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-function actionCopyMyId() {
-    const id = String(state.user?.id || '');
-    if (!id) return;
-    try { navigator.clipboard.writeText(id); haptic('success'); alert('ID скопирован: ' + id); }
-    catch (e) { alert('Твой ID: ' + id); }
-}
-async function actionAdminMonitor() {
-    state.adminBusy = true;
-    try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
-    catch (e) { state.adminMonitor = { ok: false, status: 0, error: e.message }; }
-    state.adminBusy = false; render();
-}
-async function actionAdminBroadcast() {
-    const el = document.getElementById('admin-broadcast-text');
-    if (!el) return;
-    const text = (el.value || '').trim();
-    if (!text) { alert('Пустое сообщение'); return; }
-    if (!confirm('Отправить всем пользователям?')) return;
-    try { await apiPost('/api/admin/broadcast', { text }); el.value = ''; haptic('success'); alert('Рассылка запущена'); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionAdminFbReply(fid) {
-    const reply = prompt('Текст ответа:');
-    if (!reply) return;
-    try {
-        await apiPost('/api/admin/feedback-reply', { id: fid, text: reply });
-        haptic('success');
-        await loadAdminFeedback(); await loadAdminStats(); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionAdminFbPostpone(fid) {
-    try {
-        await apiPost('/api/admin/feedback-postpone', { id: fid });
-        haptic('success');
-        await loadAdminFeedback(); await loadAdminStats(); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
+// ============================================================
+//                       HANDLERS
+// ============================================================
 
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
-        el.addEventListener('click', () => handleAction(el));
+        el.addEventListener('click', (e) => {
+            // if modal-backdrop and clicked backdrop (not child), close
+            if (el.classList.contains('modal-backdrop') && e.target !== el) return;
+            handleAction(el);
+        });
     });
     const notifyCb = document.getElementById('notify-changes');
     if (notifyCb) {
@@ -1961,7 +2937,21 @@ function handleAction(el) {
     const a = el.dataset.action;
     const v = el.dataset.value;
 
-    if (a === 'set-subgroup') actionSetSubgroup(parseInt(v));
+    // Profile
+    if (a === 'name-open') actionNameOpen();
+    else if (a === 'name-save') actionNameSave();
+    else if (a === 'avatar-open') actionAvatarOpen();
+    else if (a === 'avatar-pick') actionAvatarPick(parseInt(el.dataset.idx, 10));
+    else if (a === 'chest-open') actionChestOpen();
+    else if (a === 'modal-close') actionModalClose();
+
+    // Games
+    else if (a === 'game-open') actionGameOpen(el.dataset.game);
+    else if (a === 'game-exit') actionGameExit();
+    else if (a === 'game-play-again') actionGamePlayAgain();
+
+    // Rest
+    else if (a === 'set-subgroup') actionSetSubgroup(parseInt(v));
     else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(v));
     else if (a === 'feedback-send') actionFeedbackSend();
     else if (a === 'fb-toggle') actionFbToggle();
@@ -1997,16 +2987,12 @@ function handleAction(el) {
     else if (a === 'sem-filter') actionSemesterFilter(v);
     else if (a === 'notify-set-before') actionSetNotifyBefore(parseInt(v, 10));
     else if (a === 'export-data') actionExportData();
-    else if (a === 'game-open') actionGameOpen();
-    else if (a === 'game-exit') actionGameExit();
-    else if (a === 'game-play-again') actionGamePlayAgain();
     else if (a === 'ai-send') actionAISend();
     else if (a === 'ai-clear') actionAIClear();
     else if (a === 'ai-photo-open') actionAIPhotoOpen();
     else if (a === 'ai-photo-cancel') actionAIPhotoCancel();
     else if (a === 'choose-group') actionChooseGroup();
     else if (a === 'forget-group') actionForgetGroup();
-    else if (a === 'copy-my-id') actionCopyMyId();
     else if (a === 'picker-back') actionPickerBack();
     else if (a === 'picker-choose-institute') actionPickerChooseInstitute(v);
     else if (a === 'picker-choose-course') actionPickerChooseCourse(v);
