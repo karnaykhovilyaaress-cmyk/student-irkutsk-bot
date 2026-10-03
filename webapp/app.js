@@ -966,7 +966,6 @@ function initGame() {
     if (state.currentGame === 'flappy') initFlappy();
 }
 
-// Утилита: показать обучение → старт игры
 function showTutorialThenStart(startFn) {
     const startOv = document.getElementById('game-start-overlay');
     const tutOv = document.getElementById('game-tutorial-overlay');
@@ -1012,7 +1011,10 @@ function showTutorialThenStart(startFn) {
 }
 
 // ============================================================
-//   ИГРА: ДО ПАРЫ УСПЕТЬ (звёздный фон, шар, узкие дырки)
+//   ИГРА: ДО ПАРЫ УСПЕТЬ
+//   — плавность через delta-time
+//   — фиолетовые столбцы
+//   — шар с глазами и свечением
 // ============================================================
 
 function initFlappy() {
@@ -1064,18 +1066,74 @@ function initFlappy() {
         }
     }
 
+    // ============ ПРЕРЕНДЕР ШАРА (свечение + глаза) ============
+    const PLAYER_R = 13;
+    const SPRITE_SIZE = 90;
+    const playerSprite = document.createElement('canvas');
+    playerSprite.width = Math.floor(SPRITE_SIZE * dpr);
+    playerSprite.height = Math.floor(SPRITE_SIZE * dpr);
+    {
+        const pg = playerSprite.getContext('2d');
+        pg.scale(dpr, dpr);
+        const cx = SPRITE_SIZE / 2;
+        const cy = SPRITE_SIZE / 2;
+
+        // мягкое радиальное свечение вокруг шара
+        const glow = pg.createRadialGradient(cx, cy, PLAYER_R * 0.5, cx, cy, SPRITE_SIZE / 2);
+        glow.addColorStop(0, 'rgba(0,229,208,0.55)');
+        glow.addColorStop(0.35, 'rgba(0,229,208,0.22)');
+        glow.addColorStop(0.7, 'rgba(0,229,208,0.06)');
+        glow.addColorStop(1, 'rgba(0,229,208,0)');
+        pg.fillStyle = glow;
+        pg.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
+
+        // сам шар
+        pg.fillStyle = '#00E5D0';
+        pg.beginPath();
+        pg.arc(cx, cy, PLAYER_R, 0, Math.PI * 2);
+        pg.fill();
+
+        // верхний блик на шаре
+        const hl = pg.createRadialGradient(cx - 4, cy - 5, 0, cx - 4, cy - 5, PLAYER_R);
+        hl.addColorStop(0, 'rgba(255,255,255,0.55)');
+        hl.addColorStop(1, 'rgba(255,255,255,0)');
+        pg.fillStyle = hl;
+        pg.beginPath();
+        pg.arc(cx, cy, PLAYER_R, 0, Math.PI * 2);
+        pg.fill();
+
+        // глаза
+        pg.fillStyle = '#070B14';
+        pg.beginPath();
+        pg.arc(cx - 3.5, cy - 1, 2.8, 0, Math.PI * 2);
+        pg.arc(cx + 5.5, cy - 1, 2.8, 0, Math.PI * 2);
+        pg.fill();
+
+        // блики в глазах
+        pg.fillStyle = 'rgba(255,255,255,0.95)';
+        pg.beginPath();
+        pg.arc(cx - 4.2, cy - 1.8, 0.95, 0, Math.PI * 2);
+        pg.arc(cx + 4.8, cy - 1.8, 0.95, 0, Math.PI * 2);
+        pg.fill();
+    }
+
     // ============ ПАРАМЕТРЫ ============
-    const GAP = 138;
-    const MIN_GAP = 112;
+    const GAP = 148;
+    const MIN_GAP = 122;
     const COL_W = 58;
     const SPAWN_INTERVAL = 80;
     const MIN_SPAWN_INTERVAL = 60;
+
+    // Столбцы — фиолетовая палитра (контраст к зелёному шару)
+    const COL_FILL_TOP = 'rgba(139, 92, 246, 0.85)';
+    const COL_STROKE = '#C084FC';
+    const COL_LINE = 'rgba(255,255,255,0.16)';
 
     const game = {
         W, H,
         running: true, over: false, started: false,
         score: 0, frame: 0,
-        player: { x: W * 0.28, y: H * 0.5, r: 13, vy: 0 },
+        player: { x: W * 0.28, y: H * 0.5, r: PLAYER_R, vy: 0 },
         obstacles: [],
         spawnTimer: 0,
         spawnInterval: SPAWN_INTERVAL,
@@ -1087,7 +1145,7 @@ function initFlappy() {
         maxSpeed: 8.2,
         gap: GAP,
         minGap: MIN_GAP,
-        lastFrameTime: 0,
+        lastTime: 0,
     };
     state.gameInstance = game;
 
@@ -1133,13 +1191,13 @@ function initFlappy() {
 
     function drawColumn(x, y, w, h) {
         if (h <= 0) return;
-        ctx.fillStyle = 'rgba(0, 175, 165, 0.85)';
+        ctx.fillStyle = COL_FILL_TOP;
         roundRect(ctx, x, y, w, h, 8);
         ctx.fill();
-        ctx.strokeStyle = '#00E5D0';
+        ctx.strokeStyle = COL_STROKE;
         ctx.lineWidth = 2;
         ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+        ctx.strokeStyle = COL_LINE;
         ctx.lineWidth = 1;
         ctx.beginPath();
         for (let ly = y + 22; ly < y + h - 6; ly += 28) {
@@ -1151,23 +1209,13 @@ function initFlappy() {
 
     function drawPlayer() {
         const p = game.player;
-        ctx.strokeStyle = 'rgba(0,229,208,0.28)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r + 4, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = 'rgba(0,229,208,0.12)';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r + 9, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.fillStyle = '#00E5D0';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.45)';
-        ctx.beginPath();
-        ctx.arc(p.x - 4, p.y - 4, p.r * 0.32, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.drawImage(
+            playerSprite,
+            p.x - SPRITE_SIZE / 2,
+            p.y - SPRITE_SIZE / 2,
+            SPRITE_SIZE,
+            SPRITE_SIZE
+        );
     }
 
     function draw() {
@@ -1191,13 +1239,17 @@ function initFlappy() {
         if (state.gameInstance !== game || !game.running) return;
         requestAnimationFrame(loop);
 
-        if (game.lastFrameTime && timestamp - game.lastFrameTime < 15) return;
-        game.lastFrameTime = timestamp;
+        // === delta time (плавность на любом FPS) ===
+        if (!game.lastTime) game.lastTime = timestamp;
+        let dt = (timestamp - game.lastTime) / 16.6667;
+        game.lastTime = timestamp;
+        if (dt > 3) dt = 3;
+        if (dt <= 0) return;
 
         if (game.started) {
-            game.player.vy += game.gravity;
+            game.player.vy += game.gravity * dt;
             if (game.player.vy > game.maxFallSpeed) game.player.vy = game.maxFallSpeed;
-            game.player.y += game.player.vy;
+            game.player.y += game.player.vy * dt;
         }
         if (game.player.y - game.player.r < 0) {
             game.player.y = game.player.r;
@@ -1209,7 +1261,7 @@ function initFlappy() {
             return;
         }
 
-        game.spawnTimer++;
+        game.spawnTimer += dt;
         if (game.started && game.spawnTimer >= game.spawnInterval) {
             game.spawnTimer = 0;
             const minGapY = 40;
@@ -1221,7 +1273,7 @@ function initFlappy() {
         const px = game.player.x, py = game.player.y, pr = game.player.r;
         for (let i = game.obstacles.length - 1; i >= 0; i--) {
             const o = game.obstacles[i];
-            if (game.started) o.x -= game.speed;
+            if (game.started) o.x -= game.speed * dt;
             if (px + pr > o.x && px - pr < o.x + o.w) {
                 if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) {
                     endGame();
