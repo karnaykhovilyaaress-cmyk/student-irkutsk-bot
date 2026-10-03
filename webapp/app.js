@@ -53,12 +53,20 @@ async function apiGet(path, params = {}) {
     const url = new URL(path, window.location.origin);
     url.searchParams.set('initData', INIT_DATA);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-    const r = await fetch(url.toString());
-    if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.message || err.error || `HTTP ${r.status}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+        const r = await fetch(url.toString(), { signal: controller.signal });
+        clearTimeout(timer);
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.message || err.error || `HTTP ${r.status}`);
+        }
+        return await r.json();
+    } catch (e) {
+        clearTimeout(timer);
+        throw e;
     }
-    return await r.json();
 }
 
 async function apiPost(path, body = {}) {
@@ -205,20 +213,6 @@ function chestSvg() {
         <rect x="14" y="42" width="72" height="6" fill="#8A6508"/>
         <rect x="44" y="38" width="12" height="20" rx="2" fill="#FFEE9C" stroke="#8A6508" stroke-width="1"/>
         <circle cx="50" cy="48" r="2.5" fill="#B8860B"/>
-    </svg>`;
-}
-function gameCoverSvg(gameId) {
-    return `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-        <defs><linearGradient id="gcf" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#0E1424"/><stop offset="100%" stop-color="#1E88E5"/>
-        </linearGradient></defs>
-        <rect width="120" height="120" fill="url(#gcf)"/>
-        <rect x="76" y="20" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-        <rect x="76" y="66" width="16" height="34" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-        <rect x="30" y="20" width="16" height="26" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-        <rect x="30" y="58" width="16" height="42" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
-        <circle cx="55" cy="60" r="9" fill="#00E5D0"/>
-        <circle cx="58" cy="57" r="2" fill="#070B14"/>
     </svg>`;
 }
 
@@ -774,32 +768,21 @@ function actionModalClose() {
 }
 
 // ============================================================
-//                        ИГРЫ — СПИСОК
+//                        ИГРЫ
 // ============================================================
 
 function renderGames() {
-    const games = state.gamesList || [];
-    if (games.length === 0) return renderLoading();
+    let games = state.gamesList || [];
+    if (games.length === 0) {
+        games = [{ id: 'flappy', name: 'До пары успеть', desc: '', best: 0, plays: 0 }];
+    }
 
-    let html = `<div class="banner">
-        <div class="banner-title">Зарабатывай Стипухи и Автоматы</div>
-        <div class="banner-sub">Играй → получай валюту → меняй на ники и премиум-сундуки</div>
-    </div>`;
-
-    html += `<div class="games-catalog">`;
+    let html = `<div class="games-catalog">`;
     for (const g of games) {
         html += `<button class="game-catalog-card" data-action="game-open" data-game="${escapeHtml(g.id)}">
-            <div class="game-cover">${gameCoverSvg(g.id)}</div>
-            <div class="game-body">
-                <div>
-                    <div class="game-name">${escapeHtml(g.name)}</div>
-                    <div class="game-desc">${escapeHtml(g.desc)}</div>
-                </div>
-                <div class="game-best-line">
-                    <span>Рекорд: <strong>${g.best || 0}</strong></span>
-                    <span>Игр: <strong>${g.plays || 0}</strong></span>
-                </div>
-                <div class="game-play-btn">Играть</div>
+            <div class="game-catalog-cover">
+                <img src="assets/game-start.webp" alt="${escapeHtml(g.name)}"
+                     onerror="this.style.display='none'">
             </div>
         </button>`;
     }
@@ -827,10 +810,23 @@ function renderGameStartOverlay(gid) {
     const g = state.gamesList.find(x => x.id === gid);
     const best = g?.best || 0;
     return `<div class="game-start-overlay" id="game-start-overlay">
-        <img src="assets/game-start.webp" alt="До пары успеть" class="game-start-image"
-             onerror="this.style.display='none'">
+        <div class="game-start-icon">
+            <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                <defs><linearGradient id="fsi" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#1E88E5"/>
+                </linearGradient></defs>
+                <circle cx="60" cy="60" r="52" fill="none" stroke="url(#fsi)" stroke-width="3" opacity="0.4"/>
+                <rect x="78" y="20" width="14" height="30" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+                <rect x="78" y="72" width="14" height="28" rx="4" fill="#0E1424" stroke="#00E5D0" stroke-width="2"/>
+                <circle cx="45" cy="60" r="10" fill="#00E5D0">
+                    <animate attributeName="r" values="10;12;10" dur="1.4s" repeatCount="indefinite"/>
+                </circle>
+                <circle cx="48" cy="56" r="2" fill="#070B14"/>
+            </svg>
+        </div>
+        <div class="game-start-title">До пары<br>успеть</div>
         <div class="game-start-best">🏆 Рекорд: <strong>${best}</strong></div>
-        <div class="game-start-hint">Нажми, чтобы играть</div>
+        <div class="game-start-hint">Нажми, чтобы начать</div>
     </div>`;
 }
 
@@ -939,7 +935,6 @@ function initGame() {
     if (state.currentGame === 'flappy') initFlappy();
 }
 
-// Показать обучение ровно один раз
 function showTutorialThenStart(startFn) {
     const startOv = document.getElementById('game-start-overlay');
     const tutOv = document.getElementById('game-tutorial-overlay');
@@ -981,7 +976,7 @@ function showTutorialThenStart(startFn) {
 }
 
 // ============================================================
-//   ИГРА: ДО ПАРЫ УСПЕТЬ (фиолетовые столбцы, персонаж-студент)
+//   ИГРА: ДО ПАРЫ УСПЕТЬ
 // ============================================================
 
 function initFlappy() {
@@ -1130,7 +1125,6 @@ function initFlappy() {
         pg.fill();
     }
 
-    // ============ ПАРАМЕТРЫ ============
     const GAP = 160;
     const MIN_GAP = 132;
     const COL_W = 62;
@@ -1309,7 +1303,7 @@ function initFlappy() {
 }
 
 // ============================================================
-//                 УТИЛИТЫ CANVAS / API ИГР
+//                 УТИЛИТЫ CANVAS
 // ============================================================
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -1510,7 +1504,7 @@ function renderSchedule() {
 }
 
 // ============================================================
-//         ПИКЕРЫ ГРУПП / УВЕДОМЛЕНИЯ / ЗАДАЧИ / ЗАМЕТКИ
+//         ПИКЕРЫ ГРУПП
 // ============================================================
 
 function getCourseFromGroup(groupName) {
@@ -1608,6 +1602,10 @@ function pickerAttachSearch() {
         });
     });
 }
+
+// ============================================================
+//         УВЕДОМЛЕНИЯ
+// ============================================================
 
 function renderNotifyEditor() {
     const cur = state.notifyEditorType;
@@ -1712,6 +1710,10 @@ function _applyAttendanceLocally(date, time, subject, status) {
     if (state.schedule?.lessons) upd(state.schedule.lessons);
     if (state.weekDays?.days) for (const d of state.weekDays.days) if (d.date === date) upd(d.lessons);
 }
+
+// ============================================================
+//                        ЗАДАЧИ
+// ============================================================
 
 function renderTasks() {
     const tasks = state.tasks;
@@ -1844,6 +1846,11 @@ async function actionTasksClear() {
     try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
+
+// ============================================================
+//                        ЗАМЕТКИ
+// ============================================================
+
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
     if (!state.notes || state.notes.length === 0) {
