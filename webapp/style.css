@@ -600,7 +600,7 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 .game-top-me { color: var(--neon); font-weight: 800; }
 
 /* ============================================================
-   ЗАСТАВКА ИГРЫ
+   ЗАСТАВКА ИГРЫ — картинка
    ============================================================ */
 
 .game-start-overlay {
@@ -611,9 +611,9 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    padding: 20px;
     text-align: center;
-    background: radial-gradient(circle at 50% 35%, rgba(0,229,208,0.18) 0%, rgba(7,11,20,0.94) 55%, rgba(7,11,20,0.99) 100%);
+    background: radial-gradient(circle at 50% 35%, rgba(0,229,208,0.14) 0%, rgba(7,11,20,0.94) 55%, rgba(7,11,20,0.99) 100%);
     animation: startOverlayIn 0.4s ease;
     cursor: pointer;
     user-select: none; -webkit-user-select: none;
@@ -624,6 +624,24 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 .game-start-overlay.hide {
     opacity: 0; pointer-events: none;
     transition: opacity 0.35s ease;
+}
+
+.game-start-image {
+    width: 100%;
+    max-width: 480px;
+    height: auto;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 0 60px rgba(120, 160, 255, 0.55), 0 0 120px rgba(139, 92, 246, 0.35);
+    animation: startImageFloat 3.5s ease-in-out infinite;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+}
+@keyframes startImageFloat {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50%      { transform: translateY(-10px) scale(1.02); }
 }
 
 .game-start-icon {
@@ -671,12 +689,14 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
     font-weight: 800;
     color: var(--text-2);
     padding: 8px 16px;
-    background: rgba(0,0,0,0.4);
+    background: rgba(0,0,0,0.5);
     border: 1px solid rgba(0,229,208,0.25);
     border-radius: 999px;
     margin-bottom: 18px;
     letter-spacing: 0.6px;
     text-transform: uppercase;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 .game-start-best strong {
     color: var(--neon);
@@ -1532,4 +1552,5 @@ textarea.note-textarea { min-height: 200px; }
     .profile-name-main { font-size: 18px; }
     .chest-timer { font-size: 18px; letter-spacing: 2px; }
     .game-cover { width: 100px; }
+    .game-start-image { max-width: 100%; border-radius: 16px; }
 }
