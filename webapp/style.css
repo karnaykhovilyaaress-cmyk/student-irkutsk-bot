@@ -548,7 +548,6 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
     text-transform: uppercase; letter-spacing: 2px; margin-top: 8px;
 }
 
-/* Кнопка выхода */
 .game-exit {
     position: absolute;
     top: calc(env(safe-area-inset-top, 0px) + 60px);
@@ -567,7 +566,6 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 }
 .game-exit:active { transform: scale(0.9); }
 
-/* Кнопка mute (рядом с выходом) */
 .game-mute {
     position: absolute;
     top: calc(env(safe-area-inset-top, 0px) + 60px);
@@ -687,7 +685,7 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 }
 
 /* ============================================================
-   КАРТОЧКА ИГРЫ НА ВКЛАДКЕ «ИГРЫ» — только обложка
+   КАРТОЧКА ИГРЫ НА ВКЛАДКЕ «ИГРЫ»
    ============================================================ */
 
 .games-catalog {
@@ -1393,92 +1391,36 @@ textarea.note-textarea { min-height: 200px; }
 }
 
 /* ============================================================
-   АВАТАРКИ — подсказка и пикер
+   КНОПКА СМЕНЫ АВАТАРА (под кругом аватарки)
    ============================================================ */
 
-.profile-avatar-hint {
-    position: absolute;
-    bottom: 6px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,229,208,0.92);
-    color: #070B14;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    padding: 4px 12px;
-    border-radius: 999px;
-    box-shadow: 0 0 14px var(--neon-glow);
-    z-index: 2;
-    pointer-events: none;
-    opacity: 0.95;
-}
-.profile-avatar-wrap:active .profile-avatar-hint {
-    transform: translateX(-50%) scale(0.9);
-}
-
-.avatar-picker-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 14px;
-    margin: 8px 0 4px;
-}
-.avatar-option {
-    position: relative;
-    background: var(--bg-3);
-    border: 2px solid var(--divider);
-    border-radius: var(--r-lg);
-    padding: 10px;
-    cursor: pointer;
-    font-family: inherit;
-    color: var(--text);
-    transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    overflow: hidden;
-}
-.avatar-option:active { transform: scale(0.95); }
-.avatar-option.active {
-    border-color: var(--neon);
-    background: var(--grad-neon-soft);
-    box-shadow: 0 0 20px rgba(0,229,208,0.30);
-}
-.avatar-option img {
-    width: 90px;
-    height: 90px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: center 25%;
+.avatar-change-btn {
     display: block;
-    filter: drop-shadow(0 0 14px var(--neon-glow));
-}
-.avatar-option-label {
+    margin: 0 auto 14px;
+    background: rgba(0,229,208,0.14);
+    border: 1px solid rgba(0,229,208,0.35);
+    color: var(--neon);
+    font-family: inherit;
     font-size: 12px;
     font-weight: 800;
-    letter-spacing: 0.5px;
-    color: var(--text-2);
+    letter-spacing: 1px;
     text-transform: uppercase;
+    padding: 9px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    position: relative;
+    z-index: 2;
+    transition: all 0.15s ease;
+    box-shadow: 0 0 14px rgba(0,229,208,0.20);
 }
-.avatar-option.active .avatar-option-label { color: var(--neon); }
-.avatar-option-check {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--neon);
-    color: #070B14;
-    font-size: 14px;
-    font-weight: 900;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 12px var(--neon-glow);
+.avatar-change-btn:active {
+    transform: scale(0.96);
+    background: rgba(0,229,208,0.25);
+    box-shadow: 0 0 22px rgba(0,229,208,0.35);
 }
+
+/* Скрываем старую плашку "Сменить", если где-то осталась */
+.profile-avatar-hint { display: none !important; }
 
 @media (max-width: 420px) {
     .ach-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1494,5 +1436,4 @@ textarea.note-textarea { min-height: 200px; }
     .profile-avatar-img { width: 122px; height: 122px; }
     .profile-name-main { font-size: 18px; }
     .chest-timer { font-size: 18px; letter-spacing: 2px; }
-    .avatar-option img { width: 70px; height: 70px; }
 }
