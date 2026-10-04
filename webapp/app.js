@@ -1306,7 +1306,7 @@ function actionGameOpen(gameId) {
 function actionGameExit() {
     haptic('light');
     stopGameMusic();
-    if (state.bsPollTimer) { clearInterval(state.bsPollTimer); state.bsPollTimer = null; }
+    bsClearPoll();
     if (state.gameInstance) state.gameInstance.running = false;
     state.gameInstance = null;
     state.gameView = null;
@@ -1625,6 +1625,9 @@ function updateScore(val) {
     const el = document.getElementById('game-score');
     if (el) el.textContent = String(val);
 }
+
+
+
 
 function bsEmptyField() {
     return Array.from({ length: 10 }, () => new Array(10).fill(0));
@@ -2063,7 +2066,11 @@ function actionBSBet(value) {
 }
 
 function bsClearPoll() {
-    if (state.bsPollTimer) { clearInterval(state.bsPollTimer); state.bsPollTimer = null; }
+    if (state.bsPollTimer) {
+        clearTimeout(state.bsPollTimer);
+        clearInterval(state.bsPollTimer);
+        state.bsPollTimer = null;
+    }
 }
 
 async function actionBSPlayBot() {
@@ -2326,7 +2333,6 @@ async function actionBSConfirmPlace() {
             state._bsConfirmLock = false;
             render();
             startBSPolling();
-            if (state.bsTurn === 'enemy') pollBSGame();
         }
     } catch (e) {
         state._bsConfirmLock = false;
@@ -2335,9 +2341,26 @@ async function actionBSConfirmPlace() {
     }
 }
 
+// ============================================================
+//   АДАПТИВНЫЙ POLLING — быстро когда ход врага, редко когда свой
+// ============================================================
+
 function startBSPolling() {
     bsClearPoll();
-    state.bsPollTimer = setInterval(pollBSGame, 2500);
+    // Немедленный первый опрос + адаптивный цикл
+    pollBSGame().then(() => scheduleNextBSPoll());
+}
+
+function scheduleNextBSPoll() {
+    bsClearPoll();
+    if (!state.bsGameId || state.bsIsBot) return;
+    if (state.bsScreen !== 'battle' && state.bsScreen !== 'waiting') return;
+    // Ход соперника → опрашиваем часто (700 мс). Свой ход → редко (3000 мс).
+    const delay = (state.bsTurn === 'enemy') ? 700 : 3000;
+    state.bsPollTimer = setTimeout(async () => {
+        await pollBSGame();
+        scheduleNextBSPoll();
+    }, delay);
 }
 
 async function pollBSGame() {
@@ -2361,6 +2384,7 @@ async function pollBSGame() {
             if (r.my_shots) {
                 state.bsEnemyField = reconstructEnemyFieldFromShots(r.my_shots);
             }
+            const prevTurn = state.bsTurn;
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
             if (r.log && r.log.length) state.bsLog = r.log;
 
@@ -2369,6 +2393,11 @@ async function pollBSGame() {
                 render();
             } else {
                 refreshBSBattleDOM();
+            }
+
+            // Если ход сменился на наш — короткий сигнал
+            if (prevTurn === 'enemy' && state.bsTurn === 'me') {
+                haptic('success');
             }
         }
     } catch (e) {}
@@ -2457,7 +2486,10 @@ async function pvpFire(x, y) {
         state.bsTurn = r.your_turn ? 'me' : 'enemy';
         if (r.log) state.bsLog = r.log;
         refreshBSBattleDOM();
-        if (state.bsTurn === 'enemy') startBSPolling();
+        // Сразу запускаем быстрый polling — наш ход завершён, ждём ответа
+        if (state.bsTurn === 'enemy') {
+            startBSPolling();
+        }
     } catch (e) {
         haptic('error');
         alert('Ошибка: ' + (e.message || 'не удалось сделать выстрел'));
