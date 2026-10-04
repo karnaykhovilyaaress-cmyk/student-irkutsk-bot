@@ -17,6 +17,17 @@ setTimeout(() => {
     setTimeout(() => { if (sp) sp.remove(); }, 600);
 }, 1200);
 
+// Список доступных аватарок
+const AVATARS = [
+    { idx: 0, path: 'assets/student.webp', label: 'Парень' },
+    { idx: 1, path: 'assets/avatar-1.webp', label: 'Девушка' },
+];
+
+function avatarPathByIdx(idx) {
+    const found = AVATARS.find(a => a.idx === idx);
+    return found ? found.path : AVATARS[0].path;
+}
+
 const state = {
     tab: 'schedule', loading: false, error: null, user: tgUser, isAdmin: false,
     schedule: null, weekDays: null, nextWeekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
@@ -32,6 +43,7 @@ const state = {
     levelInfoModal: false,
     premiumModal: null,
     newAchToast: null,
+    avatarPicker: false,
     scholarship: null, groups: null,
     scholarshipEditor: false, scholarshipEditorId: null,
     scholarshipEditorSubject: '', scholarshipEditorGrade: 0,
@@ -166,11 +178,24 @@ function toggleMusicMute() {
 }
 
 // ============================================================
+//              СПРАЙТ ПЕРСОНАЖА ИГРЫ
+// ============================================================
+
+const heroImg = new Image();
+heroImg.crossOrigin = 'anonymous';
+let heroImgReady = false;
+heroImg.onload = () => { heroImgReady = true; };
+heroImg.onerror = () => { heroImgReady = false; };
+heroImg.src = 'assets/hero.webp';
+
+// ============================================================
 //          SVG / ИКОНКИ
 // ============================================================
 
 function studentAvatarSvg() {
-    return `<img src="assets/student.webp" alt="Студент" class="profile-avatar-img"
+    const idx = state.wallet?.avatar_idx || 0;
+    const path = avatarPathByIdx(idx);
+    return `<img src="${path}" alt="Аватар" class="profile-avatar-img"
         onerror="this.outerHTML = studentAvatarFallback();">`;
 }
 function studentAvatarFallback() {
@@ -334,6 +359,7 @@ function render() {
     else if (state.achModal) modalHtml = renderAchModal();
     else if (state.levelInfoModal) modalHtml = renderLevelInfoModal();
     else if (state.newAchToast) modalHtml = renderNewAchToast();
+    else if (state.avatarPicker) modalHtml = renderAvatarPickerModal();
 
     appEl?.classList.remove('picker-open');
     if (navEl) navEl.style.display = '';
@@ -422,7 +448,10 @@ function renderProfile() {
             <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
         </div>
         <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
-        <div class="profile-avatar-wrap">${studentAvatarSvg()}</div>
+        <div class="profile-avatar-wrap" data-action="avatar-open" style="cursor:pointer">
+            ${studentAvatarSvg()}
+            <div class="profile-avatar-hint">Сменить</div>
+        </div>
         <div class="profile-level-block" data-action="level-info-open">
             <div class="profile-level-num">${lvl}<small>LVL</small></div>
             <div class="profile-level-title">${escapeHtml(w?.level_title || 'Первокурсник')}</div>
@@ -568,6 +597,30 @@ function renderProfile() {
     </div>`;
 
     return html;
+}
+
+function renderAvatarPickerModal() {
+    const curIdx = state.wallet?.avatar_idx || 0;
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-title">Выбор аватарки</div>
+            <div class="modal-sub">Выбери персонажа</div>
+            <div class="avatar-picker-grid">
+                ${AVATARS.map(a => `
+                    <button class="avatar-option ${a.idx === curIdx ? 'active' : ''}"
+                            data-action="avatar-set" data-idx="${a.idx}">
+                        <img src="${a.path}" alt="${escapeHtml(a.label)}"
+                             onerror="this.style.display='none'">
+                        <div class="avatar-option-label">${escapeHtml(a.label)}</div>
+                        ${a.idx === curIdx ? '<div class="avatar-option-check">✓</div>' : ''}
+                    </button>
+                `).join('')}
+            </div>
+            <div class="actions-row" style="justify-content:center;margin-top:16px">
+                <button class="btn btn-secondary" data-action="modal-close">Закрыть</button>
+            </div>
+        </div>
+    </div>`;
 }
 
 function renderNameEditorModal() {
@@ -767,6 +820,31 @@ async function actionNameSave() {
         render();
     } catch (e) { haptic('error'); alert(e.message || 'Ошибка'); }
 }
+function actionAvatarOpen() {
+    haptic('light');
+    state.avatarPicker = true;
+    render();
+}
+async function actionAvatarSet(idx) {
+    haptic('light');
+    const curIdx = state.wallet?.avatar_idx || 0;
+    if (idx === curIdx) {
+        state.avatarPicker = false;
+        render();
+        return;
+    }
+    try {
+        const r = await apiPost('/api/set-avatar', { idx });
+        if (state.wallet) state.wallet.avatar_idx = idx;
+        state.avatarPicker = false;
+        haptic('success');
+        popEmoji('👤');
+        render();
+    } catch (e) {
+        haptic('error');
+        alert(e.message || 'Не удалось сменить аватарку');
+    }
+}
 async function actionChestOpen() {
     try {
         const r = await apiPost('/api/chest/open');
@@ -796,6 +874,7 @@ function actionModalClose() {
     state.levelInfoModal = false;
     state.premiumModal = null;
     state.newAchToast = null;
+    state.avatarPicker = false;
     render();
 }
 
@@ -1034,100 +1113,7 @@ function initFlappy() {
     }
 
     const PLAYER_R = 15;
-    const SPRITE_W = 78;
-    const SPRITE_H = 78;
-    const playerSprite = document.createElement('canvas');
-    playerSprite.width = Math.floor(SPRITE_W * dpr);
-    playerSprite.height = Math.floor(SPRITE_H * dpr);
-    {
-        const pg = playerSprite.getContext('2d');
-        pg.scale(dpr, dpr);
-        const cx = SPRITE_W / 2;
-        const cy = SPRITE_H / 2;
-
-        const glow = pg.createRadialGradient(cx, cy, 4, cx, cy, SPRITE_W / 2);
-        glow.addColorStop(0, 'rgba(120,200,255,0.45)');
-        glow.addColorStop(0.5, 'rgba(80,150,255,0.18)');
-        glow.addColorStop(1, 'rgba(80,150,255,0)');
-        pg.fillStyle = glow;
-        pg.fillRect(0, 0, SPRITE_W, SPRITE_H);
-
-        const flameGrad = pg.createLinearGradient(cx, cy + 12, cx, cy + 36);
-        flameGrad.addColorStop(0, 'rgba(255,255,255,0.95)');
-        flameGrad.addColorStop(0.35, 'rgba(160,220,255,0.9)');
-        flameGrad.addColorStop(0.7, 'rgba(80,160,255,0.5)');
-        flameGrad.addColorStop(1, 'rgba(80,160,255,0)');
-        pg.fillStyle = flameGrad;
-        pg.beginPath();
-        pg.moveTo(cx - 9, cy + 10);
-        pg.lineTo(cx + 9, cy + 10);
-        pg.lineTo(cx, cy + 36);
-        pg.closePath();
-        pg.fill();
-        pg.fillStyle = 'rgba(255,255,255,0.85)';
-        pg.beginPath();
-        pg.moveTo(cx - 4, cy + 12);
-        pg.lineTo(cx + 4, cy + 12);
-        pg.lineTo(cx, cy + 28);
-        pg.closePath();
-        pg.fill();
-
-        pg.fillStyle = '#0d0e17';
-        pg.beginPath();
-        pg.roundRect(cx - 8, cy + 8, 6, 10, 2);
-        pg.roundRect(cx + 2, cy + 8, 6, 10, 2);
-        pg.fill();
-        pg.fillStyle = '#eef2ff';
-        pg.beginPath();
-        pg.roundRect(cx - 10, cy + 15, 9, 5, 2);
-        pg.roundRect(cx + 1, cy + 15, 9, 5, 2);
-        pg.fill();
-
-        pg.fillStyle = '#15161f';
-        pg.beginPath();
-        pg.roundRect(cx - 12, cy - 8, 24, 18, 7);
-        pg.fill();
-        pg.strokeStyle = 'rgba(200,200,220,0.35)';
-        pg.lineWidth = 1;
-        pg.beginPath();
-        pg.moveTo(cx, cy - 6);
-        pg.lineTo(cx, cy + 6);
-        pg.stroke();
-        pg.fillStyle = 'rgba(240,240,255,0.85)';
-        pg.beginPath();
-        pg.roundRect(cx - 4, cy + 7, 8, 4, 2);
-        pg.fill();
-
-        pg.fillStyle = '#eec096';
-        pg.beginPath();
-        pg.arc(cx, cy - 17, 8.5, 0, Math.PI * 2);
-        pg.fill();
-        pg.fillStyle = '#3a2418';
-        pg.beginPath();
-        pg.arc(cx, cy - 19, 8.8, Math.PI, 2 * Math.PI);
-        pg.fill();
-        pg.beginPath();
-        pg.arc(cx - 7.5, cy - 16, 3.5, 0, Math.PI * 2);
-        pg.fill();
-        pg.beginPath();
-        pg.arc(cx + 7.5, cy - 16, 3.5, 0, Math.PI * 2);
-        pg.fill();
-        pg.fillStyle = '#0a0d16';
-        pg.beginPath();
-        pg.arc(cx + 3, cy - 17, 1.3, 0, Math.PI * 2);
-        pg.fill();
-        pg.beginPath();
-        pg.arc(cx + 6.5, cy - 17, 1.3, 0, Math.PI * 2);
-        pg.fill();
-        pg.fillStyle = '#15161f';
-        pg.beginPath();
-        pg.roundRect(cx + 8, cy - 6, 14, 7, 3.5);
-        pg.fill();
-        pg.fillStyle = '#eec096';
-        pg.beginPath();
-        pg.arc(cx + 22, cy - 2.5, 3.5, 0, Math.PI * 2);
-        pg.fill();
-    }
+    const HERO_SIZE = 88; // размер спрайта героя на экране
 
     const GAP = 160;
     const MIN_GAP = 132;
@@ -1221,13 +1207,35 @@ function initFlappy() {
 
     function drawPlayer() {
         const p = game.player;
-        ctx.drawImage(
-            playerSprite,
-            p.x - SPRITE_W / 2,
-            p.y - SPRITE_H / 2,
-            SPRITE_W,
-            SPRITE_H
-        );
+        if (heroImgReady) {
+            // Рисуем спрайт героя из картинки
+            const img = heroImg;
+            const ratio = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+            let w = HERO_SIZE;
+            let h = HERO_SIZE;
+            // Сохраняем пропорции: если картинка широкая — уменьшаем высоту, если высокая — ширину
+            if (ratio > 1) {
+                h = HERO_SIZE / ratio;
+            } else if (ratio < 1) {
+                w = HERO_SIZE * ratio;
+            }
+            ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h);
+        } else {
+            // Fallback: простой круг, если картинка ещё не загрузилась или не найдена
+            ctx.fillStyle = 'rgba(0,229,208,0.25)';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r + 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#00E5D0';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#070B14';
+            ctx.beginPath();
+            ctx.arc(p.x + 4, p.y - 3, 2.5, 0, Math.PI * 2);
+            ctx.arc(p.x + 10, p.y - 3, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
     }
 
     function draw() {
@@ -1366,10 +1374,12 @@ function renderUserBar() {
     const meta = metaParts.join(' · ') || 'профиль не заполнен';
     const tasks = p?.tasks_active ?? 0;
     const firstLetter = (u.first_name?.[0] || '?').toUpperCase();
+    const avIdx = state.wallet?.avatar_idx || 0;
+    const avPath = avatarPathByIdx(avIdx);
     return `
         <div class="user-bar" data-action="go-profile">
             <div class="user-bar-avatar">
-                <img src="assets/student.webp" alt="" onerror="this.outerHTML='${escapeHtml(firstLetter)}'">
+                <img src="${avPath}" alt="" onerror="this.outerHTML='${escapeHtml(firstLetter)}'">
             </div>
             <div class="user-bar-info">
                 <div class="user-bar-name">${escapeHtml(name)}</div>
@@ -1419,19 +1429,15 @@ function renderDaySwitch() {
     </div>`;
 }
 
-// Возвращает строку "завтра" в формате dd.mm.yyyy по Иркутску (UTC+8)
 function _tomorrowStrIrkutsk() {
     const nowMs = Date.now();
-    // Иркутск = UTC+8. Переводим текущий момент в UTC-представление Иркутска:
     const irkMs = nowMs + (8 * 3600 * 1000) + (new Date().getTimezoneOffset() * 60 * 1000);
-    // Проверяем: если irkMs уже в UTC = время по Иркутску
     const tomorrowIrk = new Date(irkMs + 24 * 3600 * 1000);
     const dd = String(tomorrowIrk.getUTCDate()).padStart(2, '0');
     const mm = String(tomorrowIrk.getUTCMonth() + 1).padStart(2, '0');
     const yyyy = tomorrowIrk.getUTCFullYear();
     return `${dd}.${mm}.${yyyy}`;
 }
-
 function _findDayByDate(days, dateStr) {
     if (!days) return null;
     for (const d of days) {
@@ -1439,22 +1445,16 @@ function _findDayByDate(days, dateStr) {
     }
     return null;
 }
-
 function getTomorrowData() {
     const target = _tomorrowStrIrkutsk();
-
-    // 1) Ищем в текущей неделе
     if (state.weekDays && state.weekDays.days) {
         const d = _findDayByDate(state.weekDays.days, target);
         if (d) return d;
     }
-
-    // 2) Ищем в следующей неделе (если загружена)
     if (state.nextWeekDays && state.nextWeekDays.days) {
         const d = _findDayByDate(state.nextWeekDays.days, target);
         if (d) return d;
     }
-
     return null;
 }
 async function ensureWeekLoaded() {
@@ -2512,6 +2512,7 @@ async function loadTabData(tab) {
     state.levelInfoModal = false;
     state.premiumModal = null;
     state.newAchToast = null;
+    state.avatarPicker = false;
     render();
     try {
         if (tab === 'schedule') {
@@ -2569,13 +2570,11 @@ async function actionDayTomorrow() {
     state.scheduleViewMode = 'today';
     haptic('light');
 
-    // Если неделя ещё не загружена — загружаем
     if (!state.weekDays) {
         render();
         await ensureWeekLoaded();
     }
 
-    // Если "завтра" не находится в уже загруженных данных — тянем следующую неделю
     if (!getTomorrowData()) {
         try {
             const r = await apiGet('/api/week', { offset: 1 });
@@ -2665,6 +2664,8 @@ function handleAction(el) {
     const v = el.dataset.value;
 
     if (a === 'name-open') actionNameOpen();
+    else if (a === 'avatar-open') actionAvatarOpen();
+    else if (a === 'avatar-set') actionAvatarSet(parseInt(el.dataset.idx));
     else if (a === 'level-info-open') actionLevelInfoOpen();
     else if (a === 'ach-open') actionAchOpen(el.dataset.id);
     else if (a === 'premium-open') actionPremiumOpen();
