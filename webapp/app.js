@@ -1696,6 +1696,54 @@ function bsAutoPlace(field, ships = null) {
     return placed;
 }
 
+function reconstructEnemyFieldFromShots(shots) {
+    const field = bsEmptyField();
+    if (!shots || !shots.length) return field;
+    const sunkCells = [];
+    for (const sh of shots) {
+        if (sh.x == null) continue;
+        if (sh.result === 'miss') field[sh.y][sh.x] = 3;
+        else if (sh.result === 'hit') field[sh.y][sh.x] = 2;
+        else if (sh.result === 'sunk') {
+            field[sh.y][sh.x] = 4;
+            sunkCells.push([sh.x, sh.y]);
+        }
+    }
+    if (sunkCells.length) {
+        const visited = new Set();
+        for (const [x, y] of sunkCells) {
+            const key = `${x},${y}`;
+            if (visited.has(key)) continue;
+            const stack = [[x, y]];
+            const ship = [];
+            visited.add(key);
+            while (stack.length) {
+                const [cx, cy] = stack.pop();
+                ship.push([cx, cy]);
+                for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                    const nx = cx + dx, ny = cy + dy;
+                    const k = `${nx},${ny}`;
+                    if (nx < 0 || nx > 9 || ny < 0 || ny > 9) continue;
+                    if (visited.has(k)) continue;
+                    if (field[ny][nx] !== 4) continue;
+                    visited.add(k);
+                    stack.push([nx, ny]);
+                }
+            }
+            for (const [sx, sy] of ship) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const nx = sx + dx, ny = sy + dy;
+                        if (nx < 0 || nx > 9 || ny < 0 || ny > 9) continue;
+                        if (field[ny][nx] === 0) field[ny][nx] = 3;
+                    }
+                }
+            }
+        }
+    }
+    return field;
+}
+
 function renderBattleship() {
     const s = state.bsScreen;
     if (s === 'lobby') return renderBSLobby();
@@ -2304,25 +2352,24 @@ async function pollBSGame() {
         if (r.status === 'playing') {
             if (state.bsScreen === 'waiting' && r.my_ships && r.my_ships.length) {
                 state.bsMyShips = r.my_ships.map(s => ({...s, hits: 0, sunk: false}));
+                state.bsMyField = bsEmptyField();
                 for (const s of state.bsMyShips) {
                     for (const [x, y] of s.cells) state.bsMyField[y][x] = 1;
                 }
             }
             applyEnemyShots(r.enemy_shots || []);
-            if (r.my_shots && r.my_shots.length) {
-                for (const sh of r.my_shots) {
-                    if (sh.x == null) continue;
-                    if (sh.result === 'miss') state.bsEnemyField[sh.y][sh.x] = 3;
-                    else if (sh.result === 'hit') state.bsEnemyField[sh.y][sh.x] = 2;
-                    else if (sh.result === 'sunk') state.bsEnemyField[sh.y][sh.x] = 4;
-                }
+            if (r.my_shots) {
+                state.bsEnemyField = reconstructEnemyFieldFromShots(r.my_shots);
             }
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
+            if (r.log && r.log.length) state.bsLog = r.log;
+
             if (state.bsScreen === 'waiting') {
                 state.bsScreen = 'battle';
+                render();
+            } else {
+                refreshBSBattleDOM();
             }
-            if (r.log && r.log.length) state.bsLog = r.log;
-            render();
         }
     } catch (e) {}
 }
@@ -2344,6 +2391,11 @@ function applyEnemyShots(shots) {
         }
     }
     recomputeShipsFromField();
+    if (state.bsMyShips) {
+        for (const s of state.bsMyShips) {
+            if (s.sunk) markAroundSunk(field, s);
+        }
+    }
 }
 
 function recomputeShipsFromField() {
@@ -2379,6 +2431,20 @@ function actionBSFireCell(el) {
     pvpFire(x, y);
 }
 
+function applyFireResult(r, x, y) {
+    const field = state.bsEnemyField;
+    if (!field) return;
+    if (r.result === 'miss') field[y][x] = 3;
+    else if (r.result === 'hit') field[y][x] = 2;
+    else if (r.result === 'sunk') {
+        field[y][x] = 4;
+        if (r.sunk_ship && r.sunk_ship.length) {
+            for (const [sx, sy] of r.sunk_ship) field[sy][sx] = 4;
+            markAroundSunk(field, { cells: r.sunk_ship });
+        }
+    }
+}
+
 async function pvpFire(x, y) {
     haptic('light');
     try {
@@ -2390,7 +2456,7 @@ async function pvpFire(x, y) {
         }
         state.bsTurn = r.your_turn ? 'me' : 'enemy';
         if (r.log) state.bsLog = r.log;
-        render();
+        refreshBSBattleDOM();
         if (state.bsTurn === 'enemy') startBSPolling();
     } catch (e) {
         haptic('error');
@@ -2398,17 +2464,76 @@ async function pvpFire(x, y) {
     }
 }
 
-function applyFireResult(r, x, y) {
-    const field = state.bsEnemyField;
-    if (!field) return;
-    if (r.result === 'miss') field[y][x] = 3;
-    else if (r.result === 'hit') field[y][x] = 2;
-    else if (r.result === 'sunk') {
-        field[y][x] = 4;
-        if (r.sunk_ship) {
-            for (const [sx, sy] of r.sunk_ship) field[sy][sx] = 4;
+function refreshBSBattleDOM() {
+    if (state.gameView !== 'battleship') return;
+    if (state.bsScreen !== 'battle') return;
+
+    const banner = document.querySelector('.bs-turn-banner');
+    if (banner) {
+        const myTurn = state.bsTurn === 'me';
+        const newCls = 'bs-turn-banner ' + (myTurn ? 'my-turn' : 'enemy-turn');
+        if (banner.className !== newCls) banner.className = newCls;
+        const txt = myTurn ? 'Твой ход' : 'Ход соперника';
+        let txtNode = null;
+        for (const n of banner.childNodes) {
+            if (n.nodeType === Node.TEXT_NODE && n.nodeValue.trim()) { txtNode = n; break; }
+        }
+        if (txtNode && txtNode.nodeValue.trim() !== txt) {
+            txtNode.nodeValue = ' ' + txt;
         }
     }
+
+    const sections = document.querySelectorAll('.bs-board-section');
+    if (sections.length >= 2) {
+        const enemyBoard = sections[0].querySelector('.bs-board');
+        const myBoard = sections[1].querySelector('.bs-board');
+
+        if (enemyBoard) {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = renderBSBoard(state.bsEnemyField, 'enemy', state.bsTurn === 'me', false);
+            const newBoard = wrapper.firstChild;
+            enemyBoard.replaceWith(newBoard);
+        }
+        if (myBoard) {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = renderBSBoard(state.bsMyField, 'my', false, false);
+            const newBoard = wrapper.firstChild;
+            myBoard.replaceWith(newBoard);
+        }
+
+        const myShipsAlive = countAliveShips(state.bsMyField, state.bsMyShips);
+        const enemyShipsAlive = state.bsIsBot ? countAliveShips(state.bsEnemyField, state.bsEnemyShips) : null;
+        const enemyCounter = sections[0].querySelector('.bs-board-counters .alive');
+        const myCounter = sections[1].querySelector('.bs-board-counters .alive');
+        if (enemyCounter && enemyShipsAlive !== null) {
+            const newVal = `Живых: ${enemyShipsAlive}`;
+            if (enemyCounter.textContent !== newVal) enemyCounter.textContent = newVal;
+        }
+        if (myCounter) {
+            const newVal = `Живых: ${myShipsAlive}`;
+            if (myCounter.textContent !== newVal) myCounter.textContent = newVal;
+        }
+    }
+
+    const logEl = document.querySelector('.bs-log');
+    if (logEl) {
+        const log = state.bsLog || [];
+        const newLog = log.slice(-6).map(l => `<div class="bs-log-entry ${l.type}">${escapeHtml(l.text)}</div>`).join('');
+        if (logEl.innerHTML !== newLog) logEl.innerHTML = newLog;
+    }
+
+    document.querySelectorAll('[data-action="bs-fire-cell"]').forEach((el) => {
+        if (el.dataset.handlerBound === '1') return;
+        el.dataset.handlerBound = '1';
+        el.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (state._bsTapLock) return;
+            state._bsTapLock = true;
+            setTimeout(() => { state._bsTapLock = false; }, 180);
+            handleAction(el);
+        });
+    });
 }
 
 function handleBSFinish(result) {
@@ -2532,11 +2657,11 @@ function playerFireBot(x, y) {
     }
 
     if (againTurn) {
-        render();
+        refreshBSBattleDOM();
     } else {
         state.bsTurn = 'enemy';
         state.bsBotBusy = true;
-        render();
+        refreshBSBattleDOM();
         setTimeout(botFire, 700);
     }
 }
@@ -2602,12 +2727,12 @@ function botFire() {
     }
 
     if (againTurn) {
-        render();
+        refreshBSBattleDOM();
         setTimeout(botFire, 700);
     } else {
         state.bsTurn = 'me';
         state.bsBotBusy = false;
-        render();
+        refreshBSBattleDOM();
     }
 }
 
@@ -3974,13 +4099,7 @@ async function bsTryRestoreSession() {
             for (const s of state.bsMyShips) {
                 for (const [x, y] of s.cells) state.bsMyField[y][x] = 1;
             }
-            state.bsEnemyField = bsEmptyField();
-            for (const sh of (r.my_shots || [])) {
-                if (sh.x == null) continue;
-                if (sh.result === 'miss') state.bsEnemyField[sh.y][sh.x] = 3;
-                else if (sh.result === 'hit') state.bsEnemyField[sh.y][sh.x] = 2;
-                else if (sh.result === 'sunk') state.bsEnemyField[sh.y][sh.x] = 4;
-            }
+            state.bsEnemyField = reconstructEnemyFieldFromShots(r.my_shots || []);
             applyEnemyShots(r.enemy_shots || []);
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
             state.bsLog = r.log || [];
@@ -4080,6 +4199,8 @@ function attachHandlers() {
     });
 
     document.querySelectorAll('[data-action="bs-fire-cell"], [data-action="bs-place-cell"]').forEach((el) => {
+        if (el.dataset.handlerBound === '1') return;
+        el.dataset.handlerBound = '1';
         el.addEventListener('pointerup', (e) => {
             e.preventDefault();
             e.stopPropagation();
