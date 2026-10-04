@@ -2029,13 +2029,6 @@ async def api_set_avatar(request: web.Request):
     except Exception:
         return web.json_response({"error": "bad_idx"}, status=400)
     idx = max(0, min(idx, 11))
-
-    wallet_before = wallet_get(user_id)
-    if idx != 0 and idx != wallet_before["avatar_idx"]:
-        if not wallet_consume_hard(user_id, 3):
-            return web.json_response({"error": "need_hard",
-                                      "message": "Нужно 3 Автомата для смены аватара"}, status=400)
-
     wallet_set_avatar(user_id, idx)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
 
