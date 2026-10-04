@@ -6,6 +6,36 @@ try { if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } 
 try { if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait'); } catch (e) {}
 try { if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes(); } catch (e) {}
 
+// ============================================================
+//   Патч нативных диалогов (Telegram WebView блокирует их)
+// ============================================================
+(function patchNativeAlerts() {
+    try {
+        const _origAlert = window.alert;
+        window.alert = function(msg) {
+            try {
+                if (tg && typeof tg.showAlert === 'function') {
+                    tg.showAlert(String(msg == null ? '' : msg));
+                    return;
+                }
+            } catch (e) {}
+            try { _origAlert.call(window, msg); } catch (e) { console.warn('[alert]', msg); }
+        };
+    } catch (e) {}
+})();
+
+function tgConfirm(msg) {
+    return new Promise((resolve) => {
+        try {
+            if (tg && typeof tg.showConfirm === 'function') {
+                tg.showConfirm(String(msg), (ok) => resolve(!!ok));
+                return;
+            }
+        } catch (e) {}
+        try { resolve(window.confirm(String(msg))); } catch (e) { resolve(true); }
+    });
+}
+
 const tgUser = tg.initDataUnsafe?.user || { first_name: 'Гость', last_name: '', username: '', id: 0 };
 const INIT_DATA = tg.initData || '';
 
@@ -25,6 +55,9 @@ function avatarPathByIdx(idx) {
     const found = AVATARS.find(a => a.idx === idx);
     return found ? found.path : AVATARS[0].path;
 }
+
+const BS_STORAGE_KEY = 'bs_active_game_id';
+const BS_STORAGE_IS_BOT = 'bs_active_is_bot';
 
 const state = {
     tab: 'schedule', loading: false, error: null, user: tgUser, isAdmin: false,
@@ -80,7 +113,11 @@ const state = {
     bsWaiting: false,
     bsBotBusy: false,
     bsPollTimer: null,
+    bsJoinModal: false,
+    bsJoinCode: '',
     _bsTapLock: false,
+    _bsConfirmLock: false,
+    _bsBotStarting: false,
 };
 
 async function apiGet(path, params = {}) {
@@ -167,6 +204,27 @@ function popEmoji(char) {
 }
 function formatNumber(n) {
     return Number(n || 0).toLocaleString('ru-RU').replace(/,/g, ' ');
+}
+
+// ============================================================
+//   Сохранение сессии морского боя
+// ============================================================
+function bsSaveSession() {
+    try {
+        if (state.bsGameId && !state.bsIsBot) {
+            localStorage.setItem(BS_STORAGE_KEY, state.bsGameId);
+            localStorage.setItem(BS_STORAGE_IS_BOT, '0');
+        } else {
+            localStorage.removeItem(BS_STORAGE_KEY);
+            localStorage.removeItem(BS_STORAGE_IS_BOT);
+        }
+    } catch (e) {}
+}
+function bsClearSession() {
+    try {
+        localStorage.removeItem(BS_STORAGE_KEY);
+        localStorage.removeItem(BS_STORAGE_IS_BOT);
+    } catch (e) {}
 }
 
 // ============================================================
@@ -455,6 +513,7 @@ function render() {
     else if (state.currencyInfoModal) modalHtml = renderCurrencyInfoModal();
     else if (state.newAchToast) modalHtml = renderNewAchToast();
     else if (state.exchangeOpen) modalHtml = renderExchangeModal();
+    else if (state.bsJoinModal) modalHtml = renderBSJoinModal();
 
     appEl?.classList.remove('picker-open');
     if (navEl) navEl.style.display = '';
@@ -721,7 +780,7 @@ function renderProfile() {
 }
 
 // ============================================================
-//                     МОДАЛКА «ГДЕ ВЗЯТЬ ВАЛЮТУ»
+//           МОДАЛКА «ГДЕ ВЗЯТЬ ВАЛЮТУ»
 // ============================================================
 
 function renderCurrencyInfoModal() {
@@ -770,6 +829,29 @@ function renderCurrencyInfoModal() {
 
             <div class="actions-row" style="justify-content:center;margin-top:10px">
                 <button class="btn" data-action="modal-close">Понятно</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// ============================================================
+//           МОДАЛКА ВВОДА КОДА ДЛЯ PVP
+// ============================================================
+
+function renderBSJoinModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Введи код игры</div>
+            <div class="info-modal-sub">6 цифр от друга</div>
+            <input class="modal-input" id="bs-join-code-input" maxlength="6" inputmode="numeric"
+                   pattern="[0-9]*" value="${escapeHtml(state.bsJoinCode || '')}"
+                   placeholder="000000" autofocus>
+            <div class="card-subtitle" style="text-align:center;margin-bottom:16px">
+                Ставка: <strong style="color:var(--neon)">${state.bsBet}</strong> Стипух
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="bs-join-submit">Войти</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
             </div>
         </div>
     </div>`;
@@ -1112,6 +1194,8 @@ function actionModalClose() {
     state.premiumModal = null;
     state.newAchToast = null;
     state.exchangeOpen = false;
+    state.bsJoinModal = false;
+    state.bsJoinCode = '';
     render();
 }
 
@@ -1662,7 +1746,7 @@ function renderBSLobby() {
             <button class="bs-menu-btn primary" data-action="bs-play-bot" ${canPlay ? '' : 'disabled'}>
                 <div class="bs-menu-icon">${robotIconSvg()}</div>
                 <div class="bs-menu-label">Играть с ботом</div>
-                <div class="bs-menu-sub">Тренировка</div>
+                <div class="bs-menu-sub">Умный ИИ · ставка работает</div>
             </button>
             <button class="bs-menu-btn primary" data-action="bs-create-room" ${canPlay ? '' : 'disabled'}>
                 <div class="bs-menu-icon">${keyIconSvg()}</div>
@@ -1711,7 +1795,7 @@ function renderBSPlacing() {
     return `<div class="bs-wrap">
         <div class="bs-hero">
             <div class="bs-hero-title">Расстановка</div>
-            <div class="bs-hero-sub">${nextSize ? `Осталось: ${list.length - idx} · след. ${nextSize}-палубный` : 'Всё готово к бою'}</div>
+            <div class="bs-hero-sub">Ставка: ${state.bsBet} Стипух · ${nextSize ? `осталось ${list.length - idx}` : 'всё готово'}</div>
         </div>
 
         ${previewHtml}
@@ -1750,7 +1834,10 @@ function renderBSWaiting() {
                 <div class="bs-code-value">${escapeHtml(state.bsCode || '------')}</div>
                 <button class="bs-code-copy" data-action="bs-copy-code">Копировать</button>
             </div>
-            <div class="card-subtitle" style="margin-top:14px">Как только друг введёт код — игра начнётся автоматически.</div>
+            <div class="card-subtitle" style="margin-top:14px">
+                Ставка: <strong style="color:var(--neon)">${state.bsBet}</strong> Стипух
+            </div>
+            <div class="card-subtitle" style="margin-top:6px">Как только друг введёт код — игра начнётся автоматически.</div>
         </div>
         <div class="actions-row">
             <button class="btn btn-secondary" data-action="bs-cancel-room" style="width:100%">Отменить</button>
@@ -1764,7 +1851,7 @@ function renderBSBattle() {
     const myTurn = state.bsTurn === 'me';
     const log = state.bsLog || [];
     const myShipsAlive = countAliveShips(my, state.bsMyShips);
-    const enemyShipsAlive = countAliveShips(enemy, state.bsEnemyShips);
+    const enemyShipsAlive = state.bsIsBot ? countAliveShips(enemy, state.bsEnemyShips) : null;
 
     return `<div class="bs-wrap">
         <div class="bs-turn-banner ${myTurn ? 'my-turn' : 'enemy-turn'}">
@@ -1776,7 +1863,7 @@ function renderBSBattle() {
             <div class="bs-board-header">
                 <div class="bs-board-label">Флот врага · ${escapeHtml(state.bsEnemyName || 'Соперник')}</div>
                 <div class="bs-board-counters">
-                    <span class="alive">Живых: ${enemyShipsAlive}</span>
+                    ${enemyShipsAlive !== null ? `<span class="alive">Живых: ${enemyShipsAlive}</span>` : `<span>Стреляй по клеткам</span>`}
                 </div>
             </div>
             ${renderBSBoard(enemy, 'enemy', myTurn, false)}
@@ -1807,8 +1894,8 @@ function renderBSResult() {
     const title = r.outcome === 'win' ? 'Победа!' : r.outcome === 'lose' ? 'Поражение' : 'Ничья';
     const titleCls = r.outcome === 'win' ? 'win' : r.outcome === 'lose' ? 'lose' : 'draw';
     let sub = '';
-    if (r.outcome === 'win') sub = r.reward ? `Ты забрал ${formatNumber(r.reward)} Стипух` : 'Победа!';
-    else if (r.outcome === 'lose') sub = r.loss ? `Ты потерял ${formatNumber(r.loss)} Стипух` : 'Поражение';
+    if (r.outcome === 'win') sub = r.reward ? `Чистая прибыль: ${formatNumber(r.reward)} Стипух` : 'Победа!';
+    else if (r.outcome === 'lose') sub = r.loss ? `Потеряно: ${formatNumber(r.loss)} Стипух` : 'Поражение';
     else sub = 'Ставки возвращены';
     return `<div class="bs-wrap">
         <div class="bs-result">
@@ -1903,12 +1990,24 @@ function bsClearPoll() {
     if (state.bsPollTimer) { clearInterval(state.bsPollTimer); state.bsPollTimer = null; }
 }
 
-function actionBSPlayBot() {
+async function actionBSPlayBot() {
+    if (state._bsBotStarting) return;
     haptic('light');
     if ((state.wallet?.soft || 0) < state.bsBet) {
         alert('Недостаточно Стипух для ставки');
         return;
     }
+    state._bsBotStarting = true;
+    try {
+        const r = await apiPost('/api/bs/bot-start', { bet: state.bsBet });
+        if (r.wallet) state.wallet = r.wallet;
+    } catch (e) {
+        state._bsBotStarting = false;
+        haptic('error');
+        alert('Ошибка: ' + (e.message || 'не удалось начать игру'));
+        return;
+    }
+    state._bsBotStarting = false;
     state.bsIsBot = true;
     state.bsEnemyName = 'Бот';
     state.bsGameId = null;
@@ -1924,7 +2023,9 @@ function actionBSPlayBot() {
     state.bsTurn = 'me';
     state.bsResult = null;
     state.bsBotBusy = false;
+    state._bsConfirmLock = false;
     state.bsScreen = 'placing';
+    bsSaveSession();
     render();
 }
 
@@ -1951,7 +2052,10 @@ async function actionBSCreateRoom() {
         state.bsTurn = 'me';
         state.bsResult = null;
         state.bsBotBusy = false;
+        state._bsConfirmLock = false;
         state.bsScreen = 'placing';
+        if (r.wallet) state.wallet = r.wallet;
+        bsSaveSession();
         render();
     } catch (e) {
         haptic('error');
@@ -1959,20 +2063,31 @@ async function actionBSCreateRoom() {
     }
 }
 
-async function actionBSJoinRoom() {
+function actionBSJoinRoom() {
     haptic('light');
-    const code = prompt('Введи код игры (6 цифр):');
-    if (!code) return;
-    if (!/^\d{6}$/.test(code.trim())) { alert('Код должен содержать 6 цифр'); return; }
     if ((state.wallet?.soft || 0) < state.bsBet) {
         alert('Недостаточно Стипух для ставки');
         return;
     }
+    state.bsJoinCode = '';
+    state.bsJoinModal = true;
+    render();
+}
+
+async function actionBSJoinSubmit() {
+    const el = document.getElementById('bs-join-code-input');
+    const code = ((el?.value || state.bsJoinCode) || '').trim();
+    if (!/^\d{6}$/.test(code)) {
+        alert('Код должен содержать 6 цифр');
+        return;
+    }
+    haptic('light');
     try {
-        const r = await apiPost('/api/bs/join', { code: code.trim(), bet: state.bsBet });
+        const r = await apiPost('/api/bs/join', { code, bet: state.bsBet });
+        state.bsJoinModal = false;
         state.bsIsBot = false;
         state.bsGameId = r.game_id;
-        state.bsCode = code.trim();
+        state.bsCode = code;
         state.bsEnemyName = r.opponent_name || 'Соперник';
         state.bsMyField = bsEmptyField();
         state.bsEnemyField = bsEmptyField();
@@ -1985,7 +2100,10 @@ async function actionBSJoinRoom() {
         state.bsTurn = 'me';
         state.bsResult = null;
         state.bsBotBusy = false;
+        state._bsConfirmLock = false;
         state.bsScreen = 'placing';
+        if (r.wallet) state.wallet = r.wallet;
+        bsSaveSession();
         render();
     } catch (e) {
         haptic('error');
@@ -2016,7 +2134,10 @@ async function actionBSFindMatch() {
         state.bsTurn = 'me';
         state.bsResult = null;
         state.bsBotBusy = false;
+        state._bsConfirmLock = false;
         state.bsScreen = 'placing';
+        if (r.wallet) state.wallet = r.wallet;
+        bsSaveSession();
         render();
     } catch (e) {
         haptic('error');
@@ -2069,16 +2190,15 @@ function actionBSClearPlace() {
 }
 
 async function actionBSConfirmPlace() {
+    if (state._bsConfirmLock) return;
     if (state.bsPlacingIdx < state.bsShipsToPlace.length) {
         alert('Расставь все корабли');
         return;
     }
+    state._bsConfirmLock = true;
     haptic('success');
 
     if (state.bsIsBot) {
-        // ФИКС: создаём ОТДЕЛЬНОЕ поле для отображения (пустое) 
-        // и отдельный список кораблей для логики.
-        // Раньше поле было заполнено значениями 1 — из-за этого нельзя было стрелять.
         const enemyDisplayField = bsEmptyField();
         const enemyLogicShips = bsAutoPlace(bsEmptyField());
         state.bsEnemyField = enemyDisplayField;
@@ -2088,6 +2208,7 @@ async function actionBSConfirmPlace() {
         state.bsLog = [{ type: '', text: 'Бой начался. Твой ход.' }];
         state.bsBotBusy = false;
         state.bsScreen = 'battle';
+        state._bsConfirmLock = false;
         render();
         return;
     }
@@ -2097,6 +2218,7 @@ async function actionBSConfirmPlace() {
         const r = await apiPost('/api/bs/ready', { game_id: state.bsGameId, ships: shipsData });
         if (r.status === 'waiting') {
             state.bsScreen = 'waiting';
+            state._bsConfirmLock = false;
             render();
             startBSPolling();
         } else if (r.status === 'playing') {
@@ -2105,11 +2227,13 @@ async function actionBSConfirmPlace() {
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
             state.bsLog = [{ type: '', text: 'Бой начался.' }];
             state.bsScreen = 'battle';
+            state._bsConfirmLock = false;
             render();
             startBSPolling();
             if (state.bsTurn === 'enemy') pollBSGame();
         }
     } catch (e) {
+        state._bsConfirmLock = false;
         haptic('error');
         alert('Ошибка: ' + (e.message || 'не удалось отправить расстановку'));
     }
@@ -2130,11 +2254,24 @@ async function pollBSGame() {
             return;
         }
         if (r.status === 'playing') {
+            if (state.bsScreen === 'waiting' && r.my_ships && r.my_ships.length) {
+                state.bsMyShips = r.my_ships.map(s => ({...s, hits: 0, sunk: false}));
+                for (const s of state.bsMyShips) {
+                    for (const [x, y] of s.cells) state.bsMyField[y][x] = 1;
+                }
+            }
             applyEnemyShots(r.enemy_shots || []);
+            if (r.my_shots && r.my_shots.length) {
+                for (const sh of r.my_shots) {
+                    if (sh.x == null) continue;
+                    if (sh.result === 'miss') state.bsEnemyField[sh.y][sh.x] = 3;
+                    else if (sh.result === 'hit') state.bsEnemyField[sh.y][sh.x] = 2;
+                    else if (sh.result === 'sunk') state.bsEnemyField[sh.y][sh.x] = 4;
+                }
+            }
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
             if (state.bsScreen === 'waiting') {
                 state.bsScreen = 'battle';
-                state.bsEnemyShips = r.enemy_ships || [];
             }
             if (r.log && r.log.length) state.bsLog = r.log;
             render();
@@ -2228,6 +2365,7 @@ function applyFireResult(r, x, y) {
 
 function handleBSFinish(result) {
     bsClearPoll();
+    bsClearSession();
     state.bsResult = result;
     state.bsScreen = 'result';
     if (result && result.wallet) state.wallet = result.wallet;
@@ -2237,8 +2375,67 @@ function handleBSFinish(result) {
 }
 
 // ============================================================
-//              МОРСКОЙ БОЙ — ИГРА С БОТОМ
+//              МОРСКОЙ БОЙ — УМНЫЙ БОТ
 // ============================================================
+
+function findBotTargetSmart(field) {
+    const hits = [];
+    for (let y = 0; y < 10; y++) {
+        for (let x = 0; x < 10; x++) {
+            if (field[y][x] === 2) hits.push([x, y]);
+        }
+    }
+    if (hits.length === 0) return null;
+
+    for (const [x, y] of hits) {
+        const hasLeft = x > 0 && field[y][x-1] === 2;
+        const hasRight = x < 9 && field[y][x+1] === 2;
+        const hasUp = y > 0 && field[y-1][x] === 2;
+        const hasDown = y < 9 && field[y+1][x] === 2;
+
+        if (hasLeft || hasRight) {
+            let minX = x, maxX = x;
+            while (minX > 0 && field[y][minX-1] === 2) minX--;
+            while (maxX < 9 && field[y][maxX+1] === 2) maxX++;
+            if (maxX < 9 && field[y][maxX+1] === 0) return [maxX+1, y];
+            if (minX > 0 && field[y][minX-1] === 0) return [minX-1, y];
+        }
+
+        if (hasUp || hasDown) {
+            let minY = y, maxY = y;
+            while (minY > 0 && field[minY-1][x] === 2) minY--;
+            while (maxY < 9 && field[maxY+1][x] === 2) maxY++;
+            if (maxY < 9 && field[maxY+1][x] === 0) return [x, maxY+1];
+            if (minY > 0 && field[minY-1][x] === 0) return [x, minY-1];
+        }
+    }
+
+    const dirOrder = [[1,0],[0,1],[-1,0],[0,-1]];
+    for (const [x, y] of hits) {
+        for (const [dx, dy] of dirOrder) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx > 9 || ny < 0 || ny > 9) continue;
+            if (field[ny][nx] === 0) return [nx, ny];
+        }
+    }
+    return null;
+}
+
+function findBotRandomTarget(field) {
+    const chess = [];
+    const any = [];
+    for (let y = 0; y < 10; y++) {
+        for (let x = 0; x < 10; x++) {
+            if (field[y][x] === 0) {
+                any.push([x, y]);
+                if ((x + y) % 2 === 0) chess.push([x, y]);
+            }
+        }
+    }
+    const pool = chess.length > 0 ? chess : any;
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+}
 
 function playerFireBot(x, y) {
     if (state.bsBotBusy) return;
@@ -2309,29 +2506,11 @@ function botFire() {
     const myField = state.bsMyField;
     const myShips = state.bsMyShips;
 
-    let target = findBotTarget(myField);
-
+    let target = findBotTargetSmart(myField);
+    if (!target) target = findBotRandomTarget(myField);
     if (!target) {
-        const candidates = [];
-        for (let y = 0; y < 10; y++) {
-            for (let x = 0; x < 10; x++) {
-                if (myField[y][x] === 0) {
-                    if ((x + y) % 2 === 0) candidates.push([x, y]);
-                }
-            }
-        }
-        if (candidates.length === 0) {
-            for (let y = 0; y < 10; y++) {
-                for (let x = 0; x < 10; x++) {
-                    if (myField[y][x] === 0) candidates.push([x, y]);
-                }
-            }
-        }
-        if (candidates.length === 0) {
-            state.bsBotBusy = false;
-            return;
-        }
-        target = candidates[Math.floor(Math.random() * candidates.length)];
+        state.bsBotBusy = false;
+        return;
     }
 
     const [x, y] = target;
@@ -2387,22 +2566,6 @@ function botFire() {
     }
 }
 
-function findBotTarget(field) {
-    for (let y = 0; y < 10; y++) {
-        for (let x = 0; x < 10; x++) {
-            if (field[y][x] === 2) {
-                const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-                for (const [dx, dy] of dirs) {
-                    const nx = x + dx, ny = y + dy;
-                    if (nx < 0 || nx > 9 || ny < 0 || ny > 9) continue;
-                    if (field[ny][nx] === 0) return [nx, ny];
-                }
-            }
-        }
-    }
-    return null;
-}
-
 function markAroundSunk(field, ship) {
     for (const [x, y] of ship.cells) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -2429,6 +2592,7 @@ function checkBSWin(field, ships) {
 
 async function finishBotGame(outcome) {
     bsClearPoll();
+    bsClearSession();
     const bet = state.bsBet;
     let reward = 0, loss = 0;
     try {
@@ -2467,8 +2631,10 @@ function actionBSCopyCode() {
 async function actionBSCancelRoom() {
     haptic('light');
     bsClearPoll();
+    bsClearSession();
     if (state.bsGameId && !state.bsIsBot) {
         try { await apiPost('/api/bs/cancel', { game_id: state.bsGameId }); } catch (e) {}
+        await loadWallet();
     }
     state.bsScreen = 'lobby';
     state.bsGameId = null;
@@ -2479,6 +2645,7 @@ async function actionBSCancelRoom() {
 function actionBSBackLobby() {
     haptic('light');
     bsClearPoll();
+    bsClearSession();
     state.bsScreen = 'lobby';
     state.bsResult = null;
     state.bsGameId = null;
@@ -2492,6 +2659,7 @@ function actionBSBackLobby() {
     state.bsPlacingIdx = 0;
     state.bsIsBot = false;
     state.bsBotBusy = false;
+    state._bsConfirmLock = false;
     render();
 }
 
@@ -2506,8 +2674,10 @@ function actionBSPlayAgain() {
 
 async function actionBSSurrender() {
     haptic('light');
-    if (!confirm('Сдаться? Ты потеряешь ставку.')) return;
+    const ok = await tgConfirm('Сдаться? Ты потеряешь ставку.');
+    if (!ok) return;
     bsClearPoll();
+    bsClearSession();
     if (state.bsIsBot) {
         await finishBotGame('lose');
     } else {
@@ -3026,7 +3196,8 @@ async function actionTaskEditorSave() {
 }
 async function actionTaskEditorDelete() {
     if (!state.taskEditorId) return;
-    if (!confirm('Удалить задачу?')) return;
+    const ok = await tgConfirm('Удалить задачу?');
+    if (!ok) return;
     try {
         await apiPost('/api/task-delete', { id: state.taskEditorId });
         haptic('success');
@@ -3048,12 +3219,14 @@ async function actionTaskDone(id) {
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionTaskDelete(id) {
-    if (!confirm('Удалить задачу?')) return;
+    const ok = await tgConfirm('Удалить задачу?');
+    if (!ok) return;
     try { await apiPost('/api/task-delete', { id }); haptic('success'); await loadTasks(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionTasksClear() {
-    if (!confirm('Очистить все выполненные?')) return;
+    const ok = await tgConfirm('Очистить все выполненные?');
+    if (!ok) return;
     try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
@@ -3130,7 +3303,8 @@ async function actionNoteEditorSave() {
 }
 async function actionNoteEditorDelete() {
     if (!state.noteEditorId) return;
-    if (!confirm('Удалить заметку?')) return;
+    const ok = await tgConfirm('Удалить заметку?');
+    if (!ok) return;
     try {
         await apiPost('/api/note-delete', { id: state.noteEditorId });
         haptic('success');
@@ -3139,7 +3313,8 @@ async function actionNoteEditorDelete() {
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 async function actionNoteDelete(id) {
-    if (!confirm('Удалить заметку?')) return;
+    const ok = await tgConfirm('Удалить заметку?');
+    if (!ok) return;
     try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
@@ -3182,8 +3357,9 @@ function renderAI() {
     </div>`;
     return html;
 }
-function actionAIClear() {
-    if (!confirm('Очистить историю чата?')) return;
+async function actionAIClear() {
+    const ok = await tgConfirm('Очистить историю чата?');
+    if (!ok) return;
     haptic('light');
     state.aiMessages = []; state.aiPendingPhoto = null;
     apiPost('/api/ai/clear-history').catch(() => {});
@@ -3453,7 +3629,8 @@ async function actionScholarshipSave() {
 }
 async function actionScholarshipDeleteGrade() {
     if (!state.scholarshipEditorId) return;
-    if (!confirm('Удалить эту оценку?')) return;
+    const ok = await tgConfirm('Удалить эту оценку?');
+    if (!ok) return;
     try {
         await apiPost('/api/scholarship-delete-grade', { id: state.scholarshipEditorId });
         haptic('success');
@@ -3474,7 +3651,8 @@ async function actionScholarshipSetAmount() {
 async function actionScholarshipClear() {
     const sem = state.scholarshipSemesterFilter === 'all' ? null : state.scholarshipSemesterFilter;
     const msg = sem ? `Очистить оценки за «${sem}»?` : 'Очистить ВСЕ оценки?';
-    if (!confirm(msg)) return;
+    const ok = await tgConfirm(msg);
+    if (!ok) return;
     try {
         await apiPost('/api/scholarship-clear', { semester: sem });
         haptic('success'); await loadScholarship(); render();
@@ -3546,7 +3724,8 @@ async function actionExportData() {
     }
 }
 async function actionForgetGroup() {
-    if (!confirm('Забыть группу?')) return;
+    const ok = await tgConfirm('Забыть группу?');
+    if (!ok) return;
     try {
         await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
         if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
@@ -3572,7 +3751,8 @@ async function actionAdminBroadcast() {
     if (!el) return;
     const text = (el.value || '').trim();
     if (!text) { alert('Пустое сообщение'); return; }
-    if (!confirm('Отправить всем пользователям?')) return;
+    const ok = await tgConfirm('Отправить всем пользователям?');
+    if (!ok) return;
     try { await apiPost('/api/admin/broadcast', { text }); el.value = ''; haptic('success'); alert('Рассылка запущена'); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
@@ -3697,6 +3877,7 @@ async function loadTabData(tab) {
     state.premiumModal = null;
     state.newAchToast = null;
     state.exchangeOpen = false;
+    state.bsJoinModal = false;
     state.bsScreen = 'lobby';
     state.bsResult = null;
     render();
@@ -3716,6 +3897,7 @@ async function loadTabData(tab) {
             await loadProfile();
             await loadGames();
             await loadWalletLeaderboard();
+            await bsTryRestoreSession();
         }
         else if (tab === 'ai') { await loadProfile(); await loadAiHistory(); }
         else if (tab === 'admin') {
@@ -3735,6 +3917,54 @@ async function loadTabData(tab) {
     } catch (e) { console.error(e); state.error = e.message; }
     state.loading = false;
     render();
+}
+
+async function bsTryRestoreSession() {
+    try {
+        const savedId = localStorage.getItem(BS_STORAGE_KEY);
+        if (!savedId) return;
+        const r = await apiGet('/api/bs/state', { game_id: savedId });
+        if (r.status === 'finished') {
+            bsClearSession();
+            return;
+        }
+        if (r.status === 'playing' || r.status === 'waiting' || r.status === 'placing') {
+            state.bsGameId = savedId;
+            state.bsIsBot = false;
+            state.bsEnemyName = r.opponent_name || 'Соперник';
+            state.bsMyField = bsEmptyField();
+            state.bsMyShips = (r.my_ships || []).map(s => ({ size: s.size, cells: s.cells, hits: 0, sunk: false }));
+            for (const s of state.bsMyShips) {
+                for (const [x, y] of s.cells) state.bsMyField[y][x] = 1;
+            }
+            state.bsEnemyField = bsEmptyField();
+            for (const sh of (r.my_shots || [])) {
+                if (sh.x == null) continue;
+                if (sh.result === 'miss') state.bsEnemyField[sh.y][sh.x] = 3;
+                else if (sh.result === 'hit') state.bsEnemyField[sh.y][sh.x] = 2;
+                else if (sh.result === 'sunk') state.bsEnemyField[sh.y][sh.x] = 4;
+            }
+            applyEnemyShots(r.enemy_shots || []);
+            state.bsTurn = r.your_turn ? 'me' : 'enemy';
+            state.bsLog = r.log || [];
+            if (r.status === 'playing') {
+                state.bsScreen = 'battle';
+                state.gameView = 'battleship';
+                startBSPolling();
+                render();
+            } else if (r.status === 'placing') {
+                state.bsScreen = 'waiting';
+                state.gameView = 'battleship';
+                startBSPolling();
+                render();
+            } else if (r.status === 'waiting') {
+                state.bsScreen = 'lobby';
+                bsClearSession();
+            }
+        }
+    } catch (e) {
+        bsClearSession();
+    }
 }
 
 async function loadWeekAndRender() {
@@ -3802,7 +4032,6 @@ async function actionPickerChooseGroup(groupId, groupName) {
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         const a = el.dataset.action;
-        // Ячейки морского боя обрабатываем отдельно (pointerup)
         if (a === 'bs-fire-cell' || a === 'bs-place-cell') return;
 
         if (el.classList.contains('modal-backdrop')) {
@@ -3817,7 +4046,6 @@ function attachHandlers() {
         }
     });
 
-    // Надёжная обработка тапов по ячейкам (pointerup — работает и на iOS, и на Android)
     document.querySelectorAll('[data-action="bs-fire-cell"], [data-action="bs-place-cell"]').forEach((el) => {
         el.addEventListener('pointerup', (e) => {
             e.preventDefault();
@@ -3884,6 +4112,13 @@ function attachHandlers() {
             }
         });
     }
+    const bsJoinInput = document.getElementById('bs-join-code-input');
+    if (bsJoinInput) {
+        bsJoinInput.addEventListener('input', (e) => {
+            state.bsJoinCode = e.target.value.replace(/\D/g, '').slice(0, 6);
+            e.target.value = state.bsJoinCode;
+        });
+    }
 }
 
 function handleAction(el) {
@@ -3910,6 +4145,7 @@ function handleAction(el) {
     else if (a === 'bs-play-bot') actionBSPlayBot();
     else if (a === 'bs-create-room') actionBSCreateRoom();
     else if (a === 'bs-join-room') actionBSJoinRoom();
+    else if (a === 'bs-join-submit') actionBSJoinSubmit();
     else if (a === 'bs-find-match') actionBSFindMatch();
     else if (a === 'bs-place-cell') actionBSPlaceCell(el);
     else if (a === 'bs-rotate') actionBSRotate();
