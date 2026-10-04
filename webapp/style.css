@@ -1395,28 +1395,67 @@ textarea.note-textarea { min-height: 200px; }
    ============================================================ */
 
 .avatar-change-btn {
-    display: block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     margin: 0 auto 14px;
-    background: rgba(0,229,208,0.14);
-    border: 1px solid rgba(0,229,208,0.35);
+    padding: 10px 20px;
+    background: linear-gradient(135deg, rgba(0,229,208,0.16) 0%, rgba(30,136,229,0.10) 100%);
+    border: 1px solid rgba(0,229,208,0.42);
     color: var(--neon);
     font-family: inherit;
     font-size: 12px;
     font-weight: 800;
-    letter-spacing: 1px;
+    letter-spacing: 1.2px;
     text-transform: uppercase;
-    padding: 9px 18px;
     border-radius: 999px;
     cursor: pointer;
     position: relative;
     z-index: 2;
-    transition: all 0.15s ease;
-    box-shadow: 0 0 14px rgba(0,229,208,0.20);
+    overflow: hidden;
+    box-shadow:
+        0 0 18px rgba(0,229,208,0.22),
+        inset 0 1px 0 rgba(255,255,255,0.06);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: transform 0.15s ease, border-color 0.2s ease,
+                box-shadow 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
 }
+
+.avatar-change-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(0,229,208,0.28) 0%, rgba(30,136,229,0.16) 100%);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.avatar-change-btn svg {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 6px var(--neon-glow));
+}
+
+.avatar-change-btn span {
+    position: relative;
+    z-index: 1;
+}
+
 .avatar-change-btn:active {
     transform: scale(0.96);
-    background: rgba(0,229,208,0.25);
-    box-shadow: 0 0 22px rgba(0,229,208,0.35);
+    border-color: var(--neon);
+    box-shadow:
+        0 0 26px rgba(0,229,208,0.42),
+        inset 0 1px 0 rgba(255,255,255,0.10);
+}
+.avatar-change-btn:active::before {
+    opacity: 1;
 }
 
 /* Скрываем старую плашку "Сменить", если где-то осталась */
