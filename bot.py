@@ -125,12 +125,10 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 ADMIN_BONUS_SOFT = 1000000
 ADMIN_BONUS_HARD = 10000
 
-# === НОВОЕ: обменник ===
-EXCHANGE_RATE_SOFT_TO_HARD = 100  # 100 Стипух = 1 Автомат
+EXCHANGE_RATE_SOFT_TO_HARD = 100
 
-# === НОВОЕ: морской бой ===
 BS_BET_OPTIONS = [10, 50, 100, 500]
-BS_TURN_TIMEOUT_SEC = 120  # если игрок не ходит N секунд — техпоражение
+BS_TURN_TIMEOUT_SEC = 120
 
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!")
@@ -444,7 +442,6 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-    # ============ НОВОЕ: Морской бой ============
     conn.execute("""CREATE TABLE IF NOT EXISTS bs_games (
         game_id TEXT PRIMARY KEY,
         code TEXT,
@@ -471,7 +468,6 @@ def init_db():
     except Exception:
         pass
 
-    # Одноразовые флаги для авто-очистки старых игр
     conn.execute("""CREATE TABLE IF NOT EXISTS bs_meta (
         key TEXT PRIMARY KEY, value TEXT)""")
 
@@ -1474,7 +1470,6 @@ def _bs_new_game_id():
 
 
 def _bs_new_code():
-    """Генерирует уникальный 6-значный код, не занятый активными играми."""
     for _ in range(50):
         code = f"{random.randint(100000, 999999)}"
         conn = sqlite3.connect(DB_PATH)
@@ -1493,14 +1488,12 @@ def _bs_empty_field():
 
 
 def _bs_cells_have_conflict(ships):
-    """Проверка: корабли не пересекаются и не касаются даже углами."""
     occupied = set()
     for s in ships:
         for x, y in s["cells"]:
             if (x, y) in occupied:
                 return True
             occupied.add((x, y))
-    # Проверка на касание
     for s in ships:
         for x, y in s["cells"]:
             for dx in (-1, 0, 1):
@@ -1509,8 +1502,6 @@ def _bs_cells_have_conflict(ships):
                     if nx < 0 or nx > 9 or ny < 0 or ny > 9:
                         continue
                     if (nx, ny) in occupied and (nx, ny) not in [(cx, cy) for cx, cy in s["cells"]]:
-                        # сосед — часть другого корабля
-                        other_ship_cell = True
                         for s2 in ships:
                             if s2 is s:
                                 continue
@@ -1520,7 +1511,6 @@ def _bs_cells_have_conflict(ships):
 
 
 def _bs_validate_ships(ships):
-    """Проверяет корректность расстановки (10 кораблей нужных размеров)."""
     if not ships or not isinstance(ships, list):
         return False
     sizes_required = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]
@@ -1531,79 +1521,28 @@ def _bs_validate_ships(ships):
         cells = s.get("cells", [])
         if len(cells) != s.get("size"):
             return False
-        # Проверяем, что все клетки в пределах поля и в одну линию
         xs = [c[0] for c in cells]
         ys = [c[1] for c in cells]
         if min(xs) < 0 or max(xs) > 9 or min(ys) < 0 or max(ys) > 9:
             return False
-        # Линия
         if len(set(xs)) > 1 and len(set(ys)) > 1:
             return False
-        # Соседние клетки
         sorted_cells = sorted(cells, key=lambda c: (c[1], c[0]))
         for i in range(1, len(sorted_cells)):
             prev = sorted_cells[i - 1]
             cur = sorted_cells[i]
             if abs(prev[0] - cur[0]) + abs(prev[1] - cur[1]) != 1:
                 return False
-    # Касание
     return not _bs_cells_have_conflict(ships)
 
 
-def _bs_apply_shots_to_field(field, ships, shots, show_ships=False):
-    """
-    Возвращает 2D-поле с наложенными выстрелами и пометками потопленных кораблей.
-    field: базовый 10x10, будет модифицирован.
-    ships: список {size, cells:[[x,y],...]}
-    shots: список {x, y}
-    show_ships: если True — показывает корабли на поле (для "своего" поля).
-    """
-    # Собираем hit-счётчики
-    ship_hits = []
-    for s in ships:
-        ship_hits.append({"ship": s, "hits": 0, "cell_set": {(c[0], c[1]) for c in s["cells"]}})
-
-    # Помечаем корабли
-    if show_ships:
-        for s in ships:
-            for x, y in s["cells"]:
-                field[y][x] = 1
-
-    # Применяем выстрелы
-    for sh in shots:
-        x = sh.get("x")
-        y = sh.get("y")
-        if x is None or y is None or x < 0 or x > 9 or y < 0 or y > 9:
-            continue
-        hit_ship = None
-        for sh_info in ship_hits:
-            if (x, y) in sh_info["cell_set"]:
-                hit_ship = sh_info
-                break
-        if hit_ship:
-            field[y][x] = 2
-            hit_ship["hits"] += 1
-        else:
-            field[y][x] = 3
-
-    # Помечаем потопленные
-    for sh_info in ship_hits:
-        if sh_info["hits"] >= len(sh_info["ship"]["cells"]):
-            for x, y in sh_info["ship"]["cells"]:
-                field[y][x] = 4
-
-    return field
-
-
 def _bs_check_win(ships, shots):
-    """True, если все корабли потоплены (по shots)."""
     if not ships:
         return False
     all_cells = set()
     for s in ships:
         for c in s["cells"]:
             all_cells.add((c[0], c[1]))
-    # все клетки кораблей должны быть в shots
     hit_cells = {(sh.get("x"), sh.get("y")) for sh in shots}
     return all_cells.issubset(hit_cells)
 
@@ -1647,7 +1586,6 @@ def _bs_delete_game(game_id):
 
 
 def _bs_player_side(game, user_id):
-    """Возвращает 1, 2 или 0 (не в игре)."""
     if game["p1_id"] == user_id:
         return 1
     if game["p2_id"] == user_id:
@@ -1680,7 +1618,6 @@ def _bs_get_user_name(user_id):
 
 
 def _bs_finish_game(game_id, winner_id, surrender_by=0):
-    """Завершает игру, начисляет выигрыш победителю."""
     game = _bs_get_game(game_id)
     if not game:
         return
@@ -1690,7 +1627,6 @@ def _bs_finish_game(game_id, winner_id, surrender_by=0):
     p1_id = game["p1_id"]
     p2_id = game["p2_id"]
 
-    # Возврат средств в случае ничьей/отмены
     if winner_id == 0:
         if p1_id: wallet_add(p1_id, soft=bet)
         if p2_id: wallet_add(p2_id, soft=bet)
@@ -1698,7 +1634,6 @@ def _bs_finish_game(game_id, winner_id, surrender_by=0):
                         surrender_by=surrender_by)
         return
 
-    # Победитель забирает 2× ставку
     if winner_id:
         wallet_add(winner_id, soft=bet * 2, xp=50)
 
@@ -1707,7 +1642,6 @@ def _bs_finish_game(game_id, winner_id, surrender_by=0):
 
 
 def _bs_cancel_game_refund(game_id):
-    """Отмена с возвратом ставки."""
     game = _bs_get_game(game_id)
     if not game or game["status"] == "finished":
         return
@@ -1719,8 +1653,21 @@ def _bs_cancel_game_refund(game_id):
     _bs_delete_game(game_id)
 
 
+def _bs_cancel_any_waiting(user_id):
+    """Авто-отмена всех waiting-игр игрока (где он p1 без p2) с возвратом ставки."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT game_id, bet FROM bs_games "
+        "WHERE p1_id=? AND status='waiting' AND (p2_id IS NULL OR p2_id=0)",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+    for game_id, bet in rows:
+        wallet_add(user_id, soft=bet or 0)
+        _bs_delete_game(game_id)
+
+
 def _bs_cleanup_stale_games():
-    """Удаляет слишком старые ожидающие/активные игры (старше 1 часа)."""
     threshold = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
@@ -1730,7 +1677,6 @@ def _bs_cleanup_stale_games():
     ).fetchall()
     conn.close()
     for game_id, p1_id, p2_id, bet in rows:
-        # возврат ставок
         if p1_id:
             wallet_add(p1_id, soft=bet or 0)
         if p2_id:
@@ -1738,12 +1684,7 @@ def _bs_cleanup_stale_games():
         _bs_delete_game(game_id)
 
 
-# ============================================================
-#              ОБМЕННИК — ХЕЛПЕРЫ
-# ============================================================
-
 def exchange_soft_to_hard(user_id, amount_soft):
-    """Обменять Стипухи на Автоматы. Возвращает dict или None."""
     try:
         amount_soft = int(amount_soft)
     except Exception:
@@ -1753,11 +1694,9 @@ def exchange_soft_to_hard(user_id, amount_soft):
     amount_hard = amount_soft // EXCHANGE_RATE_SOFT_TO_HARD
     if amount_hard <= 0:
         return None
-    # Проверяем баланс и списываем
     if not wallet_consume_soft(user_id, amount_hard * EXCHANGE_RATE_SOFT_TO_HARD):
         return None
     wallet_add(user_id, hard=amount_hard)
-    # Ачивка
     achievement_unlock(user_id, "exchange_1")
     rw = ACHIEVEMENT_REWARDS.get("exchange_1")
     if rw:
@@ -2424,7 +2363,7 @@ async def api_set_avatar(request: web.Request):
 
 
 # ============================================================
-#                  API: ОБМЕННИК ВАЛЮТЫ
+#                  API: ОБМЕННИК
 # ============================================================
 
 async def api_exchange_soft_to_hard(request: web.Request):
@@ -2442,7 +2381,6 @@ async def api_exchange_soft_to_hard(request: web.Request):
     if amount <= 0:
         return web.json_response({"error": "bad_amount", "message": "Сумма должна быть > 0"}, status=400)
 
-    # Округляем до кратности курса
     amount = (amount // EXCHANGE_RATE_SOFT_TO_HARD) * EXCHANGE_RATE_SOFT_TO_HARD
     if amount <= 0:
         return web.json_response({
@@ -2572,7 +2510,7 @@ async def api_wallet_leaderboard(request: web.Request):
 
 
 # ============================================================
-#                  API: ИГРА FLAPPY
+#                  API: FLAPPY
 # ============================================================
 
 async def api_game_info(request: web.Request):
@@ -2682,17 +2620,16 @@ async def api_game_submit(request: web.Request):
 
 
 # ============================================================
-#                  API: МОРСКОЙ БОЙ
+#                  API: МОРСКОЙ БОЙ (С ФИКСАМИ)
 # ============================================================
 
 def _bs_make_result_for(game, user_id):
-    """Собирает результат для конкретного игрока."""
     winner = game.get("winner") or 0
     bet = game.get("bet") or 0
     if winner == 0:
         return {"outcome": "draw", "reward": 0, "loss": 0, "wallet": wallet_get(user_id)}
     if winner == user_id:
-        return {"outcome": "win", "reward": bet * 2, "loss": 0, "wallet": wallet_get(user_id)}
+        return {"outcome": "win", "reward": bet, "loss": 0, "wallet": wallet_get(user_id)}
     return {"outcome": "lose", "reward": 0, "loss": bet, "wallet": wallet_get(user_id)}
 
 
@@ -2716,6 +2653,7 @@ async def api_bs_create(request: web.Request):
 
     _ensure_user(user_id)
     _bs_cleanup_stale_games()
+    _bs_cancel_any_waiting(user_id)
 
     active = _bs_user_in_active_game(user_id)
     if active:
@@ -2751,6 +2689,7 @@ async def api_bs_create(request: web.Request):
         "game_id": game_id,
         "code": code,
         "bet": bet,
+        "wallet": wallet_get(user_id),
     })
 
 
@@ -2810,6 +2749,7 @@ async def api_bs_join(request: web.Request):
         "opponent_name": opponent_name,
         "bet": bet,
         "side": 2,
+        "wallet": wallet_get(user_id),
     })
 
 
@@ -2831,13 +2771,13 @@ async def api_bs_find(request: web.Request):
 
     _ensure_user(user_id)
     _bs_cleanup_stale_games()
+    _bs_cancel_any_waiting(user_id)
 
     active = _bs_user_in_active_game(user_id)
     if active:
         return web.json_response({"error": "already_in_game",
                                    "game_id": active}, status=400)
 
-    # Ищем игру с такой же ставкой в статусе waiting
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
         "SELECT game_id, p1_id FROM bs_games "
@@ -2849,7 +2789,6 @@ async def api_bs_find(request: web.Request):
 
     if row:
         game_id, p1_id = row
-        # Присоединяемся
         w = wallet_get(user_id)
         if (w.get("soft") or 0) < bet:
             return web.json_response({"error": "not_enough_soft"}, status=400)
@@ -2863,9 +2802,9 @@ async def api_bs_find(request: web.Request):
             "opponent_name": _bs_get_user_name(p1_id),
             "bet": bet,
             "side": 2,
+            "wallet": wallet_get(user_id),
         })
 
-    # Не нашли — создаём новую
     w = wallet_get(user_id)
     if (w.get("soft") or 0) < bet:
         return web.json_response({"error": "not_enough_soft"}, status=400)
@@ -2892,11 +2831,11 @@ async def api_bs_find(request: web.Request):
         "game_id": game_id,
         "code": code,
         "bet": bet,
+        "wallet": wallet_get(user_id),
     })
 
 
 async def api_bs_ready(request: web.Request):
-    """Отправка расстановки кораблей."""
     try:
         body = await request.json()
     except Exception:
@@ -2933,7 +2872,6 @@ async def api_bs_ready(request: web.Request):
     both_ready = game["p1_ready"] and game["p2_ready"]
 
     if both_ready and game["status"] == "placing":
-        # Определяем, кто ходит первым случайно
         first = random.choice([1, 2])
         _bs_update_game(game_id, status="playing", turn=first)
 
@@ -2946,7 +2884,6 @@ async def api_bs_ready(request: web.Request):
 
 
 async def api_bs_state(request: web.Request):
-    """Текущее состояние игры (для polling)."""
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
@@ -2970,49 +2907,62 @@ async def api_bs_state(request: web.Request):
             "result": _bs_make_result_for(game, user_id),
         })
 
-    # Собираем мои shots и shots противника
     my_shots = json.loads(game["p1_shots"] if side == 1 else game["p2_shots"])
-    enemy_shots = json.loads(game["p2_shots"] if side == 1 else game["p1_shots"])
+    enemy_shots_raw = json.loads(game["p2_shots"] if side == 1 else game["p1_shots"])
 
     enemy_ships_json = game["p2_ships"] if side == 1 else game["p1_ships"]
     enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
     my_ships_json = game["p1_ships"] if side == 1 else game["p2_ships"]
     my_ships = json.loads(my_ships_json) if my_ships_json else []
 
-    # Формируем список "новых" выстрелов врага по мне (все, что ещё не отображены у клиента)
-    # Проще: отдаём все выстрелы врага, клиент сам определит новые.
+    my_shots_out = []
+    for sh in my_shots:
+        x = sh.get("x"); y = sh.get("y")
+        result = "miss"
+        for s in enemy_ships:
+            if any(c[0] == x and c[1] == y for c in s["cells"]):
+                sunk = all(
+                    any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in my_shots)
+                    for c in s["cells"]
+                )
+                result = "sunk" if sunk else "hit"
+                break
+        my_shots_out.append({"x": x, "y": y, "result": result})
+
     enemy_shots_out = []
-    for sh in enemy_shots:
-        x, y = sh.get("x"), sh.get("y")
+    for sh in enemy_shots_raw:
+        x = sh.get("x"); y = sh.get("y")
         result = "miss"
         for s in my_ships:
             if any(c[0] == x and c[1] == y for c in s["cells"]):
-                # это попадание или потопление
                 sunk = all(
-                    any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in enemy_shots)
+                    any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in enemy_shots_raw)
                     for c in s["cells"]
                 )
                 result = "sunk" if sunk else "hit"
                 break
         enemy_shots_out.append({"x": x, "y": y, "result": result})
 
-    # Собираем лог
+    opponent = game["p2_id"] if side == 1 else game["p1_id"]
+    opponent_name = _bs_get_user_name(opponent) if opponent else ""
+
     log = []
-    for sh in enemy_shots[-5:]:
+    for sh in enemy_shots_raw[-3:]:
         log.append({"type": "miss", "text": f"Враг: ({sh.get('x',0)+1},{sh.get('y',0)+1})"})
 
     return web.json_response({
-        "status": "playing",
+        "status": "playing" if game["status"] == "playing" else game["status"],
         "your_turn": game["turn"] == side,
+        "my_ships": my_ships,
+        "my_shots": my_shots_out,
         "enemy_shots": enemy_shots_out,
         "enemy_ships": enemy_ships if game["status"] == "finished" else None,
+        "opponent_name": opponent_name,
         "log": log,
-        "my_shots": my_shots,
     })
 
 
 async def api_bs_fire(request: web.Request):
-    """Стреляем по клетке (x, y)."""
     try:
         body = await request.json()
     except Exception:
@@ -3045,7 +2995,6 @@ async def api_bs_fire(request: web.Request):
         return web.json_response({"error": "not_your_turn",
                                    "message": "Сейчас не твой ход"}, status=400)
 
-    # Мои выстрелы (которые я делаю) и корабли соперника
     if side == 1:
         my_shots = json.loads(game["p1_shots"])
         enemy_ships_json = game["p2_ships"]
@@ -3055,11 +3004,9 @@ async def api_bs_fire(request: web.Request):
 
     enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
 
-    # Уже стрелял?
     if any(sh.get("x") == x and sh.get("y") == y for sh in my_shots):
         return web.json_response({"error": "already_fired"}, status=400)
 
-    # Проверяем попадание
     hit_ship = None
     for s in enemy_ships:
         if any(c[0] == x and c[1] == y for c in s["cells"]):
@@ -3068,12 +3015,11 @@ async def api_bs_fire(request: web.Request):
 
     if hit_ship is None:
         my_shots.append({"x": x, "y": y})
-        turn_after = 2 if side == 1 else 1  # передаём ход сопернику
+        turn_after = 2 if side == 1 else 1
         result_type = "miss"
         sunk_cells = None
     else:
         my_shots.append({"x": x, "y": y})
-        # Проверяем, потоплен ли корабль полностью
         sunk = all(any(sh.get("x") == c[0] and sh.get("y") == c[1] for sh in my_shots)
                    for c in hit_ship["cells"])
         if sunk:
@@ -3082,15 +3028,13 @@ async def api_bs_fire(request: web.Request):
         else:
             result_type = "hit"
             sunk_cells = None
-        turn_after = side  # ход остаётся
+        turn_after = side
 
-    # Обновляем игру
     if side == 1:
         _bs_update_game(game_id, p1_shots=json.dumps(my_shots), turn=turn_after)
     else:
         _bs_update_game(game_id, p2_shots=json.dumps(my_shots), turn=turn_after)
 
-    # Проверка победы
     winner = 0
     if _bs_check_win(enemy_ships, my_shots):
         winner = user_id
@@ -3167,16 +3111,54 @@ async def api_bs_cancel(request: web.Request):
     if side == 0:
         return web.json_response({"error": "not_in_game"}, status=403)
 
-    if game["status"] == "waiting" and game["p1_id"] == user_id:
-        # Отмена ожидания — возврат ставки
-        _bs_cancel_game_refund(game_id)
-        return web.json_response({"ok": True})
+    if game["status"] in ("waiting", "placing"):
+        bet = game["bet"] or 0
+        if game["p1_id"]:
+            wallet_add(game["p1_id"], soft=bet)
+        if game["p2_id"]:
+            wallet_add(game["p2_id"], soft=bet)
+        _bs_delete_game(game_id)
+        return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
 
-    return web.json_response({"error": "cant_cancel"}, status=400)
+    return web.json_response({"error": "cant_cancel", "message": "Игра уже началась"}, status=400)
+
+
+async def api_bs_bot_start(request: web.Request):
+    """Списывает ставку при старте игры с ботом."""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        bet = int(body.get("bet", 0))
+    except Exception:
+        bet = 0
+    if bet not in BS_BET_OPTIONS:
+        return web.json_response({"error": "bad_bet"}, status=400)
+
+    _ensure_user(user_id)
+
+    w = wallet_get(user_id)
+    if (w.get("soft") or 0) < bet:
+        return web.json_response({"error": "not_enough_soft",
+                                   "message": "Недостаточно Стипух для ставки"}, status=400)
+
+    if not wallet_consume_soft(user_id, bet):
+        return web.json_response({"error": "consume_failed"}, status=500)
+
+    return web.json_response({
+        "ok": True,
+        "bet": bet,
+        "wallet": wallet_get(user_id),
+    })
 
 
 async def api_bs_finish_bot(request: web.Request):
-    """Игра с ботом — исход считает клиент, сервер только начисляет/списывает."""
+    """Игра с ботом завершена. Ставка списана в /api/bs/bot-start."""
     try:
         body = await request.json()
     except Exception:
@@ -3200,16 +3182,14 @@ async def api_bs_finish_bot(request: web.Request):
 
     reward = 0
     loss = 0
-    if outcome == "win" and bet > 0:
-        # Ставка уже не списана для бота — просто начисляем выигрыш
-        wallet_add(user_id, soft=bet, xp=30)
+
+    if outcome == "win":
+        wallet_add(user_id, soft=bet * 2, xp=30)
         reward = bet
-    elif outcome == "lose" and bet > 0:
-        # Списание со счёта (если хватает)
-        w = wallet_get(user_id)
-        if (w.get("soft") or 0) >= bet:
-            wallet_consume_soft(user_id, bet)
-            loss = bet
+    elif outcome == "lose":
+        loss = bet
+    elif outcome == "draw":
+        wallet_add(user_id, soft=bet)
 
     check_and_award_achievements(user_id)
     return web.json_response({
@@ -4277,6 +4257,7 @@ async def start_webapp():
     app.router.add_post("/api/bs/fire", api_bs_fire)
     app.router.add_post("/api/bs/surrender", api_bs_surrender)
     app.router.add_post("/api/bs/cancel", api_bs_cancel)
+    app.router.add_post("/api/bs/bot-start", api_bs_bot_start)
     app.router.add_post("/api/bs/finish-bot", api_bs_finish_bot)
 
     # ==== AI ====
