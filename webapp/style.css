@@ -265,15 +265,6 @@ html, body {
 }
 .nav-btn.active svg { filter: drop-shadow(0 0 8px var(--neon-glow)); }
 
-.badge {
-    display: inline-block;
-    background: var(--grad-vip); color: #070B14;
-    font-size: 11px; font-weight: 900;
-    padding: 4px 12px; border-radius: 999px;
-    margin-top: 10px; text-transform: uppercase; letter-spacing: 0.6px;
-    box-shadow: 0 4px 14px rgba(255,176,32,0.4);
-}
-
 .btn {
     display: inline-flex; align-items: center; justify-content: center;
     gap: 6px; background: var(--neon); color: #070B14;
@@ -314,7 +305,6 @@ input[type="time"].input, input[type="date"].input {
     border-radius: var(--r-md);
     margin-bottom: 8px;
 }
-input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8); opacity: 0.8; cursor: pointer; }
 
 .checkbox-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; cursor: pointer; font-weight: 500; }
 .checkbox-row input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; accent-color: var(--neon); }
@@ -506,10 +496,7 @@ input[type="time"].input::-webkit-calendar-picker-indicator { filter: invert(0.8
 .sch-auto-toggle input[type="checkbox"] { width: 22px; height: 22px; cursor: pointer; accent-color: var(--accent-yellow); flex-shrink: 0; }
 .sch-auto-toggle span { flex: 1; }
 
-/* ============================================================
-   ИГРЫ
-   ============================================================ */
-
+/* ИГРЫ */
 .game-wrap {
     position: fixed; inset: 0;
     background: #070B14;
@@ -735,10 +722,7 @@ textarea.note-textarea { min-height: 200px; }
 .att-stat-value.red { color: var(--accent-red); }
 .att-stat-value.yellow { color: var(--accent-yellow); }
 
-/* ============================================================
-   ПРОФИЛЬ
-   ============================================================ */
-
+/* ПРОФИЛЬ */
 .profile-hero {
     position: relative;
     border-radius: var(--r-xl);
@@ -861,70 +845,6 @@ textarea.note-textarea { min-height: 200px; }
     letter-spacing: 1.4px;
     text-transform: uppercase;
     opacity: 0.85;
-}
-.xp-bar-wrap { position: relative; z-index: 1; margin-bottom: 16px; }
-.xp-bar {
-    height: 10px; border-radius: 999px;
-    background: rgba(0,0,0,0.35);
-    overflow: hidden;
-    border: 1px solid rgba(0,229,208,0.18);
-    position: relative;
-}
-.xp-fill {
-    height: 100%; border-radius: 999px;
-    background: linear-gradient(90deg, #00E5D0, #1E88E5);
-    box-shadow: 0 0 14px var(--neon-glow);
-    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-}
-.xp-fill::after {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
-    animation: xpShine 2.4s linear infinite;
-}
-@keyframes xpShine { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
-.xp-text {
-    text-align: center;
-    font-size: 11px; font-weight: 800;
-    color: var(--text-2); letter-spacing: 1px;
-    margin-top: 6px; text-transform: uppercase;
-}
-.currency-row {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-    position: relative; z-index: 1; margin-bottom: 12px;
-}
-.currency-card {
-    display: flex; flex-direction: column; align-items: center;
-    padding: 12px 8px;
-    border-radius: var(--r-md);
-    background: rgba(0,0,0,0.28);
-    border: 1px solid var(--divider);
-    position: relative; overflow: hidden;
-}
-.currency-card.soft { border-color: rgba(0,229,208,0.30); }
-.currency-card.hard { border-color: rgba(255,215,0,0.35); }
-.currency-card.soft::before {
-    content: ''; position: absolute; inset: 0;
-    background: radial-gradient(circle at 50% 0%, rgba(0,229,208,0.18) 0%, transparent 70%);
-    pointer-events: none;
-}
-.currency-card.hard::before {
-    content: ''; position: absolute; inset: 0;
-    background: radial-gradient(circle at 50% 0%, rgba(255,215,0,0.20) 0%, transparent 70%);
-    pointer-events: none;
-}
-.currency-icon { width: 42px; height: 42px; margin-bottom: 6px; position: relative; z-index: 1; }
-.currency-icon svg { width: 100%; height: 100%; }
-.currency-card.soft .currency-icon { filter: drop-shadow(0 0 10px rgba(0,229,208,0.55)); }
-.currency-card.hard .currency-icon { filter: drop-shadow(0 0 12px rgba(255,215,0,0.65)); }
-.currency-value { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; line-height: 1; position: relative; z-index: 1; }
-.currency-card.soft .currency-value { color: var(--neon); text-shadow: 0 0 12px var(--neon-glow); }
-.currency-card.hard .currency-value { color: #FFD700; text-shadow: 0 0 12px rgba(255,215,0,0.55); }
-.currency-label {
-    font-size: 10px; font-weight: 800;
-    color: var(--text-2); text-transform: uppercase;
-    letter-spacing: 1.2px; margin-top: 4px;
-    position: relative; z-index: 1;
 }
 .streak-row {
     text-align: center;
@@ -1300,10 +1220,7 @@ textarea.note-textarea { min-height: 200px; }
     100% { transform: translate(-50%, -80%) scale(1); opacity: 0; }
 }
 
-/* ============================================================
-   КНОПКА СМЕНЫ АВАТАРА
-   ============================================================ */
-
+/* КНОПКА СМЕНЫ АВАТАРА */
 .avatar-change-row {
     display: flex;
     justify-content: center;
@@ -1347,10 +1264,7 @@ textarea.note-textarea { min-height: 200px; }
 }
 .profile-avatar-hint { display: none !important; }
 
-/* ============================================================
-   МАКСИМАЛЬНЫЙ БАЛАНС
-   ============================================================ */
-
+/* МАКСИМАЛЬНЫЙ БАЛАНС */
 .balance-card {
     position: relative;
     border-radius: var(--r-xl);
@@ -1474,10 +1388,7 @@ textarea.note-textarea { min-height: 200px; }
     position: relative; z-index: 1;
 }
 
-/* ============================================================
-   ОБМЕННИК ВАЛЮТЫ
-   ============================================================ */
-
+/* ОБМЕННИК */
 .exchange-rate-badge {
     display: flex; align-items: center; justify-content: center;
     gap: 10px;
@@ -1592,10 +1503,7 @@ textarea.note-textarea { min-height: 200px; }
 }
 .exchange-balance-hint strong { color: var(--neon); font-weight: 900; }
 
-/* ============================================================
-   МОРСКОЙ БОЙ
-   ============================================================ */
-
+/* МОРСКОЙ БОЙ */
 .bs-wrap {
     padding-bottom: 20px;
     animation: fadeIn 0.3s ease;
@@ -1770,7 +1678,6 @@ textarea.note-textarea { min-height: 200px; }
 .bs-board-counters .alive { color: var(--accent-green); }
 .bs-board-counters .dead { color: var(--accent-red); }
 
-/* ==== ДОСКА ==== */
 .bs-board {
     display: grid;
     grid-template-columns: 22px repeat(10, 1fr);
@@ -1798,7 +1705,7 @@ textarea.note-textarea { min-height: 200px; }
     background: rgba(30,136,229,0.14);
     border: 1px solid rgba(30,136,229,0.28);
     cursor: pointer;
-    transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+    transition: transform 0.12s ease, background 0.2s ease, box-shadow 0.2s ease;
     position: relative;
     display: flex; align-items: center; justify-content: center;
     font-size: 12px;
@@ -1806,147 +1713,206 @@ textarea.note-textarea { min-height: 200px; }
     color: #fff;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    will-change: transform;
 }
 .bs-cell.locked { cursor: default; }
 .bs-cell.locked:active { transform: none; }
 
-/* ==== МОЙ ФЛОТ: КОРАБЛИ В 2D-СТИЛЕ ==== */
+/* ============================================================
+   МОЙ ФЛОТ: КОРАБЛИ В 2D-СТИЛЕ
+   ============================================================ */
+
 .bs-cell.ship {
+    position: relative;
+    overflow: visible;
+    border-radius: 4px;
+    transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
     background:
-        linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 55%),
+        linear-gradient(180deg, rgba(255,255,255,0.40) 0%, rgba(255,255,255,0.05) 55%, rgba(0,0,0,0.20) 100%),
         linear-gradient(180deg, #8B9CB5 0%, #5A6B84 100%);
     border: 1px solid #2B3648;
-    border-radius: 4px;
     box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.40),
+        inset 0 1px 0 rgba(255,255,255,0.45),
         inset 0 -2px 0 rgba(0,0,0,0.35),
         0 1px 2px rgba(0,0,0,0.35);
-    overflow: hidden;
 }
-.bs-cell.ship::before {
+
+/* Заклёпки палубы — только для деки */
+.bs-cell.ship.ship-deck::before {
     content: '';
     position: absolute;
-    top: 15%; left: 20%; right: 20%;
-    height: 3px;
-    background: rgba(255,255,255,0.20);
-    border-radius: 2px;
+    top: 4px; left: 50%;
+    transform: translateX(-50%);
+    width: 30%;
+    height: 2px;
+    background: rgba(255,255,255,0.35);
+    border-radius: 1px;
+    box-shadow: 0 12px 0 rgba(255,255,255,0.20);
     pointer-events: none;
 }
-.bs-cell.ship::after {
+
+/* Башня (центральная клетка корабля) — кружок */
+.bs-cell.ship.ship-tower::before {
     content: '';
     position: absolute;
-    top: 3px; right: 4px;
-    width: 3px; height: 3px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
-    background: rgba(0,0,0,0.45);
+    background:
+        radial-gradient(circle at 35% 30%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.05) 50%),
+        linear-gradient(180deg, #5A6B84 0%, #2B3648 100%);
+    border: 1px solid #1A2535;
     box-shadow:
-        -12px 0 0 rgba(0,0,0,0.45),
-        0 12px 0 rgba(0,0,0,0.35),
-        -12px 12px 0 rgba(0,0,0,0.35);
+        inset 0 1px 0 rgba(255,255,255,0.4),
+        0 1px 2px rgba(0,0,0,0.5);
     pointer-events: none;
 }
+
+/* Нос — закруглённый с одной стороны (острый край) */
+.bs-cell.ship.ship-h.ship-bow {
+    border-radius: 50% 3px 3px 50% / 50% 3px 3px 50%;
+}
+.bs-cell.ship.ship-v.ship-bow {
+    border-radius: 50% 50% 3px 3px / 50% 50% 3px 3px;
+}
+
+/* Корма — закруглённая с другой стороны */
+.bs-cell.ship.ship-h.ship-stern {
+    border-radius: 3px 50% 50% 3px / 3px 50% 50% 3px;
+}
+.bs-cell.ship.ship-v.ship-stern {
+    border-radius: 3px 3px 50% 50% / 3px 3px 50% 50%;
+}
+
+/* Однопалубный — овальный */
+.bs-cell.ship.ship-single {
+    border-radius: 50% 50% 50% 50% / 35% 35% 35% 35%;
+}
+.bs-cell.ship.ship-single::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.35);
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
+    pointer-events: none;
+}
+
+/* Попадание — красный корпус */
 .bs-cell.ship.hit {
     background:
-        linear-gradient(180deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0) 55%),
+        linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 55%),
         linear-gradient(180deg, #E23A3C 0%, #8B1A1A 100%);
     border-color: #4A0A0A;
     box-shadow:
         inset 0 1px 0 rgba(255,255,255,0.30),
         inset 0 -2px 0 rgba(0,0,0,0.40),
-        0 0 10px rgba(255,77,79,0.55);
+        0 0 12px rgba(255,77,79,0.65);
+    animation: bsHitFlash 0.4s ease-out;
 }
-.bs-cell.ship.hit::before,
-.bs-cell.ship.hit::after {
-    display: none;
+.bs-cell.ship.hit::before {
+    background: rgba(0,0,0,0.30);
+    box-shadow: none;
 }
-.bs-cell.ship.hit > .bs-x {
-    position: absolute;
-    inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff;
-    font-size: 14px;
-    font-weight: 900;
-    text-shadow: 0 0 4px rgba(0,0,0,0.75);
+@keyframes bsHitFlash {
+    0% { transform: scale(1.15); background-color: #FF6B6B; }
+    100% { transform: scale(1); }
 }
-.bs-cell.ship.sunk {
-    background:
-        linear-gradient(180deg, rgba(255,60,60,0.10) 0%, rgba(255,60,60,0) 55%),
-        linear-gradient(180deg, #3A1A1A 0%, #150303 100%);
-    border-color: #0F0303;
-    box-shadow:
-        inset 0 1px 0 rgba(255,60,60,0.20),
-        inset 0 -2px 0 rgba(0,0,0,0.55);
-    opacity: 0.9;
-}
-.bs-cell.ship.sunk::before,
-.bs-cell.ship.sunk::after {
-    display: none;
-}
+
+.bs-cell.ship.hit > .bs-x,
 .bs-cell.ship.sunk > .bs-x {
     position: absolute;
     inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    color: #FF5555;
-    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 15px;
     font-weight: 900;
-    text-shadow: 0 0 6px rgba(255,0,0,0.6);
+    text-shadow: 0 0 6px rgba(0,0,0,0.85);
+    pointer-events: none;
 }
 
-/* Промах врага по мне */
+/* Потоплен */
+.bs-cell.ship.sunk {
+    background:
+        linear-gradient(180deg, rgba(60,20,20,0.5) 0%, rgba(20,5,5,0.8) 100%),
+        linear-gradient(180deg, #3A1A1A 0%, #150303 100%);
+    border-color: #0F0303;
+    box-shadow:
+        inset 0 1px 0 rgba(255,60,60,0.15),
+        inset 0 -2px 0 rgba(0,0,0,0.55);
+    opacity: 0.85;
+}
+.bs-cell.ship.sunk::before {
+    display: none;
+}
+.bs-cell.ship.sunk > .bs-x {
+    color: #FF5555;
+}
+
+/* Промах */
 .bs-cell.miss {
-    background: rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.05);
     border-color: rgba(255,255,255,0.15);
+    transition: background 0.2s ease;
 }
 .bs-cell.miss::after {
     content: '';
     width: 7px; height: 7px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 100%);
+    background: radial-gradient(circle, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 100%);
     display: block;
 }
 
-/* ==== ФЛОТ ВРАГА ==== */
+/* ФЛОТ ВРАГА */
 .bs-cell.enemy-empty {
     background: rgba(30,136,229,0.14);
     border-color: rgba(30,136,229,0.28);
 }
 .bs-cell.enemy-miss {
-    background: rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.05);
     border-color: rgba(255,255,255,0.15);
 }
 .bs-cell.enemy-miss::after {
     content: '';
     width: 7px; height: 7px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 100%);
+    background: radial-gradient(circle, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 100%);
     display: block;
 }
 .bs-cell.enemy-hit {
     background:
-        linear-gradient(180deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0) 55%),
+        linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 55%),
         linear-gradient(180deg, #E23A3C 0%, #8B1A1A 100%);
     border-color: #4A0A0A;
     box-shadow:
         inset 0 1px 0 rgba(255,255,255,0.30),
         inset 0 -2px 0 rgba(0,0,0,0.40),
-        0 0 10px rgba(255,77,79,0.55);
+        0 0 12px rgba(255,77,79,0.55);
+    animation: bsHitFlash 0.4s ease-out;
 }
 .bs-cell.enemy-hit::after {
     content: '✕';
     display: flex; align-items: center; justify-content: center;
     position: absolute; inset: 0;
     color: #fff;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 900;
     text-shadow: 0 0 4px rgba(0,0,0,0.75);
 }
 .bs-cell.enemy-sunk {
     background:
-        linear-gradient(180deg, rgba(255,60,60,0.10) 0%, rgba(255,60,60,0) 55%),
+        linear-gradient(180deg, rgba(60,20,20,0.5) 0%, rgba(20,5,5,0.8) 100%),
         linear-gradient(180deg, #3A1A1A 0%, #150303 100%);
     border-color: #0F0303;
     box-shadow:
-        inset 0 1px 0 rgba(255,60,60,0.20),
+        inset 0 1px 0 rgba(255,60,60,0.15),
         inset 0 -2px 0 rgba(0,0,0,0.55);
     opacity: 0.9;
 }
@@ -1955,7 +1921,7 @@ textarea.note-textarea { min-height: 200px; }
     display: flex; align-items: center; justify-content: center;
     position: absolute; inset: 0;
     color: #FF5555;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 900;
     text-shadow: 0 0 6px rgba(255,0,0,0.6);
 }
@@ -1967,6 +1933,7 @@ textarea.note-textarea { min-height: 200px; }
 }
 .bs-cell.turn-active {
     cursor: crosshair;
+    transition: transform 0.12s ease, background 0.15s ease, box-shadow 0.15s ease;
     animation: bsCellPulse 2.4s ease-in-out infinite;
 }
 @keyframes bsCellPulse {
@@ -1985,6 +1952,7 @@ textarea.note-textarea { min-height: 200px; }
     text-transform: uppercase;
     margin-bottom: 14px;
     text-align: center;
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .bs-turn-banner.my-turn {
     background: var(--grad-neon-soft);
@@ -2074,7 +2042,7 @@ textarea.note-textarea { min-height: 200px; }
 }
 .bs-code-copy:active { transform: scale(0.94); }
 
-/* ==== ПРЕВЬЮ КОРАБЛЯ ПРИ РАССТАНОВКЕ ==== */
+/* Превью корабля при расстановке */
 .bs-placing-preview {
     display: flex;
     align-items: center;
@@ -2087,6 +2055,7 @@ textarea.note-textarea { min-height: 200px; }
     margin-bottom: 14px;
     position: relative;
     overflow: hidden;
+    transition: background 0.2s ease, border-color 0.2s ease;
 }
 .bs-placing-preview::before {
     content: '';
@@ -2120,14 +2089,15 @@ textarea.note-textarea { min-height: 200px; }
     height: 22px;
     border-radius: 3px;
     background:
-        linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 55%),
+        linear-gradient(180deg, rgba(255,255,255,0.40) 0%, rgba(255,255,255,0.05) 55%, rgba(0,0,0,0.20) 100%),
         linear-gradient(180deg, #8B9CB5 0%, #5A6B84 100%);
     border: 1px solid #2B3648;
     box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.40),
+        inset 0 1px 0 rgba(255,255,255,0.45),
         inset 0 -2px 0 rgba(0,0,0,0.35),
         0 1px 2px rgba(0,0,0,0.35);
     position: relative;
+    transition: transform 0.15s ease;
 }
 .bs-placing-ship-cell::after {
     content: '';
@@ -2139,12 +2109,6 @@ textarea.note-textarea { min-height: 200px; }
     box-shadow: -12px 0 0 rgba(0,0,0,0.45);
 }
 
-.bs-place-actions {
-    display: grid;
-    grid-template-columns: 1fr 2fr;
-    gap: 8px;
-    margin-top: 14px;
-}
 .bs-log {
     display: flex;
     flex-direction: column;
@@ -2163,112 +2127,21 @@ textarea.note-textarea { min-height: 200px; }
     display: flex; align-items: center; gap: 8px;
     color: var(--text-2);
     line-height: 1.35;
+    animation: logEntryIn 0.25s ease;
+}
+@keyframes logEntryIn {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
 }
 .bs-log-entry.hit { color: var(--accent-red); font-weight: 800; }
 .bs-log-entry.sunk { color: var(--accent-red); font-weight: 900; }
 .bs-log-entry.miss { color: var(--text-2); }
 
-.bs-loading-overlay {
-    position: fixed; inset: 0;
-    background: rgba(7,11,20,0.72);
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-    z-index: 500;
-    display: flex; align-items: center; justify-content: center;
-}
-.bs-loading-spinner {
-    width: 54px; height: 54px;
-    border-radius: 50%;
-    border: 3px solid rgba(0,229,208,0.18);
-    border-top-color: var(--neon);
-    animation: bsSpin 0.9s linear infinite;
-    filter: drop-shadow(0 0 12px var(--neon-glow));
-}
+/* ПЛАВНЫЕ ПЕРЕХОДЫ КНОПОК */
+.btn { transform: translateZ(0); }
+.bs-bet-btn, .bs-menu-btn, .bs-code-copy, .bs-cell { backface-visibility: hidden; }
 
-/* ============================================================
-   ОБМЕННИК / ВАЛЮТЫ — модалка «Где взять валюту»
-   ============================================================ */
-
-.currency-info-section {
-    margin-bottom: 20px;
-}
-.currency-info-section-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: 1.6px;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(0,229,208,0.20);
-}
-.currency-info-section-title.soft { color: var(--neon); }
-.currency-info-section-title.hard { color: #FFD700; }
-.currency-info-section-title.spend { color: var(--accent-yellow); }
-.currency-info-section-title svg {
-    width: 22px; height: 22px;
-    flex-shrink: 0;
-}
-.currency-info-section-title.soft svg { filter: drop-shadow(0 0 8px var(--neon-glow)); }
-.currency-info-section-title.hard svg { filter: drop-shadow(0 0 8px rgba(255,215,0,0.6)); }
-.currency-info-section-title.spend svg { filter: drop-shadow(0 0 8px rgba(255,176,32,0.5)); }
-.currency-info-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 0;
-    font-size: 13px;
-    font-weight: 600;
-    border-bottom: 1px solid var(--divider);
-}
-.currency-info-row:last-child { border-bottom: none; }
-.currency-info-row-label {
-    color: var(--text-2);
-    font-weight: 500;
-    flex: 1;
-    line-height: 1.35;
-}
-.currency-info-row-value {
-    font-weight: 900;
-    font-size: 13px;
-    white-space: nowrap;
-    letter-spacing: -0.2px;
-}
-.currency-info-row-value.soft { color: var(--neon); text-shadow: 0 0 8px var(--neon-glow); }
-.currency-info-row-value.hard { color: #FFD700; text-shadow: 0 0 8px rgba(255,215,0,0.5); }
-
-.currency-info-exchange {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 12px;
-    background: linear-gradient(135deg, rgba(0,229,208,0.10), rgba(255,215,0,0.08));
-    border: 1px dashed rgba(0,229,208,0.35);
-    border-radius: var(--r-md);
-    margin-bottom: 12px;
-    font-size: 14px;
-    font-weight: 800;
-    color: var(--text);
-}
-.currency-info-exchange .arrow {
-    color: var(--neon);
-    font-size: 16px;
-    font-weight: 900;
-    filter: drop-shadow(0 0 8px var(--neon-glow));
-}
-.currency-info-exchange .value-gold {
-    color: #FFD700;
-    font-weight: 900;
-    text-shadow: 0 0 10px rgba(255,215,0,0.5);
-}
-
-/* ============================================================
-   АДАПТИВ
-   ============================================================ */
-
+/* АДАПТИВ */
 @media (max-width: 420px) {
     .ach-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .bs-board { max-width: 340px; }
