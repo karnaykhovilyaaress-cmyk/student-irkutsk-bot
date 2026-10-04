@@ -19,7 +19,7 @@ setTimeout(() => {
 
 const state = {
     tab: 'schedule', loading: false, error: null, user: tgUser, isAdmin: false,
-    schedule: null, weekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
+    schedule: null, weekDays: null, nextWeekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
     tasks: [], tasksStats: { active: 0, done: 0 }, tasksView: 'active',
     taskEditor: false, taskEditorId: null, taskEditorText: '', taskEditorDate: '', taskEditorTime: '', taskEditorPriority: 2,
     notes: [],
@@ -1418,21 +1418,43 @@ function renderDaySwitch() {
         <button data-action="day-tomorrow" class="${state.scheduleDay === 'tomorrow' ? 'active' : ''}">Завтра</button>
     </div>`;
 }
+
+// Возвращает строку "завтра" в формате dd.mm.yyyy по Иркутску (UTC+8)
+function _tomorrowStrIrkutsk() {
+    const nowMs = Date.now();
+    // Иркутск = UTC+8. Переводим текущий момент в UTC-представление Иркутска:
+    const irkMs = nowMs + (8 * 3600 * 1000) + (new Date().getTimezoneOffset() * 60 * 1000);
+    // Проверяем: если irkMs уже в UTC = время по Иркутску
+    const tomorrowIrk = new Date(irkMs + 24 * 3600 * 1000);
+    const dd = String(tomorrowIrk.getUTCDate()).padStart(2, '0');
+    const mm = String(tomorrowIrk.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = tomorrowIrk.getUTCFullYear();
+    return `${dd}.${mm}.${yyyy}`;
+}
+
+function _findDayByDate(days, dateStr) {
+    if (!days) return null;
+    for (const d of days) {
+        if (d && d.date === dateStr) return d;
+    }
+    return null;
+}
+
 function getTomorrowData() {
-    const wd = state.weekDays;
-    if (!wd || !wd.days || wd.days.length === 0) return null;
-    const today = new Date();
-    const jsDay = today.getDay();
-    const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
-    const tomorrowIdx = (todayIdx + 1) % 7;
-    if (wd.days.length >= 7) return wd.days[tomorrowIdx] || null;
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-    const dd = String(tomorrow.getDate()).padStart(2, '0');
-    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
-    const yyyy = tomorrow.getFullYear();
-    const tomorrowStr = `${dd}.${mm}.${yyyy}`;
-    for (const d of wd.days) if (d.date === tomorrowStr) return d;
+    const target = _tomorrowStrIrkutsk();
+
+    // 1) Ищем в текущей неделе
+    if (state.weekDays && state.weekDays.days) {
+        const d = _findDayByDate(state.weekDays.days, target);
+        if (d) return d;
+    }
+
+    // 2) Ищем в следующей неделе (если загружена)
+    if (state.nextWeekDays && state.nextWeekDays.days) {
+        const d = _findDayByDate(state.nextWeekDays.days, target);
+        if (d) return d;
+    }
+
     return null;
 }
 async function ensureWeekLoaded() {
@@ -1715,6 +1737,7 @@ function _applyAttendanceLocally(date, time, subject, status) {
     };
     if (state.schedule?.lessons) upd(state.schedule.lessons);
     if (state.weekDays?.days) for (const d of state.weekDays.days) if (d.date === date) upd(d.lessons);
+    if (state.nextWeekDays?.days) for (const d of state.nextWeekDays.days) if (d.date === date) upd(d.lessons);
 }
 
 // ============================================================
@@ -2496,6 +2519,7 @@ async function loadTabData(tab) {
             state.weekOffset = 0;
             state.scheduleDay = 'today';
             state.weekDays = null;
+            state.nextWeekDays = null;
             await loadProfile();
             await loadSchedule();
             ensureWeekLoaded().catch(() => {});
@@ -2536,13 +2560,31 @@ async function loadWeekAndRender() {
 }
 async function loadTodayAndRender() {
     state.scheduleViewMode = 'today';
-    state.weekOffset = 0; state.weekDays = null; state.scheduleDay = 'today';
+    state.weekOffset = 0; state.weekDays = null; state.nextWeekDays = null; state.scheduleDay = 'today';
     await loadSchedule(); render();
 }
 function actionDayToday() { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
 async function actionDayTomorrow() {
-    state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today'; haptic('light');
-    if (!state.weekDays) { render(); await ensureWeekLoaded(); }
+    state.scheduleDay = 'tomorrow';
+    state.scheduleViewMode = 'today';
+    haptic('light');
+
+    // Если неделя ещё не загружена — загружаем
+    if (!state.weekDays) {
+        render();
+        await ensureWeekLoaded();
+    }
+
+    // Если "завтра" не находится в уже загруженных данных — тянем следующую неделю
+    if (!getTomorrowData()) {
+        try {
+            const r = await apiGet('/api/week', { offset: 1 });
+            if (r && r.days && r.days.length) {
+                state.nextWeekDays = r;
+            }
+        } catch (e) {}
+    }
+
     render();
 }
 async function actionChooseGroup() {
@@ -2685,9 +2727,9 @@ function handleAction(el) {
     else if (a === 'notify-save') actionNotifySave();
     else if (a === 'notify-off') actionNotifyOff();
     else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
-    else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
-    else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
-    else if (a === 'week-current') { state.weekOffset = 0; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-prev') { state.weekOffset -= 1; state.nextWeekDays = null; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-next') { state.weekOffset += 1; state.nextWeekDays = null; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-current') { state.weekOffset = 0; state.nextWeekDays = null; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
     else if (a === 'week-today') { loadTodayAndRender(); }
     else if (a === 'day-today') actionDayToday();
     else if (a === 'day-tomorrow') actionDayTomorrow();
