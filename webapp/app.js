@@ -17,12 +17,11 @@ setTimeout(() => {
     setTimeout(() => { if (sp) sp.remove(); }, 600);
 }, 1200);
 
-// Список доступных аватарок
+// Список аватарок
 const AVATARS = [
-    { idx: 0, path: 'assets/student.webp', label: 'Парень' },
-    { idx: 1, path: 'assets/avatar-1.webp', label: 'Девушка' },
+    { idx: 0, path: 'assets/student.webp' },
+    { idx: 1, path: 'assets/avatar-1.webp' },
 ];
-
 function avatarPathByIdx(idx) {
     const found = AVATARS.find(a => a.idx === idx);
     return found ? found.path : AVATARS[0].path;
@@ -43,7 +42,6 @@ const state = {
     levelInfoModal: false,
     premiumModal: null,
     newAchToast: null,
-    avatarPicker: false,
     scholarship: null, groups: null,
     scholarshipEditor: false, scholarshipEditorId: null,
     scholarshipEditorSubject: '', scholarshipEditorGrade: 0,
@@ -80,7 +78,6 @@ async function apiGet(path, params = {}) {
         throw e;
     }
 }
-
 async function apiPost(path, body = {}) {
     const r = await fetch(path, {
         method: 'POST',
@@ -146,7 +143,7 @@ function popEmoji(char) {
 }
 
 // ============================================================
-//              МУЗЫКА И ЗВУК
+//              МУЗЫКА
 // ============================================================
 
 function isMusicMuted() {
@@ -167,26 +164,67 @@ function stopGameMusic() {
 function toggleMusicMute() {
     const nowMuted = !isMusicMuted();
     try { localStorage.setItem('flappy_muted', nowMuted ? '1' : '0'); } catch (e) {}
-    if (nowMuted) {
-        stopGameMusic();
-    } else if (state.gameView === 'playing' && state.gameInstance && state.gameInstance.started) {
-        startGameMusic();
-    }
+    if (nowMuted) stopGameMusic();
+    else if (state.gameView === 'playing' && state.gameInstance && state.gameInstance.started) startGameMusic();
     const btn = document.getElementById('game-mute-btn');
     if (btn) btn.textContent = nowMuted ? '🔇' : '🔊';
     haptic('light');
 }
 
 // ============================================================
-//              СПРАЙТ ПЕРСОНАЖА ИГРЫ
+//   ОБРАБОТКА СПРАЙТА ГЕРОЯ — убираем белый фон
 // ============================================================
 
-const heroImg = new Image();
-heroImg.crossOrigin = 'anonymous';
-let heroImgReady = false;
-heroImg.onload = () => { heroImgReady = true; };
-heroImg.onerror = () => { heroImgReady = false; };
-heroImg.src = 'assets/hero.webp';
+let heroSprite = null;       // canvas с прозрачным фоном
+let heroSpriteReady = false;
+
+(function loadHeroSprite() {
+    const img = new Image();
+    img.onload = () => {
+        try {
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth;
+            c.height = img.naturalHeight;
+            const g = c.getContext('2d');
+            g.drawImage(img, 0, 0);
+
+            // Пиксельная обработка: белый (или почти белый) фон → прозрачный
+            try {
+                const imgData = g.getImageData(0, 0, c.width, c.height);
+                const d = imgData.data;
+                let transparentCount = 0;
+                const totalPixels = d.length / 4;
+                for (let i = 0; i < d.length; i += 4) {
+                    if (d[i + 3] === 0) { transparentCount++; continue; }
+                    // Порог: R, G, B >= 240 — считаем фоном
+                    if (d[i] >= 240 && d[i + 1] >= 240 && d[i + 2] >= 240) {
+                        d[i + 3] = 0;
+                        transparentCount++;
+                    }
+                }
+                // Если стало прозрачным > 75% площади — что-то не так, откатываемся
+                if (transparentCount > totalPixels * 0.75) {
+                    // оставляем оригинал
+                    heroSprite = img;
+                    heroSpriteReady = true;
+                    return;
+                }
+                g.putImageData(imgData, 0, 0);
+                heroSprite = c;
+                heroSpriteReady = true;
+            } catch (err) {
+                // CORS или другая ошибка чтения пикселей — используем оригинал
+                heroSprite = img;
+                heroSpriteReady = true;
+            }
+        } catch (e) {
+            heroSprite = img;
+            heroSpriteReady = true;
+        }
+    };
+    img.onerror = () => { heroSprite = null; heroSpriteReady = false; };
+    img.src = 'assets/hero.webp';
+})();
 
 // ============================================================
 //          SVG / ИКОНКИ
@@ -219,19 +257,15 @@ function studentAvatarFallback() {
         </defs>
         <circle cx="100" cy="100" r="98" fill="url(#fbGlow)"/>
         <path d="M20 200 Q20 155 55 145 Q75 152 100 152 Q125 152 145 145 Q180 155 180 200 Z" fill="url(#fbHood)"/>
-        <path d="M55 145 Q75 132 100 132 Q125 132 145 145" stroke="#00E5D0" stroke-width="1.2" fill="none" opacity="0.55"/>
         <rect x="85" y="115" width="30" height="28" fill="url(#fbSkin)"/>
         <ellipse cx="100" cy="88" rx="42" ry="50" fill="url(#fbSkin)"/>
         <path d="M58 62 Q60 30 100 24 Q140 30 142 62 Q138 48 128 42 Q100 34 72 42 Q62 48 58 62 Z" fill="#3a2418"/>
-        <path d="M60 78 Q70 74 82 76" stroke="#0a0808" stroke-width="3" fill="none" stroke-linecap="round"/>
-        <path d="M140 78 Q130 74 118 76" stroke="#0a0808" stroke-width="3" fill="none" stroke-linecap="round"/>
         <ellipse cx="82" cy="88" rx="9" ry="6" fill="#0a0d16"/>
         <ellipse cx="118" cy="88" rx="9" ry="6" fill="#0a0d16"/>
         <circle cx="82" cy="88" r="14" fill="url(#fbEye)"/>
         <circle cx="118" cy="88" r="14" fill="url(#fbEye)"/>
         <circle cx="82" cy="88" r="3" fill="#fff"/>
         <circle cx="118" cy="88" r="3" fill="#fff"/>
-        <path d="M100 92 Q104 106 98 112 Q101 114 106 112" stroke="#a87a58" stroke-width="1.6" fill="none"/>
         <path d="M88 120 Q100 127 112 120" stroke="#5c2a1c" stroke-width="2.4" fill="none" stroke-linecap="round"/>
     </svg>`;
 }
@@ -359,7 +393,6 @@ function render() {
     else if (state.achModal) modalHtml = renderAchModal();
     else if (state.levelInfoModal) modalHtml = renderLevelInfoModal();
     else if (state.newAchToast) modalHtml = renderNewAchToast();
-    else if (state.avatarPicker) modalHtml = renderAvatarPickerModal();
 
     appEl?.classList.remove('picker-open');
     if (navEl) navEl.style.display = '';
@@ -448,10 +481,8 @@ function renderProfile() {
             <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
         </div>
         <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
-        <div class="profile-avatar-wrap" data-action="avatar-open" style="cursor:pointer">
-            ${studentAvatarSvg()}
-            <div class="profile-avatar-hint">Сменить</div>
-        </div>
+        <div class="profile-avatar-wrap">${studentAvatarSvg()}</div>
+        <button class="avatar-change-btn" data-action="avatar-toggle">🔄 Сменить аватар</button>
         <div class="profile-level-block" data-action="level-info-open">
             <div class="profile-level-num">${lvl}<small>LVL</small></div>
             <div class="profile-level-title">${escapeHtml(w?.level_title || 'Первокурсник')}</div>
@@ -597,30 +628,6 @@ function renderProfile() {
     </div>`;
 
     return html;
-}
-
-function renderAvatarPickerModal() {
-    const curIdx = state.wallet?.avatar_idx || 0;
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="modal-title">Выбор аватарки</div>
-            <div class="modal-sub">Выбери персонажа</div>
-            <div class="avatar-picker-grid">
-                ${AVATARS.map(a => `
-                    <button class="avatar-option ${a.idx === curIdx ? 'active' : ''}"
-                            data-action="avatar-set" data-idx="${a.idx}">
-                        <img src="${a.path}" alt="${escapeHtml(a.label)}"
-                             onerror="this.style.display='none'">
-                        <div class="avatar-option-label">${escapeHtml(a.label)}</div>
-                        ${a.idx === curIdx ? '<div class="avatar-option-check">✓</div>' : ''}
-                    </button>
-                `).join('')}
-            </div>
-            <div class="actions-row" style="justify-content:center;margin-top:16px">
-                <button class="btn btn-secondary" data-action="modal-close">Закрыть</button>
-            </div>
-        </div>
-    </div>`;
 }
 
 function renderNameEditorModal() {
@@ -820,29 +827,25 @@ async function actionNameSave() {
         render();
     } catch (e) { haptic('error'); alert(e.message || 'Ошибка'); }
 }
-function actionAvatarOpen() {
-    haptic('light');
-    state.avatarPicker = true;
-    render();
-}
-async function actionAvatarSet(idx) {
+async function actionAvatarToggle() {
     haptic('light');
     const curIdx = state.wallet?.avatar_idx || 0;
-    if (idx === curIdx) {
-        state.avatarPicker = false;
-        render();
-        return;
-    }
+    const nextIdx = curIdx === 0 ? 1 : 0;
+    // Оптимистично обновляем UI
+    if (state.wallet) state.wallet.avatar_idx = nextIdx;
+    render();
     try {
-        const r = await apiPost('/api/set-avatar', { idx });
-        if (state.wallet) state.wallet.avatar_idx = idx;
-        state.avatarPicker = false;
+        const r = await apiPost('/api/set-avatar', { idx: nextIdx });
+        if (r.wallet) state.wallet = r.wallet;
         haptic('success');
         popEmoji('👤');
         render();
     } catch (e) {
+        // Откат при ошибке
+        if (state.wallet) state.wallet.avatar_idx = curIdx;
         haptic('error');
-        alert(e.message || 'Не удалось сменить аватарку');
+        alert(e.message || 'Не удалось сменить аватар');
+        render();
     }
 }
 async function actionChestOpen() {
@@ -874,7 +877,6 @@ function actionModalClose() {
     state.levelInfoModal = false;
     state.premiumModal = null;
     state.newAchToast = null;
-    state.avatarPicker = false;
     render();
 }
 
@@ -912,10 +914,6 @@ function renderGames() {
     }
     return html;
 }
-
-// ============================================================
-//   ЭКРАН ИГРЫ
-// ============================================================
 
 function renderGameTutorialOverlay() {
     return `<div class="tutorial-overlay hide" id="game-tutorial-overlay">
@@ -1037,7 +1035,6 @@ function showTutorialThenStart(startFn) {
         document.removeEventListener('keydown', onKey);
         startFn();
     }
-
     function onTap(e) {
         if (e.target && e.target.dataset && (e.target.dataset.action === 'game-exit' || e.target.dataset.action === 'music-toggle')) return;
         if (!tutShown) {
@@ -1113,7 +1110,7 @@ function initFlappy() {
     }
 
     const PLAYER_R = 15;
-    const HERO_SIZE = 88; // размер спрайта героя на экране
+    const HERO_SIZE = 88;
 
     const GAP = 160;
     const MIN_GAP = 132;
@@ -1207,21 +1204,18 @@ function initFlappy() {
 
     function drawPlayer() {
         const p = game.player;
-        if (heroImgReady) {
-            // Рисуем спрайт героя из картинки
-            const img = heroImg;
-            const ratio = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+        if (heroSpriteReady && heroSprite) {
+            const img = heroSprite;
+            const naturalW = img.naturalWidth || img.width || 1;
+            const naturalH = img.naturalHeight || img.height || 1;
+            const ratio = naturalW / naturalH;
             let w = HERO_SIZE;
             let h = HERO_SIZE;
-            // Сохраняем пропорции: если картинка широкая — уменьшаем высоту, если высокая — ширину
-            if (ratio > 1) {
-                h = HERO_SIZE / ratio;
-            } else if (ratio < 1) {
-                w = HERO_SIZE * ratio;
-            }
+            if (ratio > 1) h = HERO_SIZE / ratio;
+            else if (ratio < 1) w = HERO_SIZE * ratio;
             ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h);
         } else {
-            // Fallback: простой круг, если картинка ещё не загрузилась или не найдена
+            // Fallback: простой круг
             ctx.fillStyle = 'rgba(0,229,208,0.25)';
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.r + 6, 0, Math.PI * 2);
@@ -1428,7 +1422,6 @@ function renderDaySwitch() {
         <button data-action="day-tomorrow" class="${state.scheduleDay === 'tomorrow' ? 'active' : ''}">Завтра</button>
     </div>`;
 }
-
 function _tomorrowStrIrkutsk() {
     const nowMs = Date.now();
     const irkMs = nowMs + (8 * 3600 * 1000) + (new Date().getTimezoneOffset() * 60 * 1000);
@@ -2512,7 +2505,6 @@ async function loadTabData(tab) {
     state.levelInfoModal = false;
     state.premiumModal = null;
     state.newAchToast = null;
-    state.avatarPicker = false;
     render();
     try {
         if (tab === 'schedule') {
@@ -2664,8 +2656,7 @@ function handleAction(el) {
     const v = el.dataset.value;
 
     if (a === 'name-open') actionNameOpen();
-    else if (a === 'avatar-open') actionAvatarOpen();
-    else if (a === 'avatar-set') actionAvatarSet(parseInt(el.dataset.idx));
+    else if (a === 'avatar-toggle') actionAvatarToggle();
     else if (a === 'level-info-open') actionLevelInfoOpen();
     else if (a === 'ach-open') actionAchOpen(el.dataset.id);
     else if (a === 'premium-open') actionPremiumOpen();
