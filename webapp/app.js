@@ -6,9 +6,6 @@ try { if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } 
 try { if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait'); } catch (e) {}
 try { if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes(); } catch (e) {}
 
-// ============================================================
-//   Патч нативных диалогов (Telegram WebView блокирует их)
-// ============================================================
 (function patchNativeAlerts() {
     try {
         const _origAlert = window.alert;
@@ -115,6 +112,11 @@ const state = {
     bsPollTimer: null,
     bsJoinModal: false,
     bsJoinCode: '',
+    scholarshipAmountModal: false,
+    scholarshipAmountValue: '',
+    adminReplyModal: false,
+    adminReplyFeedbackId: null,
+    adminReplyText: '',
     _bsTapLock: false,
     _bsConfirmLock: false,
     _bsBotStarting: false,
@@ -206,9 +208,6 @@ function formatNumber(n) {
     return Number(n || 0).toLocaleString('ru-RU').replace(/,/g, ' ');
 }
 
-// ============================================================
-//   Сохранение сессии морского боя
-// ============================================================
 function bsSaveSession() {
     try {
         if (state.bsGameId && !state.bsIsBot) {
@@ -226,10 +225,6 @@ function bsClearSession() {
         localStorage.removeItem(BS_STORAGE_IS_BOT);
     } catch (e) {}
 }
-
-// ============================================================
-//                       МУЗЫКА
-// ============================================================
 
 function isMusicMuted() { return localStorage.getItem('flappy_muted') === '1'; }
 function startGameMusic() {
@@ -253,10 +248,6 @@ function toggleMusicMute() {
     if (btn) btn.textContent = nowMuted ? '🔇' : '🔊';
     haptic('light');
 }
-
-// ============================================================
-//   СПРАЙТ ГЕРОЯ
-// ============================================================
 
 let heroSprite = null;
 let heroSpriteReady = false;
@@ -297,10 +288,6 @@ let heroSpriteReady = false;
     img.onerror = () => { heroSprite = null; heroSpriteReady = false; };
     img.src = 'assets/hero.webp';
 })();
-
-// ============================================================
-//          SVG / ИКОНКИ
-// ============================================================
 
 function studentAvatarSvg() {
     const idx = state.wallet?.avatar_idx || 0;
@@ -416,9 +403,20 @@ function usersIconSvg() {
     </svg>`;
 }
 
-// ============================================================
-//                       RENDER
-// ============================================================
+function _computeModals() {
+    if (state.nameEditor) return renderNameEditorModal();
+    if (state.chestModal) return renderChestModal();
+    if (state.premiumModal) return renderPremiumModal();
+    if (state.achModal) return renderAchModal();
+    if (state.levelInfoModal) return renderLevelInfoModal();
+    if (state.currencyInfoModal) return renderCurrencyInfoModal();
+    if (state.newAchToast) return renderNewAchToast();
+    if (state.exchangeOpen) return renderExchangeModal();
+    if (state.bsJoinModal) return renderBSJoinModal();
+    if (state.scholarshipAmountModal) return renderScholarshipAmountModal();
+    if (state.adminReplyModal) return renderAdminReplyModal();
+    return '';
+}
 
 function render() {
     const content = document.getElementById('content');
@@ -428,11 +426,13 @@ function render() {
 
     const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
+    const modalHtml = _computeModals();
+
     if (state.gameView === 'result') {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = 'Результат';
         if (navEl) navEl.style.display = 'none';
-        content.innerHTML = renderGameResult();
+        content.innerHTML = renderGameResult() + modalHtml;
         attachHandlers();
         return;
     }
@@ -449,7 +449,7 @@ function render() {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = 'Морской бой';
         if (navEl) navEl.style.display = 'none';
-        content.innerHTML = renderBattleship();
+        content.innerHTML = renderBattleship() + modalHtml;
         attachHandlers();
         return;
     }
@@ -458,7 +458,7 @@ function render() {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = state.taskEditorId ? 'Изменить задачу' : 'Новая задача';
         if (navEl) navEl.style.display = 'none';
-        content.innerHTML = renderTaskEditor();
+        content.innerHTML = renderTaskEditor() + modalHtml;
         attachHandlers();
         return;
     }
@@ -466,7 +466,7 @@ function render() {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = state.noteEditorId ? 'Изменить заметку' : 'Новая заметка';
         if (navEl) navEl.style.display = 'none';
-        content.innerHTML = renderNoteEditor();
+        content.innerHTML = renderNoteEditor() + modalHtml;
         attachHandlers();
         return;
     }
@@ -474,7 +474,7 @@ function render() {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = 'Уведомления';
         if (navEl) navEl.style.display = 'none';
-        content.innerHTML = renderNotifyEditor();
+        content.innerHTML = renderNotifyEditor() + modalHtml;
         attachHandlers();
         return;
     }
@@ -482,7 +482,7 @@ function render() {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = state.scholarshipEditorId ? 'Изменить оценку' : 'Новая оценка';
         if (navEl) navEl.style.display = 'none';
-        content.innerHTML = renderScholarshipEditor();
+        content.innerHTML = renderScholarshipEditor() + modalHtml;
         attachHandlers();
         return;
     }
@@ -498,22 +498,11 @@ function render() {
         if (state.pickerMode === 'institute') html = renderInstitutePicker();
         else if (state.pickerMode === 'course') html = renderCoursePicker();
         else html = renderGroupPicker();
-        content.innerHTML = html;
+        content.innerHTML = html + modalHtml;
         attachHandlers();
         if (state.pickerMode === 'group') pickerAttachSearch();
         return;
     }
-
-    let modalHtml = '';
-    if (state.nameEditor) modalHtml = renderNameEditorModal();
-    else if (state.chestModal) modalHtml = renderChestModal();
-    else if (state.premiumModal) modalHtml = renderPremiumModal();
-    else if (state.achModal) modalHtml = renderAchModal();
-    else if (state.levelInfoModal) modalHtml = renderLevelInfoModal();
-    else if (state.currencyInfoModal) modalHtml = renderCurrencyInfoModal();
-    else if (state.newAchToast) modalHtml = renderNewAchToast();
-    else if (state.exchangeOpen) modalHtml = renderExchangeModal();
-    else if (state.bsJoinModal) modalHtml = renderBSJoinModal();
 
     appEl?.classList.remove('picker-open');
     if (navEl) navEl.style.display = '';
@@ -546,10 +535,6 @@ function render() {
     syncChestTimer();
 }
 
-// ============================================================
-//              ТАЙМЕР «ХАЛЯВА ДНЯ»
-// ============================================================
-
 function stopChestTimer() {
     if (state.chestTimer) { clearInterval(state.chestTimer); state.chestTimer = null; }
 }
@@ -574,10 +559,6 @@ async function updateChestTimer() {
     const el = document.getElementById('chest-timer');
     if (el) el.textContent = `${hh}:${mm}:${ss}`;
 }
-
-// ============================================================
-//                       ПРОФИЛЬ
-// ============================================================
 
 function renderBalanceCard() {
     const w = state.wallet || {};
@@ -779,10 +760,6 @@ function renderProfile() {
     return html;
 }
 
-// ============================================================
-//           МОДАЛКА «ГДЕ ВЗЯТЬ ВАЛЮТУ»
-// ============================================================
-
 function renderCurrencyInfoModal() {
     return `<div class="modal-backdrop" data-action="modal-close">
         <div class="modal-box" onclick="event.stopPropagation()">
@@ -834,10 +811,6 @@ function renderCurrencyInfoModal() {
     </div>`;
 }
 
-// ============================================================
-//           МОДАЛКА ВВОДА КОДА ДЛЯ PVP
-// ============================================================
-
 function renderBSJoinModal() {
     return `<div class="modal-backdrop" data-action="modal-close">
         <div class="modal-box" onclick="event.stopPropagation()">
@@ -857,9 +830,36 @@ function renderBSJoinModal() {
     </div>`;
 }
 
-// ============================================================
-//                     ОБМЕННИК ВАЛЮТЫ
-// ============================================================
+function renderScholarshipAmountModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Сумма стипендии</div>
+            <div class="info-modal-sub">Введите 0, если не получаете</div>
+            <input class="modal-input" id="sch-amount-input" type="number" inputmode="numeric"
+                   min="0" max="100000" value="${escapeHtml(state.scholarshipAmountValue || '')}"
+                   placeholder="0" autofocus>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="sch-amount-submit">Сохранить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderAdminReplyModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Ответ пользователю</div>
+            <div class="info-modal-sub">Обращение #${state.adminReplyFeedbackId || '?'}</div>
+            <textarea class="input" id="admin-reply-input" rows="4"
+                      placeholder="Текст ответа..." autofocus>${escapeHtml(state.adminReplyText || '')}</textarea>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="admin-reply-submit">Отправить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
 
 const EXCHANGE_RATE = 100;
 
@@ -945,10 +945,6 @@ async function actionExchangeSubmit() {
         alert('Ошибка: ' + (e.message || 'не удалось обменять'));
     }
 }
-
-// ============================================================
-//                       МОДАЛКИ
-// ============================================================
 
 function renderNameEditorModal() {
     return `<div class="modal-backdrop" data-action="modal-close">
@@ -1196,12 +1192,13 @@ function actionModalClose() {
     state.exchangeOpen = false;
     state.bsJoinModal = false;
     state.bsJoinCode = '';
+    state.scholarshipAmountModal = false;
+    state.scholarshipAmountValue = '';
+    state.adminReplyModal = false;
+    state.adminReplyFeedbackId = null;
+    state.adminReplyText = '';
     render();
 }
-
-// ============================================================
-//                       ИГРЫ (каталог)
-// ============================================================
 
 function renderGames() {
     const catalog = [
@@ -1233,10 +1230,6 @@ function renderGames() {
     }
     return html;
 }
-
-// ============================================================
-//                       FLAPPY
-// ============================================================
 
 function renderGameTutorialOverlay() {
     return `<div class="tutorial-overlay hide" id="game-tutorial-overlay">
@@ -1633,10 +1626,6 @@ function updateScore(val) {
     if (el) el.textContent = String(val);
 }
 
-// ============================================================
-//              МОРСКОЙ БОЙ — МОДЕЛЬ
-// ============================================================
-
 function bsEmptyField() {
     return Array.from({ length: 10 }, () => new Array(10).fill(0));
 }
@@ -1706,10 +1695,6 @@ function bsAutoPlace(field, ships = null) {
     }
     return placed;
 }
-
-// ============================================================
-//              МОРСКОЙ БОЙ — РЕНДЕР
-// ============================================================
 
 function renderBattleship() {
     const s = state.bsScreen;
@@ -1813,7 +1798,10 @@ function renderBSPlacing() {
         <div class="actions-row" style="margin-top:14px">
             <button class="btn btn-secondary" data-action="bs-rotate" style="flex:1">${rot === 'h' ? 'Горизонт. →' : 'Вертик. ↓'}</button>
             <button class="btn btn-secondary" data-action="bs-auto-place" style="flex:1">Авто</button>
-            <button class="btn btn-secondary" data-action="bs-clear-place" style="flex:1">Сброс</button>
+            <button class="btn btn-secondary" data-action="bs-undo-place" style="flex:1" ${idx > 0 ? '' : 'disabled'}>Убрать</button>
+        </div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="bs-clear-place" style="flex:1">Сбросить всё</button>
         </div>
         <div class="actions-row">
             <button class="btn" data-action="bs-confirm-place" style="width:100%" ${nextSize ? 'disabled' : ''}>Готов к бою</button>
@@ -1916,6 +1904,29 @@ function renderBSResult() {
 function renderBSBoard(field, mode, isMyTurn, isPlacing) {
     const letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К'];
 
+    const shipCellsInfo = {};
+    if (mode === 'my' && state.bsMyShips && state.bsMyShips.length > 0) {
+        for (const s of state.bsMyShips) {
+            const cells = s.cells;
+            if (!cells || cells.length === 0) continue;
+            const sortedH = [...cells].sort((a, b) => a[0] - b[0]);
+            const sortedV = [...cells].sort((a, b) => a[1] - b[1]);
+            const isHorizontal = cells.length === 1 || sortedH[0][1] === sortedH[sortedH.length - 1][1];
+            const ordered = isHorizontal ? sortedH : sortedV;
+            const size = ordered.length;
+            for (let i = 0; i < size; i++) {
+                const [x, y] = ordered[i];
+                let cls;
+                if (size === 1) cls = 'single';
+                else if (i === 0) cls = 'bow';
+                else if (i === size - 1) cls = 'stern';
+                else if (size >= 3 && i === Math.floor(size / 2)) cls = 'tower';
+                else cls = 'deck';
+                shipCellsInfo[`${x},${y}`] = { cls, horizontal: isHorizontal };
+            }
+        }
+    }
+
     let html = `<div class="bs-board">`;
     html += `<div class="bs-coord"></div>`;
     for (let x = 1; x <= 10; x++) html += `<div class="bs-coord">${x}</div>`;
@@ -1929,10 +1940,31 @@ function renderBSBoard(field, mode, isMyTurn, isPlacing) {
 
             if (mode === 'my') {
                 if (v === 0) cls += '';
-                else if (v === 1) cls += ' ship';
-                else if (v === 2) cls += ' ship hit';
+                else if (v === 1) {
+                    cls += ' ship';
+                    const info = shipCellsInfo[`${x},${y}`];
+                    if (info) {
+                        cls += ` ship-${info.cls}`;
+                        cls += info.horizontal ? ' ship-h' : ' ship-v';
+                    }
+                }
+                else if (v === 2) {
+                    cls += ' ship hit';
+                    const info = shipCellsInfo[`${x},${y}`];
+                    if (info) {
+                        cls += ` ship-${info.cls}`;
+                        cls += info.horizontal ? ' ship-h' : ' ship-v';
+                    }
+                }
                 else if (v === 3) cls += ' miss';
-                else if (v === 4) cls += ' ship sunk';
+                else if (v === 4) {
+                    cls += ' ship sunk';
+                    const info = shipCellsInfo[`${x},${y}`];
+                    if (info) {
+                        cls += ` ship-${info.cls}`;
+                        cls += info.horizontal ? ' ship-h' : ' ship-v';
+                    }
+                }
                 if (isPlacing) {
                     data += ` data-action="bs-place-cell"`;
                 } else {
@@ -1975,10 +2007,6 @@ function countAliveShips(field, ships) {
     }
     return alive;
 }
-
-// ============================================================
-//              МОРСКОЙ БОЙ — ДЕЙСТВИЯ
-// ============================================================
 
 function actionBSBet(value) {
     haptic('light');
@@ -2189,6 +2217,26 @@ function actionBSClearPlace() {
     render();
 }
 
+function actionBSUndoPlace() {
+    if (!state.bsMyField) return;
+    if (state.bsPlacingIdx <= 0) {
+        haptic('error');
+        return;
+    }
+    const idx = state.bsPlacingIdx - 1;
+    const ships = state.bsMyShips;
+    if (idx >= ships.length) return;
+    const lastShip = ships[idx];
+    if (!lastShip) return;
+    for (const [x, y] of lastShip.cells) {
+        state.bsMyField[y][x] = 0;
+    }
+    ships.splice(idx, 1);
+    state.bsPlacingIdx--;
+    haptic('light');
+    render();
+}
+
 async function actionBSConfirmPlace() {
     if (state._bsConfirmLock) return;
     if (state.bsPlacingIdx < state.bsShipsToPlace.length) {
@@ -2374,10 +2422,6 @@ function handleBSFinish(result) {
     render();
 }
 
-// ============================================================
-//              МОРСКОЙ БОЙ — УМНЫЙ БОТ
-// ============================================================
-
 function findBotTargetSmart(field) {
     const hits = [];
     for (let y = 0; y < 10; y++) {
@@ -2493,7 +2537,7 @@ function playerFireBot(x, y) {
         state.bsTurn = 'enemy';
         state.bsBotBusy = true;
         render();
-        setTimeout(botFire, 900);
+        setTimeout(botFire, 700);
     }
 }
 
@@ -2506,8 +2550,7 @@ function botFire() {
     const myField = state.bsMyField;
     const myShips = state.bsMyShips;
 
-    let target = findBotTargetSmart(myField);
-    if (!target) target = findBotRandomTarget(myField);
+    const target = findBotTargetSmart(myField) || findBotRandomTarget(myField);
     if (!target) {
         state.bsBotBusy = false;
         return;
@@ -2534,17 +2577,20 @@ function botFire() {
             for (const [sx, sy] of ship.cells) myField[sy][sx] = 4;
             markAroundSunk(myField, ship);
             ship.sunk = true;
-            logText = `Враг попал! Твой корабль потоплен (${x+1},${y+1})`;
+            logText = `Враг потопил твой корабль (${x+1},${y+1})`;
             logType = 'sunk';
+            haptic('error');
         } else {
             logText = `Враг попал! (${x+1},${y+1})`;
             logType = 'hit';
+            haptic('medium');
         }
         againTurn = true;
     } else {
         myField[y][x] = 3;
         logText = `Враг промахнулся (${x+1},${y+1})`;
         logType = 'miss';
+        haptic('light');
     }
 
     state.bsLog.push({ type: logType, text: logText });
@@ -2557,11 +2603,10 @@ function botFire() {
 
     if (againTurn) {
         render();
-        setTimeout(botFire, 900);
+        setTimeout(botFire, 700);
     } else {
         state.bsTurn = 'me';
         state.bsBotBusy = false;
-        haptic('light');
         render();
     }
 }
@@ -2611,10 +2656,6 @@ async function finishBotGame(outcome) {
     await loadProfile();
     render();
 }
-
-// ============================================================
-//              МОРСКОЙ БОЙ — ПРОЧИЕ
-// ============================================================
 
 function actionBSCopyCode() {
     haptic('light');
@@ -2689,10 +2730,6 @@ async function actionBSSurrender() {
         }
     }
 }
-
-// ============================================================
-//                       РАСПИСАНИЕ
-// ============================================================
 
 function attachScheduleSwipe() {
     const content = document.getElementById('content');
@@ -2883,10 +2920,6 @@ function renderSchedule() {
     return html;
 }
 
-// ============================================================
-//         ПИКЕРЫ ГРУПП
-// ============================================================
-
 function getCourseFromGroup(groupName) {
     const m = String(groupName).match(/-(\d{2})-/);
     if (!m) return null;
@@ -2982,10 +3015,6 @@ function pickerAttachSearch() {
         });
     });
 }
-
-// ============================================================
-//         УВЕДОМЛЕНИЯ
-// ============================================================
 
 function renderNotifyEditor() {
     const cur = state.notifyEditorType;
@@ -3091,10 +3120,6 @@ function _applyAttendanceLocally(date, time, subject, status) {
     if (state.weekDays?.days) for (const d of state.weekDays.days) if (d.date === date) upd(d.lessons);
     if (state.nextWeekDays?.days) for (const d of state.nextWeekDays.days) if (d.date === date) upd(d.lessons);
 }
-
-// ============================================================
-//                        ЗАДАЧИ
-// ============================================================
 
 function renderTasks() {
     const tasks = state.tasks;
@@ -3231,10 +3256,6 @@ async function actionTasksClear() {
     catch (e) { alert('Ошибка: ' + e.message); }
 }
 
-// ============================================================
-//                        ЗАМЕТКИ
-// ============================================================
-
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
     if (!state.notes || state.notes.length === 0) {
@@ -3318,10 +3339,6 @@ async function actionNoteDelete(id) {
     try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
-
-// ============================================================
-//                            AI
-// ============================================================
 
 function renderAI() {
     let html = '';
@@ -3427,10 +3444,6 @@ async function actionAISend() {
     } finally { state.aiPending = false; render(); }
 }
 
-// ============================================================
-//                          ADMIN
-// ============================================================
-
 function renderAdmin() {
     if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
     let html = '';
@@ -3468,10 +3481,6 @@ function renderAdmin() {
     } else html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
     return html;
 }
-
-// ============================================================
-//                       СТИПЕНДИЯ
-// ============================================================
 
 function renderScholarshipCard() {
     const s = state.scholarship;
@@ -3640,14 +3649,31 @@ async function actionScholarshipDeleteGrade() {
 }
 function actionScholarshipFilter(f) { haptic('light'); state.scholarshipFilter = f; render(); }
 function actionSemesterFilter(sem) { haptic('light'); state.scholarshipSemesterFilter = sem; state.scholarshipFilter = 'all'; render(); }
-async function actionScholarshipSetAmount() {
-    const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
-    if (amount === null) return;
+
+function actionScholarshipSetAmount() {
+    haptic('light');
+    state.scholarshipAmountValue = String(state.scholarship?.amount || '');
+    state.scholarshipAmountModal = true;
+    render();
+}
+
+async function actionScholarshipAmountSubmit() {
+    const el = document.getElementById('sch-amount-input');
+    const val = (el?.value || state.scholarshipAmountValue || '').trim();
+    const amount = parseInt(val, 10);
+    if (isNaN(amount) || amount < 0 || amount > 100000) {
+        alert('Введи число от 0 до 100000');
+        return;
+    }
     try {
-        await apiPost('/api/scholarship-set-amount', { amount: parseInt(amount) || 0 });
-        haptic('success'); await loadScholarship(); render();
+        await apiPost('/api/scholarship-set-amount', { amount });
+        haptic('success');
+        state.scholarshipAmountModal = false;
+        await loadScholarship();
+        render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
+
 async function actionScholarshipClear() {
     const sem = state.scholarshipSemesterFilter === 'all' ? null : state.scholarshipSemesterFilter;
     const msg = sem ? `Очистить оценки за «${sem}»?` : 'Очистить ВСЕ оценки?';
@@ -3658,10 +3684,6 @@ async function actionScholarshipClear() {
         haptic('success'); await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
-// ============================================================
-//                    ОБРАТНАЯ СВЯЗЬ / ЭКСПОРТ
-// ============================================================
 
 function renderMyFeedbackCard() {
     if (!state.myFeedbackLoaded) {
@@ -3756,15 +3778,32 @@ async function actionAdminBroadcast() {
     try { await apiPost('/api/admin/broadcast', { text }); el.value = ''; haptic('success'); alert('Рассылка запущена'); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
-async function actionAdminFbReply(fid) {
-    const reply = prompt('Текст ответа:');
-    if (!reply) return;
+
+function actionAdminFbReply(fid) {
+    haptic('light');
+    state.adminReplyFeedbackId = fid;
+    state.adminReplyText = '';
+    state.adminReplyModal = true;
+    render();
+}
+
+async function actionAdminReplySubmit() {
+    const el = document.getElementById('admin-reply-input');
+    const text = (el?.value || state.adminReplyText || '').trim();
+    if (!text) { alert('Введи текст ответа'); return; }
+    const fid = state.adminReplyFeedbackId;
+    if (!fid) return;
     try {
-        await apiPost('/api/admin/feedback-reply', { id: fid, text: reply });
+        await apiPost('/api/admin/feedback-reply', { id: fid, text });
         haptic('success');
-        await loadAdminFeedback(); await loadAdminStats(); render();
+        state.adminReplyModal = false;
+        state.adminReplyFeedbackId = null;
+        await loadAdminFeedback();
+        await loadAdminStats();
+        render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
+
 async function actionAdminFbPostpone(fid) {
     try {
         await apiPost('/api/admin/feedback-postpone', { id: fid });
@@ -3772,10 +3811,6 @@ async function actionAdminFbPostpone(fid) {
         await loadAdminFeedback(); await loadAdminStats(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
-// ============================================================
-//                       LOADERS
-// ============================================================
 
 async function loadSchedule() {
     try { state.schedule = await apiGet('/api/schedule'); }
@@ -3878,6 +3913,8 @@ async function loadTabData(tab) {
     state.newAchToast = null;
     state.exchangeOpen = false;
     state.bsJoinModal = false;
+    state.scholarshipAmountModal = false;
+    state.adminReplyModal = false;
     state.bsScreen = 'lobby';
     state.bsResult = null;
     render();
@@ -4025,10 +4062,6 @@ async function actionPickerChooseGroup(groupId, groupName) {
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
-// ============================================================
-//                       HANDLERS
-// ============================================================
-
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         const a = el.dataset.action;
@@ -4118,6 +4151,25 @@ function attachHandlers() {
             state.bsJoinCode = e.target.value.replace(/\D/g, '').slice(0, 6);
             e.target.value = state.bsJoinCode;
         });
+        bsJoinInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                actionBSJoinSubmit();
+            }
+        });
+    }
+    const schAmountInput = document.getElementById('sch-amount-input');
+    if (schAmountInput) {
+        schAmountInput.addEventListener('input', (e) => {
+            state.scholarshipAmountValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+            e.target.value = state.scholarshipAmountValue;
+        });
+    }
+    const adminReplyInput = document.getElementById('admin-reply-input');
+    if (adminReplyInput) {
+        adminReplyInput.addEventListener('input', (e) => {
+            state.adminReplyText = e.target.value;
+        });
     }
 }
 
@@ -4151,6 +4203,7 @@ function handleAction(el) {
     else if (a === 'bs-rotate') actionBSRotate();
     else if (a === 'bs-auto-place') actionBSAutoPlace();
     else if (a === 'bs-clear-place') actionBSClearPlace();
+    else if (a === 'bs-undo-place') actionBSUndoPlace();
     else if (a === 'bs-confirm-place') actionBSConfirmPlace();
     else if (a === 'bs-copy-code') actionBSCopyCode();
     else if (a === 'bs-cancel-room') actionBSCancelRoom();
@@ -4182,6 +4235,7 @@ function handleAction(el) {
     else if (a === 'note-editor-delete') actionNoteEditorDelete();
     else if (a === 'note-delete') actionNoteDelete(parseInt(el.dataset.id));
     else if (a === 'sch-set-amount-open') actionScholarshipSetAmount();
+    else if (a === 'sch-amount-submit') actionScholarshipAmountSubmit();
     else if (a === 'sch-clear') actionScholarshipClear();
     else if (a === 'sch-add-new') actionScholarshipAdd();
     else if (a === 'sch-edit') actionScholarshipEdit(parseInt(el.dataset.id));
@@ -4219,6 +4273,7 @@ function handleAction(el) {
     else if (a === 'admin-monitor') actionAdminMonitor();
     else if (a === 'admin-broadcast') actionAdminBroadcast();
     else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
+    else if (a === 'admin-reply-submit') actionAdminReplySubmit();
     else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
 }
 
