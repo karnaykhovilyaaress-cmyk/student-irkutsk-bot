@@ -482,7 +482,16 @@ function renderProfile() {
         </div>
         <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
         <div class="profile-avatar-wrap">${studentAvatarSvg()}</div>
-        <button class="avatar-change-btn" data-action="avatar-toggle">🔄 Сменить аватар</button>
+        <button class="avatar-change-btn" data-action="avatar-toggle">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.2"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span>Сменить аватар</span>
+        </button>
         <div class="profile-level-block" data-action="level-info-open">
             <div class="profile-level-num">${lvl}<small>LVL</small></div>
             <div class="profile-level-title">${escapeHtml(w?.level_title || 'Первокурсник')}</div>
@@ -831,21 +840,15 @@ async function actionAvatarToggle() {
     haptic('light');
     const curIdx = state.wallet?.avatar_idx || 0;
     const nextIdx = curIdx === 0 ? 1 : 0;
-    // Оптимистично обновляем UI
-    if (state.wallet) state.wallet.avatar_idx = nextIdx;
-    render();
     try {
         const r = await apiPost('/api/set-avatar', { idx: nextIdx });
         if (r.wallet) state.wallet = r.wallet;
+        else if (state.wallet) state.wallet.avatar_idx = nextIdx;
         haptic('success');
-        popEmoji('👤');
         render();
     } catch (e) {
-        // Откат при ошибке
-        if (state.wallet) state.wallet.avatar_idx = curIdx;
         haptic('error');
         alert(e.message || 'Не удалось сменить аватар');
-        render();
     }
 }
 async function actionChestOpen() {
