@@ -3,46 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Студент ИРНИТУ</title>
+    <title>STUDENT IRK || APP</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="style.css?v=49">
+    <link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
 
+    <!-- SPLASH -->
     <div id="splash">
-        <div class="splash-logo">
-            <svg viewBox="0 0 100 100" width="120" height="120">
-                <defs>
-                    <linearGradient id="splashGrad" x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stop-color="#00E5D0"/>
-                        <stop offset="100%" stop-color="#1E88E5"/>
-                    </linearGradient>
-                </defs>
-                <path d="M50 8 L58 38 L88 32 L66 52 L92 62 L60 64 L64 92 L50 68 L36 92 L40 64 L8 62 L34 52 L12 32 L42 38 Z"
-                      fill="url(#splashGrad)" stroke="none"/>
-                <polygon points="50,42 55,54 48,54 54,68 44,54 51,54"
-                         fill="#FFFFFF" opacity="0.9"/>
-            </svg>
+        <div class="splash-logo"></div>
+        <div class="splash-text">
+            <div>STUDENT <span class="accent">IRK</span></div>
+            <div class="splash-sub">|| APP</div>
         </div>
-        <div class="splash-text">STUDENT IRK</div>
         <div class="splash-dots">
             <span></span><span></span><span></span>
         </div>
     </div>
 
+    <!-- МУЗЫКА -->
     <audio id="game-music" loop preload="auto" playsinline src="assets/music.mp3"></audio>
 
+    <!-- APP -->
     <div id="app" style="display:none">
+
         <header class="header">
-            <h1 id="page-title">Расписание</h1>
-            <button class="header-btn" id="refresh-btn" title="Обновить">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
-            </button>
+            <div class="header-left">
+                <div class="header-logo"></div>
+                <h1>STUDENT <span class="accent">IRK</span></h1>
+            </div>
+            <div class="header-actions">
+                <div class="header-currency">
+                    <div class="header-currency-item">
+                        <span>0</span>
+                    </div>
+                </div>
+                <button class="header-btn" id="refresh-btn" title="Обновить">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                </button>
+            </div>
         </header>
 
         <main class="content" id="content">
@@ -51,7 +55,7 @@
 
         <nav class="bottom-nav" id="bottom-nav">
             <button class="nav-btn active" data-tab="schedule">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                     <line x1="16" y1="2" x2="16" y2="6"></line>
                     <line x1="8" y1="2" x2="8" y2="6"></line>
@@ -60,14 +64,14 @@
                 <span>Пары</span>
             </button>
             <button class="nav-btn" data-tab="tasks">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 11 12 14 22 4"></polyline>
                     <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                 </svg>
                 <span>Задачи</span>
             </button>
             <button class="nav-btn" data-tab="notes">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -76,7 +80,7 @@
                 <span>Заметки</span>
             </button>
             <button class="nav-btn" data-tab="games">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="2" y="6" width="20" height="14" rx="4" ry="4"></rect>
                     <line x1="7" y1="13" x2="11" y2="13"></line>
                     <line x1="9" y1="11" x2="9" y2="15"></line>
@@ -86,7 +90,7 @@
                 <span>Игры</span>
             </button>
             <button class="nav-btn" data-tab="ai">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
                     <line x1="12" y1="17" x2="12.01" y2="17"></line>
@@ -94,13 +98,13 @@
                 <span>AI</span>
             </button>
             <button class="nav-btn" data-tab="admin" style="display:none">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"></path>
                 </svg>
                 <span>Админ</span>
             </button>
             <button class="nav-btn" data-tab="profile">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                 </svg>
@@ -109,6 +113,6 @@
         </nav>
     </div>
 
-    <script src="app.js?v=49"></script>
+    <script src="app.js?v=50"></script>
 </body>
 </html>
