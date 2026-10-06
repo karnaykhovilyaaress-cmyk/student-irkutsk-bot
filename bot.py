@@ -16,6 +16,7 @@ try:
 except Exception:
     _FPDF_AVAILABLE = False
 
+
 def clean_latex(text):
     if not text: return text
     text = re.sub(r"\$\$(.+?)\$\$", r"\1", text, flags=re.DOTALL)
@@ -53,6 +54,7 @@ def clean_latex(text):
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
+
 def clean_markdown(text):
     if not text: return text
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
@@ -76,6 +78,7 @@ def clean_markdown(text):
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
+
 TOKEN = os.getenv("BOT_TOKEN", "")
 GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
 YANDEX_VISION_API_KEY = os.getenv("YANDEX_VISION_API_KEY", "")
@@ -89,10 +92,8 @@ ADMIN_BONUS_NOVA = 10000
 EXCHANGE_RATE_SHIFT_TO_NOVA = 100
 BS_BET_OPTIONS = [10, 50, 100, 500]
 BS_TURN_TIMEOUT_SEC = 120
-
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!"); sys.exit(1)
-
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 giga_client = None
@@ -102,14 +103,11 @@ if GIGACHAT_CREDENTIALS:
         giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS,
             base_url="https://api.giga.chat/v1", scope="GIGACHAT_API_PERS",
             verify_ssl_certs=False, model="GigaChat-2-Max", timeout=600)
-        logging.info("GigaChat клиент инициализирован")
     except Exception as e:
         logging.error(f"GigaChat ошибка: {e}")
-
 DB_PATH = os.getenv("DB_PATH", "users.db")
 CACHE_TTL_HOURS = 2
 PRIORITY_LABELS = {1: "низкий", 2: "средний", 3: "высокий"}
-
 DAILY_QUOTES = [
     "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
     "Сессия сдаётся не за неделю, а за семестр.",
@@ -132,22 +130,20 @@ DAILY_QUOTES = [
     "Не сдал — не конец. Сдал — не финиш.",
     "Дисциплина — это не про силу воли, а про систему.",
 ]
-
 GAMES = {"flappy": {"name": "До пары успеть", "desc": "Пролетай между парами, лови бонусы"}}
-
 ACHIEVEMENTS = {
     "first_day":    {"name": "Первый день",      "icon": "ic-ach-first_day",    "desc": "Зашёл в бота"},
     "week_visit":   {"name": "Неделя в боте",    "icon": "ic-ach-week_visit",   "desc": "7 дней подряд"},
     "first_note":   {"name": "Первый конспект",  "icon": "ic-ach-first_note",   "desc": "Добавил первую заметку"},
     "first_task":   {"name": "Сделал дело",      "icon": "ic-ach-first_task",   "desc": "Первая выполненная задача"},
     "prod_50":      {"name": "Продуктивный",     "icon": "ic-ach-prod_50",      "desc": "50 выполненных задач"},
-    "excellent":    {"name": "Отличник",         "icon": "ic-ach-excellent",    "desc": "Средний балл 5.0 (мин. 3 предмета)"},
-    "flappy_30":    {"name": "Снайпер",          "icon": "ic-ach-flappy_30",    "desc": "30 очков в «До пары успеть»"},
+    "excellent":    {"name": "Отличник",         "icon": "ic-ach-excellent",    "desc": "Средний балл 5.0"},
+    "flappy_30":    {"name": "Снайпер",          "icon": "ic-ach-flappy_30",    "desc": "30 очков в Flappy"},
     "legend_30":    {"name": "Легенда",          "icon": "ic-ach-legend_30",    "desc": "30 уровень"},
-    "bs_first_win": {"name": "Морской волк",     "icon": "ic-ach-bs_first_win", "desc": "Первая победа в морском бою"},
-    "bs_5_wins":    {"name": "Адмирал",          "icon": "ic-ach-bs_5_wins",    "desc": "5 побед в морском бою"},
-    "bs_10_wins":   {"name": "Легенда флота",    "icon": "ic-ach-bs_10_wins",   "desc": "10 побед в морском бою"},
-    "exchange_1":   {"name": "Обменник",         "icon": "ic-ach-exchange_1",   "desc": "Первый обмен Шифт на Нова"},
+    "bs_first_win": {"name": "Морской волк",     "icon": "ic-ach-bs_first_win", "desc": "Первая победа в бою"},
+    "bs_5_wins":    {"name": "Адмирал",          "icon": "ic-ach-bs_5_wins",    "desc": "5 побед в бою"},
+    "bs_10_wins":   {"name": "Легенда флота",    "icon": "ic-ach-bs_10_wins",   "desc": "10 побед в бою"},
+    "exchange_1":   {"name": "Обменник",         "icon": "ic-ach-exchange_1",   "desc": "Первый обмен"},
 }
 ACHIEVEMENT_REWARDS = {
     "first_day":    {"xp": 10,   "shift": 5,    "nova": 0},
@@ -192,6 +188,7 @@ for _lvl in range(1, 31):
     elif _lvl <= 20: LEVEL_REWARDS[_lvl] = {"shift":600,"nova":8,"xp":0}
     else: LEVEL_REWARDS[_lvl] = {"shift":1500,"nova":25,"xp":0}
 
+
 def calc_level(xp):
     lvl = 1; left = int(xp or 0)
     while lvl <= 30:
@@ -199,6 +196,7 @@ def calc_level(xp):
         if left < need: return lvl, left, need
         left -= need; lvl += 1
     return 30, left, 500
+
 
 def level_title(lvl):
     if lvl <= 5: return "Первокурсник"
@@ -208,6 +206,7 @@ def level_title(lvl):
     if lvl <= 25: return "Магистрант"
     if lvl <= 29: return "Аспирант"
     return "Легенда ИРНИТУ"
+
 
 def roll_chest_drop(chest_id):
     chest = CHESTS.get(chest_id)
@@ -220,11 +219,10 @@ def roll_chest_drop(chest_id):
     last = chest["drops"][-1]
     return {"type": last["type"], "amount": random.randint(last["min"], last["max"])}
 
-def _now_irkutsk():
-    return datetime.now(timezone.utc) + timedelta(hours=8)
 
-def _monday_of_week(d):
-    return d - timedelta(days=d.weekday())
+def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
+def _monday_of_week(d): return d - timedelta(days=d.weekday())
+
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -315,7 +313,31 @@ def init_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS achievement_rewards (user_id INTEGER, ach_id TEXT, xp INTEGER DEFAULT 0,
         shift INTEGER DEFAULT 0, nova INTEGER DEFAULT 0, granted_at TEXT, PRIMARY KEY (user_id, ach_id))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS level_rewards (user_id INTEGER, level INTEGER, claimed_at TEXT, PRIMARY KEY (user_id, level))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS wall_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, group_id TEXT DEFAULT NULL,
+        scope TEXT DEFAULT 'general', category TEXT DEFAULT 'question', subject TEXT DEFAULT NULL,
+        text TEXT NOT NULL, likes INTEGER DEFAULT 0, comments_count INTEGER DEFAULT 0,
+        solved_comment_id INTEGER DEFAULT NULL, edited_at TEXT DEFAULT NULL, is_deleted INTEGER DEFAULT 0,
+        created_at TEXT, updated_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS wall_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+        text TEXT NOT NULL, likes INTEGER DEFAULT 0, edited_at TEXT DEFAULT NULL, is_deleted INTEGER DEFAULT 0, created_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS wall_likes (
+        user_id INTEGER, target_type TEXT, target_id INTEGER, PRIMARY KEY (user_id, target_type, target_id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS wall_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, reporter_id INTEGER, target_type TEXT, target_id INTEGER,
+        reason TEXT, status TEXT DEFAULT 'new', created_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS wall_bans (
+        user_id INTEGER PRIMARY KEY, reason TEXT, until TEXT, banned_at TEXT)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wall_posts_created ON wall_posts(created_at DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wall_posts_scope ON wall_posts(scope)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wall_comments_post ON wall_comments(post_id)")
+    try: conn.execute("ALTER TABLE user_stats ADD COLUMN wall_solved INTEGER DEFAULT 0")
+    except: pass
+    try: conn.execute("ALTER TABLE user_stats ADD COLUMN wall_posts INTEGER DEFAULT 0")
+    except: pass
     conn.commit(); conn.close()
+
 
 def _ensure_user(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -328,10 +350,12 @@ def _ensure_user(user_id):
     conn.execute("INSERT OR IGNORE INTO user_stats (user_id, first_seen, last_seen) VALUES (?, ?, ?)", (user_id, now, now))
     conn.commit(); conn.close()
 
+
 def _update_user_meta(user_id, username, first_name):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (username, first_name, user_id))
     conn.commit(); conn.close()
+
 
 def wallet_get(user_id):
     _ensure_user(user_id)
@@ -347,7 +371,7 @@ def wallet_get(user_id):
     if user_id == ADMIN_ID:
         if shift < ADMIN_BONUS_SHIFT or nova < ADMIN_BONUS_NOVA:
             conn = sqlite3.connect(DB_PATH)
-            conn.execute("""UPDATE wallet SET shift = MAX(shift, ?), nova = MAX(nova, ?) WHERE user_id = ?""",
+            conn.execute("UPDATE wallet SET shift = MAX(shift, ?), nova = MAX(nova, ?) WHERE user_id = ?",
                 (ADMIN_BONUS_SHIFT, ADMIN_BONUS_NOVA, user_id))
             conn.commit(); conn.close()
             shift = max(shift, ADMIN_BONUS_SHIFT); nova = max(nova, ADMIN_BONUS_NOVA)
@@ -357,6 +381,7 @@ def wallet_get(user_id):
         "capsule_opened_at": capsule_opened_at, "chest_opened_at": capsule_opened_at,
         "level": lvl, "level_title": level_title(lvl), "xp_in_level": in_lvl, "xp_to_next": to_next}
 
+
 def wallet_add(user_id, xp=0, shift=0, nova=0):
     _ensure_user(user_id)
     now = datetime.now(timezone.utc).isoformat()
@@ -364,6 +389,7 @@ def wallet_add(user_id, xp=0, shift=0, nova=0):
     conn.execute("UPDATE wallet SET xp = xp + ?, shift = shift + ?, nova = nova + ?, updated_at = ? WHERE user_id = ?",
         (int(xp), int(shift), int(nova), now, user_id))
     conn.commit(); conn.close()
+
 
 def wallet_set_name(user_id, name):
     _ensure_user(user_id); name = (name or "").strip()
@@ -374,12 +400,14 @@ def wallet_set_name(user_id, name):
     conn.execute("UPDATE wallet SET custom_name=?, updated_at=? WHERE user_id=?", (name, now, user_id))
     conn.commit(); conn.close()
 
+
 def wallet_set_avatar(user_id, idx):
     _ensure_user(user_id); idx = max(0, min(int(idx), 11))
     now = datetime.now(timezone.utc).isoformat()
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE wallet SET avatar_idx=?, updated_at=? WHERE user_id=?", (idx, now, user_id))
     conn.commit(); conn.close()
+
 
 def wallet_consume(user_id, currency, amount):
     if currency not in ("shift", "nova"): return False
@@ -392,6 +420,7 @@ def wallet_consume(user_id, currency, amount):
     conn.commit(); conn.close()
     return True
 
+
 def wallet_use_free_name(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
@@ -402,11 +431,13 @@ def wallet_use_free_name(user_id):
     conn.commit(); conn.close()
     return True
 
+
 def wallet_add_free_name(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE wallet SET free_name_changes = free_name_changes + 1 WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def wallet_leaderboard(limit=10):
     conn = sqlite3.connect(DB_PATH)
@@ -414,6 +445,7 @@ def wallet_leaderboard(limit=10):
         FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.xp > 0 ORDER BY w.xp DESC LIMIT ?""", (limit,)).fetchall()
     conn.close()
     return rows
+
 
 def stats_update_streak(user_id):
     _ensure_user(user_id)
@@ -433,12 +465,14 @@ def stats_update_streak(user_id):
     conn.commit(); conn.close()
     return streak
 
+
 def stats_inc(user_id, field, by=1):
     _ensure_user(user_id)
-    if field not in ("tasks_done", "notes_added"): return
+    if field not in ("tasks_done", "notes_added", "wall_solved", "wall_posts"): return
     conn = sqlite3.connect(DB_PATH)
     conn.execute(f"UPDATE user_stats SET {field} = COALESCE({field}, 0) + ? WHERE user_id=?", (int(by), user_id))
     conn.commit(); conn.close()
+
 
 def stats_get(user_id):
     _ensure_user(user_id)
@@ -448,11 +482,13 @@ def stats_get(user_id):
     if not row: return {"tasks_done":0,"notes_added":0,"first_seen":None,"last_seen":None,"streak":0}
     return {"tasks_done": row[0] or 0, "notes_added": row[1] or 0, "first_seen": row[2], "last_seen": row[3], "streak": row[4] or 0}
 
+
 def achievements_get(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT ach_id, unlocked_at FROM achievements WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     return {r[0]: r[1] for r in rows}
+
 
 def achievement_unlock(user_id, ach_id):
     if ach_id not in ACHIEVEMENTS: return False
@@ -464,11 +500,13 @@ def achievement_unlock(user_id, ach_id):
     conn.commit(); conn.close()
     return True
 
+
 def bs_count_wins(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT COUNT(*) FROM bs_games WHERE winner=? AND status='finished'", (user_id,)).fetchone()
     conn.close()
     return row[0] if row else 0
+
 
 def check_and_award_achievements(user_id):
     newly = []
@@ -510,6 +548,7 @@ def check_and_award_achievements(user_id):
     conn.commit(); conn.close()
     return newly
 
+
 def chest_status(user_id, chest_id="capsule"):
     chest = CHESTS.get(chest_id)
     if not chest: return {"can_open": False, "next_at": None, "last_opened": None}
@@ -526,6 +565,7 @@ def chest_status(user_id, chest_id="capsule"):
                 can_open = False; next_at_iso = (last_dt + timedelta(hours=cooldown_h)).isoformat()
         except: pass
     return {"can_open": can_open, "next_at": next_at_iso, "last_opened": last}
+
 
 def chest_open(user_id, chest_id):
     chest = CHESTS.get(chest_id)
@@ -554,11 +594,13 @@ def chest_open(user_id, chest_id):
         conn.commit(); conn.close()
     return {"type": reward["type"], "amount": reward["amount"], "label": label, "chest": chest_id}, None
 
+
 def level_rewards_claimed(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT level FROM level_rewards WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     return sorted([r[0] for r in rows])
+
 
 def level_reward_claim(user_id, lvl):
     wallet = wallet_get(user_id)
@@ -574,6 +616,7 @@ def level_reward_claim(user_id, lvl):
     conn.commit(); conn.close()
     return rw, None
 
+
 def game_get_scores(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT game_id, best_score, plays_count FROM game_scores WHERE user_id=?", (user_id,)).fetchall()
@@ -582,6 +625,7 @@ def game_get_scores(user_id):
     for gid in GAMES:
         if gid not in result: result[gid] = {"best": 0, "plays": 0}
     return result
+
 
 def game_save_score(user_id, game_id, score):
     if game_id not in GAMES: return None
@@ -602,6 +646,7 @@ def game_save_score(user_id, game_id, score):
     conn.commit(); conn.close()
     return {"best": new_best, "is_record": is_record, "plays": plays}
 
+
 def game_leaderboard(game_id, limit=10):
     if game_id not in GAMES: return []
     conn = sqlite3.connect(DB_PATH)
@@ -611,11 +656,13 @@ def game_leaderboard(game_id, limit=10):
     conn.close()
     return [(uid, score, custom_name or first_name or '', username) for uid, score, first_name, username, custom_name in rows]
 
+
 def user_exists(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row is not None
+
 
 def daily_subscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -623,10 +670,12 @@ def daily_subscribe(user_id):
         (user_id, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def daily_unsubscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def daily_is_subscribed(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -634,11 +683,13 @@ def daily_is_subscribed(user_id):
     conn.close()
     return row is not None
 
+
 def daily_get_all_subscribers():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
     conn.close()
     return [r[0] for r in rows]
+
 
 def set_scholarship_amount(user_id, amount):
     conn = sqlite3.connect(DB_PATH)
@@ -646,11 +697,13 @@ def set_scholarship_amount(user_id, amount):
         (user_id, amount, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def get_scholarship_amount(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row else None
+
 
 def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
     conn = sqlite3.connect(DB_PATH)
@@ -664,11 +717,13 @@ def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
             (user_id, subject, grade, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def get_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') FROM grades WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
+
 
 def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None, semester=None):
     conn = sqlite3.connect(DB_PATH); fields = []; values = []
@@ -681,10 +736,12 @@ def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None
     conn.execute(f"UPDATE grades SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
+
 def delete_grade(grade_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
     conn.commit(); conn.close()
+
 
 def clear_grades(user_id, semester=None):
     conn = sqlite3.connect(DB_PATH)
@@ -692,11 +749,13 @@ def clear_grades(user_id, semester=None):
     else: conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
 
+
 def save_user_group(user_id, group_id, group_name):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET group_id=?, group_name=? WHERE user_id=?", (group_id, group_name, user_id))
     conn.commit(); conn.close()
+
 
 def get_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -704,10 +763,12 @@ def get_user_group(user_id):
     conn.close()
     return row if row and row[0] else None
 
+
 def delete_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def set_user_subgroup(user_id, subgroup):
     _ensure_user(user_id)
@@ -715,11 +776,13 @@ def set_user_subgroup(user_id, subgroup):
     conn.execute("UPDATE users SET subgroup=? WHERE user_id=?", (subgroup, user_id))
     conn.commit(); conn.close()
 
+
 def get_user_subgroup(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT subgroup FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row and row[0] else 0
+
 
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
@@ -727,17 +790,20 @@ def set_notify_changes(user_id, enabled):
     conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?", (1 if enabled else 0, user_id))
     conn.commit(); conn.close()
 
+
 def get_notify_changes(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return bool(row and row[0])
 
+
 def set_notify_settings(user_id, ntype, hour, minute):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?", (ntype, hour, minute, user_id))
     conn.commit(); conn.close()
+
 
 def get_notify_settings(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -747,11 +813,13 @@ def get_notify_settings(user_id):
         return {"type": row[0], "hour": row[1] if row[1] is not None else 0, "minute": row[2] if row[2] is not None else 0}
     return None
 
+
 def set_notify_before_min(user_id, minutes):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET notify_before_min=? WHERE user_id=?", (int(minutes), user_id))
     conn.commit(); conn.close()
+
 
 def get_notify_before_min(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -759,11 +827,13 @@ def get_notify_before_min(user_id):
     conn.close()
     return int(row[0]) if row and row[0] is not None else 0
 
+
 def get_users_for_notification():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute FROM users WHERE notify_type IS NOT NULL AND notify_type != '' AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
+
 
 def get_users_for_change_tracking():
     conn = sqlite3.connect(DB_PATH)
@@ -771,11 +841,13 @@ def get_users_for_change_tracking():
     conn.close()
     return rows
 
+
 def get_users_for_lesson_reminder():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id, group_id, subgroup, notify_before_min FROM users WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
+
 
 def get_total_users():
     conn = sqlite3.connect(DB_PATH)
@@ -783,14 +855,16 @@ def get_total_users():
     conn.close()
     return n
 
+
 def get_all_user_ids():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
-def is_vip(user_id):
-    return True
+
+def is_vip(user_id): return True
+
 
 def get_cached_schedule(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
@@ -803,11 +877,13 @@ def get_cached_schedule(group_id, week_start):
     except: pass
     return None
 
+
 def save_cached_schedule(group_id, week_start, html):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
         (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
+
 
 def save_snapshot(group_id, week_start, snapshot_str):
     conn = sqlite3.connect(DB_PATH)
@@ -815,11 +891,13 @@ def save_snapshot(group_id, week_start, snapshot_str):
         (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def get_snapshot(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
     conn.close()
     return row[0] if row else None
+
 
 def make_snapshot_str(days):
     parts = []
@@ -829,6 +907,7 @@ def make_snapshot_str(days):
             parts.append(f"{day_key}|{les.get('time','')}|{les.get('subject','')}|{les.get('type','')}|{les.get('teacher','')}|{les.get('auditorium','')}|{les.get('subgroup','')}")
     return "\n".join(sorted(parts))
 
+
 def save_feedback(user_id, username, text, admin_msg_id=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
@@ -837,10 +916,12 @@ def save_feedback(user_id, username, text, admin_msg_id=None):
     conn.commit(); conn.close()
     return fid
 
+
 def update_feedback_admin_msg(feedback_id, admin_msg_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET admin_msg_id=? WHERE id=?", (admin_msg_id, feedback_id))
     conn.commit(); conn.close()
+
 
 def get_pending_feedback():
     conn = sqlite3.connect(DB_PATH)
@@ -848,10 +929,12 @@ def get_pending_feedback():
     conn.close()
     return rows
 
+
 def set_feedback_status(feedback_id, status):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
     conn.commit(); conn.close()
+
 
 def mark_feedback_answered(feedback_id, reply_text=None):
     conn = sqlite3.connect(DB_PATH)
@@ -859,11 +942,13 @@ def mark_feedback_answered(feedback_id, reply_text=None):
         (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
     conn.commit(); conn.close()
 
+
 def get_feedback_by_id(feedback_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?", (feedback_id,)).fetchone()
     conn.close()
     return row
+
 
 def get_user_feedback(user_id, limit=30):
     conn = sqlite3.connect(DB_PATH)
@@ -872,6 +957,7 @@ def get_user_feedback(user_id, limit=30):
     conn.close()
     return rows
 
+
 def add_task(user_id, text, due_date=None, priority=2, due_time=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time) VALUES (?, ?, ?, 0, ?, ?, ?)",
@@ -879,6 +965,7 @@ def add_task(user_id, text, due_date=None, priority=2, due_time=None):
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
+
 
 def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_time=None, reset_due=False):
     conn = sqlite3.connect(DB_PATH); fields = []; values = []
@@ -893,12 +980,14 @@ def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_t
     conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
+
 def get_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE id=? AND user_id=?",
         (task_id, user_id)).fetchone()
     conn.close()
     return row
+
 
 def get_user_tasks(user_id, only_active=True):
     conn = sqlite3.connect(DB_PATH)
@@ -909,6 +998,7 @@ def get_user_tasks(user_id, only_active=True):
     conn.close()
     return rows
 
+
 def get_done_tasks(user_id, days=7):
     conn = sqlite3.connect(DB_PATH)
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -917,27 +1007,32 @@ def get_done_tasks(user_id, days=7):
     conn.close()
     return rows
 
+
 def mark_task_done(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
         (datetime.now(timezone.utc).isoformat(), task_id, user_id))
     conn.commit(); conn.close()
 
+
 def delete_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
     conn.commit(); conn.close()
+
 
 def clear_done_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
     conn.commit(); conn.close()
 
+
 def count_user_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return (row[0] or 0, row[1] or 0)
+
 
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
@@ -950,16 +1045,19 @@ def add_or_update_note(user_id, subject, text):
             (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def get_user_notes(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
 
+
 def delete_note_by_id(note_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
     conn.commit(); conn.close()
+
 
 def attendance_set(user_id, date, time, subject, status):
     if status not in ("", "was", "missed", "sick", "excused"): return False
@@ -972,6 +1070,7 @@ def attendance_set(user_id, date, time, subject, status):
     conn.commit(); conn.close()
     return True
 
+
 def attendance_get_map(user_id, dates):
     if not dates: return {}
     conn = sqlite3.connect(DB_PATH)
@@ -980,6 +1079,7 @@ def attendance_get_map(user_id, dates):
         (user_id, *dates)).fetchall()
     conn.close()
     return {(d, t, s): st for d, t, s, st in rows}
+
 
 def attendance_stats(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -990,6 +1090,7 @@ def attendance_stats(user_id):
         if status in result: result[status] = count
     return result
 
+
 def ai_get_history(user_id, limit=30):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
@@ -997,16 +1098,19 @@ def ai_get_history(user_id, limit=30):
     rows.reverse()
     return rows
 
+
 def ai_save_message(user_id, role, text, has_photo=0):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
         (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
+
 def ai_clear_history(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def get_export_data(user_id):
     saved = get_user_group(user_id)
@@ -1030,8 +1134,10 @@ def get_export_data(user_id):
         "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
         "attendance": att}
 
+
 def _bs_now(): return datetime.now(timezone.utc).isoformat()
 def _bs_new_game_id(): return secrets.token_hex(8)
+
 
 def _bs_new_code():
     for _ in range(50):
@@ -1041,6 +1147,7 @@ def _bs_new_code():
         conn.close()
         if not row: return code
     return f"{random.randint(100000, 999999)}"
+
 
 def _bs_validate_ships(ships):
     if not ships or not isinstance(ships, list): return False
@@ -1061,11 +1168,13 @@ def _bs_validate_ships(ships):
             occupied.add((x, y))
     return True
 
+
 def _bs_check_win(ships, shots):
     if not ships: return False
     all_cells = {(c[0], c[1]) for s in ships for c in s["cells"]}
     hit_cells = {(sh.get("x"), sh.get("y")) for sh in shots}
     return all_cells.issubset(hit_cells)
+
 
 def _bs_get_game(game_id):
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
@@ -1073,11 +1182,13 @@ def _bs_get_game(game_id):
     conn.close()
     return dict(row) if row else None
 
+
 def _bs_get_game_by_code(code):
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing') ORDER BY created_at DESC LIMIT 1", (code,)).fetchone()
     conn.close()
     return dict(row) if row else None
+
 
 def _bs_update_game(game_id, **fields):
     if not fields: return
@@ -1088,15 +1199,18 @@ def _bs_update_game(game_id, **fields):
     conn.execute(f"UPDATE bs_games SET {keys} WHERE game_id=?", values)
     conn.commit(); conn.close()
 
+
 def _bs_delete_game(game_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM bs_games WHERE game_id=?", (game_id,))
     conn.commit(); conn.close()
 
+
 def _bs_player_side(game, user_id):
     if game["p1_id"] == user_id: return 1
     if game["p2_id"] == user_id: return 2
     return 0
+
 
 def _bs_user_in_active_game(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -1104,11 +1218,13 @@ def _bs_user_in_active_game(user_id):
     conn.close()
     return row[0] if row else None
 
+
 def _bs_get_user_name(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT COALESCE(custom_name, first_name, username, 'Игрок') FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row and row[0] else f"Игрок-{str(user_id)[-4:]}"
+
 
 def _bs_finish_game(game_id, winner_id, surrender_by=0):
     game = _bs_get_game(game_id)
@@ -1122,6 +1238,7 @@ def _bs_finish_game(game_id, winner_id, surrender_by=0):
     wallet_add(winner_id, shift=bet * 2, xp=50)
     _bs_update_game(game_id, status="finished", winner=winner_id, surrender_by=surrender_by)
 
+
 def _bs_cancel_any_waiting(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT game_id, bet FROM bs_games WHERE p1_id=? AND status='waiting' AND (p2_id IS NULL OR p2_id=0)", (user_id,)).fetchall()
@@ -1129,6 +1246,7 @@ def _bs_cancel_any_waiting(user_id):
     for game_id, bet in rows:
         wallet_add(user_id, shift=bet or 0)
         _bs_delete_game(game_id)
+
 
 def _bs_cleanup_stale_games():
     threshold = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
@@ -1139,6 +1257,7 @@ def _bs_cleanup_stale_games():
         if p1_id: wallet_add(p1_id, shift=bet or 0)
         if p2_id: wallet_add(p2_id, shift=bet or 0)
         _bs_delete_game(game_id)
+
 
 def exchange_shift_to_nova(user_id, amount_shift):
     try: amount_shift = int(amount_shift)
@@ -1153,6 +1272,7 @@ def exchange_shift_to_nova(user_id, amount_shift):
     if rw: wallet_add(user_id, xp=rw["xp"], shift=rw["shift"], nova=rw["nova"])
     return {"soft_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA, "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
         "hard_received": amount_nova, "nova_received": amount_nova}
+
 
 # === GROUPS_ЗДЕСЬ ===
 GROUPS = {
@@ -1484,10 +1604,12 @@ GROUPS = {
     ],
 }
 
+
 LESSON_TIMES = {"8:15":"9:45","8:30":"10:00","10:00":"11:30","10:10":"11:40",
     "11:45":"13:15","12:00":"13:30","13:45":"15:15","14:00":"15:30",
     "15:30":"17:00","15:45":"17:15","17:10":"18:40","17:25":"18:55",
     "18:50":"20:20","19:05":"20:35"}
+
 
 def _filter_lessons_by_subgroup(lessons, subgroup):
     if not subgroup: return lessons
@@ -1496,6 +1618,7 @@ def _filter_lessons_by_subgroup(lessons, subgroup):
         if not les["subgroup"]: result.append(les)
         elif str(subgroup) == str(les["subgroup"]): result.append(les)
     return result
+
 
 def parse_schedule(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -1543,6 +1666,7 @@ def parse_schedule(html):
         days.append({"date": date_str, "name": day_name, "lessons": lessons})
     return week_parity, days
 
+
 async def fetch_week_html(group_id, target_monday, use_cache=True):
     week_start_str = target_monday.strftime("%Y-%m-%d")
     if use_cache:
@@ -1566,6 +1690,7 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
             if row: return row[0]
         return ""
 
+
 def _verify_webapp_init_full(init_data):
     if not init_data: return None
     try:
@@ -1575,71 +1700,297 @@ def _verify_webapp_init_full(init_data):
         logging.warning(f"[WEB] initData verify error: {e}")
     return None
 
+
 def _verify_webapp_init(init_data):
     u = _verify_webapp_init_full(init_data)
     return u.id if u else None
 
 
 # ============================================================
-#                  API: РАСПИСАНИЕ
+#              СТУДХАБ — ХЕЛПЕРЫ
 # ============================================================
 
-async def api_schedule(request: web.Request):
+def _wall_get_group_id(user_id):
+    g = get_user_group(user_id)
+    return g[0] if g else None
+
+
+def _wall_is_banned(user_id):
+    if user_id == ADMIN_ID: return False
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT until FROM wall_bans WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    if not row: return False
+    until = row[0]
+    if not until: return True
+    try:
+        if datetime.fromisoformat(until) > datetime.now(timezone.utc): return True
+    except: pass
+    return False
+
+
+def _wall_ban_user(user_id, reason, days):
+    conn = sqlite3.connect(DB_PATH)
+    until = None
+    if days and days > 0:
+        until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    conn.execute("INSERT OR REPLACE INTO wall_bans (user_id, reason, until, banned_at) VALUES (?, ?, ?, ?)",
+        (user_id, reason or "", until, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+
+
+def _wall_unban_user(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM wall_bans WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
+
+
+def _wall_get_name(user_id): return _bs_get_user_name(user_id)
+
+
+def wall_add_post(user_id, text, category="question", subject=None, scope="general", group_id=None):
+    text = (text or "").strip()
+    if not text or len(text) > 1500: return None
+    cat = category if category in ("question","homework","help","announce") else "question"
+    sc = scope if scope in ("general","group") else "general"
+    subj = (subject or "").strip()[:100] or None
+    if sc == "group" and not group_id: return None
+    conn = sqlite3.connect(DB_PATH)
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute("INSERT INTO wall_posts (user_id, group_id, scope, category, subject, text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, group_id, sc, cat, subj, text, now, now))
+    pid = cur.lastrowid
+    conn.commit(); conn.close()
+    return pid
+
+
+def wall_get_posts(user_id, scope="general", subject=None, category=None, limit=30, offset=0):
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    query = "SELECT * FROM wall_posts WHERE is_deleted=0 AND scope=?"
+    params = [scope]
+    if scope == "group":
+        gid = _wall_get_group_id(user_id)
+        if not gid:
+            conn.close(); return []
+        query += " AND group_id=?"; params.append(gid)
+    if subject: query += " AND subject=?"; params.append(subject)
+    if category: query += " AND category=?"; params.append(category)
+    query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def wall_get_post(post_id):
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM wall_posts WHERE id=? AND is_deleted=0", (post_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def wall_update_post(post_id, user_id, new_text=None, new_category=None, new_subject=None):
+    post = wall_get_post(post_id)
+    if not post: return False
+    if post["user_id"] != user_id and user_id != ADMIN_ID: return False
+    fields = []; values = []
+    if new_text is not None:
+        t = (new_text or "").strip()[:1500]
+        if not t: return False
+        fields.append("text=?"); values.append(t)
+    if new_category is not None:
+        c = new_category if new_category in ("question","homework","help","announce") else post["category"]
+        fields.append("category=?"); values.append(c)
+    if new_subject is not None:
+        s = (new_subject or "").strip()[:100] or None
+        fields.append("subject=?"); values.append(s)
+    if not fields: return False
+    fields.append("edited_at=?"); values.append(datetime.now(timezone.utc).isoformat())
+    fields.append("updated_at=?"); values.append(datetime.now(timezone.utc).isoformat())
+    values.append(post_id)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(f"UPDATE wall_posts SET {', '.join(fields)} WHERE id=?", values)
+    conn.commit(); conn.close()
+    return True
+
+
+def wall_delete_post(post_id, user_id):
+    post = wall_get_post(post_id)
+    if not post: return False
+    if post["user_id"] != user_id and user_id != ADMIN_ID: return False
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE wall_posts SET is_deleted=1 WHERE id=?", (post_id,))
+    conn.commit(); conn.close()
+    return True
+
+
+def wall_add_comment(post_id, user_id, text):
+    text = (text or "").strip()
+    if not text or len(text) > 1000: return None
+    conn = sqlite3.connect(DB_PATH)
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute("INSERT INTO wall_comments (post_id, user_id, text, created_at) VALUES (?, ?, ?, ?)",
+        (post_id, user_id, text, now))
+    cid = cur.lastrowid
+    conn.execute("UPDATE wall_posts SET comments_count = comments_count + 1, updated_at=? WHERE id=?", (now, post_id))
+    conn.commit(); conn.close()
+    return cid
+
+
+def wall_get_comments(post_id, limit=200):
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM wall_comments WHERE post_id=? AND is_deleted=0 ORDER BY id ASC LIMIT ?",
+        (post_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def wall_update_comment(comment_id, user_id, new_text):
+    t = (new_text or "").strip()[:1000]
+    if not t: return False
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT user_id FROM wall_comments WHERE id=?", (comment_id,)).fetchone()
+    if not row or (row[0] != user_id and user_id != ADMIN_ID):
+        conn.close(); return False
+    conn.execute("UPDATE wall_comments SET text=?, edited_at=? WHERE id=?",
+        (t, datetime.now(timezone.utc).isoformat(), comment_id))
+    conn.commit(); conn.close()
+    return True
+
+
+def wall_delete_comment(comment_id, user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT user_id, post_id FROM wall_comments WHERE id=?", (comment_id,)).fetchone()
+    if not row: conn.close(); return False
+    if row[0] != user_id and user_id != ADMIN_ID:
+        conn.close(); return False
+    conn.execute("UPDATE wall_comments SET is_deleted=1 WHERE id=?", (comment_id,))
+    conn.execute("UPDATE wall_posts SET comments_count = MAX(0, comments_count - 1) WHERE id=?", (row[1],))
+    conn.commit(); conn.close()
+    return True
+
+
+def wall_toggle_like(user_id, target_type, target_id):
+    if target_type not in ("post", "comment"): return None
+    conn = sqlite3.connect(DB_PATH)
+    exists = conn.execute("SELECT 1 FROM wall_likes WHERE user_id=? AND target_type=? AND target_id=?",
+        (user_id, target_type, target_id)).fetchone()
+    table = "wall_posts" if target_type == "post" else "wall_comments"
+    if exists:
+        conn.execute("DELETE FROM wall_likes WHERE user_id=? AND target_type=? AND target_id=?",
+            (user_id, target_type, target_id))
+        conn.execute(f"UPDATE {table} SET likes = MAX(0, likes - 1) WHERE id=?", (target_id,))
+        liked = False
+    else:
+        conn.execute("INSERT INTO wall_likes (user_id, target_type, target_id) VALUES (?, ?, ?)",
+            (user_id, target_type, target_id))
+        conn.execute(f"UPDATE {table} SET likes = likes + 1 WHERE id=?", (target_id,))
+        liked = True
+    conn.commit()
+    row = conn.execute(f"SELECT likes FROM {table} WHERE id=?", (target_id,)).fetchone()
+    conn.close()
+    return {"liked": liked, "likes": row[0] if row else 0}
+
+
+def wall_mark_solved(post_id, user_id, comment_id):
+    post = wall_get_post(post_id)
+    if not post: return False
+    if post["user_id"] != user_id and user_id != ADMIN_ID: return False
+    conn = sqlite3.connect(DB_PATH)
+    if post["solved_comment_id"] == comment_id:
+        conn.execute("UPDATE wall_posts SET solved_comment_id=NULL WHERE id=?", (post_id,))
+        conn.commit(); conn.close()
+        return True
+    conn.execute("UPDATE wall_posts SET solved_comment_id=? WHERE id=?", (comment_id, post_id))
+    conn.commit(); conn.close()
+    conn = sqlite3.connect(DB_PATH)
+    crow = conn.execute("SELECT user_id FROM wall_comments WHERE id=? AND post_id=?", (comment_id, post_id)).fetchone()
+    conn.close()
+    if crow and crow[0] != user_id:
+        wallet_add(crow[0], xp=30, shift=10, nova=1)
+        stats_inc(crow[0], "wall_solved", 1)
+        check_and_award_achievements(crow[0])
+    return True
+
+
+def wall_report(reporter_id, target_type, target_id, reason):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("INSERT INTO wall_reports (reporter_id, target_type, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+        (reporter_id, target_type, target_id, reason or "", datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+
+
+def wall_get_reports(status="new", limit=50):
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM wall_reports WHERE status=? ORDER BY id DESC LIMIT ?", (status, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def wall_check_like(user_id, target_type, target_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT 1 FROM wall_likes WHERE user_id=? AND target_type=? AND target_id=?",
+        (user_id, target_type, target_id)).fetchone()
+    conn.close()
+    return bool(row)
+
+
+def _wall_post_dict(p, user_id):
+    return {"id": p["id"], "user_id": p["user_id"], "author": _wall_get_name(p["user_id"]),
+        "scope": p["scope"], "category": p["category"], "subject": p["subject"],
+        "text": p["text"], "likes": p["likes"], "liked": wall_check_like(user_id, "post", p["id"]),
+        "comments_count": p["comments_count"], "solved": bool(p["solved_comment_id"]),
+        "is_mine": p["user_id"] == user_id, "is_admin": user_id == ADMIN_ID,
+        "edited": bool(p.get("edited_at")), "created_at": p["created_at"]}
+
+
+# ============================================================
+#                 API: РАСПИСАНИЕ / ЮЗЕР
+# ============================================================
+
+async def api_schedule(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     saved = get_user_group(user_id)
-    if not saved:
-        return web.json_response({"error": "no_group", "message": "Сначала выбери группу"}, status=200)
+    if not saved: return web.json_response({"error": "no_group", "message": "Сначала выбери группу"}, status=200)
     group_id, group_name = saved
     subgroup = get_user_subgroup(user_id)
-    today = _now_irkutsk()
-    monday = _monday_of_week(today)
+    today = _now_irkutsk(); monday = _monday_of_week(today)
     html = await fetch_week_html(group_id, monday, use_cache=True)
-    if not html:
-        return web.json_response({"error": "no_data", "message": "Не удалось загрузить"}, status=200)
+    if not html: return web.json_response({"error": "no_data"}, status=200)
     _, days = parse_schedule(html)
     today_str = today.strftime("%d.%m.%Y")
     day = next((d for d in days if d["date"] == today_str), None)
     if day is None:
-        return web.json_response({"date": today_str, "dayName": "", "group": group_name,
-                                   "subgroup": subgroup, "lessons": []})
+        return web.json_response({"date": today_str, "dayName": "", "group": group_name, "subgroup": subgroup, "lessons": []})
     filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
     att_map = attendance_get_map(user_id, [day["date"]])
     lessons_out = []
     for les in filtered:
         key = (day["date"], les["time"], les["subject"])
-        lessons_out.append({
-            "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
-            "subject": les["subject"], "type": les["type"],
-            "teacher": les["teacher"], "auditorium": les["auditorium"],
-            "subgroup": les["subgroup"], "date": day["date"],
-            "attendance": att_map.get(key, ""),
-        })
+        lessons_out.append({"time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
+            "subject": les["subject"], "type": les["type"], "teacher": les["teacher"],
+            "auditorium": les["auditorium"], "subgroup": les["subgroup"], "date": day["date"],
+            "attendance": att_map.get(key, "")})
     return web.json_response({"date": day["date"], "dayName": day["name"], "group": group_name,
-                               "subgroup": subgroup, "lessons": lessons_out})
+        "subgroup": subgroup, "lessons": lessons_out})
 
 
-async def api_week(request: web.Request):
+async def api_week(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        offset = int(request.query.get("offset", "0"))
-    except Exception:
-        offset = 0
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try: offset = int(request.query.get("offset", "0"))
+    except: offset = 0
     saved = get_user_group(user_id)
-    if not saved:
-        return web.json_response({"error": "no_group"}, status=200)
+    if not saved: return web.json_response({"error": "no_group"}, status=200)
     group_id, group_name = saved
     subgroup = get_user_subgroup(user_id)
     today = _now_irkutsk()
     target_monday = _monday_of_week(today) + timedelta(days=7 * offset)
     html = await fetch_week_html(group_id, target_monday, use_cache=True)
-    if not html:
-        return web.json_response({"error": "no_data"}, status=200)
+    if not html: return web.json_response({"error": "no_data"}, status=200)
     _, days = parse_schedule(html)
     dates_list = [d["date"] for d in days]
     att_map = attendance_get_map(user_id, dates_list)
@@ -1649,152 +2000,103 @@ async def api_week(request: web.Request):
         lessons_out = []
         for les in filtered:
             key = (d["date"], les["time"], les["subject"])
-            lessons_out.append({
-                "time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
-                "subject": les["subject"], "type": les["type"],
-                "teacher": les["teacher"], "auditorium": les["auditorium"],
-                "subgroup": les["subgroup"], "date": d["date"],
-                "attendance": att_map.get(key, ""),
-            })
+            lessons_out.append({"time": les["time"], "timeEnd": LESSON_TIMES.get(les["time"], ""),
+                "subject": les["subject"], "type": les["type"], "teacher": les["teacher"],
+                "auditorium": les["auditorium"], "subgroup": les["subgroup"], "date": d["date"],
+                "attendance": att_map.get(key, "")})
         days_out.append({"date": d["date"], "name": d["name"], "lessons": lessons_out})
     return web.json_response({"group": group_name, "subgroup": subgroup, "days": days_out})
 
 
-# ============================================================
-#                  API: ПРОФИЛЬ
-# ============================================================
-
-async def api_me(request: web.Request):
+async def api_me(request):
     init_data = request.query.get("initData", "")
     user_obj = _verify_webapp_init_full(init_data)
-    if not user_obj:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_obj: return web.json_response({"error": "unauthorized"}, status=401)
     user_id = user_obj.id
-    _ensure_user(user_id)
-    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
-    streak = stats_update_streak(user_id)
-    check_and_award_achievements(user_id)
-    saved = get_user_group(user_id)
-    active, done = count_user_tasks(user_id)
-    notes = get_user_notes(user_id)
-    amount = get_scholarship_amount(user_id)
-    grades = get_grades(user_id)
-    daily = daily_is_subscribed(user_id)
+    _ensure_user(user_id); _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+    streak = stats_update_streak(user_id); check_and_award_achievements(user_id)
+    saved = get_user_group(user_id); active, done = count_user_tasks(user_id)
+    notes = get_user_notes(user_id); amount = get_scholarship_amount(user_id)
+    grades = get_grades(user_id); daily = daily_is_subscribed(user_id)
     notif_settings = get_notify_settings(user_id)
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
-    att_stats = attendance_stats(user_id)
-    wallet = wallet_get(user_id)
-    ach = achievements_get(user_id)
-    if wallet["custom_name"]:
-        display_name = wallet["custom_name"]
+    att_stats = attendance_stats(user_id); wallet = wallet_get(user_id); ach = achievements_get(user_id)
+    if wallet["custom_name"]: display_name = wallet["custom_name"]
     else:
         full = " ".join(p for p in [user_obj.first_name or "", user_obj.last_name or ""] if p).strip()
         display_name = full or "PLAYER"
     player_tag = f"PLAYER-{str(user_id)[-6:].upper()}"
-    return web.json_response({
-        "user_id": user_id, "is_admin": user_id == ADMIN_ID,
+    return web.json_response({"user_id": user_id, "is_admin": user_id == ADMIN_ID,
         "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
-        "subgroup": get_user_subgroup(user_id),
-        "tasks_active": active, "tasks_done": done,
-        "notes_count": len(notes), "scholarship_amount": amount,
-        "grades_count": len(grades), "grades_avg": round(avg, 2),
-        "daily_subscribed": daily,
+        "subgroup": get_user_subgroup(user_id), "tasks_active": active, "tasks_done": done,
+        "notes_count": len(notes), "scholarship_amount": amount, "grades_count": len(grades),
+        "grades_avg": round(avg, 2), "daily_subscribed": daily,
         "notify_type": notif_settings["type"] if notif_settings else None,
         "notify_hour": notif_settings["hour"] if notif_settings else -1,
         "notify_minute": notif_settings["minute"] if notif_settings else 0,
-        "notify_changes": get_notify_changes(user_id),
-        "notify_before_min": get_notify_before_min(user_id),
+        "notify_changes": get_notify_changes(user_id), "notify_before_min": get_notify_before_min(user_id),
         "attendance_was": att_stats["was"], "attendance_missed": att_stats["missed"],
         "attendance_sick": att_stats["sick"], "attendance_excused": att_stats["excused"],
-        "attendance_total": sum(att_stats.values()),
-        "username": user_obj.username, "first_name": user_obj.first_name,
-        "last_name": user_obj.last_name, "display_name": display_name,
-        "player_tag": player_tag, "wallet": wallet, "streak": streak,
-        "achievements": ach, "chat_unread": 0,
-    })
+        "attendance_total": sum(att_stats.values()), "username": user_obj.username,
+        "first_name": user_obj.first_name, "last_name": user_obj.last_name,
+        "display_name": display_name, "player_tag": player_tag, "wallet": wallet,
+        "streak": streak, "achievements": ach, "chat_unread": 0})
 
 
-async def api_wallet(request: web.Request):
+async def api_wallet(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    _ensure_user(user_id)
-    check_and_award_achievements(user_id)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    _ensure_user(user_id); check_and_award_achievements(user_id)
     return web.json_response({"wallet": wallet_get(user_id)})
 
 
-async def api_set_name(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_set_name(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     name = (body.get("name") or "").strip()
-    if len(name) > 24:
-        name = name[:24]
-    wallet_before = wallet_get(user_id)
-    used_free = False
+    if len(name) > 24: name = name[:24]
+    wallet_before = wallet_get(user_id); used_free = False
     if wallet_before["custom_name"]:
         if wallet_before["free_name_changes"] > 0:
-            wallet_use_free_name(user_id)
-            used_free = True
+            wallet_use_free_name(user_id); used_free = True
         else:
             if not wallet_consume(user_id, "nova", 5):
-                return web.json_response({"error": "need_hard",
-                                          "message": "Нужно 5 Нова для смены ника"}, status=400)
+                return web.json_response({"error": "need_hard", "message": "Нужно 5 Нова"}, status=400)
     wallet_set_name(user_id, name)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "used_free": used_free})
 
 
-async def api_set_avatar(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_set_avatar(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        idx = int(body.get("idx", 0))
-    except Exception:
-        return web.json_response({"error": "bad_idx"}, status=400)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try: idx = int(body.get("idx", 0))
+    except: return web.json_response({"error": "bad_idx"}, status=400)
     idx = max(0, min(idx, 11))
     wallet_set_avatar(user_id, idx)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
 
 
-# ============================================================
-#                  API: ОБМЕННИК
-# ============================================================
-
-async def api_exchange_shift_to_nova(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_exchange(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        amount = int(body.get("amount", 0))
-    except Exception:
-        return web.json_response({"error": "bad_amount"}, status=400)
-    if amount <= 0:
-        return web.json_response({"error": "bad_amount", "message": "Сумма должна быть > 0"}, status=400)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try: amount = int(body.get("amount", 0))
+    except: return web.json_response({"error": "bad_amount"}, status=400)
+    if amount <= 0: return web.json_response({"error": "bad_amount"}, status=400)
     amount = (amount // EXCHANGE_RATE_SHIFT_TO_NOVA) * EXCHANGE_RATE_SHIFT_TO_NOVA
     if amount <= 0:
-        return web.json_response({"error": "too_small",
-            "message": f"Минимум {EXCHANGE_RATE_SHIFT_TO_NOVA} Шифт для обмена"}, status=400)
+        return web.json_response({"error": "too_small", "message": f"Минимум {EXCHANGE_RATE_SHIFT_TO_NOVA} Шифт"}, status=400)
     w = wallet_get(user_id)
     if (w.get("shift") or 0) < amount:
-        return web.json_response({"error": "not_enough_soft", "message": "Недостаточно Шифт",
-            "have": w.get("shift") or 0, "need": amount}, status=400)
+        return web.json_response({"error": "not_enough_soft", "message": "Недостаточно Шифт"}, status=400)
     result = exchange_shift_to_nova(user_id, amount)
-    if not result:
-        return web.json_response({"error": "exchange_failed"}, status=500)
+    if not result: return web.json_response({"error": "exchange_failed"}, status=500)
     check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "soft_spent": result["soft_spent"],
         "hard_received": result["hard_received"], "shift_spent": result["shift_spent"],
@@ -1802,56 +2104,42 @@ async def api_exchange_shift_to_nova(request: web.Request):
 
 
 # ============================================================
-#                  API: КЕЙСЫ
+#                 API: КЕЙСЫ / ДОСТИЖЕНИЯ / УРОВНИ
 # ============================================================
 
-async def api_chest_status(request: web.Request):
+async def api_chest_status(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     chest_id = request.query.get("chest_id", "capsule")
     return web.json_response(chest_status(user_id, chest_id))
 
 
-async def api_chest_open(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_chest_open(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     chest_id = (body.get("type") or body.get("chest") or "capsule").strip()
-    if chest_id not in CHESTS:
-        chest_id = "capsule"
+    if chest_id not in CHESTS: chest_id = "capsule"
     reward, err = chest_open(user_id, chest_id)
     if err:
-        msg = {"already_opened": "Кейс уже открыт, приходи позже",
-               "not_enough_shift": "Недостаточно Шифт",
-               "not_enough_nova": "Недостаточно Нова",
-               "bad_chest": "Неизвестный кейс",
-               "roll_failed": "Ошибка розыгрыша"}.get(err, "Ошибка")
+        msg = {"already_opened": "Кейс уже открыт", "not_enough_shift": "Недостаточно Шифт",
+               "not_enough_nova": "Недостаточно Нова", "bad_chest": "Неизвестный кейс",
+               "roll_failed": "Ошибка"}.get(err, "Ошибка")
         return web.json_response({"error": err, "message": msg}, status=400)
     check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "reward": reward, "wallet": wallet_get(user_id)})
 
 
-# ============================================================
-#                  API: ДОСТИЖЕНИЯ
-# ============================================================
-
-async def api_achievements(request: web.Request):
+async def api_achievements(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    _ensure_user(user_id)
-    check_and_award_achievements(user_id)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    _ensure_user(user_id); check_and_award_achievements(user_id)
     unlocked = achievements_get(user_id)
     conn = sqlite3.connect(DB_PATH)
-    rewards = conn.execute("SELECT ach_id, xp, shift, nova FROM achievement_rewards WHERE user_id=?",
-        (user_id,)).fetchall()
+    rewards = conn.execute("SELECT ach_id, xp, shift, nova FROM achievement_rewards WHERE user_id=?", (user_id,)).fetchall()
     claimed = conn.execute("SELECT ach_id FROM achievement_claims WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     reward_map = {r[0]: {"xp": r[1], "shift": r[2], "nova": r[3], "soft": r[2], "hard": r[3]} for r in rewards}
@@ -1871,9 +2159,9 @@ async def api_achievements(request: web.Request):
     total_reward = {"xp": 0, "shift": 0, "nova": 0, "soft": 0, "hard": 0}
     for it in items:
         if it["can_claim"]:
-            total_reward["xp"]    += it["reward"]["xp"]
+            total_reward["xp"] += it["reward"]["xp"]
             total_reward["shift"] += it["reward"]["shift"]
-            total_reward["nova"]  += it["reward"]["nova"]
+            total_reward["nova"] += it["reward"]["nova"]
     total_reward["soft"] = total_reward["shift"]
     total_reward["hard"] = total_reward["nova"]
     return web.json_response({"items": items, "total": len(ACHIEVEMENTS),
@@ -1881,14 +2169,11 @@ async def api_achievements(request: web.Request):
         "total_reward": total_reward})
 
 
-async def api_achievement_claim(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_achievement_claim(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     ach_id = (body.get("ach_id") or "").strip()
     if not ach_id or ach_id not in ACHIEVEMENTS:
         return web.json_response({"error": "bad_id"}, status=400)
@@ -1898,8 +2183,7 @@ async def api_achievement_claim(request: web.Request):
     claimed = conn.execute("SELECT 1 FROM achievement_claims WHERE user_id=? AND ach_id=?",
         (user_id, ach_id)).fetchone()
     conn.close()
-    if not has or claimed:
-        return web.json_response({"error": "already_claimed"}, status=400)
+    if not has or claimed: return web.json_response({"error": "already_claimed"}, status=400)
     xp, shift, nova = has
     wallet_add(user_id, xp=xp, shift=shift, nova=nova)
     conn = sqlite3.connect(DB_PATH)
@@ -1912,41 +2196,29 @@ async def api_achievement_claim(request: web.Request):
         "wallet": wallet_get(user_id)})
 
 
-# ============================================================
-#                  API: УРОВНИ
-# ============================================================
-
-async def api_level_rewards(request: web.Request):
+async def api_level_rewards(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     return web.json_response({"claimed": level_rewards_claimed(user_id)})
 
 
-async def api_level_reward_claim(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_level_reward_claim(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        lvl = int(body.get("level", 0))
-    except Exception:
-        return web.json_response({"error": "bad_level"}, status=400)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try: lvl = int(body.get("level", 0))
+    except: return web.json_response({"error": "bad_level"}, status=400)
     rw, err = level_reward_claim(user_id, lvl)
-    if err:
-        return web.json_response({"error": err}, status=400)
+    if err: return web.json_response({"error": err}, status=400)
     return web.json_response({"ok": True, "reward": rw, "wallet": wallet_get(user_id)})
 
 
-async def api_wallet_leaderboard(request: web.Request):
+async def api_wallet_leaderboard(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     rows = wallet_leaderboard(10)
     items = []
     for i, (uid, xp, custom_name, username) in enumerate(rows):
@@ -1960,76 +2232,57 @@ async def api_wallet_leaderboard(request: web.Request):
 
 
 # ============================================================
-#                  API: ГРУППЫ
+#                 API: ГРУППЫ / ЗАДАЧИ / ЗАМЕТКИ
 # ============================================================
 
-async def api_groups(request: web.Request):
-    return web.json_response({"groups": GROUPS})
+async def api_groups(request): return web.json_response({"groups": GROUPS})
 
 
-async def api_set_group(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_set_group(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    group_id = str(body.get("group_id", ""))
-    group_name = str(body.get("group_name", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    group_id = str(body.get("group_id", "")); group_name = str(body.get("group_name", ""))
     subgroup = int(body.get("subgroup", 0))
     if not group_id or not group_name:
-        delete_user_group(user_id)
-        return web.json_response({"ok": True})
-    save_user_group(user_id, group_id, group_name)
-    set_user_subgroup(user_id, subgroup)
+        delete_user_group(user_id); return web.json_response({"ok": True})
+    save_user_group(user_id, group_id, group_name); set_user_subgroup(user_id, subgroup)
     return web.json_response({"ok": True})
 
 
-async def api_set_subgroup(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_set_subgroup(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     subgroup = int(body.get("subgroup", 0))
     set_user_subgroup(user_id, subgroup)
     return web.json_response({"ok": True})
 
-
-# ============================================================
-#                  API: ЗАДАЧИ
-# ============================================================
 
 def _task_to_dict(row):
     tid, text, due_date, done, created_at, priority, due_time = row
     overdue = False
     if due_date and not done:
         try:
-            if due_time:
-                dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
-            else:
-                dt = datetime.strptime(due_date, "%d.%m.%Y").replace(hour=23, minute=59)
+            if due_time: dt = datetime.strptime(f"{due_date} {due_time}", "%d.%m.%Y %H:%M")
+            else: dt = datetime.strptime(due_date, "%d.%m.%Y").replace(hour=23, minute=59)
             overdue = dt < _now_irkutsk()
-        except Exception:
-            pass
+        except: pass
     p = priority if priority is not None else 2
     if p not in (1, 2, 3): p = 2
     return {"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
-            "priority": p, "done": bool(done), "overdue": overdue}
+        "priority": p, "done": bool(done), "overdue": overdue}
 
 
-async def api_tasks(request: web.Request):
+async def api_tasks(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     show_done = request.query.get("done", "0") == "1"
     if show_done:
-        rows = get_done_tasks(user_id, days=7)
-        tasks = []
+        rows = get_done_tasks(user_id, days=7); tasks = []
         for r in rows:
             tid, text, due_date, done, created_at, priority, due_time, done_at = r
             p = priority if priority is not None else 2
@@ -2037,60 +2290,43 @@ async def api_tasks(request: web.Request):
             tasks.append({"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
                 "priority": p, "done": True, "done_at": done_at, "overdue": False})
     else:
-        rows = get_user_tasks(user_id, only_active=True)
-        tasks = [_task_to_dict(r) for r in rows]
+        rows = get_user_tasks(user_id, only_active=True); tasks = [_task_to_dict(r) for r in rows]
     active, done_count = count_user_tasks(user_id)
     return web.json_response({"tasks": tasks, "active": active, "done": done_count})
 
 
-async def api_task_add(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_task_add(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     text = (body.get("text") or "").strip()
-    if not text:
-        return web.json_response({"error": "empty_text"}, status=400)
+    if not text: return web.json_response({"error": "empty_text"}, status=400)
     if len(text) > 500: text = text[:500]
-    due_date = body.get("due_date") or None
-    due_time = body.get("due_time") or None
+    due_date = body.get("due_date") or None; due_time = body.get("due_time") or None
     priority = int(body.get("priority", 2))
     if priority not in (1, 2, 3): priority = 2
     tid = add_task(user_id, text, due_date, priority, due_time)
-    wallet_add(user_id, xp=5, shift=1)
-    check_and_award_achievements(user_id)
+    wallet_add(user_id, xp=5, shift=1); check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "id": tid, "wallet": wallet_get(user_id)})
 
 
-async def api_task_update(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_task_update(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     tid = int(body.get("id", 0))
-    if not tid:
-        return web.json_response({"error": "no_id"}, status=400)
+    if not tid: return web.json_response({"error": "no_id"}, status=400)
     row = get_task(tid, user_id)
-    if not row:
-        return web.json_response({"error": "not_found"}, status=404)
+    if not row: return web.json_response({"error": "not_found"}, status=404)
     if body.get("done") is True:
-        mark_task_done(tid, user_id)
-        stats_inc(user_id, "tasks_done", 1)
+        mark_task_done(tid, user_id); stats_inc(user_id, "tasks_done", 1)
         wallet_add(user_id, xp=20, shift=5)
         new_ach = check_and_award_achievements(user_id)
-        return web.json_response({"ok": True, "done": True,
-            "wallet": wallet_get(user_id), "new_achievements": new_ach})
-    text = body.get("text")
-    due_date = body.get("due_date")
-    due_time = body.get("due_time")
-    priority = body.get("priority")
-    reset_due = body.get("reset_due", False)
+        return web.json_response({"ok": True, "done": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
+    text = body.get("text"); due_date = body.get("due_date"); due_time = body.get("due_time")
+    priority = body.get("priority"); reset_due = body.get("reset_due", False)
     if priority is not None:
         priority = int(priority)
         if priority not in (1, 2, 3): priority = 2
@@ -2100,94 +2336,69 @@ async def api_task_update(request: web.Request):
     return web.json_response({"ok": True})
 
 
-async def api_task_delete(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_task_delete(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     tid = int(body.get("id", 0))
-    if not tid:
-        return web.json_response({"error": "no_id"}, status=400)
+    if not tid: return web.json_response({"error": "no_id"}, status=400)
     delete_task(tid, user_id)
     return web.json_response({"ok": True})
 
 
-async def api_task_clear(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_task_clear(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     clear_done_tasks(user_id)
     return web.json_response({"ok": True})
 
 
-# ============================================================
-#                  API: ЗАМЕТКИ
-# ============================================================
-
-async def api_notes(request: web.Request):
+async def api_notes(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     rows = get_user_notes(user_id)
     return web.json_response({"notes": [{"id": nid, "subject": subj, "text": txt} for nid, subj, txt in rows]})
 
 
-async def api_note_save(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_note_save(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    subject = (body.get("subject") or "").strip()
-    text = (body.get("text") or "").strip()
-    if not subject or not text:
-        return web.json_response({"error": "empty"}, status=400)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    subject = (body.get("subject") or "").strip(); text = (body.get("text") or "").strip()
+    if not subject or not text: return web.json_response({"error": "empty"}, status=400)
     if len(subject) > 100: subject = subject[:100]
     if len(text) > 500: text = text[:500]
-    add_or_update_note(user_id, subject, text)
-    stats_inc(user_id, "notes_added", 1)
+    add_or_update_note(user_id, subject, text); stats_inc(user_id, "notes_added", 1)
     wallet_add(user_id, xp=3, shift=1)
     new_ach = check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
 
 
-async def api_note_delete(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_note_delete(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     nid = int(body.get("id", 0))
-    if not nid:
-        return web.json_response({"error": "no_id"}, status=400)
+    if not nid: return web.json_response({"error": "no_id"}, status=400)
     delete_note_by_id(nid, user_id)
     return web.json_response({"ok": True})
 
 
 # ============================================================
-#                  API: УВЕДОМЛЕНИЯ / ЦИТАТЫ / СТИПЕНДИЯ / ПОСЕЩ
+#        API: УВЕДОМЛЕНИЯ / ЦИТАТЫ / СТИПЕНДИЯ / ПОСЕЩ
 # ============================================================
 
-async def api_notify_set(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_notify_set(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     if "changes" in body:
         set_notify_changes(user_id, bool(body.get("changes", False)))
         return web.json_response({"ok": True})
@@ -2195,79 +2406,61 @@ async def api_notify_set(request: web.Request):
     if ntype is None or ntype == "":
         set_notify_settings(user_id, None, -1, 0)
         return web.json_response({"ok": True, "type": None})
-    if ntype not in ("today", "tomorrow"):
-        return web.json_response({"error": "bad_type"}, status=400)
+    if ntype not in ("today", "tomorrow"): return web.json_response({"error": "bad_type"}, status=400)
     try:
         hour = int(body.get("hour", 8)); minute = int(body.get("minute", 0))
-    except Exception:
-        return web.json_response({"error": "bad_time"}, status=400)
+    except: return web.json_response({"error": "bad_time"}, status=400)
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         return web.json_response({"error": "bad_time"}, status=400)
     if ntype == "today" and hour > 10:
-        return web.json_response({"error": "today_limit",
-            "message": "Для «Сегодня» — не позже 10:00"}, status=400)
+        return web.json_response({"error": "today_limit", "message": "Для «Сегодня» — не позже 10:00"}, status=400)
     set_notify_settings(user_id, ntype, hour, minute)
     return web.json_response({"ok": True, "type": ntype, "hour": hour, "minute": minute})
 
 
-async def api_notify_set_before(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_notify_set_before(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        minutes = int(body.get("minutes", 0))
-    except Exception:
-        return web.json_response({"error": "bad_minutes"}, status=400)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try: minutes = int(body.get("minutes", 0))
+    except: return web.json_response({"error": "bad_minutes"}, status=400)
     if minutes not in (0, 5, 10, 15, 20, 30, 60): minutes = 0
     set_notify_before_min(user_id, minutes)
     return web.json_response({"ok": True, "minutes": minutes})
 
 
-async def api_quote(request: web.Request):
+async def api_quote(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    return web.json_response({"quote": random.choice(DAILY_QUOTES),
-        "subscribed": daily_is_subscribed(user_id)})
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response({"quote": random.choice(DAILY_QUOTES), "subscribed": daily_is_subscribed(user_id)})
 
 
-async def api_quote_subscribe(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_quote_subscribe(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     sub = bool(body.get("subscribe", False))
     if sub: daily_subscribe(user_id)
     else: daily_unsubscribe(user_id)
     return web.json_response({"ok": True, "subscribed": sub})
 
 
-async def api_scholarship(request: web.Request):
+async def api_scholarship(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    amount = get_scholarship_amount(user_id)
-    grades = get_grades(user_id)
-    grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]),
-        "semester": g[4] or ""} for g in grades]
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    amount = get_scholarship_amount(user_id); grades = get_grades(user_id)
+    grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4] or ""} for g in grades]
     semesters = sorted(set(g[4] for g in grades if g[4]))
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
-    count5 = sum(1 for g in grades if g[2] == 5)
-    count4 = sum(1 for g in grades if g[2] == 4)
-    count3 = sum(1 for g in grades if g[2] == 3)
-    count2 = sum(1 for g in grades if g[2] == 2)
+    count5 = sum(1 for g in grades if g[2] == 5); count4 = sum(1 for g in grades if g[2] == 4)
+    count3 = sum(1 for g in grades if g[2] == 3); count2 = sum(1 for g in grades if g[2] == 2)
     count_auto = sum(1 for g in grades if g[3])
     forecast = ""
-    if count2 > 0 or count3 > 0: forecast = "На академическую не проходишь: есть тройки/двойки."
+    if count2 > 0 or count3 > 0: forecast = "На академическую не проходишь."
     elif avg >= 4.5: forecast = "Проходишь на академическую и можешь претендовать на повышенную."
     elif avg >= 4.0: forecast = f"Проходишь на академическую. До повышенной не хватает {4.5 - avg:.2f}."
     elif grades: forecast = "На академическую не проходишь: средний балл ниже 4.0."
@@ -2275,82 +2468,64 @@ async def api_scholarship(request: web.Request):
     saved = get_user_group(user_id)
     if saved:
         try:
-            group_id, _ = saved
-            subgroup = get_user_subgroup(user_id)
-            today = _now_irkutsk()
-            monday = _monday_of_week(today)
+            group_id, _ = saved; subgroup = get_user_subgroup(user_id)
+            today = _now_irkutsk(); monday = _monday_of_week(today)
             html = await fetch_week_html(group_id, monday, use_cache=True)
             if html:
-                _, days = parse_schedule(html)
-                subjects = set()
+                _, days = parse_schedule(html); subjects = set()
                 for d in days:
                     for les in d["lessons"]:
                         s = (les.get("subject") or "").strip()
                         if s: subjects.add(s)
                 available_subjects = sorted(subjects)
         except Exception as e:
-            logging.warning(f"[SCH] subjects fetch: {e}")
+            logging.warning(f"[SCH] subjects: {e}")
     return web.json_response({"amount": amount, "grades": grades_out, "avg": round(avg, 2),
         "count5": count5, "count4": count4, "count3": count3, "count2": count2,
         "count_auto": count_auto, "forecast": forecast,
         "available_subjects": available_subjects, "semesters": semesters})
 
 
-async def api_scholarship_set_amount(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_scholarship_set_amount(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     amount = int(body.get("amount", 0))
-    if amount < 0 or amount > 100000:
-        return web.json_response({"error": "invalid"}, status=400)
+    if amount < 0 or amount > 100000: return web.json_response({"error": "invalid"}, status=400)
     set_scholarship_amount(user_id, amount)
     return web.json_response({"ok": True})
 
 
-async def api_scholarship_add_grade(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_scholarship_add_grade(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    subject = (body.get("subject") or "").strip()
-    grade = int(body.get("grade", 0))
-    is_auto = bool(body.get("is_auto", False))
-    semester = (body.get("semester") or "").strip() or None
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    subject = (body.get("subject") or "").strip(); grade = int(body.get("grade", 0))
+    is_auto = bool(body.get("is_auto", False)); semester = (body.get("semester") or "").strip() or None
     if not subject or grade not in (2, 3, 4, 5):
         return web.json_response({"error": "invalid"}, status=400)
     if len(subject) > 100: subject = subject[:100]
     if semester and len(semester) > 40: semester = semester[:40]
-    upsert_grade(user_id, subject, grade, is_auto, semester)
-    wallet_add(user_id, xp=5, shift=1)
+    upsert_grade(user_id, subject, grade, is_auto, semester); wallet_add(user_id, xp=5, shift=1)
     new_ach = check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
 
 
-async def api_scholarship_update_grade(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_scholarship_update_grade(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     gid = int(body.get("id", 0))
-    if not gid:
-        return web.json_response({"error": "no_id"}, status=400)
+    if not gid: return web.json_response({"error": "no_id"}, status=400)
     subject = (body.get("subject") or "").strip()
     if subject and len(subject) > 100: subject = subject[:100]
     grade = body.get("grade")
     if grade is not None:
         grade = int(grade)
-        if grade not in (2, 3, 4, 5):
-            return web.json_response({"error": "invalid_grade"}, status=400)
+        if grade not in (2, 3, 4, 5): return web.json_response({"error": "invalid_grade"}, status=400)
     is_auto = body.get("is_auto")
     if is_auto is not None: is_auto = bool(is_auto)
     semester = body.get("semester")
@@ -2361,48 +2536,35 @@ async def api_scholarship_update_grade(request: web.Request):
     return web.json_response({"ok": True})
 
 
-async def api_scholarship_delete_grade(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_scholarship_delete_grade(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     gid = int(body.get("id", 0))
-    if not gid:
-        return web.json_response({"error": "no_id"}, status=400)
+    if not gid: return web.json_response({"error": "no_id"}, status=400)
     delete_grade(gid, user_id)
     return web.json_response({"ok": True})
 
 
-async def api_scholarship_clear(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_scholarship_clear(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     semester = body.get("semester")
-    if semester is not None:
-        semester = (semester or "").strip() or None
+    if semester is not None: semester = (semester or "").strip() or None
     clear_grades(user_id, semester)
     return web.json_response({"ok": True})
 
 
-async def api_attendance_set(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_attendance_set(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    date = (body.get("date") or "").strip()
-    time_ = (body.get("time") or "").strip()
-    subject = (body.get("subject") or "").strip()
-    status = (body.get("status") or "").strip()
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    date = (body.get("date") or "").strip(); time_ = (body.get("time") or "").strip()
+    subject = (body.get("subject") or "").strip(); status = (body.get("status") or "").strip()
     if not date or not time_ or not subject:
         return web.json_response({"error": "empty"}, status=400)
     if status not in ("", "was", "missed", "sick", "excused"):
@@ -2410,28 +2572,22 @@ async def api_attendance_set(request: web.Request):
     if len(subject) > 200: subject = subject[:200]
     attendance_set(user_id, date, time_, subject, status)
     if status == "was":
-        wallet_add(user_id, xp=3, shift=1)
-        check_and_award_achievements(user_id)
+        wallet_add(user_id, xp=3, shift=1); check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "status": status, "wallet": wallet_get(user_id)})
 
 
 # ============================================================
-#                  API: AI
+#                 API: AI
 # ============================================================
 
-async def api_ai(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_ai(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    if giga_client is None:
-        return web.json_response({"error": "ai_unavailable"}, status=503)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    if giga_client is None: return web.json_response({"error": "ai_unavailable"}, status=503)
     question = (body.get("question") or "").strip()
-    if not question:
-        return web.json_response({"error": "empty"}, status=400)
+    if not question: return web.json_response({"error": "empty"}, status=400)
     if len(question) > 2000: question = question[:2000]
     ai_save_message(user_id, 'user', question, has_photo=0)
     try:
@@ -2454,27 +2610,21 @@ async def api_ai(request: web.Request):
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
 
-async def api_ai_photo(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_ai_photo(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     if not YANDEX_VISION_API_KEY or not YANDEX_FOLDER_ID:
-        return web.json_response({"error": "ocr_unavailable", "message": "OCR не настроен"}, status=503)
-    if giga_client is None:
-        return web.json_response({"error": "ai_unavailable"}, status=503)
-    photo_data = (body.get("photo") or "").strip()
-    question = (body.get("question") or "").strip()
-    if not photo_data:
-        return web.json_response({"error": "no_photo"}, status=400)
+        return web.json_response({"error": "ocr_unavailable"}, status=503)
+    if giga_client is None: return web.json_response({"error": "ai_unavailable"}, status=503)
+    photo_data = (body.get("photo") or "").strip(); question = (body.get("question") or "").strip()
+    if not photo_data: return web.json_response({"error": "no_photo"}, status=400)
     b64 = photo_data.split(",", 1)[1] if "," in photo_data else photo_data
     try: img_bytes = base64.b64decode(b64)
-    except Exception: return web.json_response({"error": "bad_photo"}, status=400)
+    except: return web.json_response({"error": "bad_photo"}, status=400)
     if len(img_bytes) > 8 * 1024 * 1024:
-        return web.json_response({"error": "too_big", "message": "Фото слишком большое (макс 8 МБ)"}, status=400)
+        return web.json_response({"error": "too_big"}, status=400)
     ai_save_message(user_id, 'user', question or 'Что на фото?', has_photo=1)
     try:
         ocr_url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
@@ -2485,27 +2635,23 @@ async def api_ai_photo(request: web.Request):
                                     timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status != 200:
                     err_text = await resp.text()
-                    logging.error(f"[OCR] HTTP {resp.status}: {err_text}")
                     return web.json_response({"error": "ocr_failed", "message": f"OCR HTTP {resp.status}"}, status=500)
                 ocr_result = await resp.json()
         recognized_text = ""
         try: recognized_text = ocr_result["result"]["textAnnotation"]["fullText"] or ""
         except (KeyError, TypeError):
             try:
-                blocks = ocr_result["result"]["textAnnotation"]["blocks"]
-                parts = []
+                blocks = ocr_result["result"]["textAnnotation"]["blocks"]; parts = []
                 for b in blocks:
                     for line in b.get("lines", []): parts.append(line.get("text", ""))
                 recognized_text = "\n".join(parts)
-            except Exception: recognized_text = ""
+            except: recognized_text = ""
         recognized_text = recognized_text.strip()
     except Exception as e:
-        logging.exception("[OCR]")
         return web.json_response({"error": "ocr_failed", "message": str(e)}, status=500)
-    if not recognized_text:
-        return web.json_response({"answer": "На фото не удалось распознать текст."})
+    if not recognized_text: return web.json_response({"answer": "На фото не удалось распознать текст."})
     if len(recognized_text) > 4000: recognized_text = recognized_text[:4000]
-    if not question: question = "Разберись, что это за задача или текст, и помоги студенту."
+    if not question: question = "Разберись, что это, и помоги студенту."
     if len(question) > 2000: question = question[:2000]
     try:
         prompt = ("Ты — студенческий помощник. Пользователь прислал фото, с которого распознан текст. "
@@ -2524,60 +2670,48 @@ async def api_ai_photo(request: web.Request):
         wallet_add(user_id, xp=5, shift=2)
         return web.json_response({"answer": answer})
     except Exception as e:
-        logging.exception("[AI-PHOTO-GIGA]")
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
 
-async def api_ai_history(request: web.Request):
+async def api_ai_history(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     rows = ai_get_history(user_id, limit=30)
     items = [{"id": r[0], "role": r[1], "text": r[2], "has_photo": bool(r[3])} for r in rows]
     return web.json_response({"items": items})
 
 
-async def api_ai_clear_history(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_ai_clear_history(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     ai_clear_history(user_id)
     return web.json_response({"ok": True})
 
 
 # ============================================================
-#              API: ОБРАТНАЯ СВЯЗЬ
+#                 API: FEEDBACK / GAMES / BS
 # ============================================================
 
-async def api_feedback_my(request: web.Request):
+async def api_feedback_my(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     rows = get_user_feedback(user_id, limit=30)
-    items = []
-    for r in rows:
-        items.append({"id": r[0], "text": r[1], "status": r[2], "created_at": r[3],
-            "answered_at": r[4], "admin_reply": r[5]})
+    items = [{"id": r[0], "text": r[1], "status": r[2], "created_at": r[3],
+        "answered_at": r[4], "admin_reply": r[5]} for r in rows]
     return web.json_response({"items": items})
 
 
-async def api_feedback(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_feedback(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     text = (body.get("text") or "").strip()
-    if not text:
-        return web.json_response({"error": "empty"}, status=400)
+    if not text: return web.json_response({"error": "empty"}, status=400)
     if len(text) > 2000: text = text[:2000]
     fid = save_feedback(user_id, f"user_{user_id}", text)
     try:
@@ -2588,57 +2722,43 @@ async def api_feedback(request: web.Request):
     return web.json_response({"ok": True, "id": fid})
 
 
-# ============================================================
-#                  API: ИГРЫ
-# ============================================================
-
-async def api_game_info(request: web.Request):
+async def api_game_info(request):
     init_data = request.query.get("initData", "")
     user_obj = _verify_webapp_init_full(init_data)
-    if not user_obj:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_obj: return web.json_response({"error": "unauthorized"}, status=401)
     user_id = user_obj.id
-    _ensure_user(user_id)
-    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+    _ensure_user(user_id); _update_user_meta(user_id, user_obj.username, user_obj.first_name)
     scores = game_get_scores(user_id)
     tops = {}
     for gid in GAMES:
-        rows = game_leaderboard(gid, 5)
-        items = []
+        rows = game_leaderboard(gid, 5); items = []
         for i, (uid, score, display_name, username) in enumerate(rows):
             if display_name and username: display = f"{display_name} (@{username})"
             elif display_name: display = display_name
             elif username: display = "@" + username
             else: display = f"PLAYER-{str(uid)[-6:].upper()}"
-            items.append({"rank": i + 1, "user_id": uid, "score": score,
-                "display": display, "is_me": uid == user_id})
+            items.append({"rank": i + 1, "user_id": uid, "score": score, "display": display, "is_me": uid == user_id})
         tops[gid] = items
     games_out = []
     for gid, meta in GAMES.items():
         s = scores.get(gid, {"best": 0, "plays": 0})
-        games_out.append({"id": gid, "name": meta["name"], "desc": meta["desc"],
-            "best": s["best"], "plays": s["plays"]})
+        games_out.append({"id": gid, "name": meta["name"], "desc": meta["desc"], "best": s["best"], "plays": s["plays"]})
     return web.json_response({"games": games_out, "scores": scores, "tops": tops})
 
 
-async def api_game_submit(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_game_submit(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_obj = _verify_webapp_init_full(body.get("initData", ""))
-    if not user_obj:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_obj: return web.json_response({"error": "unauthorized"}, status=401)
     user_id = user_obj.id
-    _ensure_user(user_id)
-    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+    _ensure_user(user_id); _update_user_meta(user_id, user_obj.username, user_obj.first_name)
     game_id = (body.get("game_id") or "flappy").strip()
-    if game_id not in GAMES:
-        return web.json_response({"error": "bad_game"}, status=400)
+    if game_id not in GAMES: return web.json_response({"error": "bad_game"}, status=400)
     try: score = int(body.get("score", 0))
-    except Exception: score = 0
+    except: score = 0
     try: bonus_shift = int(body.get("bonus_shift", 0))
-    except Exception: bonus_shift = 0
+    except: bonus_shift = 0
     bonus_shift = max(0, min(bonus_shift, 200))
     result = game_save_score(user_id, game_id, score)
     soft_reward = max(1, score // 2) + bonus_shift
@@ -2647,58 +2767,41 @@ async def api_game_submit(request: web.Request):
     if result["is_record"] and score > 0: hard_reward += 1
     wallet_add(user_id, xp=xp_reward, shift=soft_reward, nova=hard_reward)
     rows = game_leaderboard(game_id, 1)
-    if rows and rows[0][0] == user_id and score > 0:
-        wallet_add(user_id, nova=5)
+    if rows and rows[0][0] == user_id and score > 0: wallet_add(user_id, nova=5)
     check_and_award_achievements(user_id)
     wallet = wallet_get(user_id)
-    lb_rows = game_leaderboard(game_id, 10)
-    items = []
+    lb_rows = game_leaderboard(game_id, 10); items = []
     for i, (uid, s, display_name, username) in enumerate(lb_rows):
         if display_name and username: display = f"{display_name} (@{username})"
         elif display_name: display = display_name
         elif username: display = "@" + username
         else: display = f"PLAYER-{str(uid)[-6:].upper()}"
-        items.append({"rank": i + 1, "user_id": uid, "score": s,
-            "display": display, "is_me": uid == user_id})
-    return web.json_response({"ok": True, "best": result["best"],
-        "is_record": result["is_record"], "plays": result["plays"],
-        "soft_reward": soft_reward, "xp_reward": xp_reward, "hard_reward": hard_reward,
-        "wallet": wallet, "top": items})
+        items.append({"rank": i + 1, "user_id": uid, "score": s, "display": display, "is_me": uid == user_id})
+    return web.json_response({"ok": True, "best": result["best"], "is_record": result["is_record"],
+        "plays": result["plays"], "soft_reward": soft_reward, "xp_reward": xp_reward,
+        "hard_reward": hard_reward, "wallet": wallet, "top": items})
 
-
-# ============================================================
-#                  API: МОРСКОЙ БОЙ
-# ============================================================
 
 def _bs_make_result_for(game, user_id):
-    winner = game.get("winner") or 0
-    bet = game.get("bet") or 0
+    winner = game.get("winner") or 0; bet = game.get("bet") or 0
     if winner == 0: return {"outcome": "draw", "reward": 0, "loss": 0, "wallet": wallet_get(user_id)}
     if winner == user_id: return {"outcome": "win", "reward": bet, "loss": 0, "wallet": wallet_get(user_id)}
     return {"outcome": "lose", "reward": 0, "loss": bet, "wallet": wallet_get(user_id)}
 
 
-async def api_bs_create(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_create(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     try: bet = int(body.get("bet", 0))
-    except Exception: bet = 0
-    if bet not in BS_BET_OPTIONS:
-        return web.json_response({"error": "bad_bet"}, status=400)
-    _ensure_user(user_id)
-    _bs_cleanup_stale_games()
-    _bs_cancel_any_waiting(user_id)
+    except: bet = 0
+    if bet not in BS_BET_OPTIONS: return web.json_response({"error": "bad_bet"}, status=400)
+    _ensure_user(user_id); _bs_cleanup_stale_games(); _bs_cancel_any_waiting(user_id)
     active = _bs_user_in_active_game(user_id)
-    if active:
-        return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
+    if active: return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
     w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
     if not wallet_consume(user_id, "shift", bet):
         return web.json_response({"error": "consume_failed"}, status=500)
     game_id = _bs_new_game_id(); code = _bs_new_code()
@@ -2712,33 +2815,24 @@ async def api_bs_create(request: web.Request):
         "code": code, "bet": bet, "wallet": wallet_get(user_id)})
 
 
-async def api_bs_join(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_join(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     code = (body.get("code") or "").strip()
     if not code or len(code) != 6 or not code.isdigit():
         return web.json_response({"error": "bad_code"}, status=400)
-    _ensure_user(user_id)
-    _bs_cleanup_stale_games()
+    _ensure_user(user_id); _bs_cleanup_stale_games()
     active = _bs_user_in_active_game(user_id)
-    if active:
-        return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
+    if active: return web.json_response({"error": "already_in_game"}, status=400)
     game = _bs_get_game_by_code(code)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
-    if game["p1_id"] == user_id:
-        return web.json_response({"error": "self_join"}, status=400)
-    if game["status"] != "waiting":
-        return web.json_response({"error": "not_waiting"}, status=400)
+    if not game: return web.json_response({"error": "not_found"}, status=404)
+    if game["p1_id"] == user_id: return web.json_response({"error": "self_join"}, status=400)
+    if game["status"] != "waiting": return web.json_response({"error": "not_waiting"}, status=400)
     bet = game["bet"] or 0
     w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
     if not wallet_consume(user_id, "shift", bet):
         return web.json_response({"error": "consume_failed"}, status=500)
     _bs_update_game(game["game_id"], p2_id=user_id, status="placing", turn=1)
@@ -2747,24 +2841,17 @@ async def api_bs_join(request: web.Request):
         "wallet": wallet_get(user_id)})
 
 
-async def api_bs_find(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_find(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     try: bet = int(body.get("bet", 0))
-    except Exception: bet = 0
-    if bet not in BS_BET_OPTIONS:
-        return web.json_response({"error": "bad_bet"}, status=400)
-    _ensure_user(user_id)
-    _bs_cleanup_stale_games()
-    _bs_cancel_any_waiting(user_id)
+    except: bet = 0
+    if bet not in BS_BET_OPTIONS: return web.json_response({"error": "bad_bet"}, status=400)
+    _ensure_user(user_id); _bs_cleanup_stale_games(); _bs_cancel_any_waiting(user_id)
     active = _bs_user_in_active_game(user_id)
-    if active:
-        return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
+    if active: return web.json_response({"error": "already_in_game"}, status=400)
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT game_id, p1_id FROM bs_games WHERE status='waiting' AND bet=? AND p1_id != ? ORDER BY created_at ASC LIMIT 1",
         (bet, user_id)).fetchone()
@@ -2772,8 +2859,7 @@ async def api_bs_find(request: web.Request):
     if row:
         game_id, p1_id = row
         w = wallet_get(user_id)
-        if (w.get("shift") or 0) < bet:
-            return web.json_response({"error": "not_enough_soft"}, status=400)
+        if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
         if not wallet_consume(user_id, "shift", bet):
             return web.json_response({"error": "consume_failed"}, status=500)
         _bs_update_game(game_id, p2_id=user_id, status="placing", turn=1)
@@ -2781,8 +2867,7 @@ async def api_bs_find(request: web.Request):
             "opponent_name": _bs_get_user_name(p1_id), "bet": bet, "side": 2,
             "wallet": wallet_get(user_id)})
     w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
     if not wallet_consume(user_id, "shift", bet):
         return web.json_response({"error": "consume_failed"}, status=500)
     game_id = _bs_new_game_id(); code = _bs_new_code()
@@ -2796,32 +2881,23 @@ async def api_bs_find(request: web.Request):
         "code": code, "bet": bet, "wallet": wallet_get(user_id)})
 
 
-async def api_bs_ready(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_ready(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    game_id = (body.get("game_id") or "").strip()
-    ships = body.get("ships") or []
-    if not game_id:
-        return web.json_response({"error": "no_game"}, status=400)
-    if not _bs_validate_ships(ships):
-        return web.json_response({"error": "bad_ships"}, status=400)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    game_id = (body.get("game_id") or "").strip(); ships = body.get("ships") or []
+    if not game_id: return web.json_response({"error": "no_game"}, status=400)
+    if not _bs_validate_ships(ships): return web.json_response({"error": "bad_ships"}, status=400)
     game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
+    if not game: return web.json_response({"error": "not_found"}, status=404)
     side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
+    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
     ships_json = json.dumps(ships, ensure_ascii=False)
     if side == 1: _bs_update_game(game_id, p1_ships=ships_json, p1_ready=1)
     else: _bs_update_game(game_id, p2_ships=ships_json, p2_ready=1)
     game = _bs_get_game(game_id)
-    both_ready = game["p1_ready"] and game["p2_ready"]
-    if both_ready and game["status"] == "placing":
+    if game["p1_ready"] and game["p2_ready"] and game["status"] == "placing":
         first = random.choice([1, 2])
         _bs_update_game(game_id, status="playing", turn=first)
     game = _bs_get_game(game_id)
@@ -2830,20 +2906,16 @@ async def api_bs_ready(request: web.Request):
         "your_turn": (game["turn"] == side) if game["status"] == "playing" else False})
 
 
-async def api_bs_state(request: web.Request):
+async def api_bs_state(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     game_id = request.query.get("game_id", "")
-    if not game_id:
-        return web.json_response({"error": "no_game"}, status=400)
+    if not game_id: return web.json_response({"error": "no_game"}, status=400)
     game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
+    if not game: return web.json_response({"error": "not_found"}, status=404)
     side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
+    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
     if game["status"] == "finished":
         return web.json_response({"status": "finished", "result": _bs_make_result_for(game, user_id)})
     my_shots = json.loads(game["p1_shots"] if side == 1 else game["p2_shots"])
@@ -2857,8 +2929,7 @@ async def api_bs_state(request: web.Request):
         x = sh.get("x"); y = sh.get("y"); result = "miss"
         for s in enemy_ships:
             if any(c[0] == x and c[1] == y for c in s["cells"]):
-                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in my_shots)
-                    for c in s["cells"])
+                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in my_shots) for c in s["cells"])
                 result = "sunk" if sunk else "hit"
                 break
         my_shots_out.append({"x": x, "y": y, "result": result})
@@ -2867,47 +2938,35 @@ async def api_bs_state(request: web.Request):
         x = sh.get("x"); y = sh.get("y"); result = "miss"
         for s in my_ships:
             if any(c[0] == x and c[1] == y for c in s["cells"]):
-                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in enemy_shots_raw)
-                    for c in s["cells"])
+                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in enemy_shots_raw) for c in s["cells"])
                 result = "sunk" if sunk else "hit"
                 break
         enemy_shots_out.append({"x": x, "y": y, "result": result})
     opponent = game["p2_id"] if side == 1 else game["p1_id"]
     opponent_name = _bs_get_user_name(opponent) if opponent else ""
-    log = [{"type": "miss", "text": f"Враг: ({sh.get('x',0)+1},{sh.get('y',0)+1})"}
-           for sh in enemy_shots_raw[-3:]]
+    log = [{"type": "miss", "text": f"Враг: ({sh.get('x',0)+1},{sh.get('y',0)+1})"} for sh in enemy_shots_raw[-3:]]
     return web.json_response({"status": "playing" if game["status"] == "playing" else game["status"],
         "your_turn": game["turn"] == side, "my_ships": my_ships, "my_shots": my_shots_out,
-        "enemy_shots": enemy_shots_out,
-        "enemy_ships": enemy_ships if game["status"] == "finished" else None,
+        "enemy_shots": enemy_shots_out, "enemy_ships": enemy_ships if game["status"] == "finished" else None,
         "opponent_name": opponent_name, "log": log})
 
 
-async def api_bs_fire(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_fire(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     game_id = (body.get("game_id") or "").strip()
     try:
         x = int(body.get("x")); y = int(body.get("y"))
-    except Exception:
-        return web.json_response({"error": "bad_coords"}, status=400)
-    if x < 0 or x > 9 or y < 0 or y > 9:
-        return web.json_response({"error": "bad_coords"}, status=400)
+    except: return web.json_response({"error": "bad_coords"}, status=400)
+    if x < 0 or x > 9 or y < 0 or y > 9: return web.json_response({"error": "bad_coords"}, status=400)
     game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
+    if not game: return web.json_response({"error": "not_found"}, status=404)
     side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
-    if game["status"] != "playing":
-        return web.json_response({"error": "not_playing"}, status=400)
-    if game["turn"] != side:
-        return web.json_response({"error": "not_your_turn"}, status=400)
+    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
+    if game["status"] != "playing": return web.json_response({"error": "not_playing"}, status=400)
+    if game["turn"] != side: return web.json_response({"error": "not_your_turn"}, status=400)
     if side == 1:
         my_shots = json.loads(game["p1_shots"]); enemy_ships_json = game["p2_ships"]
     else:
@@ -2924,12 +2983,9 @@ async def api_bs_fire(request: web.Request):
         result_type = "miss"; sunk_cells = None
     else:
         my_shots.append({"x": x, "y": y})
-        sunk = all(any(sh.get("x") == c[0] and sh.get("y") == c[1] for sh in my_shots)
-                   for c in hit_ship["cells"])
-        if sunk:
-            result_type = "sunk"; sunk_cells = [[c[0], c[1]] for c in hit_ship["cells"]]
-        else:
-            result_type = "hit"; sunk_cells = None
+        sunk = all(any(sh.get("x") == c[0] and sh.get("y") == c[1] for sh in my_shots) for c in hit_ship["cells"])
+        if sunk: result_type = "sunk"; sunk_cells = [[c[0], c[1]] for c in hit_ship["cells"]]
+        else: result_type = "hit"; sunk_cells = None
         turn_after = side
     if side == 1: _bs_update_game(game_id, p1_shots=json.dumps(my_shots), turn=turn_after)
     else: _bs_update_game(game_id, p2_shots=json.dumps(my_shots), turn=turn_after)
@@ -2940,51 +2996,39 @@ async def api_bs_fire(request: web.Request):
         game = _bs_get_game(game_id)
         check_and_award_achievements(winner)
         return web.json_response({"ok": True, "result": result_type, "sunk_ship": sunk_cells,
-            "your_turn": False, "status": "finished",
-            "result_data": _bs_make_result_for(game, user_id)})
+            "your_turn": False, "status": "finished", "result_data": _bs_make_result_for(game, user_id)})
     game = _bs_get_game(game_id)
     return web.json_response({"ok": True, "result": result_type, "sunk_ship": sunk_cells,
         "your_turn": game["turn"] == side, "status": "playing"})
 
 
-async def api_bs_surrender(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_surrender(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     game_id = (body.get("game_id") or "").strip()
     game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
+    if not game: return web.json_response({"error": "not_found"}, status=404)
     side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
-    if game["status"] == "finished":
-        return web.json_response({"error": "already_finished"}, status=400)
+    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
+    if game["status"] == "finished": return web.json_response({"error": "already_finished"}, status=400)
     opponent = game["p2_id"] if side == 1 else game["p1_id"]
     _bs_finish_game(game_id, opponent, surrender_by=user_id)
     game = _bs_get_game(game_id)
     return web.json_response({"ok": True, "result": _bs_make_result_for(game, user_id)})
 
 
-async def api_bs_cancel(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_cancel(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     game_id = (body.get("game_id") or "").strip()
     game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"ok": True})
+    if not game: return web.json_response({"ok": True})
     side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
+    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
     if game["status"] in ("waiting", "placing"):
         bet = game["bet"] or 0
         if game["p1_id"]: wallet_add(game["p1_id"], shift=bet)
@@ -2994,54 +3038,253 @@ async def api_bs_cancel(request: web.Request):
     return web.json_response({"error": "cant_cancel"}, status=400)
 
 
-async def api_bs_bot_start(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_bot_start(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     try: bet = int(body.get("bet", 0))
-    except Exception: bet = 0
-    if bet not in BS_BET_OPTIONS:
-        return web.json_response({"error": "bad_bet"}, status=400)
+    except: bet = 0
+    if bet not in BS_BET_OPTIONS: return web.json_response({"error": "bad_bet"}, status=400)
     _ensure_user(user_id)
     w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
     if not wallet_consume(user_id, "shift", bet):
         return web.json_response({"error": "consume_failed"}, status=500)
     return web.json_response({"ok": True, "bet": bet, "wallet": wallet_get(user_id)})
 
 
-async def api_bs_finish_bot(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_bs_finish_bot(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     outcome = (body.get("outcome") or "").strip()
     try: bet = int(body.get("bet", 0))
-    except Exception: bet = 0
-    if outcome not in ("win", "lose", "draw"):
-        return web.json_response({"error": "bad_outcome"}, status=400)
+    except: bet = 0
+    if outcome not in ("win", "lose", "draw"): return web.json_response({"error": "bad_outcome"}, status=400)
     if bet not in BS_BET_OPTIONS: bet = 0
     _ensure_user(user_id)
     reward = 0; loss = 0
-    if outcome == "win":
-        wallet_add(user_id, shift=bet * 2, xp=30); reward = bet
+    if outcome == "win": wallet_add(user_id, shift=bet * 2, xp=30); reward = bet
     elif outcome == "lose": loss = bet
     elif outcome == "draw": wallet_add(user_id, shift=bet)
     check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "reward": reward, "loss": loss,
-        "wallet": wallet_get(user_id)})
+    return web.json_response({"ok": True, "reward": reward, "loss": loss, "wallet": wallet_get(user_id)})
 
 
 # ============================================================
-#                  API: ЭКСПОРТ PDF
+#                 API: СТУДХАБ
+# ============================================================
+
+async def api_wall_list(request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    scope = request.query.get("scope", "general")
+    if scope not in ("general", "group"): scope = "general"
+    subject = request.query.get("subject") or None
+    category = request.query.get("category") or None
+    try: limit = min(int(request.query.get("limit", "30")), 100)
+    except: limit = 30
+    try: offset = max(int(request.query.get("offset", "0")), 0)
+    except: offset = 0
+    posts = wall_get_posts(user_id, scope=scope, subject=subject, category=category, limit=limit, offset=offset)
+    items = [_wall_post_dict(p, user_id) for p in posts]
+    return web.json_response({"items": items, "scope": scope})
+
+
+async def api_wall_create(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    if _wall_is_banned(user_id):
+        return web.json_response({"error": "banned", "message": "Ты заблокирован в СтудХабе"}, status=403)
+    text = (body.get("text") or "").strip()
+    if not text: return web.json_response({"error": "empty"}, status=400)
+    if len(text) > 1500: text = text[:1500]
+    category = body.get("category", "question")
+    subject = (body.get("subject") or "").strip() or None
+    scope = body.get("scope", "general")
+    if scope not in ("general", "group"): scope = "general"
+    group_id = None
+    if scope == "group":
+        group_id = _wall_get_group_id(user_id)
+        if not group_id: return web.json_response({"error": "no_group", "message": "Сначала выбери группу"}, status=400)
+    pid = wall_add_post(user_id, text, category, subject, scope, group_id)
+    if not pid: return web.json_response({"error": "failed"}, status=500)
+    wallet_add(user_id, xp=5, shift=1); stats_inc(user_id, "wall_posts", 1)
+    check_and_award_achievements(user_id)
+    return web.json_response({"ok": True, "id": pid})
+
+
+async def api_wall_post_get(request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try: post_id = int(request.query.get("id", "0"))
+    except: post_id = 0
+    post = wall_get_post(post_id)
+    if not post: return web.json_response({"error": "not_found"}, status=404)
+    comments = wall_get_comments(post_id)
+    items = []
+    for c in comments:
+        items.append({"id": c["id"], "user_id": c["user_id"], "author": _wall_get_name(c["user_id"]),
+            "text": c["text"], "likes": c["likes"], "liked": wall_check_like(user_id, "comment", c["id"]),
+            "is_solution": post["solved_comment_id"] == c["id"], "is_mine": c["user_id"] == user_id,
+            "is_admin": user_id == ADMIN_ID, "edited": bool(c.get("edited_at")), "created_at": c["created_at"]})
+    return web.json_response({"post": _wall_post_dict(post, user_id), "comments": items})
+
+
+async def api_wall_comment(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    if _wall_is_banned(user_id): return web.json_response({"error": "banned"}, status=403)
+    try: post_id = int(body.get("post_id", 0))
+    except: post_id = 0
+    text = (body.get("text") or "").strip()
+    if not post_id or not text: return web.json_response({"error": "empty"}, status=400)
+    if len(text) > 1000: text = text[:1000]
+    post = wall_get_post(post_id)
+    if not post: return web.json_response({"error": "not_found"}, status=404)
+    cid = wall_add_comment(post_id, user_id, text)
+    if not cid: return web.json_response({"error": "failed"}, status=500)
+    wallet_add(user_id, xp=3, shift=1); check_and_award_achievements(user_id)
+    return web.json_response({"ok": True, "id": cid})
+
+
+async def api_wall_like(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    target_type = (body.get("target_type") or "").strip()
+    try: target_id = int(body.get("target_id", 0))
+    except: target_id = 0
+    if target_type not in ("post", "comment") or not target_id:
+        return web.json_response({"error": "bad_target"}, status=400)
+    res = wall_toggle_like(user_id, target_type, target_id)
+    return web.json_response({"ok": True, **(res or {})})
+
+
+async def api_wall_solve(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        post_id = int(body.get("post_id", 0)); comment_id = int(body.get("comment_id", 0))
+    except: return web.json_response({"error": "bad_ids"}, status=400)
+    if not post_id or not comment_id: return web.json_response({"error": "bad_ids"}, status=400)
+    ok = wall_mark_solved(post_id, user_id, comment_id)
+    if not ok: return web.json_response({"error": "forbidden"}, status=403)
+    return web.json_response({"ok": True})
+
+
+async def api_wall_edit(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    target_type = (body.get("target_type") or "").strip()
+    try: target_id = int(body.get("target_id", 0))
+    except: target_id = 0
+    new_text = body.get("text")
+    if not target_id: return web.json_response({"error": "bad_id"}, status=400)
+    if target_type == "post":
+        ok = wall_update_post(target_id, user_id, new_text=new_text,
+            new_category=body.get("category"), new_subject=body.get("subject"))
+    elif target_type == "comment":
+        ok = wall_update_comment(target_id, user_id, new_text)
+    else: return web.json_response({"error": "bad_target"}, status=400)
+    if not ok: return web.json_response({"error": "forbidden"}, status=403)
+    return web.json_response({"ok": True})
+
+
+async def api_wall_delete(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    target_type = (body.get("target_type") or "").strip()
+    try: target_id = int(body.get("target_id", 0))
+    except: target_id = 0
+    if target_type == "post": ok = wall_delete_post(target_id, user_id)
+    elif target_type == "comment": ok = wall_delete_comment(target_id, user_id)
+    else: return web.json_response({"error": "bad_target"}, status=400)
+    if not ok: return web.json_response({"error": "forbidden"}, status=403)
+    return web.json_response({"ok": True})
+
+
+async def api_wall_report(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    target_type = (body.get("target_type") or "").strip()
+    try: target_id = int(body.get("target_id", 0))
+    except: target_id = 0
+    reason = (body.get("reason") or "").strip()[:500]
+    if target_type not in ("post", "comment") or not target_id:
+        return web.json_response({"error": "bad_target"}, status=400)
+    wall_report(user_id, target_type, target_id, reason)
+    return web.json_response({"ok": True})
+
+
+async def api_wall_moderation(request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id or user_id != ADMIN_ID: return web.json_response({"error": "forbidden"}, status=403)
+    reports = wall_get_reports(status="new", limit=50); items = []
+    for r in reports:
+        target_preview = ""
+        if r["target_type"] == "post":
+            post = wall_get_post(r["target_id"])
+            if post: target_preview = (post.get("text") or "")[:100]
+        elif r["target_type"] == "comment":
+            conn = sqlite3.connect(DB_PATH)
+            row = conn.execute("SELECT text FROM wall_comments WHERE id=?", (r["target_id"],)).fetchone()
+            conn.close()
+            if row: target_preview = (row[0] or "")[:100]
+        items.append({"id": r["id"], "reporter_id": r["reporter_id"],
+            "reporter": _wall_get_name(r["reporter_id"]), "target_type": r["target_type"],
+            "target_id": r["target_id"], "reason": r["reason"],
+            "created_at": r["created_at"], "preview": target_preview})
+    return web.json_response({"items": items})
+
+
+async def api_wall_ban(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id or user_id != ADMIN_ID: return web.json_response({"error": "forbidden"}, status=403)
+    try: target_id = int(body.get("user_id", 0))
+    except: target_id = 0
+    if not target_id: return web.json_response({"error": "bad_user"}, status=400)
+    try: days = int(body.get("days", 0))
+    except: days = 0
+    reason = (body.get("reason") or "").strip()[:200]
+    _wall_ban_user(target_id, reason, days)
+    return web.json_response({"ok": True})
+
+
+async def api_wall_unban(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id or user_id != ADMIN_ID: return web.json_response({"error": "forbidden"}, status=403)
+    try: target_id = int(body.get("user_id", 0))
+    except: target_id = 0
+    if not target_id: return web.json_response({"error": "bad_user"}, status=400)
+    _wall_unban_user(target_id)
+    return web.json_response({"ok": True})
+
+
+# ============================================================
+#                 PDF / АДМИН / WEBAPP
 # ============================================================
 
 def _find_or_download_pdf_font():
@@ -3052,21 +3295,16 @@ def _find_or_download_pdf_font():
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "fonts/DejaVuSans.ttf",
-    ]
+        "fonts/DejaVuSans.ttf"]
     for p in candidates:
         if os.path.isfile(p): return p
     try:
-        target_dir = os.path.join(base_dir, "fonts")
-        os.makedirs(target_dir, exist_ok=True)
+        target_dir = os.path.join(base_dir, "fonts"); os.makedirs(target_dir, exist_ok=True)
         target = os.path.join(target_dir, "DejaVuSans.ttf")
         import urllib.request
         urls = [
             "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf",
-            "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSans.ttf",
-            "https://github.com/dejavu-fonts/dejavu-fonts/raw/refs/heads/master/ttf/DejaVuSans.ttf",
-        ]
+            "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSans.ttf"]
         for url in urls:
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -3074,12 +3312,12 @@ def _find_or_download_pdf_font():
                     data = resp.read()
                     if len(data) > 100000:
                         with open(target, "wb") as f: f.write(data)
-                        logging.info(f"[PDF FONT] скачан: {target} ({len(data)} байт)")
+                        logging.info(f"[PDF FONT] скачан: {target}")
                         return target
             except Exception as e:
                 logging.warning(f"[PDF FONT] {url}: {e}")
     except Exception as e:
-        logging.warning(f"[PDF FONT] download failed: {e}")
+        logging.warning(f"[PDF FONT] {e}")
     return None
 
 
@@ -3091,17 +3329,14 @@ def _pdf_short(text, limit=120):
 
 
 def generate_user_pdf(user_id):
-    if not _FPDF_AVAILABLE:
-        raise RuntimeError("fpdf2 не установлена")
+    if not _FPDF_AVAILABLE: raise RuntimeError("fpdf2 не установлена")
     font_path = _find_or_download_pdf_font()
-    if not font_path:
-        raise RuntimeError("Не удалось найти шрифт для PDF. Положи DejaVuSans.ttf в папку fonts/ проекта.")
+    if not font_path: raise RuntimeError("Не удалось найти шрифт для PDF")
     data = get_export_data(user_id)
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_font("Main", "", font_path)
-    pdf.set_font("Main", size=11)
-    pdf.add_page()
+    pdf.set_font("Main", size=11); pdf.add_page()
 
     def hr():
         pdf.set_draw_color(200, 200, 200); pdf.set_line_width(0.2)
@@ -3112,8 +3347,7 @@ def generate_user_pdf(user_id):
         pdf.cell(0, 8, title, ln=True)
         pdf.set_text_color(0, 0, 0); pdf.set_font("Main", size=11); hr()
 
-    pdf.set_font("Main", size=22)
-    pdf.cell(0, 12, "Student IRK", ln=True)
+    pdf.set_font("Main", size=22); pdf.cell(0, 12, "Student IRK", ln=True)
     pdf.set_font("Main", size=10); pdf.set_text_color(120, 120, 120)
     now_str = _now_irkutsk().strftime("%d.%m.%Y в %H:%M")
     pdf.cell(0, 6, f"Отчёт от {now_str}", ln=True)
@@ -3130,7 +3364,7 @@ def generate_user_pdf(user_id):
         if data.get("subgroup"): g += f" · подгруппа {data['subgroup']}"
         pdf.cell(0, 6, f"Группа: {g}", ln=True)
     tasks = data.get("tasks", [])
-    section(f"Задачи (всего {len(tasks)})")
+    section(f"Задачи ({len(tasks)})")
     if not tasks: pdf.cell(0, 6, "Нет задач", ln=True)
     else:
         prio_map = {1: "низкий", 2: "средний", 3: "высокий"}
@@ -3164,34 +3398,19 @@ def generate_user_pdf(user_id):
     if grades:
         avg = sum(g["grade"] for g in grades) / len(grades)
         pdf.cell(0, 6, f"Средний балл: {avg:.2f} ({len(grades)} предметов)", ln=True)
-        pdf.ln(1)
         for g in grades:
             auto = " (автомат)" if g.get("is_auto") else ""
             sem = f" · {g['semester']}" if g.get("semester") else ""
             pdf.cell(0, 5.5, f"  {g['subject']}: {g['grade']}{auto}{sem}", ln=True)
     else: pdf.cell(0, 6, "Оценок нет", ln=True)
-    att = data.get("attendance", {})
-    total = sum(att.values())
-    section(f"Посещаемость (отмечено {total})")
+    att = data.get("attendance", {}); total = sum(att.values())
+    section(f"Посещаемость ({total})")
     if total == 0: pdf.cell(0, 6, "Отметок нет", ln=True)
     else:
         pdf.cell(0, 6, f"Посещено: {att.get('was', 0)}", ln=True)
         pdf.cell(0, 6, f"Пропущено: {att.get('missed', 0)}", ln=True)
         pdf.cell(0, 6, f"По болезни: {att.get('sick', 0)}", ln=True)
         pdf.cell(0, 6, f"Уважительная: {att.get('excused', 0)}", ln=True)
-    feedback = data.get("feedback", [])
-    if feedback:
-        section(f"Обращения ({len(feedback)})")
-        for f in feedback[:20]:
-            pdf.set_font("Main", size=10); pdf.set_text_color(130, 130, 130)
-            pdf.cell(0, 5, f"#{f['id']} · {(f.get('created_at') or '')[:10]}", ln=True)
-            pdf.set_text_color(0, 0, 0); pdf.set_font("Main", size=11)
-            pdf.multi_cell(0, 5.5, "    " + _pdf_short(f["text"], 400))
-            if f.get("admin_reply"):
-                pdf.set_font("Main", size=10); pdf.set_text_color(0, 150, 130)
-                pdf.multi_cell(0, 5, "    Ответ: " + _pdf_short(f["admin_reply"], 400))
-                pdf.set_text_color(0, 0, 0)
-            pdf.ln(1)
     pdf.ln(6); hr()
     pdf.set_font("Main", size=9); pdf.set_text_color(150, 150, 150)
     pdf.cell(0, 5, "Сгенерировано Student IRK", ln=True, align="C")
@@ -3200,18 +3419,13 @@ def generate_user_pdf(user_id):
     return bytes(out)
 
 
-async def api_export(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
+async def api_export(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        pdf_bytes = await asyncio.to_thread(generate_user_pdf, user_id)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try: pdf_bytes = await asyncio.to_thread(generate_user_pdf, user_id)
     except Exception as e:
-        logging.exception("[PDF]")
         return web.json_response({"error": "pdf_failed", "message": str(e)}, status=500)
     date_str = _now_irkutsk().strftime("%Y-%m-%d")
     try:
@@ -3219,13 +3433,8 @@ async def api_export(request: web.Request):
         await bot.send_document(user_id, doc, caption="Твой отчёт Student IRK.")
         return web.json_response({"ok": True})
     except Exception as e:
-        logging.error(f"[EXPORT] {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-
-# ============================================================
-#                  API: АДМИН
-# ============================================================
 
 def _admin_only(init_data):
     user_id = _verify_webapp_init(init_data)
@@ -3233,37 +3442,30 @@ def _admin_only(init_data):
     return user_id
 
 
-async def api_admin_stats(request: web.Request):
+async def api_admin_stats(request):
     init_data = request.query.get("initData", "")
-    if not _admin_only(init_data):
-        return web.json_response({"error": "forbidden"}, status=403)
+    if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
     return web.json_response({"total_users": get_total_users(), "vip_count": 0,
         "pending_feedback": len(get_pending_feedback())})
 
 
-async def api_admin_feedback_list(request: web.Request):
+async def api_admin_feedback_list(request):
     init_data = request.query.get("initData", "")
-    if not _admin_only(init_data):
-        return web.json_response({"error": "forbidden"}, status=403)
+    if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
     rows = get_pending_feedback()
     return web.json_response({"items": [{"id": fid, "user_id": uid, "username": uname,
         "text": text, "created": created, "status": status}
         for fid, uid, uname, text, created, status in rows]})
 
 
-async def api_admin_feedback_reply(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    if not _admin_only(body.get("initData", "")):
-        return web.json_response({"error": "forbidden"}, status=403)
+async def api_admin_feedback_reply(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")): return web.json_response({"error": "forbidden"}, status=403)
     fid = int(body.get("id", 0)); reply = (body.get("text") or "").strip()
-    if not fid or not reply:
-        return web.json_response({"error": "empty"}, status=400)
+    if not fid or not reply: return web.json_response({"error": "empty"}, status=400)
     row = get_feedback_by_id(fid)
-    if not row:
-        return web.json_response({"error": "not_found"}, status=404)
+    if not row: return web.json_response({"error": "not_found"}, status=404)
     _, target_uid, _, _ = row
     try:
         await bot.send_message(target_uid, f"Ответ администратора на обращение #{fid}:\n\n{reply}")
@@ -3273,69 +3475,52 @@ async def api_admin_feedback_reply(request: web.Request):
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def api_admin_feedback_postpone(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    if not _admin_only(body.get("initData", "")):
-        return web.json_response({"error": "forbidden"}, status=403)
+async def api_admin_feedback_postpone(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")): return web.json_response({"error": "forbidden"}, status=403)
     fid = int(body.get("id", 0))
-    if not fid:
-        return web.json_response({"error": "no_id"}, status=400)
+    if not fid: return web.json_response({"error": "no_id"}, status=400)
     set_feedback_status(fid, "postponed")
     return web.json_response({"ok": True})
 
 
-async def api_admin_broadcast(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    if not _admin_only(body.get("initData", "")):
-        return web.json_response({"error": "forbidden"}, status=403)
+async def api_admin_broadcast(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")): return web.json_response({"error": "forbidden"}, status=403)
     text = (body.get("text") or "").strip()
-    if not text:
-        return web.json_response({"error": "empty"}, status=400)
+    if not text: return web.json_response({"error": "empty"}, status=400)
     async def _run():
         user_ids = get_all_user_ids()
         sent = failed = 0
         for uid in user_ids:
-            try:
-                await bot.send_message(uid, text); sent += 1
-            except Exception: failed += 1
+            try: await bot.send_message(uid, text); sent += 1
+            except: failed += 1
             await asyncio.sleep(0.05)
-        logging.info(f"[BROADCAST] отправлено {sent}, не доставлено {failed}")
+        logging.info(f"[BROADCAST] {sent} ok, {failed} fail")
     asyncio.create_task(_run())
     return web.json_response({"ok": True, "started": True})
 
 
-async def api_admin_monitor(request: web.Request):
+async def api_admin_monitor(request):
     init_data = request.query.get("initData", "")
-    if not _admin_only(init_data):
-        return web.json_response({"error": "forbidden"}, status=403)
-    check_url = "https://www.istu.edu/raspisanie/"
+    if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(check_url, timeout=aiohttp.ClientTimeout(total=15),
-                                   headers={"User-Agent": "Mozilla/5.0"}) as response:
+            async with session.get("https://www.istu.edu/raspisanie/",
+                timeout=aiohttp.ClientTimeout(total=15),
+                headers={"User-Agent": "Mozilla/5.0"}) as response:
                 return web.json_response({"status": response.status, "ok": response.status == 200})
     except Exception as e:
         return web.json_response({"status": 0, "ok": False, "error": str(e)})
 
 
-# ============================================================
-#                  WEB APP — СЕРВЕР
-# ============================================================
-
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    possible_paths = [
-        os.path.join(base_dir, "webapp"),
-        os.path.join(os.getcwd(), "webapp"),
-        "/app/webapp", "webapp",
-    ]
+    possible_paths = [os.path.join(base_dir, "webapp"), os.path.join(os.getcwd(), "webapp"),
+        "/app/webapp", "webapp"]
     webapp_dir = None
     for p in possible_paths:
         if os.path.isdir(p): webapp_dir = p; break
@@ -3346,7 +3531,7 @@ async def start_webapp():
     app.router.add_get("/api/wallet", api_wallet)
     app.router.add_post("/api/set-name", api_set_name)
     app.router.add_post("/api/set-avatar", api_set_avatar)
-    app.router.add_post("/api/exchange-soft-to-hard", api_exchange_shift_to_nova)
+    app.router.add_post("/api/exchange-soft-to-hard", api_exchange)
     app.router.add_get("/api/groups", api_groups)
     app.router.add_post("/api/set-group", api_set_group)
     app.router.add_post("/api/set-subgroup", api_set_subgroup)
@@ -3395,37 +3580,40 @@ async def start_webapp():
     app.router.add_get("/api/level-rewards", api_level_rewards)
     app.router.add_post("/api/level-reward-claim", api_level_reward_claim)
     app.router.add_get("/api/wallet/leaderboard", api_wallet_leaderboard)
+    app.router.add_get("/api/wall", api_wall_list)
+    app.router.add_post("/api/wall/create", api_wall_create)
+    app.router.add_get("/api/wall/post", api_wall_post_get)
+    app.router.add_post("/api/wall/comment", api_wall_comment)
+    app.router.add_post("/api/wall/like", api_wall_like)
+    app.router.add_post("/api/wall/solve", api_wall_solve)
+    app.router.add_post("/api/wall/edit", api_wall_edit)
+    app.router.add_post("/api/wall/delete", api_wall_delete)
+    app.router.add_post("/api/wall/report", api_wall_report)
+    app.router.add_get("/api/wall/moderation", api_wall_moderation)
+    app.router.add_post("/api/wall/ban", api_wall_ban)
+    app.router.add_post("/api/wall/unban", api_wall_unban)
     app.router.add_get("/api/admin/stats", api_admin_stats)
     app.router.add_get("/api/admin/feedback-list", api_admin_feedback_list)
     app.router.add_post("/api/admin/feedback-reply", api_admin_feedback_reply)
     app.router.add_post("/api/admin/feedback-postpone", api_admin_feedback_postpone)
     app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
     app.router.add_get("/api/admin/monitor", api_admin_monitor)
-
     if webapp_dir:
-        logging.info(f"[WEB] отдаю статику из {webapp_dir}")
         async def index_handler(request):
-            index_path = os.path.join(webapp_dir, "index.html")
-            if os.path.isfile(index_path): return web.FileResponse(index_path)
-            return web.Response(text="index.html not found", status=404)
+            p = os.path.join(webapp_dir, "index.html")
+            return web.FileResponse(p) if os.path.isfile(p) else web.Response(text="not found", status=404)
         async def style_handler(request):
-            path = os.path.join(webapp_dir, "style.css")
-            if os.path.isfile(path): return web.FileResponse(path, headers={"Content-Type": "text/css"})
-            return web.Response(text="not found", status=404)
+            p = os.path.join(webapp_dir, "style.css")
+            return web.FileResponse(p, headers={"Content-Type": "text/css"}) if os.path.isfile(p) else web.Response(status=404)
         async def appjs_handler(request):
-            path = os.path.join(webapp_dir, "app.js")
-            if os.path.isfile(path): return web.FileResponse(path, headers={"Content-Type": "application/javascript"})
-            return web.Response(text="not found", status=404)
-        async def favicon_handler(request):
-            return web.Response(status=204)
+            p = os.path.join(webapp_dir, "app.js")
+            return web.FileResponse(p, headers={"Content-Type": "application/javascript"}) if os.path.isfile(p) else web.Response(status=404)
+        async def favicon_handler(request): return web.Response(status=204)
         async def asset_handler(request):
-            name = request.match_info.get("name", "")
-            safe_name = os.path.basename(name)
-            if not safe_name or safe_name.startswith("."):
-                return web.Response(status=404)
-            path = os.path.join(webapp_dir, "assets", safe_name)
-            if os.path.isfile(path): return web.FileResponse(path)
-            return web.Response(status=404)
+            name = request.match_info.get("name", ""); safe_name = os.path.basename(name)
+            if not safe_name or safe_name.startswith("."): return web.Response(status=404)
+            p = os.path.join(webapp_dir, "assets", safe_name)
+            return web.FileResponse(p) if os.path.isfile(p) else web.Response(status=404)
         app.router.add_get("/", index_handler)
         app.router.add_get("/index.html", index_handler)
         app.router.add_get("/style.css", style_handler)
@@ -3433,43 +3621,28 @@ async def start_webapp():
         app.router.add_get("/favicon.ico", favicon_handler)
         app.router.add_get("/assets/{name}", asset_handler)
     else:
-        logging.warning("[WEB] папка webapp не найдена")
         async def root(request): return web.Response(text="webapp not found", status=404)
         app.router.add_get("/", root)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logging.info(f"[WEB] сервер запущен на 0.0.0.0:{port}")
+    runner = web.AppRunner(app); await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port); await site.start()
+    logging.info(f"[WEB] на 0.0.0.0:{port}")
 
-
-# ============================================================
-#                  AIOGRAM ХЕНДЛЕРЫ
-# ============================================================
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     _ensure_user(message.from_user.id)
-    try:
-        _update_user_meta(message.from_user.id, message.from_user.username, message.from_user.first_name)
-    except Exception:
-        pass
+    try: _update_user_meta(message.from_user.id, message.from_user.username, message.from_user.first_name)
+    except: pass
     if not WEBAPP_URL:
-        await message.answer("Приложение ещё не настроено. Обратись к администратору.")
-        return
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]
-    ])
-    await message.answer("Привет! Открой приложение — там расписание, задачи, заметки и многое другое.", reply_markup=kb)
+        await message.answer("Приложение ещё не настроено."); return
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]])
+    await message.answer("Привет! Открой приложение.", reply_markup=kb)
 
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа.")
-        return
-    await message.answer("АДМИН-КОМАНДЫ (всё остальное — в Mini App, вкладка «Админ»):\n\n"
-        "/backup — прислать файл users.db\n/restore — восстановить базу (пришли .db с подписью /restore)\n/admin — эта справка")
+    if message.from_user.id != ADMIN_ID: await message.answer("Только для админа."); return
+    await message.answer("АДМИН-КОМАНДЫ:\n/backup — прислать users.db\n/restore — восстановить базу\n/admin — справка")
 
 
 @dp.message(Command("backup"))
@@ -3478,29 +3651,21 @@ async def cmd_backup(message: Message):
     try:
         total = get_total_users()
         doc = FSInputFile(DB_PATH, filename="users_backup.db")
-        await message.answer_document(doc, caption=f"Резервная копия. Всего пользователей: {total}")
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
+        await message.answer_document(doc, caption=f"Резервная копия. Всего: {total}")
+    except Exception as e: await message.answer(f"Ошибка: {e}")
 
 
 @dp.message(Command("restore"))
 async def cmd_restore(message: Message):
     if message.from_user.id != ADMIN_ID: return
-    if not message.document:
-        await message.answer("Пришли файл .db с командой /restore в подписи.")
-        return
+    if not message.document: await message.answer("Пришли .db с /restore."); return
     try:
         file = await bot.get_file(message.document.file_id)
         await bot.download_file(file.file_path, DB_PATH)
         init_db()
         await message.answer(f"База восстановлена. Всего: {get_total_users()}")
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
+    except Exception as e: await message.answer(f"Ошибка: {e}")
 
-
-# ============================================================
-#                  ВОРКЕРЫ УВЕДОМЛЕНИЙ
-# ============================================================
 
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
@@ -3515,12 +3680,10 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         label = "Сегодня" if ntype == "today" else "Завтра"
         header = f"{label}, {target_str}"
         if not day:
-            await bot.send_message(user_id, f"{header}\n\nНе удалось загрузить расписание.", parse_mode=None)
-            return
+            await bot.send_message(user_id, f"{header}\n\nНе удалось загрузить.", parse_mode=None); return
         lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
         if not lessons:
-            await bot.send_message(user_id, f"{header}\n\nЗанятий нет.", parse_mode=None)
-            return
+            await bot.send_message(user_id, f"{header}\n\nЗанятий нет.", parse_mode=None); return
         lines = [header, ""]
         for les in lessons:
             time_end = LESSON_TIMES.get(les["time"], "")
@@ -3533,14 +3696,12 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
             if details: lines.append(f"{' · '.join(details)}")
             lines.append("")
         await bot.send_message(user_id, "\n".join(lines), parse_mode=None)
-    except Exception as e:
-        logging.error(f"[NOTIFY] user={user_id} error: {e}")
+    except Exception as e: logging.error(f"[NOTIFY] user={user_id}: {e}")
 
 
 async def send_lesson_reminder(user_id, les, before_min):
     try:
-        subject = les.get("subject", "Пара")
-        time_str = les.get("time", "")
+        subject = les.get("subject", "Пара"); time_str = les.get("time", "")
         text = f"Через {before_min} мин — {subject}"
         if time_str: text += f" в {time_str}"
         details = []
@@ -3548,8 +3709,7 @@ async def send_lesson_reminder(user_id, les, before_min):
         if les.get("teacher"): details.append(les["teacher"])
         if details: text += "\n" + " · ".join(details)
         await bot.send_message(user_id, text, parse_mode=None)
-    except Exception as e:
-        logging.error(f"[REMIND] user={user_id}: {e}")
+    except Exception as e: logging.error(f"[REMIND] user={user_id}: {e}")
 
 
 async def send_daily_quotes():
@@ -3559,17 +3719,15 @@ async def send_daily_quotes():
     text = f"Цитата дня\n\n{quote}"
     for uid in subs:
         try: await bot.send_message(uid, text, parse_mode=None)
-        except Exception: pass
+        except: pass
         await asyncio.sleep(0.05)
 
 
 async def notification_worker():
-    logging.info("[NOTIFY] воркер запущен")
     last_quote_date = None
     while True:
         try:
-            now = _now_irkutsk()
-            today_str = now.strftime("%Y-%m-%d")
+            now = _now_irkutsk(); today_str = now.strftime("%Y-%m-%d")
             hh, mm = now.hour, now.minute
             for uid, gid, subgroup, ntype, nh, nm in get_users_for_notification():
                 if nh == hh and nm == mm:
@@ -3577,18 +3735,15 @@ async def notification_worker():
             if hh == 10 and mm == 0 and last_quote_date != today_str:
                 last_quote_date = today_str
                 await send_daily_quotes()
-        except Exception:
-            logging.exception("[NOTIFY WORKER]")
+        except: logging.exception("[NOTIFY]")
         await asyncio.sleep(60 - datetime.now().second)
 
 
 async def lesson_reminder_worker():
-    logging.info("[REMIND] воркер запущен")
     sent_keys = set()
     while True:
         try:
-            now = _now_irkutsk()
-            today_str = now.strftime("%d.%m.%Y")
+            now = _now_irkutsk(); today_str = now.strftime("%d.%m.%Y")
             if len(sent_keys) > 20000: sent_keys.clear()
             html_cache = {}
             for uid, gid, subgroup, before_min in get_users_for_lesson_reminder():
@@ -3610,25 +3765,22 @@ async def lesson_reminder_worker():
                         try:
                             hh_s, mm_s = time_str.split(":")
                             lesson_dt = now.replace(hour=int(hh_s), minute=int(mm_s), second=0, microsecond=0)
-                        except Exception: continue
+                        except: continue
                         delta_min = (lesson_dt - now).total_seconds() / 60
                         if abs(delta_min - before_min) < 1:
                             key = (uid, today_str, time_str, before_min)
                             if key in sent_keys: continue
                             sent_keys.add(key)
                             await send_lesson_reminder(uid, les, before_min)
-                except Exception as e:
-                    logging.error(f"[REMIND] user={uid}: {e}")
-        except Exception:
-            logging.exception("[REMIND WORKER]")
+                except: pass
+        except: logging.exception("[REMIND]")
         await asyncio.sleep(60)
 
 
 async def check_schedule_changes():
     users = get_users_for_change_tracking()
     if not users: return
-    html_cache = {}
-    now = _now_irkutsk()
+    html_cache = {}; now = _now_irkutsk()
     for uid, group_id, subgroup in users:
         try:
             for offset in (0, 1):
@@ -3649,51 +3801,34 @@ async def check_schedule_changes():
                     save_snapshot(group_id, week_start_str, new_snap)
                     label = "текущей" if offset == 0 else "следующей"
                     try:
-                        await bot.send_message(uid,
-                            f"Изменения в расписании\n\nОбнаружены правки на {label} неделе.", parse_mode=None)
-                    except Exception as e:
-                        logging.error(f"[CHANGE] notify user={uid}: {e}")
-        except Exception as e:
-            logging.error(f"[CHANGE] user={uid}: {e}")
+                        await bot.send_message(uid, f"Изменения в расписании\n\nОбнаружены правки на {label} неделе.", parse_mode=None)
+                    except: pass
+        except: pass
 
 
 async def change_worker():
-    logging.info("[CHANGE] воркер запущен")
     await asyncio.sleep(180)
     while True:
-        try:
-            await check_schedule_changes()
-        except Exception:
-            logging.exception("[CHANGE WORKER]")
+        try: await check_schedule_changes()
+        except: logging.exception("[CHANGE]")
         await asyncio.sleep(1800)
 
 
 async def bs_cleanup_worker():
-    logging.info("[BS CLEANUP] воркер запущен")
     while True:
-        try:
-            _bs_cleanup_stale_games()
-        except Exception:
-            logging.exception("[BS CLEANUP]")
+        try: _bs_cleanup_stale_games()
+        except: pass
         await asyncio.sleep(600)
 
 
-# ============================================================
-#                            MAIN
-# ============================================================
-
 async def main():
-    logging.basicConfig(level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
         stream=sys.stdout, force=True)
     init_db()
     await bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Webhook удалён, polling")
     try:
-        if _FPDF_AVAILABLE:
-            await asyncio.to_thread(_find_or_download_pdf_font)
-    except Exception as e:
-        logging.warning(f"[PDF FONT preload] {e}")
+        if _FPDF_AVAILABLE: await asyncio.to_thread(_find_or_download_pdf_font)
+    except: pass
     asyncio.create_task(start_webapp())
     asyncio.create_task(notification_worker())
     asyncio.create_task(lesson_reminder_worker())
