@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 
@@ -26,30 +26,17 @@
           <stop offset="0%" stop-color="#3EE6D2"/><stop offset="100%" stop-color="#0E6A63"/>
         </linearGradient>
       </defs>
-      <!-- Шапка выпускника -->
       <polygon points="100,18 180,58 100,98 20,58" fill="url(#gWhite)"/>
       <polygon points="100,98 100,118 60,100 60,80" fill="url(#gCyanD)"/>
       <polygon points="100,98 100,118 140,100 140,80" fill="url(#gCyanD)"/>
       <rect x="98" y="98" width="4" height="22" fill="url(#gCyan)"/>
       <circle cx="100" cy="122" r="5" fill="#7FE9FF"/>
-      <!-- Кисточка -->
       <line x1="155" y1="62" x2="155" y2="96" stroke="#7FE9FF" stroke-width="3"/>
       <rect x="150" y="96" width="10" height="16" rx="4" fill="#7FE9FF"/>
-      <!-- Лента-S -->
-      <path d="M35 122 
-               C35 100 80 95 100 112 
-               C120 129 165 132 165 154 
-               C165 178 120 185 100 168 
-               C80 151 35 148 35 122 Z"
-            fill="url(#gCyan)" opacity="0.92"/>
-      <!-- Молния -->
-      <polygon points="108,102 72,146 96,146 84,182 134,134 108,134 122,102"
-               fill="#FFFFFF" stroke="#3EE6D2" stroke-width="2"/>
-      <!-- Пламя -->
-      <path d="M168 100 C180 118 188 134 182 156 C175 172 158 176 154 160 C150 142 162 122 168 100 Z"
-            fill="url(#gCyanD)"/>
-      <path d="M170 118 C177 130 180 142 175 152 C170 160 162 160 162 146 C162 134 166 126 170 118 Z"
-            fill="#7FE9FF" opacity="0.85"/>
+      <path d="M35 122 C35 100 80 95 100 112 C120 129 165 132 165 154 C165 178 120 185 100 168 C80 151 35 148 35 122 Z" fill="url(#gCyan)" opacity="0.92"/>
+      <polygon points="108,102 72,146 96,146 84,182 134,134 108,134 122,102" fill="#FFFFFF" stroke="#3EE6D2" stroke-width="2"/>
+      <path d="M168 100 C180 118 188 134 182 156 C175 172 158 176 154 160 C150 142 162 122 168 100 Z" fill="url(#gCyanD)"/>
+      <path d="M170 118 C177 130 180 142 175 152 C170 160 162 160 162 146 C162 134 166 126 170 118 Z" fill="#7FE9FF" opacity="0.85"/>
     </svg>
   </div>
   <div class="splash-text">STUDENT IRK</div>
@@ -101,7 +88,6 @@
   </nav>
 </div>
 
-<!-- FLAPPY -->
 <div class="fullscreen-screen" id="screen-flappy" style="display:none">
   <div class="flappy-top">
     <div class="flappy-score" id="flappyScore">0</div>
@@ -122,7 +108,6 @@
   </div>
 </div>
 
-<!-- УРОВНИ -->
 <div class="fullscreen-screen" id="screen-levels" style="display:none">
   <div class="levels-top">
     <button class="levels-back" id="levelsBack">‹</button>
@@ -149,7 +134,6 @@
   <div class="levels-list" id="levelsList"></div>
 </div>
 
-<!-- МОРСКОЙ БОЙ -->
 <div class="fullscreen-screen" id="screen-bs" style="display:none">
   <div class="bs-top">
     <button class="levels-back" id="bsBack">‹</button>
@@ -190,7 +174,6 @@
   </div>
 </div>
 
-<!-- МОДАЛКА -->
 <div class="modal" id="modal" style="display:none">
   <div class="modal-backdrop" data-close-modal></div>
   <div class="modal-box" id="modalBox">
@@ -200,9 +183,8 @@
   </div>
 </div>
 
-<!-- ТОСТ -->
 <div class="toast-wrap" id="toastWrap"></div>
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
