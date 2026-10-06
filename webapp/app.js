@@ -45,8 +45,8 @@ setTimeout(() => {
 }, 1200);
 
 const AVATARS = [
-    { idx: 0, path: 'assets/student.webp' },
-    { idx: 1, path: 'assets/avatar-1.webp' },
+    { idx: 0, path: 'assets/hero-avatar.webp' },
+    { idx: 1, path: 'assets/hero-avatar-2.webp' },
 ];
 function avatarPathByIdx(idx) {
     const found = AVATARS.find(a => a.idx === idx);
@@ -87,6 +87,7 @@ const state = {
     exportPending: false,
     gamePhase: 'start',
     tutorialShown: {},
+    navScrollAtStart: true,
 
     exchangeOpen: false,
     exchangeAmount: 100,
@@ -286,137 +287,194 @@ let heroSpriteReady = false;
         }
     };
     img.onerror = () => { heroSprite = null; heroSpriteReady = false; };
-    img.src = 'assets/hero.webp';
+    img.src = 'assets/hero-flappy.webp';
 })();
 
-function studentAvatarSvg() {
-    const idx = state.wallet?.avatar_idx || 0;
-    const path = avatarPathByIdx(idx);
-    return `<img src="${path}" alt="Аватар" class="profile-avatar-img"
-        onerror="this.outerHTML = studentAvatarFallback();">`;
+// ============================================================
+//   SVG-ФОЛБЭКИ (если картинок нет в assets)
+// ============================================================
+
+function fallbackCoinSoft() {
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <defs><radialGradient id="fbCoinS" cx="35%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#7CFFEE"/><stop offset="55%" stop-color="#00E5C9"/><stop offset="100%" stop-color="#00A891"/>
+        </radialGradient></defs>
+        <circle cx="32" cy="32" r="28" fill="url(#fbCoinS)"/>
+        <circle cx="32" cy="32" r="22" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+        <path d="M35 12 L22 34 L30 34 L26 52 L42 30 L34 30 Z" fill="#FFFFFF"/>
+    </svg>`;
 }
-function studentAvatarFallback() {
-    return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+function fallbackCoinHard() {
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="fbCoinH" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#FFD700"/><stop offset="60%" stop-color="#FFB020"/><stop offset="100%" stop-color="#FF6B35"/>
+        </linearGradient></defs>
+        <path d="M32 6 Q40 18 44 26 Q50 36 44 46 Q40 52 32 58 Q24 52 20 46 Q14 36 20 26 Q24 18 32 6 Z" fill="url(#fbCoinH)"/>
+        <path d="M32 22 Q36 30 38 36 Q40 42 36 46 Q34 48 32 50 Q30 48 28 46 Q24 42 26 36 Q28 30 32 22 Z" fill="#FFEE9C" opacity="0.85"/>
+    </svg>`;
+}
+function fallbackChestDaily() {
+    return `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
         <defs>
-            <radialGradient id="fbGlow" cx="50%" cy="45%" r="60%">
-                <stop offset="0%" stop-color="#00E5D0" stop-opacity="0.35"/>
-                <stop offset="100%" stop-color="#00E5D0" stop-opacity="0"/>
+            <linearGradient id="fbChB" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/></linearGradient>
+            <linearGradient id="fbChL" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFEE9C"/><stop offset="100%" stop-color="#FFD700"/></linearGradient>
+        </defs>
+        <rect x="16" y="52" width="88" height="48" rx="8" fill="url(#fbChB)" stroke="#8A6508" stroke-width="2"/>
+        <path d="M16 58 Q16 26 60 26 Q104 26 104 58 L104 62 L16 62 Z" fill="url(#fbChL)" stroke="#8A6508" stroke-width="2"/>
+        <rect x="16" y="50" width="88" height="7" fill="#8A6508"/>
+        <rect x="52" y="46" width="16" height="26" rx="3" fill="#FFEE9C" stroke="#8A6508" stroke-width="1.5"/>
+        <circle cx="60" cy="58" r="3.5" fill="#8A6508"/>
+    </svg>`;
+}
+function fallbackChestPremium() {
+    return `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="fbPcB" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#C084FC"/><stop offset="100%" stop-color="#6B21A8"/></linearGradient>
+            <linearGradient id="fbPcL" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#E9D5FF"/><stop offset="100%" stop-color="#A855F7"/></linearGradient>
+        </defs>
+        <rect x="16" y="52" width="88" height="48" rx="8" fill="url(#fbPcB)" stroke="#4C1D95" stroke-width="2"/>
+        <path d="M16 58 Q16 26 60 26 Q104 26 104 58 L104 62 L16 62 Z" fill="url(#fbPcL)" stroke="#4C1D95" stroke-width="2"/>
+        <rect x="16" y="50" width="88" height="7" fill="#4C1D95"/>
+        <rect x="52" y="46" width="16" height="26" rx="3" fill="#FFD700" stroke="#8A6508" stroke-width="1.5"/>
+        <circle cx="60" cy="58" r="3.5" fill="#8A6508"/>
+    </svg>`;
+}
+function fallbackHeroAvatar() {
+    return `<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <radialGradient id="fbHeroG" cx="50%" cy="45%" r="55%">
+                <stop offset="0%" stop-color="#00E5C9" stop-opacity="0.7"/>
+                <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
             </radialGradient>
-            <linearGradient id="fbSkin" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#eec096"/><stop offset="100%" stop-color="#c99568"/>
-            </linearGradient>
-            <linearGradient id="fbHood" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#1b2540"/><stop offset="100%" stop-color="#060a12"/>
-            </linearGradient>
-            <radialGradient id="fbEye" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#fff"/>
-                <stop offset="40%" stop-color="#7CFFEE"/>
-                <stop offset="100%" stop-color="#00E5D0" stop-opacity="0"/>
+            <radialGradient id="fbHeroS" cx="50%" cy="35%" r="65%">
+                <stop offset="0%" stop-color="#E5B896"/><stop offset="100%" stop-color="#A87A5E"/>
+            </radialGradient>
+            <radialGradient id="fbHeroE" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#FFFFFF"/><stop offset="30%" stop-color="#7CFFEE"/><stop offset="100%" stop-color="#00E5C9" stop-opacity="0.2"/>
             </radialGradient>
         </defs>
-        <circle cx="100" cy="100" r="98" fill="url(#fbGlow)"/>
-        <path d="M20 200 Q20 155 55 145 Q75 152 100 152 Q125 152 145 145 Q180 155 180 200 Z" fill="url(#fbHood)"/>
-        <rect x="85" y="115" width="30" height="28" fill="url(#fbSkin)"/>
-        <ellipse cx="100" cy="88" rx="42" ry="50" fill="url(#fbSkin)"/>
-        <path d="M58 62 Q60 30 100 24 Q140 30 142 62 Q138 48 128 42 Q100 34 72 42 Q62 48 58 62 Z" fill="#3a2418"/>
-        <ellipse cx="82" cy="88" rx="9" ry="6" fill="#0a0d16"/>
-        <ellipse cx="118" cy="88" rx="9" ry="6" fill="#0a0d16"/>
-        <circle cx="82" cy="88" r="14" fill="url(#fbEye)"/>
-        <circle cx="118" cy="88" r="14" fill="url(#fbEye)"/>
-        <circle cx="82" cy="88" r="3" fill="#fff"/>
-        <circle cx="118" cy="88" r="3" fill="#fff"/>
-        <path d="M88 120 Q100 127 112 120" stroke="#5c2a1c" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-    </svg>`;
-}
-function softIconSvg() {
-    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-        <defs><radialGradient id="sfi" cx="40%" cy="35%" r="65%">
-            <stop offset="0%" stop-color="#7CFFEE"/><stop offset="55%" stop-color="#00E5D0"/><stop offset="100%" stop-color="#0A9B8E"/>
-        </radialGradient></defs>
-        <circle cx="32" cy="32" r="26" fill="url(#sfi)" stroke="#00B8A8" stroke-width="2"/>
-        <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.2"/>
-        <text x="32" y="38" font-family="Manrope, sans-serif" font-size="22" font-weight="900" fill="#070B14" text-anchor="middle">₽</text>
-    </svg>`;
-}
-function hardIconSvg() {
-    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-        <defs><radialGradient id="hri" cx="40%" cy="35%" r="65%">
-            <stop offset="0%" stop-color="#FFEE9C"/><stop offset="55%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/>
-        </radialGradient></defs>
-        <circle cx="32" cy="32" r="26" fill="url(#hri)" stroke="#8A6508" stroke-width="2"/>
-        <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.4"/>
-        <text x="32" y="41" font-family="Manrope, sans-serif" font-size="26" font-weight="900" fill="#3D2600" text-anchor="middle">A</text>
-    </svg>`;
-}
-function chestSvg() {
-    return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-            <linearGradient id="chg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/>
-            </linearGradient>
-            <linearGradient id="chg2" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#FFEE9C"/><stop offset="100%" stop-color="#FFD700"/>
-            </linearGradient>
-        </defs>
-        <rect x="14" y="44" width="72" height="40" rx="6" fill="url(#chg)" stroke="#8A6508" stroke-width="1.5"/>
-        <path d="M14 48 Q14 22 50 22 Q86 22 86 48 L86 52 L14 52 Z" fill="url(#chg2)" stroke="#8A6508" stroke-width="1.5"/>
-        <rect x="14" y="42" width="72" height="6" fill="#8A6508"/>
-        <rect x="44" y="38" width="12" height="20" rx="2" fill="#FFEE9C" stroke="#8A6508" stroke-width="1"/>
-        <circle cx="50" cy="48" r="2.5" fill="#B8860B"/>
-    </svg>`;
-}
-function anchorIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="5" r="3"></circle>
-        <line x1="12" y1="22" x2="12" y2="8"></line>
-        <path d="M5 12H2a10 10 0 0 0 20 0h-3"></path>
-    </svg>`;
-}
-function targetIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <circle cx="12" cy="12" r="6"></circle>
-        <circle cx="12" cy="12" r="2"></circle>
-    </svg>`;
-}
-function robotIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="4" y="8" width="16" height="12" rx="2"></rect>
-        <circle cx="9" cy="13" r="1"></circle>
-        <circle cx="15" cy="13" r="1"></circle>
-        <line x1="9" y1="17" x2="15" y2="17"></line>
-        <line x1="12" y1="4" x2="12" y2="8"></line>
-        <circle cx="12" cy="3" r="1"></circle>
-    </svg>`;
-}
-function keyIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-    </svg>`;
-}
-function usersIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-        <circle cx="9" cy="7" r="4"></circle>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        <circle cx="200" cy="200" r="180" fill="url(#fbHeroG)"/>
+        <path d="M40 400 Q40 300 110 275 Q150 288 200 288 Q250 288 290 275 Q360 300 360 400 Z" fill="#1B1B1B"/>
+        <rect x="170" y="245" width="60" height="50" fill="url(#fbHeroS)"/>
+        <ellipse cx="200" cy="180" rx="85" ry="105" fill="url(#fbHeroS)"/>
+        <ellipse cx="165" cy="180" rx="14" ry="10" fill="#0A0A0A"/>
+        <ellipse cx="235" cy="180" rx="14" ry="10" fill="#0A0A0A"/>
+        <circle cx="165" cy="180" r="22" fill="url(#fbHeroE)" opacity="0.8"/>
+        <circle cx="235" cy="180" r="22" fill="url(#fbHeroE)" opacity="0.8"/>
+        <circle cx="165" cy="180" r="4" fill="#FFFFFF"/>
+        <circle cx="235" cy="180" r="4" fill="#FFFFFF"/>
     </svg>`;
 }
 
-function _computeModals() {
-    if (state.nameEditor) return renderNameEditorModal();
-    if (state.chestModal) return renderChestModal();
-    if (state.premiumModal) return renderPremiumModal();
-    if (state.achModal) return renderAchModal();
-    if (state.levelInfoModal) return renderLevelInfoModal();
-    if (state.currencyInfoModal) return renderCurrencyInfoModal();
-    if (state.newAchToast) return renderNewAchToast();
-    if (state.exchangeOpen) return renderExchangeModal();
-    if (state.bsJoinModal) return renderBSJoinModal();
-    if (state.scholarshipAmountModal) return renderScholarshipAmountModal();
-    if (state.adminReplyModal) return renderAdminReplyModal();
-    return '';
+function imgWithFallback(src, alt, className, fallbackSvg) {
+    return `<img src="${src}" alt="${escapeHtml(alt)}" class="${className}"
+        onerror="this.style.display='none';this.insertAdjacentHTML('afterend','${fallbackSvg.replace(/'/g, "\\'").replace(/\n/g, '')}')">`;
 }
+
+
+// ============================================================
+//                       SPLASH
+// ============================================================
+
+function initSplash() {
+    const splash = document.getElementById('splash');
+    if (!splash) return;
+    const logoEl = splash.querySelector('.splash-logo');
+    if (logoEl && !logoEl.querySelector('img')) {
+        const img = document.createElement('img');
+        img.src = 'assets/logo-splash.webp';
+        img.alt = 'STUDENT IRK';
+        img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block';
+        img.onerror = () => { img.remove(); logoEl.innerHTML = fallbackSplashLogo(); };
+        logoEl.appendChild(img);
+    }
+}
+
+function fallbackSplashLogo() {
+    return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="fbLogoGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#00E5C9"/>
+                <stop offset="100%" stop-color="#00A891"/>
+            </linearGradient>
+            <radialGradient id="fbLogoGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#00E5C9" stop-opacity="0.6"/>
+                <stop offset="100%" stop-color="#00E5C9" stop-opacity="0"/>
+            </radialGradient>
+        </defs>
+        <circle cx="100" cy="100" r="95" fill="url(#fbLogoGlow)"/>
+        <path d="M62 30 L42 90 L66 90 L50 150 L96 82 L70 82 L90 30 Z" fill="url(#fbLogoGrad)" stroke="#00E5C9" stroke-width="2" stroke-linejoin="round"/>
+    </svg>`;
+}
+
+// ============================================================
+//                       HEADER
+// ============================================================
+
+function renderHeaderCurrency() {
+    const w = state.wallet || {};
+    return `<div class="header-currency">
+        <div class="header-currency-item">
+            ${imgWithFallback('assets/coin-soft.webp', 'Софт', 'hdr-coin', fallbackCoinSoft())}
+            <span>${formatNumber(w.soft || 0)}</span>
+        </div>
+        <div class="header-currency-divider">/</div>
+        <div class="header-currency-item">
+            ${imgWithFallback('assets/coin-hard.webp', 'Хард', 'hdr-coin', fallbackCoinHard())}
+            <span>${formatHtmlNum(w.hard || 0)}</span>
+        </div>
+    </div>`;
+}
+function formatHtmlNum(n) { return formatNumber(n); }
+
+function updateHeaderCurrency() {
+    const el = document.querySelector('.header-currency');
+    if (!el) return;
+    const w = state.wallet || {};
+    el.outerHTML = renderHeaderCurrency();
+}
+
+// ============================================================
+//                       ИКОНКИ
+// ============================================================
+
+function softIconImg(size = 40) {
+    return `<img src="assets/coin-soft.webp" alt="Софт" style="width:${size}px;height:${size}px;object-fit:contain;display:block"
+        onerror="this.outerHTML='<span style=&quot;display:inline-block;width:${size}px;height:${size}px&quot;>${fallbackCoinSoft().replace(/'/g, '&#39;').replace(/"/g, '&quot;')}</span>'">`;
+}
+function hardIconImg(size = 40) {
+    return `<img src="assets/coin-hard.webp" alt="Хард" style="width:${size}px;height:${size}px;object-fit:contain;display:block"
+        onerror="this.outerHTML='<span style=&quot;display:inline-block;width:${size}px;height:${size}px&quot;>${fallbackCoinHard().replace(/'/g, '&#39;').replace(/"/g, '&quot;')}</span>'">`;
+}
+function chestDailyImg(size = 100) {
+    return `<img src="assets/chest-daily.webp" alt="Сундук" style="width:${size}px;height:${size}px;object-fit:contain;display:block;filter:drop-shadow(0 0 24px rgba(255,215,0,0.55))"
+        onerror="this.outerHTML='${fallbackChestDaily().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}'">`;
+}
+function chestPremiumImg(size = 80) {
+    return `<img src="assets/chest-premium.webp" alt="Премиум" style="width:${size}px;height:${size}px;object-fit:contain;display:block;filter:drop-shadow(0 0 20px rgba(168,85,247,0.6))"
+        onerror="this.outerHTML='${fallbackChestPremium().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}'">`;
+}
+function heroAvatarImg(size = 180) {
+    return `<img src="${avatarPathByIdx(state.wallet?.avatar_idx || 0)}" alt="Аватар"
+        style="width:${size}px;height:${size}px;object-fit:cover;object-position:center top;border-radius:50%;display:block"
+        onerror="this.outerHTML='${fallbackHeroAvatar().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}'">`;
+}
+
+function fireIconSvg(size = 20) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="fireSec" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#FFB020"/><stop offset="100%" stop-color="#FF6B35"/>
+            </linearGradient>
+        </defs>
+        <path d="M12 2 Q15 7 16 10 Q18 13 16 17 Q15 20 12 22 Q9 20 8 17 Q6 13 8 10 Q9 7 12 2 Z" fill="url(#fireSec)"/>
+        <path d="M12 9 Q13 12 13.5 14 Q14 16 13 18 Q12.5 19 12 19.5 Q11.5 19 11 18 Q10 16 10.5 14 Q11 12 12 9 Z" fill="#FFEE9C"/>
+    </svg>`;
+}
+
+// ============================================================
+//                       RENDER — ГЛАВНЫЙ
+// ============================================================
 
 function render() {
     const content = document.getElementById('content');
@@ -424,7 +482,7 @@ function render() {
     const appEl = document.getElementById('app');
     const navEl = document.getElementById('bottom-nav');
 
-    const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
+    const titles = { schedule: 'Пары', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
     const modalHtml = _computeModals();
 
@@ -444,7 +502,6 @@ function render() {
         requestAnimationFrame(() => initGame());
         return;
     }
-
     if (state.gameView === 'battleship') {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = 'Морской бой';
@@ -453,7 +510,6 @@ function render() {
         attachHandlers();
         return;
     }
-
     if (state.taskEditor) {
         appEl?.classList.add('picker-open');
         if (title) title.textContent = state.taskEditorId ? 'Изменить задачу' : 'Новая задача';
@@ -507,7 +563,7 @@ function render() {
     appEl?.classList.remove('picker-open');
     if (navEl) navEl.style.display = '';
 
-    title.textContent = titles[state.tab] || 'Студент';
+    title.textContent = titles[state.tab] || 'STUDENT IRK';
 
     let html = '';
     if (state.loading) html = renderLoading();
@@ -525,700 +581,852 @@ function render() {
     }
 
     content.innerHTML = html + modalHtml;
+
+    // Хедер-лого
+    const hdrLogo = document.querySelector('.header-logo');
+    if (hdrLogo && !hdrLogo.querySelector('img')) {
+        const img = document.createElement('img');
+        img.src = 'assets/logo-header.webp';
+        img.alt = 'STUDENT IRK';
+        img.style.cssText = 'width:100%;height:100%;object-fit:contain';
+        img.onerror = () => { img.remove(); hdrLogo.innerHTML = fallbackSplashLogo(); };
+        hdrLogo.appendChild(img);
+    }
+
+    // Кнопки навигации
     document.querySelectorAll('.nav-btn').forEach((btn) => {
         const isAdmin = btn.dataset.tab === 'admin';
         btn.style.display = (isAdmin && !state.isAdmin) ? 'none' : '';
         btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
+
+    // Currency в хедере
+    updateHeaderCurrency();
+
     attachHandlers();
     if (state.tab === 'schedule') attachScheduleSwipe();
     syncChestTimer();
+    initNavScrollHint();
+    syncNavActiveIntoView();
 }
 
-function stopChestTimer() {
-    if (state.chestTimer) { clearInterval(state.chestTimer); state.chestTimer = null; }
-}
-function syncChestTimer() {
-    if (state.tab !== 'profile') { stopChestTimer(); return; }
-    if (!state.chest || state.chest.can_open) { stopChestTimer(); return; }
-    if (!state.chest.next_at) { stopChestTimer(); return; }
-    if (!state.chestTimer) state.chestTimer = setInterval(updateChestTimer, 1000);
-    updateChestTimer();
-}
-async function updateChestTimer() {
-    if (!state.chest || state.chest.can_open || !state.chest.next_at) { stopChestTimer(); return; }
-    const next = new Date(state.chest.next_at);
-    const diff = next.getTime() - Date.now();
-    if (diff <= 0) {
-        try { state.chest = await apiGet('/api/chest/status'); } catch (e) {}
-        stopChestTimer(); render(); return;
+// ============================================================
+//                       НАВИГАЦИЯ — СКРОЛЛ
+// ============================================================
+
+function initNavScrollHint() {
+    const nav = document.getElementById('bottom-nav');
+    if (!nav || nav.dataset.scrollBound === '1') return;
+    nav.dataset.scrollBound = '1';
+
+    function checkEnd() {
+        if (nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 4) {
+            nav.classList.add('scrolled-end');
+        } else {
+            nav.classList.remove('scrolled-end');
+        }
     }
-    const hh = String(Math.floor(diff / 3600000)).padStart(2, '0');
-    const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
-    const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
-    const el = document.getElementById('chest-timer');
-    if (el) el.textContent = `${hh}:${mm}:${ss}`;
+    nav.addEventListener('scroll', checkEnd, { passive: true });
+    checkEnd();
+
+    // Подсказка-«дыхание» при первом заходе
+    try {
+        if (localStorage.getItem('nav_hint_shown') !== '1') {
+            setTimeout(() => {
+                nav.scrollTo({ left: 40, behavior: 'smooth' });
+                setTimeout(() => {
+                    nav.scrollTo({ left: 0, behavior: 'smooth' });
+                    localStorage.setItem('nav_hint_shown', '1');
+                }, 600);
+            }, 800);
+        }
+    } catch (e) {}
 }
 
-function renderBalanceCard() {
-    const w = state.wallet || {};
-    const lvl = w.level || 1;
-    const xpIn = w.xp_in_level || 0;
-    const xpNext = w.xp_to_next || 500;
-    const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
-    return `<div class="balance-card">
-        <div class="balance-header">
-            <div class="balance-title">Баланс</div>
-            <div class="balance-level-tag">LVL ${lvl}</div>
-        </div>
-        <div class="balance-grid">
-            <div class="balance-tile soft">
-                <div class="balance-tile-icon">${softIconSvg()}</div>
-                <div class="balance-tile-value">${formatNumber(w.soft || 0)}</div>
-                <div class="balance-tile-label">Стипух</div>
-            </div>
-            <div class="balance-tile hard">
-                <div class="balance-tile-icon">${hardIconSvg()}</div>
-                <div class="balance-tile-value">${formatNumber(w.hard || 0)}</div>
-                <div class="balance-tile-label">Автоматов</div>
-            </div>
-        </div>
-        <div class="balance-xp-row">
-            <div class="balance-xp-bar"><div class="balance-xp-fill" style="width:${xpPct}%"></div></div>
-            <div class="balance-xp-text">${xpIn} / ${xpNext} XP</div>
-        </div>
-        <div class="balance-actions">
-            <button class="btn btn-secondary" data-action="exchange-open" style="width:100%">Обменять</button>
-            <button class="btn btn-secondary" data-action="currency-info-open" style="width:100%">Где взять валюту</button>
-        </div>
+function syncNavActiveIntoView() {
+    const nav = document.getElementById('bottom-nav');
+    if (!nav) return;
+    const active = nav.querySelector('.nav-btn.active');
+    if (!active) return;
+    const navRect = nav.getBoundingClientRect();
+    const btnRect = active.getBoundingClientRect();
+    if (btnRect.left < navRect.left || btnRect.right > navRect.right) {
+        active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+}
+
+// ============================================================
+//                 ХЕДЕР + КНОПКИ ВОЗВРАТА
+// ============================================================
+
+function renderSubHeader(backAction, titleText) {
+    return `<div class="picker-header">
+        <button class="picker-back" data-action="${backAction}">←</button>
+        <div class="picker-title">${escapeHtml(titleText)}</div>
     </div>`;
 }
 
-function renderProfile() {
-    const p = state.profile;
-    const w = state.wallet;
+// ============================================================
+//                       РАСПИСАНИЕ
+// ============================================================
+
+function attachScheduleSwipe() {
+    const content = document.getElementById('content');
+    if (!content || content.dataset.swipeBound === '1') return;
+    content.dataset.swipeBound = '1';
+    let startX = 0, startY = 0, tracking = false;
+    content.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        tracking = true;
+    }, { passive: true });
+    content.addEventListener('touchend', (e) => {
+        if (!tracking) return;
+        tracking = false;
+        const dx = e.changedTouches[0].clientX - startX;
+        const dy = e.changedTouches[0].clientY - startY;
+        if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
+        if (state.tab !== 'schedule' || state.scheduleViewMode !== 'today') return;
+        if (dx > 0) { if (state.scheduleDay === 'tomorrow') actionDayToday(); }
+        else { if (state.scheduleDay === 'today') actionDayTomorrow(); }
+    }, { passive: true });
+}
+
+function renderUserBar() {
     const u = state.user;
-    const ach = state.achievements || [];
-    const achGot = ach.filter(a => a.unlocked).length;
-    if (!p) return renderLoading();
-
-    const displayName = (p.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Студент');
-    const playerTag = p.player_tag || `PLAYER-${String(u.id).slice(-6).toUpperCase()}`;
-
-    let html = '';
-    const lvl = w?.level || 1;
-
-    html += `<div class="profile-hero">
-        <div class="profile-name-hero">
-            <span class="profile-name-main">${escapeHtml(displayName)}</span>
-            <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
+    const p = state.profile;
+    const name = (p?.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Гость');
+    const metaParts = [];
+    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
+    if (u.username) metaParts.push('@' + u.username);
+    const meta = metaParts.join(' · ') || 'профиль не заполнен';
+    const tasks = p?.tasks_active ?? 0;
+    const avIdx = state.wallet?.avatar_idx || 0;
+    const avPath = avatarPathByIdx(avIdx);
+    return `
+        <div class="user-bar" data-action="go-profile">
+            <div class="user-bar-avatar">
+                <img src="${avPath}" alt="" onerror="this.outerHTML='${escapeHtml((u.first_name?.[0] || '?').toUpperCase())}'">
+            </div>
+            <div class="user-bar-info">
+                <div class="user-bar-name">${escapeHtml(name)}</div>
+                <div class="user-bar-meta">${escapeHtml(meta)}</div>
+            </div>
+            <div class="user-bar-badges">
+                <div class="user-badge">${tasks} задач</div>
+            </div>
         </div>
-        <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
-        <div class="profile-avatar-wrap">${studentAvatarSvg()}</div>
-        <div class="avatar-change-row">
-            <button class="avatar-change-btn" data-action="avatar-toggle">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" stroke-width="2.2"
-                     stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <polyline points="1 20 1 14 7 14"></polyline>
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                </svg>
-                <span>Сменить аватар</span>
-            </button>
+    `;
+}
+
+function renderLesson(les) {
+    const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
+    const details = [];
+    if (les.teacher) details.push(escapeHtml(les.teacher));
+    if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
+    const att = les.attendance || '';
+    const attLabel = att === 'was' ? '✓' : att === 'missed' ? '✗' : att === 'sick' ? 'Б' : '';
+    return `
+        <div class="lesson">
+            <div class="lesson-time">${escapeHtml(timeRange)}</div>
+            <div class="lesson-body">
+                <div class="lesson-subject">${escapeHtml(les.subject)}${les.type ? ` <span style="color:var(--text-2);font-weight:400">(${escapeHtml(les.type)})</span>` : ''}</div>
+                ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
+                ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
+            </div>
+            <button class="lesson-status ${att}"
+                    data-action="lesson-status"
+                    data-date="${escapeHtml(les.date || '')}"
+                    data-time="${escapeHtml(les.time || '')}"
+                    data-subject="${escapeHtml(les.subject || '')}"
+                    data-status="${att}">${attLabel}</button>
         </div>
-        <div class="profile-level-block" data-action="level-info-open">
-            <div class="profile-level-num">${lvl}<small>LVL</small></div>
-            <div class="profile-level-title">${escapeHtml(w?.level_title || 'Первокурсник')}</div>
-            <div class="profile-level-hint">Как получать XP?</div>
-        </div>
-        <div class="streak-row"><span class="fire">🔥</span> Стрик: ${p.streak || 0} ${p.streak === 1 ? 'день' : 'дн.'}</div>
+    `;
+}
+function renderDaySwitch() {
+    return `<div class="day-switch">
+        <button data-action="day-today" class="${state.scheduleDay === 'today' ? 'active' : ''}">Сегодня</button>
+        <button data-action="day-tomorrow" class="${state.scheduleDay === 'tomorrow' ? 'active' : ''}">Завтра</button>
     </div>`;
-
-    html += renderBalanceCard();
-
-    const chestReady = state.chest?.can_open !== false;
-    html += `<div class="chest-card">
-        <div class="chest-svg">${chestSvg()}</div>
-        <div class="chest-title">Халява дня</div>
-        <div class="chest-sub">${chestReady ? '🎁 Готово к открытию' : '🎁 Сегодняшняя халява уже получена'}</div>
-        ${chestReady ? '' : `<div class="chest-timer" id="chest-timer">--:--:--</div>`}
-        <button class="chest-btn" data-action="chest-open" ${chestReady ? '' : 'disabled'}>
-            ${chestReady ? 'Открыть' : 'Уже открыто'}
-        </button>
-    </div>`;
-
-    const hardHave = w?.hard || 0;
-    const canPremium = hardHave >= 10;
-    html += `<div class="premium-chest-card">
-        <div class="premium-chest-crown">👑</div>
-        <div class="premium-chest-title">Премиум сундук</div>
-        <div class="premium-chest-sub">Стоимость: <strong>10 Автоматов</strong> · у тебя: ${hardHave}</div>
-        <div class="premium-chest-preview">
-            <div class="premium-chest-item">💰 500 Стипух · ⚡ 1000 XP</div>
-            <div class="premium-chest-item">🎁 Бонус: 3 / 5 / 10 / 25 Автоматов</div>
-        </div>
-        <button class="premium-chest-btn" data-action="premium-open" ${canPremium ? '' : 'disabled'}>
-            ${canPremium ? 'Открыть за 10 Автоматов' : 'Нужно 10 Автоматов'}
-        </button>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Достижения: ${achGot} / ${ach.length || 8}</div>
-        <div class="ach-grid">
-            ${ach.length === 0 ? '<div class="card-subtitle">Загрузка...</div>' : ach.map(a => `
-                <div class="ach-item ${a.unlocked ? 'unlocked' : ''}" data-action="ach-open" data-id="${escapeHtml(a.id)}">
-                    <div class="ach-emoji">${a.icon}</div>
-                    <div class="ach-name">${escapeHtml(a.name)}</div>
-                </div>
-            `).join('')}
-        </div>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Статистика</div>
-        <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
-        <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
-        <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
-        <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
-    </div>`;
-
-    const attTotal = p.attendance_total || 0;
-    html += `<div class="card"><div class="card-title">Посещаемость</div>`;
-    if (attTotal === 0) html += `<div class="card-subtitle">Отмечай пары в расписании — здесь появится статистика.</div>`;
-    else {
-        html += `<div class="att-stat-row"><span class="att-stat-label">Всего отмечено</span><span class="att-stat-value">${attTotal}</span></div>`;
-        html += `<div class="att-stat-row"><span class="att-stat-label">Посещено</span><span class="att-stat-value green">${p.attendance_was || 0}</span></div>`;
-        html += `<div class="att-stat-row"><span class="att-stat-label">Пропущено</span><span class="att-stat-value red">${p.attendance_missed || 0}</span></div>`;
-        html += `<div class="att-stat-row"><span class="att-stat-label">По болезни</span><span class="att-stat-value yellow">${p.attendance_sick || 0}</span></div>`;
+}
+function _tomorrowStrIrkutsk() {
+    const nowMs = Date.now();
+    const irkMs = nowMs + (8 * 3600 * 1000) + (new Date().getTimezoneOffset() * 60 * 1000);
+    const tomorrowIrk = new Date(irkMs + 24 * 3600 * 1000);
+    const dd = String(tomorrowIrk.getUTCDate()).padStart(2, '0');
+    const mm = String(tomorrowIrk.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = tomorrowIrk.getUTCFullYear();
+    return `${dd}.${mm}.${yyyy}`;
+}
+function _findDayByDate(days, dateStr) {
+    if (!days) return null;
+    for (const d of days) {
+        if (d && d.date === dateStr) return d;
     }
-    html += `</div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Моя группа</div>
-        <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="choose-group">${p?.group ? 'Изменить' : 'Выбрать группу'}</button>
-            ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
-        </div>
+    return null;
+}
+function getTomorrowData() {
+    const target = _tomorrowStrIrkutsk();
+    if (state.weekDays && state.weekDays.days) {
+        const d = _findDayByDate(state.weekDays.days, target);
+        if (d) return d;
+    }
+    if (state.nextWeekDays && state.nextWeekDays.days) {
+        const d = _findDayByDate(state.nextWeekDays.days, target);
+        if (d) return d;
+    }
+    return null;
+}
+async function ensureWeekLoaded() {
+    if (state.weekDays && state.weekDays.days && state.weekDays.days.length > 0) return true;
+    try { const r = await apiGet('/api/week', { offset: 0 }); state.weekDays = r; return true; }
+    catch (e) { return false; }
+}
+function renderWeekView() {
+    const wd = state.weekDays;
+    if (!wd || !wd.days || wd.days.length === 0) return renderEmpty('Не удалось загрузить расписание на неделю');
+    let title;
+    if (state.weekOffset === 0) title = 'Текущая неделя';
+    else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
+    else title = `Неделя ${state.weekOffset}`;
+    let html = renderUserBar();
+    html += `<div class="day-header">${escapeHtml(title)}</div>`;
+    if (wd.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(wd.group)}${wd.subgroup ? ` · подгруппа ${escapeHtml(wd.subgroup)}` : ''}</div>`;
+    for (const day of wd.days) {
+        html += `<div class="day-header" style="margin-top:16px">${escapeHtml(day.name || day.date)}</div>`;
+        if (!day.lessons || day.lessons.length === 0) html += `<div class="card-subtitle" style="padding:8px 0">Занятий нет</div>`;
+        else for (const les of day.lessons) html += renderLesson(les);
+    }
+    html += `<div class="actions-row" style="margin-top:16px">
+        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+        <button class="btn btn-secondary" data-action="week-today">Сегодня</button>
+        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
     </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Подгруппа</div>
-        <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">—</button>
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
-            <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
-        </div>
+    return html;
+}
+function renderDayCard(day, label) {
+    let html = `<div class="day-header">${escapeHtml(label)}${day.name ? ' · ' + escapeHtml(day.name) : ''}${day.date ? ', ' + escapeHtml(day.date) : ''}</div>`;
+    const p = state.profile;
+    if (p?.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(p.group)}${p.subgroup ? ` · подгруппа ${escapeHtml(p.subgroup)}` : ''}</div>`;
+    if (!day.lessons || day.lessons.length === 0) html += renderEmpty('Занятий нет');
+    else for (const les of day.lessons) html += renderLesson(les);
+    html += `<div class="actions-row">
+        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+        <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
+        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
     </div>`;
-
-    const notifyOn = !!p?.notify_type;
-    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
-    html += `<div class="card">
-        <div class="card-title">Уведомления о расписании</div>
-        <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
-        <div class="actions-row"><button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button></div>
-        <label class="checkbox-row">
-            <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
-            <span>Следить за изменениями в расписании</span>
-        </label>
-        <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
-        <div class="nbf-buttons">
-            ${[0, 10, 15, 30].map(m => `
-                <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
-                        data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
-            `).join('')}
-        </div>
+    return html;
+}
+function renderSchedule() {
+    if (state.scheduleViewMode === 'week' && state.weekDays) return renderWeekView();
+    const s = state.schedule;
+    if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
+        return renderUserBar() + `
+            <div class="hero-banner" data-action="go-profile">
+                <div class="hero-banner-overlay"></div>
+                <div class="hero-banner-content">
+                    <div class="hero-banner-title">Как <span class="accent">начать</span></div>
+                    <div class="hero-banner-sub">1. Профиль → Выбрать группу<br>2. Укажи институт, курс и группу<br>3. Вернись — расписание появится</div>
+                    <button class="hero-banner-btn" data-action="go-profile">Выбрать группу</button>
+                </div>
+            </div>
+        `;
+    }
+    let html = renderUserBar() + renderDaySwitch();
+    if (state.scheduleDay === 'tomorrow') {
+        if (!state.weekDays) return html + renderLoading();
+        const tomorrow = getTomorrowData();
+        if (!tomorrow) return html + renderEmpty('Не удалось загрузить расписание на завтра');
+        return html + renderDayCard(tomorrow, 'Завтра');
+    }
+    if (!s) return html + renderEmpty('Нет данных о расписании');
+    if (s.error) return html + renderEmpty(s.message || 'Ошибка загрузки');
+    const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
+    html += `<div class="day-header">${escapeHtml(header)}</div>`;
+    if (s.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${s.subgroup ? ` · подгруппа ${escapeHtml(s.subgroup)}` : ''}</div>`;
+    if (!s.lessons || s.lessons.length === 0) html += renderEmpty('Занятий нет');
+    else for (const les of s.lessons) html += renderLesson(les);
+    html += `<div class="actions-row">
+        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+        <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
+        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
     </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Цитата дня</div>
-        <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
-        <div class="actions-row">
-            ${p?.daily_subscribed
-                ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
-                : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
-        </div>
-    </div>`;
-
-    html += renderScholarshipCard();
-    html += renderMyFeedbackCard();
-
-    html += `<div class="card">
-        <div class="card-title">Обратная связь</div>
-        <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
-        <button class="btn" data-action="feedback-send">Отправить</button>
-    </div>`;
-
-    html += `<div class="card">
-        <div class="card-title">Экспорт данных</div>
-        <div class="export-hint">PDF-файл со всеми данными: задачи, заметки, оценки, посещаемость.</div>
-        <button class="btn btn-secondary" data-action="export-data" style="width:100%" ${state.exportPending ? 'disabled' : ''}>${state.exportPending ? 'Готовлю PDF...' : 'Скачать PDF'}</button>
-    </div>`;
-
     return html;
 }
 
-function renderCurrencyInfoModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Откуда взять валюту</div>
-            <div class="info-modal-sub">Все способы получать Стипухи и Автоматы</div>
+// ============================================================
+//                       ПИКЕРЫ ГРУПП
+// ============================================================
 
-            <div class="currency-info-section">
-                <div class="currency-info-section-title soft">${softIconSvg()} Стипухи</div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Добавить задачу</span><span class="currency-info-row-value soft">+1</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Выполнить задачу</span><span class="currency-info-row-value soft">+5</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Новая заметка</span><span class="currency-info-row-value soft">+1</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Добавить оценку</span><span class="currency-info-row-value soft">+1</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Отметить посещение</span><span class="currency-info-row-value soft">+1</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Вопрос AI</span><span class="currency-info-row-value soft">+1</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">AI с фото</span><span class="currency-info-row-value soft">+2</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Игра «До пары успеть»</span><span class="currency-info-row-value soft">+1–30</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Халява дня</span><span class="currency-info-row-value soft">+10–30</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Премиум-сундук</span><span class="currency-info-row-value soft">+500</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Победа в морском бою</span><span class="currency-info-row-value soft">×2 ставки</span></div>
-            </div>
-
-            <div class="currency-info-section">
-                <div class="currency-info-section-title hard">${hardIconSvg()} Автоматы</div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Халява дня (редкий дроп)</span><span class="currency-info-row-value hard">+1 – 5</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Премиум-сундук (за 10 А)</span><span class="currency-info-row-value hard">+3 – 25</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Рекорд в игре</span><span class="currency-info-row-value hard">+1</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Новый рекорд в игре</span><span class="currency-info-row-value hard">+5</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Достижения</span><span class="currency-info-row-value hard">+1 – 10</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Обменник (курс 100:1)</span><span class="currency-info-row-value hard">∞</span></div>
-            </div>
-
-            <div class="currency-info-exchange">
-                <span>100 Стипух</span>
-                <span class="arrow">→</span>
-                <span class="value-gold">1 Автомат</span>
-            </div>
-
-            <div class="currency-info-section">
-                <div class="currency-info-section-title spend">Куда потратить</div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Премиум-сундук</span><span class="currency-info-row-value hard">10 А</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Смена ника (если нет бесплатной)</span><span class="currency-info-row-value hard">5 А</span></div>
-                <div class="currency-info-row"><span class="currency-info-row-label">Ставка в морском бою</span><span class="currency-info-row-value soft">10–500 С</span></div>
-            </div>
-
-            <div class="actions-row" style="justify-content:center;margin-top:10px">
-                <button class="btn" data-action="modal-close">Понятно</button>
-            </div>
-        </div>
-    </div>`;
+function getCourseFromGroup(groupName) {
+    const m = String(groupName).match(/-(\d{2})-/);
+    if (!m) return null;
+    const year = parseInt(m[1], 10);
+    const map = { 26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6 };
+    return map[year] || null;
+}
+function getCoursesForInstitute(inst) {
+    const groups = (state.groups && state.groups[inst]) || [];
+    const set = new Set();
+    for (const g of groups) { const c = getCourseFromGroup(g.name); if (c) set.add(c); }
+    return Array.from(set).sort((a, b) => a - b);
+}
+function renderInstitutePicker() {
+    const groups = state.groups || {};
+    const institutes = Object.keys(groups);
+    let html = renderSubHeader('picker-back', 'Институт');
+    if (institutes.length === 0) { html += `<div class="picker-empty">Список институтов не загружен</div>`; return html; }
+    html += `<div class="picker-list">`;
+    for (const inst of institutes) {
+        const count = groups[inst]?.length || 0;
+        const selected = state.profile?.group && groups[inst]?.some(g => g.name === state.profile.group);
+        html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-institute" data-value="${escapeHtml(inst)}">
+            <div class="picker-group-item"><span>${escapeHtml(inst)}</span><span class="picker-item-sub">${count} групп</span></div>
+            <span class="picker-item-arrow">›</span>
+        </button>`;
+    }
+    html += `</div>`; return html;
+}
+function renderCoursePicker() {
+    const inst = state.pickerInstitute;
+    const courses = getCoursesForInstitute(inst);
+    let html = renderSubHeader('picker-back', `${inst} · Курс`);
+    if (courses.length === 0) { html += `<div class="picker-empty">Нет доступных курсов</div>`; return html; }
+    const groups = (state.groups && state.groups[inst]) || [];
+    html += `<div class="picker-list">`;
+    for (const c of courses) {
+        const count = groups.filter(g => getCourseFromGroup(g.name) === c).length;
+        html += `<button class="picker-item" data-action="picker-choose-course" data-value="${c}">
+            <div class="picker-group-item"><span>${c} курс</span><span class="picker-item-sub">${count} групп</span></div>
+            <span class="picker-item-arrow">›</span>
+        </button>`;
+    }
+    html += `</div>`; return html;
+}
+function renderGroupPicker() {
+    const inst = state.pickerInstitute;
+    const course = state.pickerCourse;
+    const allGroups = (state.groups && state.groups[inst]) || [];
+    const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
+    let html = renderSubHeader('picker-back', `${inst} · ${course} курс`);
+    html += `<input class="picker-search" id="picker-search" placeholder="Поиск группы..." value="${escapeHtml(state.pickerSearch)}" autocomplete="off">
+    <div class="picker-list" id="picker-list">`;
+    const q = (state.pickerSearch || '').trim().toLowerCase();
+    const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+    if (filtered.length === 0) html += `<div class="picker-empty">Ничего не найдено</div>`;
+    else for (const g of filtered) {
+        const selected = state.profile?.group === g.name;
+        html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+            <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
+            ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+        </button>`;
+    }
+    html += `</div>`; return html;
+}
+function pickerAttachSearch() {
+    const input = document.getElementById('picker-search');
+    if (!input) return;
+    input.focus();
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+    input.addEventListener('input', (e) => {
+        state.pickerSearch = e.target.value;
+        const inst = state.pickerInstitute;
+        const course = state.pickerCourse;
+        const allGroups = (state.groups && state.groups[inst]) || [];
+        const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
+        const q = (state.pickerSearch || '').trim().toLowerCase();
+        const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+        const list = document.getElementById('picker-list');
+        if (!list) return;
+        let html = '';
+        if (filtered.length === 0) html = `<div class="picker-empty">Ничего не найдено</div>`;
+        else for (const g of filtered) {
+            const selected = state.profile?.group === g.name;
+            html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+                <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
+                ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+            </button>`;
+        }
+        list.innerHTML = html;
+        document.querySelectorAll('#picker-list [data-action]').forEach((el) => {
+            el.addEventListener('click', () => handleAction(el));
+        });
+    });
 }
 
-function renderBSJoinModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Введи код игры</div>
-            <div class="info-modal-sub">6 цифр от друга</div>
-            <input class="modal-input" id="bs-join-code-input" maxlength="6" inputmode="numeric"
-                   pattern="[0-9]*" value="${escapeHtml(state.bsJoinCode || '')}"
-                   placeholder="000000" autofocus>
-            <div class="card-subtitle" style="text-align:center;margin-bottom:16px">
-                Ставка: <strong style="color:var(--neon)">${state.bsBet}</strong> Стипух
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="bs-join-submit">Войти</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
+// ============================================================
+//                       УВЕДОМЛЕНИЯ
+// ============================================================
+
+function renderNotifyEditor() {
+    const cur = state.notifyEditorType;
+    const hh = state.notifyEditorHour;
+    const mm = state.notifyEditorMinute;
+    const timeVal = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    return renderSubHeader('notify-back', 'Уведомления') + `
+    <div class="card">
+        <div class="card-title">Когда напоминать</div>
+        <div class="tab-buttons" style="margin-bottom:12px">
+            <button data-action="notify-set-type" data-value="today" class="${cur === 'today' ? 'active' : ''}">Сегодня</button>
+            <button data-action="notify-set-type" data-value="tomorrow" class="${cur === 'tomorrow' ? 'active' : ''}">Завтра</button>
         </div>
+        <div class="card-subtitle">${cur === 'today' ? 'Расписание на сегодня. Время — до 10:00.' : 'Расписание на завтра. Время — любое.'}</div>
+    </div>
+    <div class="card">
+        <div class="card-title">Во сколько</div>
+        <div class="card-subtitle">Время по Иркутску</div>
+        <input type="time" id="notify-time-input" class="input" value="${timeVal}">
+    </div>
+    <div class="actions-row" style="margin-top:16px">
+        <button class="btn" data-action="notify-save" style="flex:1">Сохранить</button>
+        <button class="btn btn-secondary" data-action="notify-off" style="flex:1">Выключить</button>
     </div>`;
 }
-
-function renderScholarshipAmountModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Сумма стипендии</div>
-            <div class="info-modal-sub">Введите 0, если не получаете</div>
-            <input class="modal-input" id="sch-amount-input" type="number" inputmode="numeric"
-                   min="0" max="100000" value="${escapeHtml(state.scholarshipAmountValue || '')}"
-                   placeholder="0" autofocus>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="sch-amount-submit">Сохранить</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-
-function renderAdminReplyModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Ответ пользователю</div>
-            <div class="info-modal-sub">Обращение #${state.adminReplyFeedbackId || '?'}</div>
-            <textarea class="input" id="admin-reply-input" rows="4"
-                      placeholder="Текст ответа..." autofocus>${escapeHtml(state.adminReplyText || '')}</textarea>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="admin-reply-submit">Отправить</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-
-const EXCHANGE_RATE = 100;
-
-function renderExchangeModal() {
-    const w = state.wallet || {};
-    const soft = w.soft || 0;
-    const amount = Math.max(0, Math.min(state.exchangeAmount || 0, soft));
-    const hard = Math.floor(amount / EXCHANGE_RATE);
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Обмен валюты</div>
-            <div class="info-modal-sub">Обменяй Стипухи на Автоматы</div>
-
-            <div class="exchange-rate-badge">
-                <span>${EXCHANGE_RATE} Стипух</span>
-                <span class="rate-arrow">→</span>
-                <span class="rate-value">1 Автомат</span>
-            </div>
-
-            <div class="exchange-input-wrap">
-                <input class="exchange-input" id="exchange-amount-input" type="number" min="0" step="100"
-                       value="${state.exchangeAmount}" inputmode="numeric"
-                       placeholder="0">
-                <div class="exchange-input-suffix">Стипух</div>
-            </div>
-
-            <div class="exchange-quick-buttons">
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.25">25%</button>
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.5">50%</button>
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.75">75%</button>
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="1">MAX</button>
-            </div>
-
-            <div class="exchange-preview">
-                <div class="exchange-preview-label">Получишь</div>
-                <div class="exchange-preview-value">${hard}<span class="suffix">Автоматов</span></div>
-            </div>
-
-            <div class="exchange-balance-hint">
-                Доступно: <strong>${formatNumber(soft)}</strong> Стипух
-            </div>
-
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="exchange-submit" ${hard > 0 ? '' : 'disabled'}>Обменять</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-
-function actionExchangeOpen() {
+function actionOpenNotifyEditor() {
     haptic('light');
-    state.exchangeAmount = EXCHANGE_RATE;
-    state.exchangeOpen = true;
+    const p = state.profile;
+    state.notifyEditorType = p?.notify_type || 'today';
+    state.notifyEditorHour = p?.notify_hour >= 0 ? p.notify_hour : 8;
+    state.notifyEditorMinute = p?.notify_minute || 0;
+    state.notifyEditor = true; render();
+}
+function actionNotifyBack() { haptic('light'); state.notifyEditor = false; render(); }
+function actionNotifySetType(ntype) {
+    haptic('light');
+    state.notifyEditorType = ntype;
+    if (ntype === 'today' && state.notifyEditorHour > 10) { state.notifyEditorHour = 8; state.notifyEditorMinute = 0; }
     render();
 }
-
-function actionExchangeQuick(ratio) {
-    haptic('light');
-    const soft = state.wallet?.soft || 0;
-    let amt = Math.floor(soft * ratio);
-    amt = Math.floor(amt / EXCHANGE_RATE) * EXCHANGE_RATE;
-    state.exchangeAmount = Math.max(0, amt);
-    render();
-}
-
-async function actionExchangeSubmit() {
-    const w = state.wallet || {};
-    const soft = w.soft || 0;
-    const amount = Math.max(0, Math.min(Math.floor(state.exchangeAmount || 0), soft));
-    const hard = Math.floor(amount / EXCHANGE_RATE);
-    if (hard <= 0) { haptic('error'); alert('Слишком маленькая сумма для обмена'); return; }
-    try {
-        const r = await apiPost('/api/exchange-soft-to-hard', { amount });
-        haptic('success');
-        popEmoji('💱');
-        if (r.wallet) state.wallet = r.wallet;
-        state.exchangeOpen = false;
-        await loadProfile();
-        render();
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось обменять'));
-    }
-}
-
-function renderNameEditorModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="modal-title">Изменить имя</div>
-            <div class="modal-sub">Максимум 24 символа.</div>
-            <input class="modal-input" id="name-editor-input" maxlength="24" value="${escapeHtml(state.nameEditorValue || '')}" placeholder="Твоё имя" autofocus>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="name-save">Сохранить</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderChestModal() {
-    const r = state.chestModal;
-    if (!r) return '';
-    const emojiMap = { soft: '💰', xp: '⚡', hard: '🏅', free_name: '✏️' };
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="reward-reveal">
-                <div class="reward-icon">${emojiMap[r.type] || '🎁'}</div>
-                <div class="reward-label">${escapeHtml(r.label || '')}</div>
-                <div class="reward-desc">${r.type === 'soft' ? 'Стипухи зачислены' : r.type === 'xp' ? 'Опыт добавлен' : r.type === 'hard' ? 'Автомат твой!' : 'Смена ника бесплатно'}</div>
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="modal-close">Круто!</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderPremiumModal() {
-    const r = state.premiumModal;
-    if (!r) return '';
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="reward-reveal" style="padding-top:14px">
-                <div class="reward-icon">👑</div>
-                <div class="reward-premium-label">ПРЕМИУМ СУНДУК</div>
-            </div>
-            <div class="reward-premium-list">
-                <div class="reward-premium-row"><span>💰 Стипухи</span><span class="val">+${r.soft || 0}</span></div>
-                <div class="reward-premium-row"><span>⚡ Опыт</span><span class="val">+${r.xp || 0} XP</span></div>
-                <div class="reward-premium-row"><span>🏅 Бонус</span><span class="val gold">${escapeHtml(r.bonus_label || '—')}</span></div>
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="modal-close">Круто!</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderNewAchToast() {
-    const list = state.newAchToast || [];
-    if (list.length === 0) return '';
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">🎉 Новое достижение!</div>
-            <div class="info-modal-sub">${list.length > 1 ? `Открыто сразу ${list.length}:` : 'Ты только что получил:'}</div>
-            <div class="ach-toast-list">
-                ${list.map(a => `
-                    <div class="ach-toast-item">
-                        <div class="ach-toast-icon">${a.icon}</div>
-                        <div class="ach-toast-body">
-                            <div class="ach-toast-name">${escapeHtml(a.name)}</div>
-                            <div class="ach-toast-reward">${escapeHtml(a.rewardText)}</div>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="modal-close">Отлично!</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderLevelInfoModal() {
-    const w = state.wallet || {};
-    const lvl = w.level || 1;
-    const xpIn = w.xp_in_level || 0;
-    const xpNext = w.xp_to_next || 500;
-    const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Уровни и опыт</div>
-            <div class="info-modal-sub">Как растёт уровень и за что дают XP</div>
-            <div class="info-current">
-                <div class="info-current-lvl">${lvl}<small>LVL</small></div>
-                <div class="info-current-info">
-                    <div class="info-current-name">${escapeHtml(w.level_title || 'Первокурсник')}</div>
-                    <div class="info-current-xp">${xpIn} / ${xpNext} XP</div>
-                </div>
-            </div>
-            <div class="info-xp-bar"><div class="info-xp-fill" style="width:${xpPct}%"></div></div>
-            <div class="info-section">
-                <div class="info-section-title">За что дают опыт</div>
-                <div class="info-row"><span class="info-row-label">Задача добавлена</span><span class="info-row-value">+5 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Задача выполнена</span><span class="info-row-value">+20 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Заметка</span><span class="info-row-value">+3 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Оценка в стипендию</span><span class="info-row-value">+5 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Отметка посещаемости</span><span class="info-row-value">+3 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+2 XP</span></div>
-                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+5 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Игра: 1 очко</span><span class="info-row-value">+2 XP</span></div>
-            </div>
-            <div class="info-section">
-                <div class="info-section-title">Формула уровня</div>
-                <div class="info-row"><span class="info-row-label">1 → 2 уровень</span><span class="info-row-value muted">500 XP</span></div>
-                <div class="info-row"><span class="info-row-label">2 → 3 уровень</span><span class="info-row-value muted">1000 XP</span></div>
-                <div class="info-row"><span class="info-row-label">N → N+1 уровень</span><span class="info-row-value">N × 500 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Максимум</span><span class="info-row-value gold">30 LVL</span></div>
-            </div>
-            <div class="info-section">
-                <div class="info-section-title">Титулы</div>
-                <div class="info-row"><span class="info-row-label">1–5</span><span class="info-row-value muted">Первокурсник</span></div>
-                <div class="info-row"><span class="info-row-label">6–10</span><span class="info-row-value muted">Второкурсник</span></div>
-                <div class="info-row"><span class="info-row-label">11–15</span><span class="info-row-value muted">Третьекурсник</span></div>
-                <div class="info-row"><span class="info-row-label">16–20</span><span class="info-row-value muted">Старшекурсник</span></div>
-                <div class="info-row"><span class="info-row-label">21–25</span><span class="info-row-value muted">Магистрант</span></div>
-                <div class="info-row"><span class="info-row-label">26–29</span><span class="info-row-value muted">Аспирант</span></div>
-                <div class="info-row"><span class="info-row-label">30</span><span class="info-row-value gold">Легенда ИРНИТУ</span></div>
-            </div>
-            <div class="actions-row" style="justify-content:center;margin-top:20px">
-                <button class="btn" data-action="modal-close">Понятно</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderAchModal() {
-    const achId = state.achModal;
-    if (!achId) return '';
-    const item = (state.achievements || []).find(a => a.id === achId);
-    if (!item) return '';
-    const status = item.unlocked
-        ? '<span class="info-ach-badge unlocked">Получено</span>'
-        : '<span class="info-ach-badge locked">Ещё не открыто</span>';
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-ach-hero">
-                <div class="info-ach-icon ${item.unlocked ? '' : 'locked'}">${item.icon}</div>
-                <div class="info-ach-name">${escapeHtml(item.name)}</div>
-                ${status}
-            </div>
-            <div class="info-ach-desc">${escapeHtml(item.desc)}</div>
-            ${item.reward && (item.reward.xp || item.reward.soft || item.reward.hard) ? `
-                <div class="info-section" style="margin-top:14px">
-                    <div class="info-section-title">Награда за достижение</div>
-                    ${item.reward.xp ? `<div class="info-row"><span class="info-row-label">⚡ Опыт</span><span class="info-row-value">+${item.reward.xp} XP</span></div>` : ''}
-                    ${item.reward.soft ? `<div class="info-row"><span class="info-row-label">💰 Стипухи</span><span class="info-row-value">+${item.reward.soft}</span></div>` : ''}
-                    ${item.reward.hard ? `<div class="info-row"><span class="info-row-label">🏅 Автоматы</span><span class="info-row-value gold">+${item.reward.hard}</span></div>` : ''}
-                </div>
-            ` : ''}
-            ${item.unlocked ? '' : `<div class="info-ach-hint">Продолжай пользоваться приложением — достижение откроется автоматически.</div>`}
-            <div class="actions-row" style="justify-content:center;margin-top:18px">
-                <button class="btn" data-action="modal-close">Закрыть</button>
-            </div>
-        </div>
-    </div>`;
-}
-function showNewAchievements(newIds) {
-    if (!newIds || newIds.length === 0) return;
-    const achList = state.achievements || [];
-    const items = [];
-    for (const id of newIds) {
-        const meta = achList.find(a => a.id === id);
-        if (!meta) continue;
-        const rw = meta.reward || {};
-        const parts = [];
-        if (rw.xp) parts.push(`+${rw.xp} XP`);
-        if (rw.soft) parts.push(`+${rw.soft} 💰`);
-        if (rw.hard) parts.push(`+${rw.hard} 🏅`);
-        items.push({ name: meta.name, icon: meta.icon, rewardText: parts.length ? `Награда: ${parts.join(' · ')}` : 'Без награды' });
-    }
-    if (items.length === 0) return;
-    state.newAchToast = items;
+async function actionNotifySave() {
+    const input = document.getElementById('notify-time-input');
+    if (!input) return;
+    const val = (input.value || '').trim();
+    if (!/^\d{1,2}:\d{2}$/.test(val)) { alert('Введи время в формате ЧЧ:ММ'); return; }
+    const [hhStr, mmStr] = val.split(':');
+    const hh = parseInt(hhStr, 10);
+    const mm = parseInt(mmStr, 10);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { alert('Неверное время'); return; }
+    if (state.notifyEditorType === 'today' && hh > 10) { alert('Для «Сегодня» — не позже 10:00'); return; }
     haptic('success');
-    popEmoji('🏆');
-}
-function actionNameOpen() {
-    haptic('light');
-    const cur = state.profile?.display_name || '';
-    state.nameEditorValue = cur && cur !== 'PLAYER' ? cur : '';
-    state.nameEditor = true; render();
-}
-async function actionNameSave() {
-    const el = document.getElementById('name-editor-input');
-    if (!el) return;
-    const name = (el.value || '').trim();
-    if (!name) { alert('Введи имя'); return; }
     try {
-        const r = await apiPost('/api/set-name', { name });
-        state.wallet = r.wallet;
-        if (state.profile) state.profile.display_name = name;
-        haptic('success');
-        state.nameEditor = false;
-        popEmoji('✏️');
-        render();
-    } catch (e) { haptic('error'); alert(e.message || 'Ошибка'); }
+        await apiPost('/api/notify-set', { type: state.notifyEditorType, hour: hh, minute: mm });
+        state.notifyEditor = false;
+        await loadProfile(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-async function actionAvatarToggle() {
-    haptic('light');
-    const curIdx = state.wallet?.avatar_idx || 0;
-    const nextIdx = curIdx === 0 ? 1 : 0;
+async function actionNotifyOff() {
+    haptic('success');
     try {
-        const r = await apiPost('/api/set-avatar', { idx: nextIdx });
-        if (r.wallet) state.wallet = r.wallet;
-        else if (state.wallet) state.wallet.avatar_idx = nextIdx;
-        haptic('success');
-        render();
-    } catch (e) {
-        haptic('error');
-        alert(e.message || 'Не удалось сменить аватар');
+        await apiPost('/api/notify-set', { type: null });
+        state.notifyEditor = false;
+        await loadProfile(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function actionSetNotifyBefore(minutes) {
+    haptic('light');
+    try {
+        await apiPost('/api/notify-set-before', { minutes });
+        if (state.profile) state.profile.notify_before_min = minutes;
+        haptic('success'); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+function actionLessonStatus(el) {
+    const date = el.dataset.date || '';
+    const time = el.dataset.time || '';
+    const subject = el.dataset.subject || '';
+    const cur = el.dataset.status || '';
+    if (!date || !time || !subject) return;
+    let next = '';
+    if (cur === '') next = 'was';
+    else if (cur === 'was') next = 'missed';
+    else if (cur === 'missed') next = 'sick';
+    else if (cur === 'sick') next = '';
+    el.dataset.status = next;
+    el.classList.remove('was', 'missed', 'sick');
+    if (next) el.classList.add(next);
+    el.textContent = next === 'was' ? '✓' : next === 'missed' ? '✗' : next === 'sick' ? 'Б' : '';
+    haptic(next === 'was' ? 'light' : next === 'missed' ? 'error' : 'light');
+    _applyAttendanceLocally(date, time, subject, next);
+    apiPost('/api/attendance-set', { date, time, subject, status: next }).catch(() => {});
+}
+function _applyAttendanceLocally(date, time, subject, status) {
+    const upd = (lessons) => {
+        if (!lessons) return;
+        for (const les of lessons) {
+            if (les.time === time && les.subject === subject && (les.date || date) === date) {
+                les.attendance = status;
+            }
+        }
+    };
+    if (state.schedule?.lessons) upd(state.schedule.lessons);
+    if (state.weekDays?.days) for (const d of state.weekDays.days) if (d.date === date) upd(d.lessons);
+    if (state.nextWeekDays?.days) for (const d of state.nextWeekDays.days) if (d.date === date) upd(d.lessons);
+}
+
+// ============================================================
+//                       ЗАДАЧИ
+// ============================================================
+
+function renderTasks() {
+    const tasks = state.tasks;
+    const stats = state.tasksStats;
+    let html = `<div class="tab-buttons">
+        <button data-action="tasks-show-active" class="${state.tasksView === 'active' ? 'active' : ''}">Активные (${stats.active})</button>
+        <button data-action="tasks-show-done" class="${state.tasksView === 'done' ? 'active' : ''}">Готовые (${stats.done})</button>
+    </div>`;
+    if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
+    if (!tasks || tasks.length === 0) {
+        if (state.tasksView === 'active') html += `<div class="hero-banner"><div class="hero-banner-overlay"></div><div class="hero-banner-content"><div class="hero-banner-title">Задач <span class="accent">нет</span></div><div class="hero-banner-sub">Нажми «+ Добавить задачу»</div></div></div>`;
+        else html += renderEmpty('Нет выполненных задач');
+        return html;
     }
+    for (const t of tasks) {
+        const dueStr = t.due_date ? `<span class="${t.overdue ? 'overdue' : ''}">до ${escapeHtml(t.due_date)}${t.due_time ? ' ' + escapeHtml(t.due_time) : ''}${t.overdue ? ' — просрочено' : ''}</span>` : '';
+        html += `<div class="card">
+            <div class="card-title">${escapeHtml(t.text)}</div>
+            <div class="card-meta">${priorityLabel(t.priority)} ${dueStr}</div>
+            <div class="actions-row">
+                ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">Готово</button>` : ''}
+                <button class="btn btn-secondary" data-action="task-edit-open" data-id="${t.id}">Изменить</button>
+                <button class="btn btn-secondary" data-action="task-delete" data-id="${t.id}">Удалить</button>
+            </div>
+        </div>`;
+    }
+    if (state.tasksView === 'done' && tasks.length > 0) html += `<button class="btn btn-secondary" data-action="tasks-clear" style="width:100%;margin-top:8px">Очистить выполненные</button>`;
+    return html;
 }
-async function actionChestOpen() {
-    try {
-        const r = await apiPost('/api/chest/open');
-        state.wallet = r.wallet;
-        state.chestModal = r.reward;
-        haptic('success'); popEmoji('🎁');
-        await loadChestStatus(); render();
-    } catch (e) { haptic('error'); alert(e.message || 'Сундук уже открыт'); }
+function renderTaskEditor() {
+    const isEdit = state.taskEditorId !== null;
+    const p = state.taskEditorPriority;
+    const dueIso = state.taskEditorDate;
+    return `<div class="editor-header"><button class="picker-back" data-action="task-editor-back">←</button><div class="picker-title">${isEdit ? 'Изменить задачу' : 'Новая задача'}</div></div>
+    <div class="card"><div class="card-title">Текст задачи</div>
+        <textarea class="input" id="task-text-input" placeholder="Что нужно сделать?" rows="4">${escapeHtml(state.taskEditorText || '')}</textarea>
+    </div>
+    <div class="card"><div class="card-title">Срок</div>
+        <div class="card-subtitle">Дата</div>
+        <input type="date" id="task-date-input" class="input" value="${escapeHtml(dueIso)}">
+        <div class="card-subtitle" style="margin-top:8px">Время</div>
+        <input type="time" id="task-time-input" class="input" value="${escapeHtml(state.taskEditorTime || '')}">
+        <div class="actions-row" style="margin-top:8px">
+            <button class="btn btn-secondary" data-action="task-clear-date" style="flex:1">Очистить срок</button>
+        </div>
+    </div>
+    <div class="card"><div class="card-title">Приоритет</div>
+        <div class="task-priority-picker">
+            <button class="task-priority-btn p-low ${p === 1 ? 'active' : ''}" data-action="task-set-priority" data-value="1">Низкий</button>
+            <button class="task-priority-btn p-medium ${p === 2 ? 'active' : ''}" data-action="task-set-priority" data-value="2">Средний</button>
+            <button class="task-priority-btn p-high ${p === 3 ? 'active' : ''}" data-action="task-set-priority" data-value="3">Высокий</button>
+        </div>
+    </div>
+    <div class="actions-row" style="margin-top:16px">
+        <button class="btn" data-action="task-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
+        ${isEdit ? `<button class="btn btn-secondary" data-action="task-editor-delete" style="flex:1">Удалить</button>` : ''}
+    </div>`;
 }
-async function actionPremiumOpen() {
+function actionTaskAddOpen() {
     haptic('light');
-    try {
-        const r = await apiPost('/api/premium-chest/open');
-        state.wallet = r.wallet;
-        state.premiumModal = r.reward;
-        haptic('success'); popEmoji('👑');
-        await loadAchievements(); render();
-    } catch (e) { haptic('error'); alert(e.message || 'Не хватает автоматов'); }
+    state.taskEditor = true; state.taskEditorId = null;
+    state.taskEditorText = ''; state.taskEditorDate = ''; state.taskEditorTime = '';
+    state.taskEditorPriority = 2; render();
 }
-function actionLevelInfoOpen() { haptic('light'); state.levelInfoModal = true; render(); }
-function actionCurrencyInfoOpen() { haptic('light'); state.currencyInfoModal = true; render(); }
-function actionAchOpen(achId) { haptic('light'); state.achModal = achId; render(); }
-function actionModalClose() {
+function actionTaskEditOpen(id) {
     haptic('light');
-    state.nameEditor = false;
-    state.chestModal = null;
-    state.achModal = null;
-    state.levelInfoModal = false;
-    state.currencyInfoModal = false;
-    state.premiumModal = null;
-    state.newAchToast = null;
-    state.exchangeOpen = false;
-    state.bsJoinModal = false;
-    state.bsJoinCode = '';
-    state.scholarshipAmountModal = false;
-    state.scholarshipAmountValue = '';
-    state.adminReplyModal = false;
-    state.adminReplyFeedbackId = null;
-    state.adminReplyText = '';
+    const t = state.tasks.find(x => x.id === id);
+    if (!t) return;
+    state.taskEditor = true; state.taskEditorId = t.id;
+    state.taskEditorText = t.text || '';
+    state.taskEditorDate = displayToISO(t.due_date || '');
+    state.taskEditorTime = t.due_time || '';
+    state.taskEditorPriority = t.priority || 2;
     render();
 }
+function actionTaskEditorBack() { haptic('light'); state.taskEditor = false; state.taskEditorId = null; render(); }
+function actionTaskSetPriority(p) { haptic('light'); state.taskEditorPriority = p; render(); }
+function actionTaskClearDate() { haptic('light'); state.taskEditorDate = ''; state.taskEditorTime = ''; render(); }
+async function actionTaskEditorSave() {
+    const textEl = document.getElementById('task-text-input');
+    const dateEl = document.getElementById('task-date-input');
+    const timeEl = document.getElementById('task-time-input');
+    const text = (textEl?.value || '').trim();
+    if (!text) { alert('Введи текст задачи'); return; }
+    const dateIso = dateEl?.value || '';
+    const due_date = dateIso ? isoToDisplay(dateIso) : null;
+    const due_time = (timeEl?.value || '').trim() || null;
+    const priority = state.taskEditorPriority || 2;
+    try {
+        if (state.taskEditorId) {
+            await apiPost('/api/task-update', { id: state.taskEditorId, text, due_date, due_time, priority, reset_due: !due_date });
+        } else {
+            await apiPost('/api/task-add', { text, due_date, due_time, priority });
+        }
+        haptic('success');
+        state.taskEditor = false; state.taskEditorId = null;
+        await loadTasks(); await loadWallet(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function actionTaskEditorDelete() {
+    if (!state.taskEditorId) return;
+    const ok = await tgConfirm('Удалить задачу?');
+    if (!ok) return;
+    try {
+        await apiPost('/api/task-delete', { id: state.taskEditorId });
+        haptic('success');
+        state.taskEditor = false; state.taskEditorId = null;
+        await loadTasks(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function actionTaskDone(id) {
+    try {
+        const r = await apiPost('/api/task-update', { id, done: true });
+        haptic('success'); popEmoji('✅');
+        if (r.wallet) state.wallet = r.wallet;
+        await loadTasks();
+        if (r.new_achievements && r.new_achievements.length > 0) {
+            await loadAchievements();
+            showNewAchievements(r.new_achievements);
+        }
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTaskDelete(id) {
+    const ok = await tgConfirm('Удалить задачу?');
+    if (!ok) return;
+    try { await apiPost('/api/task-delete', { id }); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTasksClear() {
+    const ok = await tgConfirm('Очистить все выполненные?');
+    if (!ok) return;
+    try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+// ============================================================
+//                       ЗАМЕТКИ
+// ============================================================
+
+function renderNotes() {
+    let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
+    if (!state.notes || state.notes.length === 0) {
+        html += `<div class="hero-banner"><div class="hero-banner-overlay"></div><div class="hero-banner-content"><div class="hero-banner-title">Заметки</div><div class="hero-banner-sub">Короткие записи по предметам</div></div></div>`;
+        return html;
+    }
+    for (const n of state.notes) {
+        html += `<div class="card">
+            <div class="card-title">${escapeHtml(n.subject)}</div>
+            <div class="card-subtitle">${escapeHtml(n.text)}</div>
+            <div class="actions-row">
+                <button class="btn btn-secondary" data-action="note-edit-open" data-id="${n.id}">Изменить</button>
+                <button class="btn btn-secondary" data-action="note-delete" data-id="${n.id}">Удалить</button>
+            </div>
+        </div>`;
+    }
+    return html;
+}
+function renderNoteEditor() {
+    const isEdit = state.noteEditorId !== null;
+    return `<div class="editor-header"><button class="picker-back" data-action="note-editor-back">←</button><div class="picker-title">${isEdit ? 'Изменить заметку' : 'Новая заметка'}</div></div>
+    <div class="card"><div class="card-title">Предмет</div>
+        <input class="input" id="note-subject-input" placeholder="Название предмета" value="${escapeHtml(state.noteEditorSubject || '')}" autocomplete="off">
+    </div>
+    <div class="card"><div class="card-title">Текст заметки</div>
+        <textarea class="input" id="note-text-input" placeholder="Что записать?" rows="8">${escapeHtml(state.noteEditorText || '')}</textarea>
+    </div>
+    <div class="actions-row" style="margin-top:16px">
+        <button class="btn" data-action="note-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
+        ${isEdit ? `<button class="btn btn-secondary" data-action="note-editor-delete" style="flex:1">Удалить</button>` : ''}
+    </div>`;
+}
+function actionNoteAddOpen() {
+    haptic('light');
+    state.noteEditor = true; state.noteEditorId = null;
+    state.noteEditorSubject = ''; state.noteEditorText = ''; render();
+}
+function actionNoteEditOpen(id) {
+    haptic('light');
+    const n = state.notes.find(x => x.id === id);
+    if (!n) return;
+    state.noteEditor = true; state.noteEditorId = n.id;
+    state.noteEditorSubject = n.subject || '';
+    state.noteEditorText = n.text || ''; render();
+}
+function actionNoteEditorBack() { haptic('light'); state.noteEditor = false; state.noteEditorId = null; render(); }
+async function actionNoteEditorSave() {
+    const subjEl = document.getElementById('note-subject-input');
+    const textEl = document.getElementById('note-text-input');
+    const subject = (subjEl?.value || '').trim();
+    const text = (textEl?.value || '').trim();
+    if (!subject) { alert('Введи название предмета'); return; }
+    if (!text) { alert('Введи текст заметки'); return; }
+    try {
+        const r = await apiPost('/api/note-save', { subject, text });
+        haptic('success');
+        state.noteEditor = false; state.noteEditorId = null;
+        if (r.wallet) state.wallet = r.wallet;
+        await loadNotes();
+        if (r.new_achievements && r.new_achievements.length > 0) {
+            await loadAchievements();
+            showNewAchievements(r.new_achievements);
+        }
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function actionNoteEditorDelete() {
+    if (!state.noteEditorId) return;
+    const ok = await tgConfirm('Удалить заметку?');
+    if (!ok) return;
+    try {
+        await apiPost('/api/note-delete', { id: state.noteEditorId });
+        haptic('success');
+        state.noteEditor = false; state.noteEditorId = null;
+        await loadNotes(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function actionNoteDelete(id) {
+    const ok = await tgConfirm('Удалить заметку?');
+    if (!ok) return;
+    try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+// ============================================================
+//                       AI
+// ============================================================
+
+function renderAI() {
+    let html = '';
+    if (state.aiMessages.length === 0) {
+        html += `<div class="hero-banner"><div class="hero-banner-overlay"></div><div class="hero-banner-content"><div class="hero-banner-title">AI <span class="accent">Помощник</span></div><div class="hero-banner-sub">Задай вопрос или прикрепи фото</div></div></div>`;
+    } else {
+        for (const m of state.aiMessages) {
+            if (m.role === 'user') {
+                if (m.photo) {
+                    html += `<div class="card" style="background:var(--neon);color:#000;padding:10px">
+                        <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="фото">
+                        <div style="font-weight:700">${escapeHtml(m.text || '')}</div>
+                    </div>`;
+                } else {
+                    html += `<div class="card" style="background:var(--neon);color:#000"><div style="font-weight:700">${escapeHtml(m.text)}</div></div>`;
+                }
+            } else {
+                html += `<div class="card"><div style="white-space:pre-wrap;font-weight:500">${escapeHtml(m.text)}</div></div>`;
+            }
+        }
+    }
+    if (state.aiPending) html += renderLoading();
+    html += `<div style="margin-top:12px">
+        <textarea class="input" id="ai-input" placeholder="Напиши вопрос..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
+        <button class="btn" data-action="ai-send" style="width:100%" ${state.aiPending ? 'disabled' : ''}>Отправить</button>
+        <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>Прикрепить фото</button>
+        <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
+        <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
+    </div>`;
+    return html;
+}
+async function actionAIClear() {
+    const ok = await tgConfirm('Очистить историю чата?');
+    if (!ok) return;
+    haptic('light');
+    state.aiMessages = []; state.aiPendingPhoto = null;
+    apiPost('/api/ai/clear-history').catch(() => {});
+    render();
+}
+function actionAIPhotoOpen() {
+    haptic('light');
+    const input = document.getElementById('ai-photo-input');
+    if (input) input.click();
+}
+function actionAIPhotoCancel() { haptic('light'); state.aiPendingPhoto = null; render(); }
+function actionAIPhotoSelected(file) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { alert('Фото слишком большое (макс 8 МБ)'); return; }
+    if (!file.type.startsWith('image/')) { alert('Нужно изображение'); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxSide = 1600;
+            let w = img.width, h = img.height;
+            if (w > maxSide || h > maxSide) {
+                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
+                else { w = Math.round(w * maxSide / h); h = maxSide; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
+            haptic('light'); render();
+        };
+        img.onerror = () => alert('Не удалось прочитать изображение');
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+async function actionAISend() {
+    const el = document.getElementById('ai-input');
+    if (!el) return;
+    const question = (el.value || '').trim();
+    const photo = state.aiPendingPhoto;
+    if (!question && !photo) return;
+    if (photo) {
+        state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
+        state.aiPendingPhoto = null; el.value = ''; state.aiPending = true; render();
+        try {
+            const r = await apiPost('/api/ai-photo', { photo, question });
+            state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+            haptic('success'); await loadWallet();
+        } catch (err) {
+            state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
+            haptic('error');
+        } finally { state.aiPending = false; render(); }
+        return;
+    }
+    state.aiMessages.push({ role: 'user', text: question });
+    el.value = ''; state.aiPending = true; render();
+    try {
+        const r = await apiPost('/api/ai', { question });
+        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+        haptic('success'); await loadWallet();
+    } catch (e) {
+        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
+        haptic('error');
+    } finally { state.aiPending = false; render(); }
+}
+
+// ============================================================
+//                       ИГРЫ
+// ============================================================
 
 function renderGames() {
     const catalog = [
-        { id: 'flappy', name: 'До пары успеть', asset: 'assets/game-start.webp' },
-        { id: 'battleship', name: 'Морской бой', asset: 'assets/game-battleship.webp' },
+        { id: 'flappy', name: 'До пары успеть', asset: 'assets/cover-flappy.webp', desc: 'Прыгай между столбцами' },
+        { id: 'battleship', name: 'Морской бой', asset: 'assets/cover-battleship.webp', desc: 'PvP на стипухи' },
     ];
 
     let html = `<div class="games-catalog">`;
     for (const g of catalog) {
-        html += `<button class="game-catalog-card" data-action="game-open" data-game="${escapeHtml(g.id)}">
-            <div class="game-catalog-cover">
-                <img src="${g.asset}" alt="${escapeHtml(g.name)}"
-                     onerror="this.style.display='none'">
+        html += `<button class="hero-banner" data-action="game-open" data-game="${escapeHtml(g.id)}" style="width:100%;text-align:left;border:none">
+            <img class="hero-banner-bg" src="${g.asset}" alt="${escapeHtml(g.name)}"
+                 onerror="this.style.display='none'">
+            <div class="hero-banner-overlay"></div>
+            <div class="hero-banner-content">
+                <div class="hero-banner-title">${escapeHtml(g.name)}</div>
+                <div class="hero-banner-sub">${escapeHtml(g.desc)}</div>
+                <button class="hero-banner-btn">Играть</button>
             </div>
         </button>`;
     }
     html += `</div>`;
 
     if (state.walletLeaderboard && state.walletLeaderboard.length > 0) {
-        html += `<div class="card" style="margin-top:12px"><div class="card-title">Топ по опыту</div>`;
+        html += `<div class="section" style="margin-top:20px">
+            <div class="section-header">
+                <div class="section-icon">${fireIconSvg(22)}</div>
+                <h2 class="section-title">Топ по опыту</h2>
+            </div>`;
+        html += `<div class="card">`;
         for (const item of state.walletLeaderboard) {
             const cls = item.is_me ? 'game-top-me' : '';
             html += `<div class="grade-row ${cls}">
@@ -1226,7 +1434,7 @@ function renderGames() {
                 <span class="grade-value">${item.xp} XP</span>
             </div>`;
         }
-        html += `</div>`;
+        html += `</div></div>`;
     }
     return html;
 }
@@ -1235,7 +1443,7 @@ function renderGameTutorialOverlay() {
     return `<div class="tutorial-overlay hide" id="game-tutorial-overlay">
         <div class="tutorial-arrow">👆</div>
         <div class="tutorial-title">Как играть</div>
-        <div class="tutorial-text">Тапай по экрану — студент <strong>прыгает</strong>. Пролетай между столбцами и набирай очки. Заденешь столбец — конец.</div>
+        <div class="tutorial-text">Тапай по экрану — студент <strong>прыгает</strong>. Пролетай между столбцами и набирай очки.</div>
         <div class="tutorial-tap-hint">Тапни, чтобы начать</div>
     </div>`;
 }
@@ -1265,9 +1473,9 @@ function renderGameResult() {
             ${r.is_record ? '<div class="game-result-record">НОВЫЙ РЕКОРД</div>' : ''}
         </div>
         <div class="game-result-best">Лучший результат: ${r.best}</div>
-        <div class="card" style="background:var(--grad-neon-soft);border-color:rgba(0,229,208,0.3)">
+        <div class="card" style="background:var(--neon-soft);border:none">
             <div class="card-title">Награда</div>
-            <div class="card-subtitle">+${r.soft_reward || 0} Стипух · +${r.xp_reward || 0} XP ${r.hard_reward ? '· +' + r.hard_reward + ' Автоматов' : ''}</div>
+            <div class="card-subtitle">+${r.soft_reward || 0} Софта · +${r.xp_reward || 0} XP ${r.hard_reward ? '· +' + r.hard_reward + ' Харда' : ''}</div>
         </div>`;
     if (r.top && r.top.length > 0) {
         html += `<div class="card"><div class="card-title">Топ игроков</div>`;
@@ -1398,14 +1606,14 @@ function initFlappy() {
     starCtx.scale(dpr, dpr);
     {
         const bg = starCtx.createLinearGradient(0, 0, 0, H);
-        bg.addColorStop(0, '#050813');
-        bg.addColorStop(0.5, '#08101f');
+        bg.addColorStop(0, '#000000');
+        bg.addColorStop(0.5, '#050510');
         bg.addColorStop(1, '#0b1524');
         starCtx.fillStyle = bg;
         starCtx.fillRect(0, 0, W, H);
         const glow = starCtx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.75);
-        glow.addColorStop(0, 'rgba(139,92,246,0.10)');
-        glow.addColorStop(1, 'rgba(139,92,246,0)');
+        glow.addColorStop(0, 'rgba(0,229,201,0.12)');
+        glow.addColorStop(1, 'rgba(0,229,201,0)');
         starCtx.fillStyle = glow;
         starCtx.fillRect(0, 0, W, H);
         const starCount = Math.floor((W * H) / 3500);
@@ -1431,9 +1639,9 @@ function initFlappy() {
     const COL_W = 62;
     const SPAWN_INTERVAL = 120;
     const MIN_SPAWN_INTERVAL = 95;
-    const COL_FILL = 'rgba(139, 92, 246, 0.88)';
-    const COL_STROKE = '#C084FC';
-    const COL_LINE = 'rgba(255,255,255,0.16)';
+    const COL_FILL = 'rgba(0,229,201,0.88)';
+    const COL_STROKE = '#7CFFEE';
+    const COL_LINE = 'rgba(0,0,0,0.16)';
 
     const game = {
         W, H,
@@ -1523,15 +1731,15 @@ function initFlappy() {
             else if (ratio < 1) w = HERO_SIZE * ratio;
             ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h);
         } else {
-            ctx.fillStyle = 'rgba(0,229,208,0.25)';
+            ctx.fillStyle = 'rgba(0,229,201,0.25)';
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.r + 6, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = '#00E5D0';
+            ctx.fillStyle = '#00E5C9';
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = '#070B14';
+            ctx.fillStyle = '#000';
             ctx.beginPath();
             ctx.arc(p.x + 4, p.y - 3, 2.5, 0, Math.PI * 2);
             ctx.arc(p.x + 10, p.y - 3, 2.5, 0, Math.PI * 2);
@@ -1627,7 +1835,9 @@ function updateScore(val) {
 }
 
 
-
+// ============================================================
+//                       МОРСКОЙ БОЙ — МОДЕЛЬ
+// ============================================================
 
 function bsEmptyField() {
     return Array.from({ length: 10 }, () => new Array(10).fill(0));
@@ -1747,6 +1957,10 @@ function reconstructEnemyFieldFromShots(shots) {
     return field;
 }
 
+// ============================================================
+//                       МОРСКОЙ БОЙ — РЕНДЕР
+// ============================================================
+
 function renderBattleship() {
     const s = state.bsScreen;
     if (s === 'lobby') return renderBSLobby();
@@ -1764,7 +1978,7 @@ function renderBSLobby() {
     return `<div class="bs-wrap">
         <div class="bs-hero">
             <div class="bs-hero-title">Морской бой</div>
-            <div class="bs-hero-sub">Сразись за Стипухи</div>
+            <div class="bs-hero-sub">Сразись за Софт</div>
         </div>
 
         <div class="card">
@@ -1775,28 +1989,28 @@ function renderBSLobby() {
                     <button class="bs-bet-btn ${bet === v ? 'active' : ''}" data-action="bs-bet" data-value="${v}">${v}</button>
                 `).join('')}
             </div>
-            <div class="card-subtitle" style="margin-top:10px">У тебя: <strong style="color:var(--neon)">${formatNumber(w.soft || 0)}</strong> Стипух</div>
+            <div class="card-subtitle" style="margin-top:10px">У тебя: <strong style="color:var(--neon-dark)">${formatNumber(w.soft || 0)}</strong> Софта</div>
         </div>
 
         <div class="bs-menu-grid">
             <button class="bs-menu-btn primary" data-action="bs-play-bot" ${canPlay ? '' : 'disabled'}>
                 <div class="bs-menu-icon">${robotIconSvg()}</div>
-                <div class="bs-menu-label">Играть с ботом</div>
-                <div class="bs-menu-sub">Умный ИИ · ставка работает</div>
+                <div class="bs-menu-label">С ботом</div>
+                <div class="bs-menu-sub">Умный ИИ · со ставкой</div>
             </button>
             <button class="bs-menu-btn primary" data-action="bs-create-room" ${canPlay ? '' : 'disabled'}>
                 <div class="bs-menu-icon">${keyIconSvg()}</div>
-                <div class="bs-menu-label">Создать игру</div>
-                <div class="bs-menu-sub">Получить код для друга</div>
+                <div class="bs-menu-label">Создать</div>
+                <div class="bs-menu-sub">Код для друга</div>
             </button>
             <button class="bs-menu-btn" data-action="bs-join-room" ${canPlay ? '' : 'disabled'}>
                 <div class="bs-menu-icon">${targetIconSvg()}</div>
                 <div class="bs-menu-label">Ввести код</div>
-                <div class="bs-menu-sub">Присоединиться к другу</div>
+                <div class="bs-menu-sub">Присоединиться</div>
             </button>
             <button class="bs-menu-btn" data-action="bs-find-match" ${canPlay ? '' : 'disabled'}>
                 <div class="bs-menu-icon">${usersIconSvg()}</div>
-                <div class="bs-menu-label">Найти соперника</div>
+                <div class="bs-menu-label">Найти</div>
                 <div class="bs-menu-sub">Случайный игрок</div>
             </button>
         </div>
@@ -1831,7 +2045,7 @@ function renderBSPlacing() {
     return `<div class="bs-wrap">
         <div class="bs-hero">
             <div class="bs-hero-title">Расстановка</div>
-            <div class="bs-hero-sub">Ставка: ${state.bsBet} Стипух · ${nextSize ? `осталось ${list.length - idx}` : 'всё готово'}</div>
+            <div class="bs-hero-sub">Ставка: ${state.bsBet} Софта · ${nextSize ? `осталось ${list.length - idx}` : 'всё готово'}</div>
         </div>
 
         ${previewHtml}
@@ -1874,7 +2088,7 @@ function renderBSWaiting() {
                 <button class="bs-code-copy" data-action="bs-copy-code">Копировать</button>
             </div>
             <div class="card-subtitle" style="margin-top:14px">
-                Ставка: <strong style="color:var(--neon)">${state.bsBet}</strong> Стипух
+                Ставка: <strong style="color:var(--neon-dark)">${state.bsBet}</strong> Софта
             </div>
             <div class="card-subtitle" style="margin-top:6px">Как только друг введёт код — игра начнётся автоматически.</div>
         </div>
@@ -1933,8 +2147,8 @@ function renderBSResult() {
     const title = r.outcome === 'win' ? 'Победа!' : r.outcome === 'lose' ? 'Поражение' : 'Ничья';
     const titleCls = r.outcome === 'win' ? 'win' : r.outcome === 'lose' ? 'lose' : 'draw';
     let sub = '';
-    if (r.outcome === 'win') sub = r.reward ? `Чистая прибыль: ${formatNumber(r.reward)} Стипух` : 'Победа!';
-    else if (r.outcome === 'lose') sub = r.loss ? `Потеряно: ${formatNumber(r.loss)} Стипух` : 'Поражение';
+    if (r.outcome === 'win') sub = r.reward ? `Чистая прибыль: ${formatNumber(r.reward)} Софта` : 'Победа!';
+    else if (r.outcome === 'lose') sub = r.loss ? `Потеряно: ${formatNumber(r.loss)} Софта` : 'Поражение';
     else sub = 'Ставки возвращены';
     return `<div class="bs-wrap">
         <div class="bs-result">
@@ -2059,6 +2273,10 @@ function countAliveShips(field, ships) {
     return alive;
 }
 
+// ============================================================
+//                       МОРСКОЙ БОЙ — ДЕЙСТВИЯ
+// ============================================================
+
 function actionBSBet(value) {
     haptic('light');
     state.bsBet = value;
@@ -2077,7 +2295,7 @@ async function actionBSPlayBot() {
     if (state._bsBotStarting) return;
     haptic('light');
     if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Стипух для ставки');
+        alert('Недостаточно Софта для ставки');
         return;
     }
     state._bsBotStarting = true;
@@ -2115,7 +2333,7 @@ async function actionBSPlayBot() {
 async function actionBSCreateRoom() {
     haptic('light');
     if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Стипух для ставки');
+        alert('Недостаточно Софта для ставки');
         return;
     }
     try {
@@ -2149,7 +2367,7 @@ async function actionBSCreateRoom() {
 function actionBSJoinRoom() {
     haptic('light');
     if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Стипух для ставки');
+        alert('Недостаточно Софта для ставки');
         return;
     }
     state.bsJoinCode = '';
@@ -2197,7 +2415,7 @@ async function actionBSJoinSubmit() {
 async function actionBSFindMatch() {
     haptic('light');
     if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Стипух для ставки');
+        alert('Недостаточно Софта для ставки');
         return;
     }
     try {
@@ -2342,12 +2560,11 @@ async function actionBSConfirmPlace() {
 }
 
 // ============================================================
-//   АДАПТИВНЫЙ POLLING — быстро когда ход врага, редко когда свой
+//                  АДАПТИВНЫЙ POLLING
 // ============================================================
 
 function startBSPolling() {
     bsClearPoll();
-    // Немедленный первый опрос + адаптивный цикл
     pollBSGame().then(() => scheduleNextBSPoll());
 }
 
@@ -2355,7 +2572,6 @@ function scheduleNextBSPoll() {
     bsClearPoll();
     if (!state.bsGameId || state.bsIsBot) return;
     if (state.bsScreen !== 'battle' && state.bsScreen !== 'waiting') return;
-    // Ход соперника → опрашиваем часто (700 мс). Свой ход → редко (3000 мс).
     const delay = (state.bsTurn === 'enemy') ? 700 : 3000;
     state.bsPollTimer = setTimeout(async () => {
         await pollBSGame();
@@ -2395,7 +2611,6 @@ async function pollBSGame() {
                 refreshBSBattleDOM();
             }
 
-            // Если ход сменился на наш — короткий сигнал
             if (prevTurn === 'enemy' && state.bsTurn === 'me') {
                 haptic('success');
             }
@@ -2486,7 +2701,6 @@ async function pvpFire(x, y) {
         state.bsTurn = r.your_turn ? 'me' : 'enemy';
         if (r.log) state.bsLog = r.log;
         refreshBSBattleDOM();
-        // Сразу запускаем быстрый polling — наш ход завершён, ждём ответа
         if (state.bsTurn === 'enemy') {
             startBSPolling();
         }
@@ -2578,6 +2792,10 @@ function handleBSFinish(result) {
     loadProfile();
     render();
 }
+
+// ============================================================
+//                  УМНЫЙ БОТ
+// ============================================================
 
 function findBotTargetSmart(field) {
     const hits = [];
@@ -2888,761 +3106,658 @@ async function actionBSSurrender() {
     }
 }
 
-function attachScheduleSwipe() {
-    const content = document.getElementById('content');
-    if (!content || content.dataset.swipeBound === '1') return;
-    content.dataset.swipeBound = '1';
-    let startX = 0, startY = 0, tracking = false;
-    content.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        startX = e.touches[0].clientX;
-        startY = e.touches[0].clientY;
-        tracking = true;
-    }, { passive: true });
-    content.addEventListener('touchend', (e) => {
-        if (!tracking) return;
-        tracking = false;
-        const dx = e.changedTouches[0].clientX - startX;
-        const dy = e.changedTouches[0].clientY - startY;
-        if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
-        if (state.tab !== 'schedule' || state.scheduleViewMode !== 'today') return;
-        if (dx > 0) { if (state.scheduleDay === 'tomorrow') actionDayToday(); }
-        else { if (state.scheduleDay === 'today') actionDayTomorrow(); }
-    }, { passive: true });
+function robotIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="8" width="16" height="12" rx="2"></rect>
+        <circle cx="9" cy="13" r="1"></circle>
+        <circle cx="15" cy="13" r="1"></circle>
+        <line x1="9" y1="17" x2="15" y2="17"></line>
+        <line x1="12" y1="4" x2="12" y2="8"></line>
+        <circle cx="12" cy="3" r="1"></circle>
+    </svg>`;
+}
+function keyIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+    </svg>`;
+}
+function targetIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <circle cx="12" cy="12" r="6"></circle>
+        <circle cx="12" cy="12" r="2"></circle>
+    </svg>`;
+}
+function usersIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+    </svg>`;
 }
 
-function renderUserBar() {
+
+// ============================================================
+//                       ПРОФИЛЬ
+// ============================================================
+
+function renderProfile() {
+    const p = state.profile;
+    const w = state.wallet;
     const u = state.user;
-    const p = state.profile;
-    const name = (p?.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Гость');
-    const metaParts = [];
-    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
-    if (u.username) metaParts.push('@' + u.username);
-    const meta = metaParts.join(' · ') || 'профиль не заполнен';
-    const tasks = p?.tasks_active ?? 0;
-    const firstLetter = (u.first_name?.[0] || '?').toUpperCase();
-    const avIdx = state.wallet?.avatar_idx || 0;
-    const avPath = avatarPathByIdx(avIdx);
-    return `
-        <div class="user-bar" data-action="go-profile">
-            <div class="user-bar-avatar">
-                <img src="${avPath}" alt="" onerror="this.outerHTML='${escapeHtml(firstLetter)}'">
+    const ach = state.achievements || [];
+    const achGot = ach.filter(a => a.unlocked).length;
+    if (!p) return renderLoading();
+
+    const displayName = (p.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Студент');
+    const playerTag = p.player_tag || `PLAYER-${String(u.id).slice(-6).toUpperCase()}`;
+
+    const lvl = w?.level || 1;
+    const xpIn = w?.xp_in_level || 0;
+    const xpNext = w?.xp_to_next || 500;
+    const xpTotal = (w?.xp || 0);
+    const xpTarget = xpTotal + (xpNext - xpIn);
+
+    let html = '';
+
+    // Hero-профиль
+    html += `<div class="profile-hero">
+        <div class="profile-hero-bg"></div>
+        <div class="profile-hero-overlay"></div>
+        <div class="profile-hero-glow"></div>
+
+        <div style="padding-top:24px;position:relative;z-index:1"></div>
+
+        <div class="profile-avatar-wrap">${heroAvatarImg(180)}</div>
+
+        <div class="profile-level-badge">
+            <span class="num">${lvl}</span> LVL
+        </div>
+
+        <div class="profile-name-block">
+            <div class="profile-name-hero">
+                <div class="profile-name-main">${escapeHtml(displayName)}</div>
+                <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
             </div>
-            <div class="user-bar-info">
-                <div class="user-bar-name">${escapeHtml(name)}</div>
-                <div class="user-bar-meta">${escapeHtml(meta)}</div>
+            <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
+        </div>
+
+        <div class="profile-xp-row">
+            <div class="profile-xp-current">${formatNumber(xpTotal)} XP</div>
+            <div class="profile-xp-target">${formatNumber(xpTarget)} XP</div>
+        </div>
+
+        <div class="profile-currency-row">
+            <div class="profile-currency-tile soft" data-action="exchange-open">
+                <div class="label">Софт</div>
+                <div class="value">${softIconImg(22)}<span>${formatNumber(w?.soft || 0)}</span></div>
             </div>
-            <div class="user-bar-badges">
-                <div class="user-badge">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 11 12 14 22 4"></polyline>
-                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                    </svg>
-                    <span>${tasks}</span>
-                </div>
+            <div class="profile-currency-tile hard" data-action="premium-open">
+                <div class="label">Хард</div>
+                <div class="value">${hardIconImg(22)}<span>${formatNumber(w?.hard || 0)}</span></div>
             </div>
         </div>
-    `;
-}
 
-function renderLesson(les) {
-    const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
-    const details = [];
-    if (les.teacher) details.push(escapeHtml(les.teacher));
-    if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
-    const att = les.attendance || '';
-    const attLabel = att === 'was' ? '✓' : att === 'missed' ? '✗' : att === 'sick' ? 'Б' : '';
-    return `
-        <div class="lesson">
-            <div class="lesson-time">${escapeHtml(timeRange)}</div>
-            <div class="lesson-body">
-                <div class="lesson-subject">${escapeHtml(les.subject)}${les.type ? ` <span style="color:var(--text-2);font-weight:400">(${escapeHtml(les.type)})</span>` : ''}</div>
-                ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
-                ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
-            </div>
-            <button class="lesson-status ${att}"
-                    data-action="lesson-status"
-                    data-date="${escapeHtml(les.date || '')}"
-                    data-time="${escapeHtml(les.time || '')}"
-                    data-subject="${escapeHtml(les.subject || '')}"
-                    data-status="${att}">${attLabel}</button>
+        <div class="avatar-change-row">
+            <button class="avatar-change-btn" data-action="avatar-toggle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                <span>Сменить аватар</span>
+            </button>
         </div>
-    `;
-}
-function renderDaySwitch() {
-    return `<div class="day-switch">
-        <button data-action="day-today" class="${state.scheduleDay === 'today' ? 'active' : ''}">Сегодня</button>
-        <button data-action="day-tomorrow" class="${state.scheduleDay === 'tomorrow' ? 'active' : ''}">Завтра</button>
     </div>`;
-}
-function _tomorrowStrIrkutsk() {
-    const nowMs = Date.now();
-    const irkMs = nowMs + (8 * 3600 * 1000) + (new Date().getTimezoneOffset() * 60 * 1000);
-    const tomorrowIrk = new Date(irkMs + 24 * 3600 * 1000);
-    const dd = String(tomorrowIrk.getUTCDate()).padStart(2, '0');
-    const mm = String(tomorrowIrk.getUTCMonth() + 1).padStart(2, '0');
-    const yyyy = tomorrowIrk.getUTCFullYear();
-    return `${dd}.${mm}.${yyyy}`;
-}
-function _findDayByDate(days, dateStr) {
-    if (!days) return null;
-    for (const d of days) {
-        if (d && d.date === dateStr) return d;
-    }
-    return null;
-}
-function getTomorrowData() {
-    const target = _tomorrowStrIrkutsk();
-    if (state.weekDays && state.weekDays.days) {
-        const d = _findDayByDate(state.weekDays.days, target);
-        if (d) return d;
-    }
-    if (state.nextWeekDays && state.nextWeekDays.days) {
-        const d = _findDayByDate(state.nextWeekDays.days, target);
-        if (d) return d;
-    }
-    return null;
-}
-async function ensureWeekLoaded() {
-    if (state.weekDays && state.weekDays.days && state.weekDays.days.length > 0) return true;
-    try { const r = await apiGet('/api/week', { offset: 0 }); state.weekDays = r; return true; }
-    catch (e) { return false; }
-}
-function renderWeekView() {
-    const wd = state.weekDays;
-    if (!wd || !wd.days || wd.days.length === 0) return renderEmpty('Не удалось загрузить расписание на неделю');
-    let title;
-    if (state.weekOffset === 0) title = 'Текущая неделя';
-    else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
-    else title = `Неделя ${state.weekOffset}`;
-    let html = renderUserBar();
-    html += `<div class="day-header">${escapeHtml(title)}</div>`;
-    if (wd.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(wd.group)}${wd.subgroup ? ` · подгруппа ${escapeHtml(wd.subgroup)}` : ''}</div>`;
-    for (const day of wd.days) {
-        html += `<div class="day-header" style="margin-top:16px">${escapeHtml(day.name || day.date)}</div>`;
-        if (!day.lessons || day.lessons.length === 0) html += `<div class="card-subtitle" style="padding:8px 0">Занятий нет</div>`;
-        else for (const les of day.lessons) html += renderLesson(les);
-    }
-    html += `<div class="actions-row" style="margin-top:16px">
-        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
-        <button class="btn btn-secondary" data-action="week-today">Сегодня</button>
-        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
-    </div>`;
-    return html;
-}
-function renderDayCard(day, label) {
-    let html = `<div class="day-header">${escapeHtml(label)}${day.name ? ' · ' + escapeHtml(day.name) : ''}${day.date ? ', ' + escapeHtml(day.date) : ''}</div>`;
-    const p = state.profile;
-    if (p?.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(p.group)}${p.subgroup ? ` · подгруппа ${escapeHtml(p.subgroup)}` : ''}</div>`;
-    if (!day.lessons || day.lessons.length === 0) html += renderEmpty('Занятий нет');
-    else for (const les of day.lessons) html += renderLesson(les);
-    html += `<div class="actions-row">
-        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
-        <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
-        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
-    </div>`;
-    return html;
-}
-function renderSchedule() {
-    if (state.scheduleViewMode === 'week' && state.weekDays) return renderWeekView();
-    const s = state.schedule;
-    if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
-        return renderUserBar() + `
-            <div class="banner">
-                <div class="banner-title">Как начать</div>
-                <div class="banner-sub">1. Профиль → «Выбрать группу»<br>2. Укажи институт, курс и группу<br>3. Вернись — расписание появится</div>
-                <button class="banner-btn" data-action="go-profile">Выбрать группу</button>
-            </div>
-        `;
-    }
-    let html = renderUserBar() + renderDaySwitch();
-    if (state.scheduleDay === 'tomorrow') {
-        if (!state.weekDays) return html + renderLoading();
-        const tomorrow = getTomorrowData();
-        if (!tomorrow) return html + renderEmpty('Не удалось загрузить расписание на завтра');
-        return html + renderDayCard(tomorrow, 'Завтра');
-    }
-    if (!s) return html + renderEmpty('Нет данных о расписании');
-    if (s.error) return html + renderEmpty(s.message || 'Ошибка загрузки');
-    const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
-    html += `<div class="day-header">${escapeHtml(header)}</div>`;
-    if (s.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${s.subgroup ? ` · подгруппа ${escapeHtml(s.subgroup)}` : ''}</div>`;
-    if (!s.lessons || s.lessons.length === 0) html += renderEmpty('Занятий нет');
-    else for (const les of s.lessons) html += renderLesson(les);
-    html += `<div class="actions-row">
-        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
-        <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
-        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
-    </div>`;
-    return html;
-}
 
-function getCourseFromGroup(groupName) {
-    const m = String(groupName).match(/-(\d{2})-/);
-    if (!m) return null;
-    const year = parseInt(m[1], 10);
-    const map = { 26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6 };
-    return map[year] || null;
-}
-function getCoursesForInstitute(inst) {
-    const groups = (state.groups && state.groups[inst]) || [];
-    const set = new Set();
-    for (const g of groups) { const c = getCourseFromGroup(g.name); if (c) set.add(c); }
-    return Array.from(set).sort((a, b) => a - b);
-}
-function renderInstitutePicker() {
-    const groups = state.groups || {};
-    const institutes = Object.keys(groups);
-    let html = `<div class="picker-header"><button class="picker-back" data-action="picker-back">←</button><div class="picker-title">Выбери институт</div></div>`;
-    if (institutes.length === 0) { html += `<div class="picker-empty">Список институтов не загружен</div>`; return html; }
-    html += `<div class="picker-list">`;
-    for (const inst of institutes) {
-        const count = groups[inst]?.length || 0;
-        const selected = state.profile?.group && groups[inst]?.some(g => g.name === state.profile.group);
-        html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-institute" data-value="${escapeHtml(inst)}">
-            <div class="picker-group-item"><span>${escapeHtml(inst)}</span><span class="picker-item-sub">${count} групп</span></div>
-            <span class="picker-item-arrow">›</span>
-        </button>`;
-    }
-    html += `</div>`; return html;
-}
-function renderCoursePicker() {
-    const inst = state.pickerInstitute;
-    const courses = getCoursesForInstitute(inst);
-    let html = `<div class="picker-header"><button class="picker-back" data-action="picker-back">←</button><div class="picker-title">${escapeHtml(inst)} · Курс</div></div>`;
-    if (courses.length === 0) { html += `<div class="picker-empty">Нет доступных курсов</div>`; return html; }
-    const groups = (state.groups && state.groups[inst]) || [];
-    html += `<div class="picker-list">`;
-    for (const c of courses) {
-        const count = groups.filter(g => getCourseFromGroup(g.name) === c).length;
-        html += `<button class="picker-item" data-action="picker-choose-course" data-value="${c}">
-            <div class="picker-group-item"><span>${c} курс</span><span class="picker-item-sub">${count} групп</span></div>
-            <span class="picker-item-arrow">›</span>
-        </button>`;
-    }
-    html += `</div>`; return html;
-}
-function renderGroupPicker() {
-    const inst = state.pickerInstitute;
-    const course = state.pickerCourse;
-    const allGroups = (state.groups && state.groups[inst]) || [];
-    const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
-    let html = `<div class="picker-header"><button class="picker-back" data-action="picker-back">←</button><div class="picker-title">${escapeHtml(inst)} · ${course} курс</div></div>
-    <input class="picker-search" id="picker-search" placeholder="Поиск группы..." value="${escapeHtml(state.pickerSearch)}" autocomplete="off">
-    <div class="picker-list" id="picker-list">`;
-    const q = (state.pickerSearch || '').trim().toLowerCase();
-    const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
-    if (filtered.length === 0) html += `<div class="picker-empty">Ничего не найдено</div>`;
-    else for (const g of filtered) {
-        const selected = state.profile?.group === g.name;
-        html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
-            <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
-            ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
-        </button>`;
-    }
-    html += `</div>`; return html;
-}
-function pickerAttachSearch() {
-    const input = document.getElementById('picker-search');
-    if (!input) return;
-    input.focus();
-    try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
-    input.addEventListener('input', (e) => {
-        state.pickerSearch = e.target.value;
-        const inst = state.pickerInstitute;
-        const course = state.pickerCourse;
-        const allGroups = (state.groups && state.groups[inst]) || [];
-        const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
-        const q = (state.pickerSearch || '').trim().toLowerCase();
-        const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
-        const list = document.getElementById('picker-list');
-        if (!list) return;
-        let html = '';
-        if (filtered.length === 0) html = `<div class="picker-empty">Ничего не найдено</div>`;
-        else for (const g of filtered) {
-            const selected = state.profile?.group === g.name;
-            html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
-                <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
-                ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
-            </button>`;
-        }
-        list.innerHTML = html;
-        document.querySelectorAll('#picker-list [data-action]').forEach((el) => {
-            el.addEventListener('click', () => handleAction(el));
-        });
-    });
-}
+    // Стрик
+    html += `<div class="streak-row" style="margin-bottom:20px">
+        <span class="fire">🔥</span> Стрик: ${p.streak || 0} ${p.streak === 1 ? 'день' : 'дн.'}
+    </div>`;
 
-function renderNotifyEditor() {
-    const cur = state.notifyEditorType;
-    const hh = state.notifyEditorHour;
-    const mm = state.notifyEditorMinute;
-    const timeVal = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-    return `<div class="picker-header"><button class="picker-back" data-action="notify-back">←</button><div class="picker-title">Уведомления</div></div>
-    <div class="card">
-        <div class="card-title">Когда напоминать</div>
-        <div class="tab-buttons" style="margin-bottom:12px">
-            <button data-action="notify-set-type" data-value="today" class="${cur === 'today' ? 'active' : ''}">Сегодня</button>
-            <button data-action="notify-set-type" data-value="tomorrow" class="${cur === 'tomorrow' ? 'active' : ''}">Завтра</button>
+    // Статистика — 3 столбика как у LIT
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Твоя статистика</h2>
         </div>
-        <div class="card-subtitle">${cur === 'today' ? 'Расписание на сегодня. Время — до 10:00.' : 'Расписание на завтра. Время — любое.'}</div>
-    </div>
-    <div class="card">
-        <div class="card-title">Во сколько</div>
-        <div class="card-subtitle">Время по Иркутску</div>
-        <input type="time" id="notify-time-input" class="input" value="${timeVal}">
-    </div>
-    <div class="actions-row" style="margin-top:16px">
-        <button class="btn" data-action="notify-save" style="flex:1">Сохранить</button>
-        <button class="btn btn-secondary" data-action="notify-off" style="flex:1">Выключить</button>
+        <div class="stats-row">
+            <div class="stat-col">
+                <div class="stat-value">${p.notes_count || 0}</div>
+                <div class="stat-label">Заметок<br>создано</div>
+            </div>
+            <div class="stat-col highlight">
+                <div class="stat-value">${p.streak || 0}</div>
+                <div class="stat-label">Дней<br>подряд</div>
+            </div>
+            <div class="stat-col">
+                <div class="stat-value">${p.tasks_done || 0}</div>
+                <div class="stat-label">Заданий<br>выполнено</div>
+            </div>
+        </div>
     </div>`;
-}
-function actionOpenNotifyEditor() {
-    haptic('light');
-    const p = state.profile;
-    state.notifyEditorType = p?.notify_type || 'today';
-    state.notifyEditorHour = p?.notify_hour >= 0 ? p.notify_hour : 8;
-    state.notifyEditorMinute = p?.notify_minute || 0;
-    state.notifyEditor = true; render();
-}
-function actionNotifyBack() { haptic('light'); state.notifyEditor = false; render(); }
-function actionNotifySetType(ntype) {
-    haptic('light');
-    state.notifyEditorType = ntype;
-    if (ntype === 'today' && state.notifyEditorHour > 10) { state.notifyEditorHour = 8; state.notifyEditorMinute = 0; }
-    render();
-}
-async function actionNotifySave() {
-    const input = document.getElementById('notify-time-input');
-    if (!input) return;
-    const val = (input.value || '').trim();
-    if (!/^\d{1,2}:\d{2}$/.test(val)) { alert('Введи время в формате ЧЧ:ММ'); return; }
-    const [hhStr, mmStr] = val.split(':');
-    const hh = parseInt(hhStr, 10);
-    const mm = parseInt(mmStr, 10);
-    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { alert('Неверное время'); return; }
-    if (state.notifyEditorType === 'today' && hh > 10) { alert('Для «Сегодня» — не позже 10:00'); return; }
-    haptic('success');
-    try {
-        await apiPost('/api/notify-set', { type: state.notifyEditorType, hour: hh, minute: mm });
-        state.notifyEditor = false;
-        await loadProfile(); render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-async function actionNotifyOff() {
-    haptic('success');
-    try {
-        await apiPost('/api/notify-set', { type: null });
-        state.notifyEditor = false;
-        await loadProfile(); render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-async function actionSetNotifyBefore(minutes) {
-    haptic('light');
-    try {
-        await apiPost('/api/notify-set-before', { minutes });
-        if (state.profile) state.profile.notify_before_min = minutes;
-        haptic('success'); render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-function actionLessonStatus(el) {
-    const date = el.dataset.date || '';
-    const time = el.dataset.time || '';
-    const subject = el.dataset.subject || '';
-    const cur = el.dataset.status || '';
-    if (!date || !time || !subject) return;
-    let next = '';
-    if (cur === '') next = 'was';
-    else if (cur === 'was') next = 'missed';
-    else if (cur === 'missed') next = 'sick';
-    else if (cur === 'sick') next = '';
-    el.dataset.status = next;
-    el.classList.remove('was', 'missed', 'sick');
-    if (next) el.classList.add(next);
-    el.textContent = next === 'was' ? '✓' : next === 'missed' ? '✗' : next === 'sick' ? 'Б' : '';
-    haptic(next === 'was' ? 'light' : next === 'missed' ? 'error' : 'light');
-    _applyAttendanceLocally(date, time, subject, next);
-    apiPost('/api/attendance-set', { date, time, subject, status: next }).catch(() => {});
-}
-function _applyAttendanceLocally(date, time, subject, status) {
-    const upd = (lessons) => {
-        if (!lessons) return;
-        for (const les of lessons) {
-            if (les.time === time && les.subject === subject && (les.date || date) === date) {
-                les.attendance = status;
-            }
-        }
-    };
-    if (state.schedule?.lessons) upd(state.schedule.lessons);
-    if (state.weekDays?.days) for (const d of state.weekDays.days) if (d.date === date) upd(d.lessons);
-    if (state.nextWeekDays?.days) for (const d of state.nextWeekDays.days) if (d.date === date) upd(d.lessons);
-}
 
-function renderTasks() {
-    const tasks = state.tasks;
-    const stats = state.tasksStats;
-    let html = `<div class="tab-buttons">
-        <button data-action="tasks-show-active" class="${state.tasksView === 'active' ? 'active' : ''}">Активные (${stats.active})</button>
-        <button data-action="tasks-show-done" class="${state.tasksView === 'done' ? 'active' : ''}">Выполненные (${stats.done})</button>
+    // Сундуки
+    const chestReady = state.chest?.can_open !== false;
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Халява дня</h2>
+        </div>
+        <div class="chest-card">
+            <div class="chest-svg">${chestDailyImg(100)}</div>
+            <div class="chest-title">Халява <span class="accent">дня</span></div>
+            <div class="chest-sub">${chestReady ? '🎁 Готово к открытию' : '🎁 Уже открыто сегодня'}</div>
+            ${chestReady ? '' : `<div class="chest-timer" id="chest-timer">--:--:--</div>`}
+            <button class="chest-btn" data-action="chest-open" ${chestReady ? '' : 'disabled'}>
+                ${chestReady ? 'Открыть' : 'Уже открыто'}
+            </button>
+        </div>
     </div>`;
-    if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
-    if (!tasks || tasks.length === 0) {
-        if (state.tasksView === 'active') html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу».</div></div>`;
-        else html += renderEmpty('Нет выполненных задач');
-        return html;
-    }
-    for (const t of tasks) {
-        const dueStr = t.due_date ? `<span class="${t.overdue ? 'overdue' : ''}">до ${escapeHtml(t.due_date)}${t.due_time ? ' ' + escapeHtml(t.due_time) : ''}${t.overdue ? ' — просрочено' : ''}</span>` : '';
-        html += `<div class="card">
-            <div class="card-title">${escapeHtml(t.text)}</div>
-            <div class="card-meta">${priorityLabel(t.priority)} ${dueStr}</div>
-            <div class="actions-row">
-                ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">Готово</button>` : ''}
-                <button class="btn btn-secondary" data-action="task-edit-open" data-id="${t.id}">Изменить</button>
-                <button class="btn btn-secondary" data-action="task-delete" data-id="${t.id}">Удалить</button>
+
+    // Премиум-сундук
+    const hardHave = w?.hard || 0;
+    const canPremium = hardHave >= 10;
+    html += `<div class="premium-chest-card">
+        <div class="premium-chest-crown">👑</div>
+        <div class="premium-chest-title">Премиум сундук</div>
+        <div class="premium-chest-sub">Стоимость: <strong>10 Харда</strong> · у тебя: ${hardHave}</div>
+        <div class="premium-chest-preview">
+            <div class="premium-chest-item">💰 500 Софта · ⚡ 1000 XP</div>
+            <div class="premium-chest-item">🎁 Бонус: 3 / 5 / 10 / 25 Харда</div>
+        </div>
+        <button class="premium-chest-btn" data-action="premium-open" ${canPremium ? '' : 'disabled'}>
+            ${canPremium ? 'Открыть за 10 Харда' : 'Нужно 10 Харда'}
+        </button>
+    </div>`;
+
+    // Достижения
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Достижения ${achGot}/${ach.length || 8}</h2>
+        </div>
+        <div class="card">
+            <div class="ach-grid">
+                ${ach.length === 0 ? '<div class="card-subtitle">Загрузка...</div>' : ach.map(a => `
+                    <div class="ach-item ${a.unlocked ? 'unlocked' : ''}" data-action="ach-open" data-id="${escapeHtml(a.id)}">
+                        <div class="ach-emoji">${a.icon}</div>
+                        <div class="ach-name">${escapeHtml(a.name)}</div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    </div>`;
+
+    // Посещаемость
+    const attTotal = p.attendance_total || 0;
+    if (attTotal > 0) {
+        html += `<div class="section">
+            <div class="section-header">
+                <div class="section-icon">${fireIconSvg(22)}</div>
+                <h2 class="section-title">Посещаемость</h2>
+            </div>
+            <div class="card">
+                <div class="att-stat-row"><span class="att-stat-label">Всего</span><span class="att-stat-value">${attTotal}</span></div>
+                <div class="att-stat-row"><span class="att-stat-label">Посещено</span><span class="att-stat-value green">${p.attendance_was || 0}</span></div>
+                <div class="att-stat-row"><span class="att-stat-label">Пропущено</span><span class="att-stat-value red">${p.attendance_missed || 0}</span></div>
+                <div class="att-stat-row"><span class="att-stat-label">По болезни</span><span class="att-stat-value yellow">${p.attendance_sick || 0}</span></div>
             </div>
         </div>`;
     }
-    if (state.tasksView === 'done' && tasks.length > 0) html += `<button class="btn btn-secondary" data-action="tasks-clear" style="width:100%;margin-top:8px">Очистить выполненные</button>`;
-    return html;
-}
-function renderTaskEditor() {
-    const isEdit = state.taskEditorId !== null;
-    const p = state.taskEditorPriority;
-    const dueIso = state.taskEditorDate;
-    return `<div class="editor-header"><button class="picker-back" data-action="task-editor-back">←</button><div class="picker-title">${isEdit ? 'Изменить задачу' : 'Новая задача'}</div></div>
-    <div class="card"><div class="card-title">Текст задачи</div>
-        <textarea class="input" id="task-text-input" placeholder="Что нужно сделать?" rows="4">${escapeHtml(state.taskEditorText || '')}</textarea>
-    </div>
-    <div class="card"><div class="card-title">Срок</div>
-        <div class="card-subtitle">Дата</div>
-        <input type="date" id="task-date-input" class="input" value="${escapeHtml(dueIso)}">
-        <div class="card-subtitle" style="margin-top:8px">Время (необязательно)</div>
-        <input type="time" id="task-time-input" class="input" value="${escapeHtml(state.taskEditorTime || '')}">
-        <div class="actions-row" style="margin-top:8px">
-            <button class="btn btn-secondary" data-action="task-clear-date" style="flex:1">Очистить срок</button>
-        </div>
-    </div>
-    <div class="card"><div class="card-title">Приоритет</div>
-        <div class="task-priority-picker">
-            <button class="task-priority-btn p-low ${p === 1 ? 'active' : ''}" data-action="task-set-priority" data-value="1">Низкий</button>
-            <button class="task-priority-btn p-medium ${p === 2 ? 'active' : ''}" data-action="task-set-priority" data-value="2">Средний</button>
-            <button class="task-priority-btn p-high ${p === 3 ? 'active' : ''}" data-action="task-set-priority" data-value="3">Высокий</button>
-        </div>
-    </div>
-    <div class="actions-row" style="margin-top:16px">
-        <button class="btn" data-action="task-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
-        ${isEdit ? `<button class="btn btn-secondary" data-action="task-editor-delete" style="flex:1">Удалить</button>` : ''}
-    </div>`;
-}
-function actionTaskAddOpen() {
-    haptic('light');
-    state.taskEditor = true; state.taskEditorId = null;
-    state.taskEditorText = ''; state.taskEditorDate = ''; state.taskEditorTime = '';
-    state.taskEditorPriority = 2; render();
-}
-function actionTaskEditOpen(id) {
-    haptic('light');
-    const t = state.tasks.find(x => x.id === id);
-    if (!t) return;
-    state.taskEditor = true; state.taskEditorId = t.id;
-    state.taskEditorText = t.text || '';
-    state.taskEditorDate = displayToISO(t.due_date || '');
-    state.taskEditorTime = t.due_time || '';
-    state.taskEditorPriority = t.priority || 2;
-    render();
-}
-function actionTaskEditorBack() { haptic('light'); state.taskEditor = false; state.taskEditorId = null; render(); }
-function actionTaskSetPriority(p) { haptic('light'); state.taskEditorPriority = p; render(); }
-function actionTaskClearDate() { haptic('light'); state.taskEditorDate = ''; state.taskEditorTime = ''; render(); }
-async function actionTaskEditorSave() {
-    const textEl = document.getElementById('task-text-input');
-    const dateEl = document.getElementById('task-date-input');
-    const timeEl = document.getElementById('task-time-input');
-    const text = (textEl?.value || '').trim();
-    if (!text) { alert('Введи текст задачи'); return; }
-    const dateIso = dateEl?.value || '';
-    const due_date = dateIso ? isoToDisplay(dateIso) : null;
-    const due_time = (timeEl?.value || '').trim() || null;
-    const priority = state.taskEditorPriority || 2;
-    try {
-        if (state.taskEditorId) {
-            await apiPost('/api/task-update', { id: state.taskEditorId, text, due_date, due_time, priority, reset_due: !due_date });
-        } else {
-            await apiPost('/api/task-add', { text, due_date, due_time, priority });
-        }
-        haptic('success');
-        state.taskEditor = false; state.taskEditorId = null;
-        await loadTasks(); await loadWallet(); render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-async function actionTaskEditorDelete() {
-    if (!state.taskEditorId) return;
-    const ok = await tgConfirm('Удалить задачу?');
-    if (!ok) return;
-    try {
-        await apiPost('/api/task-delete', { id: state.taskEditorId });
-        haptic('success');
-        state.taskEditor = false; state.taskEditorId = null;
-        await loadTasks(); render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-async function actionTaskDone(id) {
-    try {
-        const r = await apiPost('/api/task-update', { id, done: true });
-        haptic('success'); popEmoji('✅');
-        if (r.wallet) state.wallet = r.wallet;
-        await loadTasks();
-        if (r.new_achievements && r.new_achievements.length > 0) {
-            await loadAchievements();
-            showNewAchievements(r.new_achievements);
-        }
-        render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionTaskDelete(id) {
-    const ok = await tgConfirm('Удалить задачу?');
-    if (!ok) return;
-    try { await apiPost('/api/task-delete', { id }); haptic('success'); await loadTasks(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionTasksClear() {
-    const ok = await tgConfirm('Очистить все выполненные?');
-    if (!ok) return;
-    try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
 
-function renderNotes() {
-    let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
-    if (!state.notes || state.notes.length === 0) {
-        html += `<div class="banner"><div class="banner-title">Заметки</div><div class="banner-sub">Короткие записи по предметам.</div></div>`;
-        return html;
-    }
-    for (const n of state.notes) {
-        html += `<div class="card">
-            <div class="card-title">${escapeHtml(n.subject)}</div>
-            <div class="card-subtitle">${escapeHtml(n.text)}</div>
+    // Стипендия
+    html += renderScholarshipCard();
+
+    // Меню (как у LIT — список кнопок)
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Меню</h2>
+        </div>
+        <div class="menu-list">
+            <button class="menu-item accent" data-action="choose-group">
+                <span>${p?.group ? 'Изменить группу' : 'Выбрать группу'}</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+            <button class="menu-item" data-action="notify-open">
+                <span>Уведомления о расписании</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+            <button class="menu-item" data-action="level-info-open">
+                <span>Уровни и опыт</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+            <button class="menu-item" data-action="currency-info-open">
+                <span>Где взять валюту</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+            <button class="menu-item" data-action="export-data">
+                <span>Скачать PDF с данными</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        </div>
+    </div>`;
+
+    // Подгруппа
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Подгруппа</h2>
+        </div>
+        <div class="card">
+            <div class="card-subtitle" style="margin-bottom:10px">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'Не выбрана'}</div>
             <div class="actions-row">
-                <button class="btn btn-secondary" data-action="note-edit-open" data-id="${n.id}">Изменить</button>
-                <button class="btn btn-secondary" data-action="note-delete" data-id="${n.id}">Удалить</button>
+                <button class="btn btn-secondary" data-action="set-subgroup" data-value="0" style="flex:1">—</button>
+                <button class="btn btn-secondary" data-action="set-subgroup" data-value="1" style="flex:1">1</button>
+                <button class="btn btn-secondary" data-action="set-subgroup" data-value="2" style="flex:1">2</button>
             </div>
-        </div>`;
-    }
+        </div>
+    </div>`;
+
+    // Цитата дня
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Цитата дня</h2>
+        </div>
+        <div class="card">
+            <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
+            <div class="actions-row">
+                ${p?.daily_subscribed
+                    ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0" style="width:100%">Отписаться</button>`
+                    : `<button class="btn" data-action="quote-subscribe" data-value="1" style="width:100%">Подписаться</button>`}
+            </div>
+        </div>
+    </div>`;
+
+    // Мои обращения
+    html += renderMyFeedbackCard();
+
+    // Обратная связь
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Обратная связь</h2>
+        </div>
+        <div class="card">
+            <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
+            <button class="btn" data-action="feedback-send" style="width:100%">Отправить</button>
+        </div>
+    </div>`;
+
+    // Уведомления checkbox + напоминания
+    const notifyOn = !!p?.notify_type;
+    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Настройки</h2>
+        </div>
+        <div class="card">
+            <div class="card-subtitle">Текущее: ${escapeHtml(notifyLabel)}</div>
+            <label class="checkbox-row">
+                <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
+                <span>Следить за изменениями в расписании</span>
+            </label>
+            <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
+            <div class="nbf-buttons">
+                ${[0, 10, 15, 30].map(m => `
+                    <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
+                            data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
+                `).join('')}
+            </div>
+        </div>
+    </div>`;
+
     return html;
 }
-function renderNoteEditor() {
-    const isEdit = state.noteEditorId !== null;
-    return `<div class="editor-header"><button class="picker-back" data-action="note-editor-back">←</button><div class="picker-title">${isEdit ? 'Изменить заметку' : 'Новая заметка'}</div></div>
-    <div class="card"><div class="card-title">Предмет</div>
-        <input class="input" id="note-subject-input" placeholder="Название предмета" value="${escapeHtml(state.noteEditorSubject || '')}" autocomplete="off">
-    </div>
-    <div class="card"><div class="card-title">Текст заметки</div>
-        <textarea class="input note-textarea" id="note-text-input" placeholder="Что записать?" rows="8">${escapeHtml(state.noteEditorText || '')}</textarea>
-    </div>
-    <div class="actions-row" style="margin-top:16px">
-        <button class="btn" data-action="note-editor-save" style="flex:1">${isEdit ? 'Сохранить' : 'Добавить'}</button>
-        ${isEdit ? `<button class="btn btn-secondary" data-action="note-editor-delete" style="flex:1">Удалить</button>` : ''}
-    </div>`;
-}
-function actionNoteAddOpen() {
-    haptic('light');
-    state.noteEditor = true; state.noteEditorId = null;
-    state.noteEditorSubject = ''; state.noteEditorText = ''; render();
-}
-function actionNoteEditOpen(id) {
-    haptic('light');
-    const n = state.notes.find(x => x.id === id);
-    if (!n) return;
-    state.noteEditor = true; state.noteEditorId = n.id;
-    state.noteEditorSubject = n.subject || '';
-    state.noteEditorText = n.text || ''; render();
-}
-function actionNoteEditorBack() { haptic('light'); state.noteEditor = false; state.noteEditorId = null; render(); }
-async function actionNoteEditorSave() {
-    const subjEl = document.getElementById('note-subject-input');
-    const textEl = document.getElementById('note-text-input');
-    const subject = (subjEl?.value || '').trim();
-    const text = (textEl?.value || '').trim();
-    if (!subject) { alert('Введи название предмета'); return; }
-    if (!text) { alert('Введи текст заметки'); return; }
-    try {
-        const r = await apiPost('/api/note-save', { subject, text });
-        haptic('success');
-        state.noteEditor = false; state.noteEditorId = null;
-        if (r.wallet) state.wallet = r.wallet;
-        await loadNotes();
-        if (r.new_achievements && r.new_achievements.length > 0) {
-            await loadAchievements();
-            showNewAchievements(r.new_achievements);
-        }
-        render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-async function actionNoteEditorDelete() {
-    if (!state.noteEditorId) return;
-    const ok = await tgConfirm('Удалить заметку?');
-    if (!ok) return;
-    try {
-        await apiPost('/api/note-delete', { id: state.noteEditorId });
-        haptic('success');
-        state.noteEditor = false; state.noteEditorId = null;
-        await loadNotes(); render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-async function actionNoteDelete(id) {
-    const ok = await tgConfirm('Удалить заметку?');
-    if (!ok) return;
-    try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
+
+// ============================================================
+//                       МОДАЛКИ
+// ============================================================
+
+function _computeModals() {
+    if (state.nameEditor) return renderNameEditorModal();
+    if (state.chestModal) return renderChestModal();
+    if (state.premiumModal) return renderPremiumModal();
+    if (state.achModal) return renderAchModal();
+    if (state.levelInfoModal) return renderLevelInfoModal();
+    if (state.currencyInfoModal) return renderCurrencyInfoModal();
+    if (state.newAchToast) return renderNewAchToast();
+    if (state.exchangeOpen) return renderExchangeModal();
+    if (state.bsJoinModal) return renderBSJoinModal();
+    if (state.scholarshipAmountModal) return renderScholarshipAmountModal();
+    if (state.adminReplyModal) return renderAdminReplyModal();
+    return '';
 }
 
-function renderAI() {
-    let html = '';
-    if (state.aiMessages.length === 0) {
-        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото.</div></div>`;
-    } else {
-        for (const m of state.aiMessages) {
-            if (m.role === 'user') {
-                if (m.photo) {
-                    html += `<div class="card" style="background:var(--neon);color:#070B14;padding:10px">
-                        <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="фото">
-                        <div style="font-weight:600">${escapeHtml(m.text || '')}</div>
-                    </div>`;
-                } else {
-                    html += `<div class="card" style="background:var(--neon);color:#070B14"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
-                }
-            } else {
-                html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(m.text)}</div></div>`;
-            }
-        }
-    }
-    if (state.aiPending) html += renderLoading();
-    const photoPreview = state.aiPendingPhoto
-        ? `<div class="ai-photo-preview"><img src="${state.aiPendingPhoto}" alt="фото"><button class="ai-photo-remove" data-action="ai-photo-cancel">✕</button></div>`
-        : '';
-    html += `<div style="margin-top:12px">
-        ${photoPreview}
-        <textarea class="input" id="ai-input" placeholder="Напиши вопрос..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
-        <button class="btn" data-action="ai-send" style="width:100%" ${state.aiPending ? 'disabled' : ''}>Отправить</button>
-        <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>Прикрепить фото</button>
-        <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
-        <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
+function renderNameEditorModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-title">Изменить имя</div>
+            <div class="modal-sub">Максимум 24 символа</div>
+            <input class="modal-input" id="name-editor-input" maxlength="24" value="${escapeHtml(state.nameEditorValue || '')}" placeholder="Твоё имя" autofocus>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="name-save">Сохранить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
     </div>`;
-    return html;
 }
-async function actionAIClear() {
-    const ok = await tgConfirm('Очистить историю чата?');
-    if (!ok) return;
-    haptic('light');
-    state.aiMessages = []; state.aiPendingPhoto = null;
-    apiPost('/api/ai/clear-history').catch(() => {});
-    render();
-}
-function actionAIPhotoOpen() {
-    haptic('light');
-    const input = document.getElementById('ai-photo-input');
-    if (input) input.click();
-}
-function actionAIPhotoCancel() { haptic('light'); state.aiPendingPhoto = null; render(); }
-function actionAIPhotoSelected(file) {
-    if (!file) return;
-    if (file.size > 8 * 1024 * 1024) { alert('Фото слишком большое (макс 8 МБ)'); return; }
-    if (!file.type.startsWith('image/')) { alert('Нужно изображение'); return; }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-            const maxSide = 1600;
-            let w = img.width, h = img.height;
-            if (w > maxSide || h > maxSide) {
-                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
-                else { w = Math.round(w * maxSide / h); h = maxSide; }
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
-            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
-            haptic('light'); render();
-        };
-        img.onerror = () => alert('Не удалось прочитать изображение');
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-}
-async function actionAISend() {
-    const el = document.getElementById('ai-input');
-    if (!el) return;
-    const question = (el.value || '').trim();
-    const photo = state.aiPendingPhoto;
-    if (!question && !photo) return;
-    if (photo) {
-        state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo });
-        state.aiPendingPhoto = null; el.value = ''; state.aiPending = true; render();
-        try {
-            const r = await apiPost('/api/ai-photo', { photo, question });
-            state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
-            haptic('success'); await loadWallet();
-        } catch (err) {
-            state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
-            haptic('error');
-        } finally { state.aiPending = false; render(); }
-        return;
-    }
-    state.aiMessages.push({ role: 'user', text: question });
-    el.value = ''; state.aiPending = true; render();
-    try {
-        const r = await apiPost('/api/ai', { question });
-        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
-        haptic('success'); await loadWallet();
-    } catch (e) {
-        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
-        haptic('error');
-    } finally { state.aiPending = false; render(); }
-}
-
-function renderAdmin() {
-    if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
-    let html = '';
-    if (state.adminStats) {
-        const s = state.adminStats;
-        html += `<div class="banner"><div class="banner-title">Статистика</div><div class="banner-sub">Пользователей: ${s.total_users}<br>Обращений в ожидании: ${s.pending_feedback}</div></div>`;
-    } else html += renderLoading();
-    html += `<div class="card">
-        <div class="card-title">Мониторинг ИРНИТУ</div>
-        ${state.adminMonitor
-            ? (state.adminMonitor.ok
-                ? `<div class="card-subtitle" style="color:var(--accent-green)">Сайт отвечает (HTTP ${state.adminMonitor.status})</div>`
-                : `<div class="card-subtitle overdue">Сайт не отвечает${state.adminMonitor.error ? ': ' + escapeHtml(state.adminMonitor.error) : ''}</div>`)
-            : `<div class="card-subtitle">Не проверено</div>`}
-        <div class="actions-row"><button class="btn btn-secondary" data-action="admin-monitor">Проверить</button></div>
+function renderChestModal() {
+    const r = state.chestModal;
+    if (!r) return '';
+    const emojiMap = { soft: '💰', xp: '⚡', hard: '🏅', free_name: '✏️' };
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="reward-reveal">
+                <div class="reward-icon">${emojiMap[r.type] || '🎁'}</div>
+                <div class="reward-label">${escapeHtml(r.label || '')}</div>
+                <div class="reward-desc">${r.type === 'soft' ? 'Софт зачислен' : r.type === 'xp' ? 'Опыт добавлен' : r.type === 'hard' ? 'Хард твой!' : 'Смена ника бесплатно'}</div>
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Круто!</button>
+            </div>
+        </div>
     </div>`;
-    html += `<div class="card">
-        <div class="card-title">Рассылка</div>
-        <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
-        <button class="btn" data-action="admin-broadcast">Отправить всем</button>
+}
+function renderPremiumModal() {
+    const r = state.premiumModal;
+    if (!r) return '';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="reward-reveal" style="padding-top:14px">
+                <div class="reward-icon">👑</div>
+                <div class="reward-label">ПРЕМИУМ СУНДУК</div>
+            </div>
+            <div class="info-section" style="margin-top:14px">
+                <div class="info-row"><span class="info-row-label">💰 Софт</span><span class="info-row-value">+${r.soft || 0}</span></div>
+                <div class="info-row"><span class="info-row-label">⚡ Опыт</span><span class="info-row-value">+${r.xp || 0} XP</span></div>
+                <div class="info-row"><span class="info-row-label">🏅 Бонус</span><span class="info-row-value gold">${escapeHtml(r.bonus_label || '—')}</span></div>
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Круто!</button>
+            </div>
+        </div>
     </div>`;
-    if (state.adminFeedback && state.adminFeedback.length > 0) {
-        html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
-        for (const f of state.adminFeedback) {
-            html += `<div style="border-bottom:1px solid var(--divider);padding:10px 0">
-                <div class="card-subtitle">#${f.id} | ${escapeHtml(f.username || f.user_id)}${f.status === 'postponed' ? ' [отложено]' : ''}</div>
-                <div style="white-space:pre-wrap;margin-top:4px">${escapeHtml(f.text)}</div>
-                <div class="actions-row">
-                    <button class="btn btn-secondary" data-action="admin-fb-reply" data-id="${f.id}">Ответить</button>
-                    <button class="btn btn-secondary" data-action="admin-fb-postpone" data-id="${f.id}">Отложить</button>
+}
+function renderNewAchToast() {
+    const list = state.newAchToast || [];
+    if (list.length === 0) return '';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">🎉 Новое достижение!</div>
+            <div class="info-modal-sub">${list.length > 1 ? `Открыто сразу ${list.length}:` : 'Ты только что получил:'}</div>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+                ${list.map(a => `
+                    <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--neon-soft);border-radius:var(--r-md)">
+                        <div style="font-size:32px">${a.icon}</div>
+                        <div style="flex:1;min-width:0">
+                            <div style="font-size:14px;font-weight:800;margin-bottom:2px">${escapeHtml(a.name)}</div>
+                            <div style="font-size:11px;font-weight:700;color:var(--neon-dark)">${escapeHtml(a.rewardText)}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Отлично!</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderLevelInfoModal() {
+    const w = state.wallet || {};
+    const lvl = w.level || 1;
+    const xpIn = w.xp_in_level || 0;
+    const xpNext = w.xp_to_next || 500;
+    const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Уровни и опыт</div>
+            <div class="info-modal-sub">Как растёт уровень и за что дают XP</div>
+            <div class="info-current">
+                <div class="info-current-lvl">${lvl}<small>LVL</small></div>
+                <div class="info-current-info">
+                    <div class="info-current-name">${escapeHtml(w.level_title || 'Первокурсник')}</div>
+                    <div class="info-current-xp">${xpIn} / ${xpNext} XP</div>
                 </div>
-            </div>`;
-        }
-        html += `</div>`;
-    } else html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
-    return html;
+            </div>
+            <div class="info-xp-bar"><div class="info-xp-fill" style="width:${xpPct}%"></div></div>
+            <div class="info-section">
+                <div class="info-section-title">За что дают опыт</div>
+                <div class="info-row"><span class="info-row-label">Задача добавлена</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Задача выполнена</span><span class="info-row-value">+20 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Заметка</span><span class="info-row-value">+3 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Оценка</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Посещение</span><span class="info-row-value">+3 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+2 XP</span></div>
+                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Игра: 1 очко</span><span class="info-row-value">+2 XP</span></div>
+            </div>
+            <div class="info-section">
+                <div class="info-section-title">Формула уровня</div>
+                <div class="info-row"><span class="info-row-label">1 → 2</span><span class="info-row-value muted">500 XP</span></div>
+                <div class="info-row"><span class="info-row-label">N → N+1</span><span class="info-row-value">N × 500 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Максимум</span><span class="info-row-value gold">30 LVL</span></div>
+            </div>
+            <div class="info-section">
+                <div class="info-section-title">Титулы</div>
+                <div class="info-row"><span class="info-row-label">1–5</span><span class="info-row-value muted">Первокурсник</span></div>
+                <div class="info-row"><span class="info-row-label">6–10</span><span class="info-row-value muted">Второкурсник</span></div>
+                <div class="info-row"><span class="info-row-label">11–15</span><span class="info-row-value muted">Третьекурсник</span></div>
+                <div class="info-row"><span class="info-row-label">16–20</span><span class="info-row-value muted">Старшекурсник</span></div>
+                <div class="info-row"><span class="info-row-label">21–25</span><span class="info-row-value muted">Магистрант</span></div>
+                <div class="info-row"><span class="info-row-label">26–29</span><span class="info-row-value muted">Аспирант</span></div>
+                <div class="info-row"><span class="info-row-label">30</span><span class="info-row-value gold">Легенда ИРНИТУ</span></div>
+            </div>
+            <div class="actions-row" style="justify-content:center;margin-top:20px">
+                <button class="btn" data-action="modal-close">Понятно</button>
+            </div>
+        </div>
+    </div>`;
 }
+function renderCurrencyInfoModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Откуда взять валюту</div>
+            <div class="info-modal-sub">Все способы получать Софт и Хард</div>
+
+            <div class="info-section">
+                <div class="info-section-title">${softIconImg(18)} Софт</div>
+                <div class="info-row"><span class="info-row-label">Добавить задачу</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Выполнить задачу</span><span class="info-row-value">+5</span></div>
+                <div class="info-row"><span class="info-row-label">Новая заметка</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Добавить оценку</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Отметить посещение</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+2</span></div>
+                <div class="info-row"><span class="info-row-label">Игра «До пары успеть»</span><span class="info-row-value">+1–30</span></div>
+                <div class="info-row"><span class="info-row-label">Халява дня</span><span class="info-row-value">+10–30</span></div>
+                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value">+500</span></div>
+                <div class="info-row"><span class="info-row-label">Победа в морском бою</span><span class="info-row-value">×2 ставки</span></div>
+            </div>
+
+            <div class="info-section">
+                <div class="info-section-title">${hardIconImg(18)} Хард</div>
+                <div class="info-row"><span class="info-row-label">Халява дня (редкий)</span><span class="info-row-value gold">+1–5</span></div>
+                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value gold">+3–25</span></div>
+                <div class="info-row"><span class="info-row-label">Рекорд в игре</span><span class="info-row-value gold">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Новый рекорд</span><span class="info-row-value gold">+5</span></div>
+                <div class="info-row"><span class="info-row-label">Достижения</span><span class="info-row-value gold">+1–10</span></div>
+                <div class="info-row"><span class="info-row-label">Обменник (100:1)</span><span class="info-row-value gold">∞</span></div>
+            </div>
+
+            <div class="exchange-rate-badge" style="margin:16px 0">
+                <span>100 Софта</span>
+                <span class="rate-arrow">→</span>
+                <span class="rate-value">1 Хард</span>
+            </div>
+
+            <div class="info-section">
+                <div class="info-section-title">Куда потратить</div>
+                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value gold">10 Харда</span></div>
+                <div class="info-row"><span class="info-row-label">Смена ника</span><span class="info-row-value gold">5 Харда</span></div>
+                <div class="info-row"><span class="info-row-label">Ставка в морском бою</span><span class="info-row-value">10–500 Софта</span></div>
+            </div>
+
+            <div class="actions-row" style="justify-content:center;margin-top:10px">
+                <button class="btn" data-action="modal-close">Понятно</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderAchModal() {
+    const achId = state.achModal;
+    if (!achId) return '';
+    const item = (state.achievements || []).find(a => a.id === achId);
+    if (!item) return '';
+    const status = item.unlocked
+        ? '<span class="info-ach-badge unlocked">Получено</span>'
+        : '<span class="info-ach-badge locked">Ещё не открыто</span>';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-ach-hero">
+                <div class="info-ach-icon ${item.unlocked ? '' : 'locked'}">${item.icon}</div>
+                <div class="info-ach-name">${escapeHtml(item.name)}</div>
+                ${status}
+            </div>
+            <div class="info-ach-desc">${escapeHtml(item.desc)}</div>
+            ${item.reward && (item.reward.xp || item.reward.soft || item.reward.hard) ? `
+                <div class="info-section" style="margin-top:14px">
+                    <div class="info-section-title">Награда</div>
+                    ${item.reward.xp ? `<div class="info-row"><span class="info-row-label">⚡ Опыт</span><span class="info-row-value">+${item.reward.xp} XP</span></div>` : ''}
+                    ${item.reward.soft ? `<div class="info-row"><span class="info-row-label">💰 Софт</span><span class="info-row-value">+${item.reward.soft}</span></div>` : ''}
+                    ${item.reward.hard ? `<div class="info-row"><span class="info-row-label">🏅 Хард</span><span class="info-row-value gold">+${item.reward.hard}</span></div>` : ''}
+                </div>
+            ` : ''}
+            ${item.unlocked ? '' : `<div class="info-ach-hint">Продолжай пользоваться приложением — достижение откроется автоматически.</div>`}
+            <div class="actions-row" style="justify-content:center;margin-top:18px">
+                <button class="btn" data-action="modal-close">Закрыть</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderExchangeModal() {
+    const w = state.wallet || {};
+    const soft = w.soft || 0;
+    const amount = Math.max(0, Math.min(state.exchangeAmount || 0, soft));
+    const hard = Math.floor(amount / 100);
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Обмен валюты</div>
+            <div class="info-modal-sub">Обменяй Софт на Хард</div>
+
+            <div class="exchange-rate-badge">
+                <span>100 Софта</span>
+                <span class="rate-arrow">→</span>
+                <span class="rate-value">1 Хард</span>
+            </div>
+
+            <div class="exchange-input-wrap">
+                <input class="exchange-input" id="exchange-amount-input" type="number" min="0" step="100"
+                       value="${state.exchangeAmount}" inputmode="numeric" placeholder="0">
+                <div class="exchange-input-suffix">Софт</div>
+            </div>
+
+            <div class="exchange-quick-buttons">
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.25">25%</button>
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.5">50%</button>
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.75">75%</button>
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="1">MAX</button>
+            </div>
+
+            <div class="exchange-preview">
+                <div class="exchange-preview-label">Получишь</div>
+                <div class="exchange-preview-value">${hard}<span class="suffix">Харда</span></div>
+            </div>
+
+            <div class="exchange-balance-hint">
+                Доступно: <strong>${formatNumber(soft)}</strong> Софта
+            </div>
+
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="exchange-submit" ${hard > 0 ? '' : 'disabled'}>Обменять</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderBSJoinModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Введи код игры</div>
+            <div class="info-modal-sub">6 цифр от друга</div>
+            <input class="modal-input" id="bs-join-code-input" maxlength="6" inputmode="numeric"
+                   pattern="[0-9]*" value="${escapeHtml(state.bsJoinCode || '')}"
+                   placeholder="000000" autofocus>
+            <div class="card-subtitle" style="text-align:center;margin-bottom:16px">
+                Ставка: <strong style="color:var(--neon-dark)">${state.bsBet}</strong> Софта
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="bs-join-submit">Войти</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderScholarshipAmountModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Сумма стипендии</div>
+            <div class="info-modal-sub">Введите 0, если не получаете</div>
+            <input class="modal-input" id="sch-amount-input" type="number" inputmode="numeric"
+                   min="0" max="100000" value="${escapeHtml(state.scholarshipAmountValue || '')}"
+                   placeholder="0" autofocus>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="sch-amount-submit">Сохранить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderAdminReplyModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Ответ пользователю</div>
+            <div class="info-modal-sub">Обращение #${state.adminReplyFeedbackId || '?'}</div>
+            <textarea class="input" id="admin-reply-input" rows="4"
+                      placeholder="Текст ответа..." autofocus>${escapeHtml(state.adminReplyText || '')}</textarea>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="admin-reply-submit">Отправить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+
+// ============================================================
+//                       СТИПЕНДИЯ
+// ============================================================
 
 function renderScholarshipCard() {
     const s = state.scholarship;
-    let html = `<div class="card"><div class="card-title">Стипендия</div>`;
-    if (!s) { html += `<div class="card-subtitle">Загрузка...</div></div>`; return html; }
+    let html = `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Стипендия</h2>
+        </div>
+        <div class="card">`;
+    if (!s) { html += `<div class="card-subtitle">Загрузка...</div></div></div>`; return html; }
     html += `<div class="card-subtitle">Текущая сумма: ${s.amount !== null && s.amount !== undefined ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
     const semesters = s.semesters || [];
     if (semesters.length > 0) {
@@ -3654,11 +3769,11 @@ function renderScholarshipCard() {
     const allGrades = s.grades || [];
     const grades = state.scholarshipSemesterFilter === 'all' ? allGrades : allGrades.filter(g => (g.semester || '') === state.scholarshipSemesterFilter);
     if (allGrades.length === 0) {
-        html += `<div class="sch-empty">Оценок пока нет.</div>`;
-        html += `<div class="actions-row" style="margin-top:12px">
-            <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
-            <button class="btn" data-action="sch-add-new" style="flex:1">+ Добавить оценку</button>
-        </div></div>`;
+        html += `<div class="card-subtitle">Оценок пока нет.</div>
+            <div class="actions-row" style="margin-top:12px">
+                <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
+                <button class="btn" data-action="sch-add-new" style="flex:1">+ Оценка</button>
+            </div></div></div>`;
         return html;
     }
     const cnt5 = grades.filter(g => g.grade === 5).length;
@@ -3673,7 +3788,7 @@ function renderScholarshipCard() {
     </div>`;
     html += `<div class="sch-filters">
         <button class="sch-filter ${state.scholarshipFilter === 'all' ? 'active' : ''}" data-action="sch-filter" data-value="all">Все · ${grades.length}</button>
-        ${cntAuto > 0 ? `<button class="sch-filter sch-filter-auto ${state.scholarshipFilter === 'auto' ? 'active' : ''}" data-action="sch-filter" data-value="auto">Автоматы · ${cntAuto}</button>` : ''}
+        ${cntAuto > 0 ? `<button class="sch-filter sch-filter-auto ${state.scholarshipFilter === 'auto' ? 'active' : ''}" data-action="sch-filter" data-value="auto">Авто · ${cntAuto}</button>` : ''}
         ${cnt5 > 0 ? `<button class="sch-filter grade-5 ${state.scholarshipFilter === '5' ? 'active' : ''}" data-action="sch-filter" data-value="5">5 · ${cnt5}</button>` : ''}
         ${cnt4 > 0 ? `<button class="sch-filter grade-4 ${state.scholarshipFilter === '4' ? 'active' : ''}" data-action="sch-filter" data-value="4">4 · ${cnt4}</button>` : ''}
         ${cnt3 > 0 ? `<button class="sch-filter grade-3 ${state.scholarshipFilter === '3' ? 'active' : ''}" data-action="sch-filter" data-value="3">3 · ${cnt3}</button>` : ''}
@@ -3703,29 +3818,31 @@ function renderScholarshipCard() {
         <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
         <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
         <button class="btn" data-action="sch-add-new" style="flex:1">+ Оценка</button>
-    </div></div>`;
+    </div></div></div>`;
     return html;
 }
+
 function pluralSubjects(n) {
     const mod10 = n % 10, mod100 = n % 100;
     if (mod10 === 1 && mod100 !== 11) return 'предмет';
     if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'предмета';
     return 'предметов';
 }
+
 function renderScholarshipEditor() {
     const isEdit = state.scholarshipEditorId !== null;
     const subject = state.scholarshipEditorSubject || '';
     const grade = state.scholarshipEditorGrade;
     const isAuto = state.scholarshipEditorIsAuto;
     const semester = state.scholarshipEditorSemester || currentSemester();
-    let html = `<div class="picker-header"><button class="picker-back" data-action="sch-editor-back">←</button><div class="picker-title">${isEdit ? 'Изменить оценку' : 'Новая оценка'}</div></div>
-    <div class="card">
+    let html = renderSubHeader('sch-editor-back', isEdit ? 'Изменить оценку' : 'Новая оценка');
+    html += `<div class="card">
         <div class="card-title">Предмет</div>
         <input class="input" id="sch-subject-input" list="sch-subjects-list" placeholder="Название предмета" value="${escapeHtml(subject)}" autocomplete="off">
         <datalist id="sch-subjects-list">${state.scholarshipAvailable.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}</datalist>`;
     if (state.scholarshipAvailable.length > 0) {
         const preview = state.scholarshipAvailable.slice(0, 12);
-        html += `<div class="sch-hint">Из твоего расписания:</div>
+        html += `<div class="sch-hint">Из расписания:</div>
             <div class="sch-subject-chips">${preview.map(s => `<button class="sch-subject-chip" data-action="sch-pick-subject" data-value="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>`;
     }
     html += `</div>
@@ -3738,7 +3855,7 @@ function renderScholarshipEditor() {
         </div>
         <label class="sch-auto-toggle">
             <input type="checkbox" id="sch-auto-input" ${isAuto ? 'checked' : ''}>
-            <span>Автомат — оценка выставлена без экзамена</span>
+            <span>Автомат — без экзамена</span>
         </label>
     </div>
     <div class="actions-row" style="margin-top:16px">
@@ -3747,6 +3864,7 @@ function renderScholarshipEditor() {
     </div>`;
     return html;
 }
+
 function actionScholarshipAdd() {
     haptic('light');
     state.scholarshipEditor = true; state.scholarshipEditorId = null;
@@ -3806,14 +3924,12 @@ async function actionScholarshipDeleteGrade() {
 }
 function actionScholarshipFilter(f) { haptic('light'); state.scholarshipFilter = f; render(); }
 function actionSemesterFilter(sem) { haptic('light'); state.scholarshipSemesterFilter = sem; state.scholarshipFilter = 'all'; render(); }
-
 function actionScholarshipSetAmount() {
     haptic('light');
     state.scholarshipAmountValue = String(state.scholarship?.amount || '');
     state.scholarshipAmountModal = true;
     render();
 }
-
 async function actionScholarshipAmountSubmit() {
     const el = document.getElementById('sch-amount-input');
     const val = (el?.value || state.scholarshipAmountValue || '').trim();
@@ -3830,7 +3946,6 @@ async function actionScholarshipAmountSubmit() {
         render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionScholarshipClear() {
     const sem = state.scholarshipSemesterFilter === 'all' ? null : state.scholarshipSemesterFilter;
     const msg = sem ? `Очистить оценки за «${sem}»?` : 'Очистить ВСЕ оценки?';
@@ -3842,18 +3957,39 @@ async function actionScholarshipClear() {
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
+// ============================================================
+//                       ОБРАТНАЯ СВЯЗЬ / ЭКСПОРТ
+// ============================================================
+
 function renderMyFeedbackCard() {
     if (!state.myFeedbackLoaded) {
-        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Загрузка...</div></div>`;
+        return `<div class="section">
+            <div class="section-header">
+                <div class="section-icon">${fireIconSvg(22)}</div>
+                <h2 class="section-title">Мои обращения</h2>
+            </div>
+            <div class="card"><div class="card-subtitle">Загрузка...</div></div>
+        </div>`;
     }
     if (!state.myFeedback || state.myFeedback.length === 0) {
-        return `<div class="card"><div class="card-title">Мои обращения</div><div class="card-subtitle">Ты ещё не писал админу.</div></div>`;
+        return `<div class="section">
+            <div class="section-header">
+                <div class="section-icon">${fireIconSvg(22)}</div>
+                <h2 class="section-title">Мои обращения</h2>
+            </div>
+            <div class="card"><div class="card-subtitle">Ты ещё не писал админу.</div></div>
+        </div>`;
     }
     const total = state.myFeedback.length;
     const previewLimit = 3;
     const showAll = state.myFeedbackExpanded;
     const items = showAll ? state.myFeedback : state.myFeedback.slice(0, previewLimit);
-    let html = `<div class="card"><div class="card-title">Мои обращения <span style="color:var(--text-2);font-weight:600;font-size:13px">${total > previewLimit && !showAll ? `· показаны ${previewLimit} из ${total}` : `· ${total}`}</span></div>`;
+    let html = `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Мои обращения</h2>
+        </div>
+        <div class="card">`;
     for (const f of items) {
         let statusLabel = 'В обработке';
         let statusCls = 'new';
@@ -3871,7 +4007,7 @@ function renderMyFeedbackCard() {
     }
     if (total > previewLimit && !showAll) html += `<button class="fb-show-more" data-action="fb-toggle">Показать все (${total})</button>`;
     else if (showAll && total > previewLimit) html += `<button class="fb-show-more" data-action="fb-toggle">Свернуть</button>`;
-    html += `</div>`;
+    html += `</div></div>`;
     return html;
 }
 function actionFbToggle() { haptic('light'); state.myFeedbackExpanded = !state.myFeedbackExpanded; render(); }
@@ -3902,23 +4038,72 @@ async function actionExportData() {
         state.exportPending = false; render();
     }
 }
-async function actionForgetGroup() {
-    const ok = await tgConfirm('Забыть группу?');
-    if (!ok) return;
-    try {
-        await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
-        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
-        haptic('success'); await loadProfile(); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
+
+// ============================================================
+//                       АДМИН
+// ============================================================
+
+function renderAdmin() {
+    if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
+    let html = '';
+    if (state.adminStats) {
+        const s = state.adminStats;
+        html += `<div class="hero-banner">
+            <div class="hero-banner-overlay"></div>
+            <div class="hero-banner-content">
+                <div class="hero-banner-title">Админ <span class="accent">панель</span></div>
+                <div class="hero-banner-sub">Пользователей: ${s.total_users}<br>Обращений: ${s.pending_feedback}</div>
+            </div>
+        </div>`;
+    } else html += renderLoading();
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Мониторинг</h2>
+        </div>
+        <div class="card">
+            ${state.adminMonitor
+                ? (state.adminMonitor.ok
+                    ? `<div class="card-subtitle" style="color:var(--green)">Сайт ИРНИТУ отвечает (HTTP ${state.adminMonitor.status})</div>`
+                    : `<div class="card-subtitle" style="color:var(--red)">Сайт не отвечает${state.adminMonitor.error ? ': ' + escapeHtml(state.adminMonitor.error) : ''}</div>`)
+                : `<div class="card-subtitle">Не проверено</div>`}
+            <div class="actions-row"><button class="btn btn-secondary" data-action="admin-monitor" style="width:100%">Проверить</button></div>
+        </div>
+    </div>`;
+    html += `<div class="section">
+        <div class="section-header">
+            <div class="section-icon">${fireIconSvg(22)}</div>
+            <h2 class="section-title">Рассылка</h2>
+        </div>
+        <div class="card">
+            <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
+            <button class="btn" data-action="admin-broadcast" style="width:100%">Отправить всем</button>
+        </div>
+    </div>`;
+    if (state.adminFeedback && state.adminFeedback.length > 0) {
+        html += `<div class="section">
+            <div class="section-header">
+                <div class="section-icon">${fireIconSvg(22)}</div>
+                <h2 class="section-title">Обращения (${state.adminFeedback.length})</h2>
+            </div>
+            <div class="card">`;
+        for (const f of state.adminFeedback) {
+            html += `<div style="border-bottom:1px solid var(--divider);padding:12px 0">
+                <div class="card-subtitle" style="margin-bottom:6px">#${f.id} · ${escapeHtml(f.username || f.user_id)}${f.status === 'postponed' ? ' · отложено' : ''}</div>
+                <div style="font-weight:600;white-space:pre-wrap;margin-bottom:8px">${escapeHtml(f.text)}</div>
+                <div class="actions-row">
+                    <button class="btn btn-secondary" data-action="admin-fb-reply" data-id="${f.id}">Ответить</button>
+                    <button class="btn btn-secondary" data-action="admin-fb-postpone" data-id="${f.id}">Отложить</button>
+                </div>
+            </div>`;
+        }
+        html += `</div></div>`;
+    } else {
+        html += `<div class="card"><div class="card-subtitle">Обращений нет.</div></div>`;
+    }
+    return html;
 }
-async function actionSetSubgroup(value) {
-    try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionQuoteSubscribe(value) {
-    try { await apiPost('/api/quote-subscribe', { subscribe: value === 1 }); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
+
 async function actionAdminMonitor() {
     state.adminBusy = true;
     try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
@@ -3935,7 +4120,6 @@ async function actionAdminBroadcast() {
     try { await apiPost('/api/admin/broadcast', { text }); el.value = ''; haptic('success'); alert('Рассылка запущена'); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 function actionAdminFbReply(fid) {
     haptic('light');
     state.adminReplyFeedbackId = fid;
@@ -3943,7 +4127,6 @@ function actionAdminFbReply(fid) {
     state.adminReplyModal = true;
     render();
 }
-
 async function actionAdminReplySubmit() {
     const el = document.getElementById('admin-reply-input');
     const text = (el?.value || state.adminReplyText || '').trim();
@@ -3960,7 +4143,6 @@ async function actionAdminReplySubmit() {
         render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
-
 async function actionAdminFbPostpone(fid) {
     try {
         await apiPost('/api/admin/feedback-postpone', { id: fid });
@@ -3968,6 +4150,10 @@ async function actionAdminFbPostpone(fid) {
         await loadAdminFeedback(); await loadAdminStats(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
+
+// ============================================================
+//                       LOADERS
+// ============================================================
 
 async function loadSchedule() {
     try { state.schedule = await apiGet('/api/schedule'); }
@@ -4213,6 +4399,10 @@ async function actionPickerChooseGroup(groupId, groupName) {
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
+// ============================================================
+//                       HANDLERS
+// ============================================================
+
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         const a = el.dataset.action;
@@ -4287,12 +4477,12 @@ function attachHandlers() {
             state.exchangeAmount = v;
             const hardEl = document.querySelector('.exchange-preview-value');
             if (hardEl) {
-                const hard = Math.floor(v / EXCHANGE_RATE);
-                hardEl.innerHTML = `${hard}<span class="suffix">Автоматов</span>`;
+                const hard = Math.floor(v / 100);
+                hardEl.innerHTML = `${hard}<span class="suffix">Харда</span>`;
             }
             const submitBtn = document.querySelector('[data-action="exchange-submit"]');
             if (submitBtn) {
-                const hard = Math.floor(v / EXCHANGE_RATE);
+                const hard = Math.floor(v / 100);
                 if (hard <= 0) submitBtn.setAttribute('disabled', '');
                 else submitBtn.removeAttribute('disabled');
             }
@@ -4305,10 +4495,7 @@ function attachHandlers() {
             e.target.value = state.bsJoinCode;
         });
         bsJoinInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                actionBSJoinSubmit();
-            }
+            if (e.key === 'Enter') { e.preventDefault(); actionBSJoinSubmit(); }
         });
     }
     const schAmountInput = document.getElementById('sch-amount-input');
@@ -4446,6 +4633,193 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
     else await loadTabData(state.tab);
 });
 
+// ============================================================
+//                       NAME / AVATAR / CHEST / PREMIUM
+// ============================================================
+
+function actionNameOpen() {
+    haptic('light');
+    const cur = state.profile?.display_name || '';
+    state.nameEditorValue = cur && cur !== 'PLAYER' ? cur : '';
+    state.nameEditor = true; render();
+}
+async function actionNameSave() {
+    const el = document.getElementById('name-editor-input');
+    if (!el) return;
+    const name = (el.value || '').trim();
+    if (!name) { alert('Введи имя'); return; }
+    try {
+        const r = await apiPost('/api/set-name', { name });
+        state.wallet = r.wallet;
+        if (state.profile) state.profile.display_name = name;
+        haptic('success');
+        state.nameEditor = false;
+        popEmoji('✏️');
+        render();
+    } catch (e) { haptic('error'); alert(e.message || 'Ошибка'); }
+}
+async function actionAvatarToggle() {
+    haptic('light');
+    const curIdx = state.wallet?.avatar_idx || 0;
+    const nextIdx = curIdx === 0 ? 1 : 0;
+    try {
+        const r = await apiPost('/api/set-avatar', { idx: nextIdx });
+        if (r.wallet) state.wallet = r.wallet;
+        else if (state.wallet) state.wallet.avatar_idx = nextIdx;
+        haptic('success');
+        render();
+    } catch (e) {
+        haptic('error');
+        alert(e.message || 'Не удалось сменить аватар');
+    }
+}
+async function actionChestOpen() {
+    try {
+        const r = await apiPost('/api/chest/open');
+        state.wallet = r.wallet;
+        state.chestModal = r.reward;
+        haptic('success'); popEmoji('🎁');
+        await loadChestStatus(); render();
+    } catch (e) { haptic('error'); alert(e.message || 'Сундук уже открыт'); }
+}
+async function actionPremiumOpen() {
+    haptic('light');
+    try {
+        const r = await apiPost('/api/premium-chest/open');
+        state.wallet = r.wallet;
+        state.premiumModal = r.reward;
+        haptic('success'); popEmoji('👑');
+        await loadAchievements(); render();
+    } catch (e) { haptic('error'); alert(e.message || 'Не хватает Харда'); }
+}
+function actionLevelInfoOpen() { haptic('light'); state.levelInfoModal = true; render(); }
+function actionCurrencyInfoOpen() { haptic('light'); state.currencyInfoModal = true; render(); }
+function actionAchOpen(achId) { haptic('light'); state.achModal = achId; render(); }
+function actionModalClose() {
+    haptic('light');
+    state.nameEditor = false;
+    state.chestModal = null;
+    state.achModal = null;
+    state.levelInfoModal = false;
+    state.currencyInfoModal = false;
+    state.premiumModal = null;
+    state.newAchToast = null;
+    state.exchangeOpen = false;
+    state.bsJoinModal = false;
+    state.bsJoinCode = '';
+    state.scholarshipAmountModal = false;
+    state.scholarshipAmountValue = '';
+    state.adminReplyModal = false;
+    state.adminReplyFeedbackId = null;
+    state.adminReplyText = '';
+    render();
+}
+function showNewAchievements(newIds) {
+    if (!newIds || newIds.length === 0) return;
+    const achList = state.achievements || [];
+    const items = [];
+    for (const id of newIds) {
+        const meta = achList.find(a => a.id === id);
+        if (!meta) continue;
+        const rw = meta.reward || {};
+        const parts = [];
+        if (rw.xp) parts.push(`+${rw.xp} XP`);
+        if (rw.soft) parts.push(`+${rw.soft} 💰`);
+        if (rw.hard) parts.push(`+${rw.hard} 🏅`);
+        items.push({ name: meta.name, icon: meta.icon, rewardText: parts.length ? `Награда: ${parts.join(' · ')}` : 'Без награды' });
+    }
+    if (items.length === 0) return;
+    state.newAchToast = items;
+    haptic('success');
+    popEmoji('🏆');
+}
+
+async function actionExchangeOpen() {
+    haptic('light');
+    state.exchangeAmount = 100;
+    state.exchangeOpen = true;
+    render();
+}
+function actionExchangeQuick(ratio) {
+    haptic('light');
+    const soft = state.wallet?.soft || 0;
+    let amt = Math.floor(soft * ratio);
+    amt = Math.floor(amt / 100) * 100;
+    state.exchangeAmount = Math.max(0, amt);
+    render();
+}
+async function actionExchangeSubmit() {
+    const w = state.wallet || {};
+    const soft = w.soft || 0;
+    const amount = Math.max(0, Math.min(Math.floor(state.exchangeAmount || 0), soft));
+    const hard = Math.floor(amount / 100);
+    if (hard <= 0) { haptic('error'); alert('Слишком маленькая сумма для обмена'); return; }
+    try {
+        const r = await apiPost('/api/exchange-soft-to-hard', { amount });
+        haptic('success');
+        popEmoji('💱');
+        if (r.wallet) state.wallet = r.wallet;
+        state.exchangeOpen = false;
+        await loadProfile();
+        render();
+    } catch (e) {
+        haptic('error');
+        alert('Ошибка: ' + (e.message || 'не удалось обменять'));
+    }
+}
+
+async function actionSetSubgroup(value) {
+    try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionQuoteSubscribe(value) {
+    try { await apiPost('/api/quote-subscribe', { subscribe: value === 1 }); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionForgetGroup() {
+    const ok = await tgConfirm('Забыть группу?');
+    if (!ok) return;
+    try {
+        await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
+        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
+        haptic('success'); await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+// ============================================================
+//                       ЧЕСТ-ТАЙМЕР
+// ============================================================
+
+function stopChestTimer() {
+    if (state.chestTimer) { clearInterval(state.chestTimer); state.chestTimer = null; }
+}
+function syncChestTimer() {
+    if (state.tab !== 'profile') { stopChestTimer(); return; }
+    if (!state.chest || state.chest.can_open) { stopChestTimer(); return; }
+    if (!state.chest.next_at) { stopChestTimer(); return; }
+    if (!state.chestTimer) state.chestTimer = setInterval(updateChestTimer, 1000);
+    updateChestTimer();
+}
+async function updateChestTimer() {
+    if (!state.chest || state.chest.can_open || !state.chest.next_at) { stopChestTimer(); return; }
+    const next = new Date(state.chest.next_at);
+    const diff = next.getTime() - Date.now();
+    if (diff <= 0) {
+        try { state.chest = await apiGet('/api/chest/status'); } catch (e) {}
+        stopChestTimer(); render(); return;
+    }
+    const hh = String(Math.floor(diff / 3600000)).padStart(2, '0');
+    const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+    const el = document.getElementById('chest-timer');
+    if (el) el.textContent = `${hh}:${mm}:${ss}`;
+}
+
+// ============================================================
+//                       INIT
+// ============================================================
+
 (async function init() {
+    initSplash();
     await loadTabData(state.tab);
 })();
