@@ -1,38 +1,23 @@
 from dotenv import load_dotenv
 load_dotenv()
-
-import os
-import asyncio
-import re
-import sys
-import json
-import base64
-import random
-import secrets
-import sqlite3
-import logging
+import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from aiohttp import web
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import (
-    Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery, FSInputFile, WebAppInfo, BufferedInputFile
-)
+from aiogram.types import (Message, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery, FSInputFile, WebAppInfo, BufferedInputFile)
 from aiogram.utils.web_app import safe_parse_webapp_init_data
-
 try:
     from fpdf import FPDF
     _FPDF_AVAILABLE = True
 except Exception:
     _FPDF_AVAILABLE = False
 
-
-def clean_latex(text: str) -> str:
-    if not text:
-        return text
+def clean_latex(text):
+    if not text: return text
     text = re.sub(r"\$\$(.+?)\$\$", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"\$(.+?)\$", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"\\\[(.+?)\\\]", r"\1", text, flags=re.DOTALL)
@@ -45,48 +30,31 @@ def clean_latex(text: str) -> str:
     text = re.sub(r"\\bar\s*\{([^{}]+)\}", r"\1", text)
     text = re.sub(r"\^\s*\{([^{}]+)\}", r"^\1", text)
     text = re.sub(r"_\s*\{([^{}]+)\}", r"_\1", text)
-    greek = {
-        r"\\alpha": "α", r"\\beta": "β", r"\\gamma": "γ", r"\\delta": "δ",
-        r"\\epsilon": "ε", r"\\theta": "θ", r"\\lambda": "λ",
-        r"\\mu": "μ", r"\\nu": "ν", r"\\pi": "π",
-        r"\\rho": "ρ", r"\\sigma": "σ", r"\\tau": "τ",
-        r"\\phi": "φ", r"\\varphi": "φ", r"\\chi": "χ", r"\\psi": "ψ",
-        r"\\omega": "ω", r"\\Gamma": "Γ", r"\\Delta": "Δ", r"\\Theta": "Θ",
-        r"\\Lambda": "Λ", r"\\Pi": "Π", r"\\Sigma": "Σ",
-        r"\\Phi": "Φ", r"\\Psi": "Ψ", r"\\Omega": "Ω",
-    }
-    for cmd, repl in greek.items():
-        text = re.sub(cmd + r"\b", repl, text)
-    replacements = [
-        (r"\\cdot", "·"), (r"\\times", "×"), (r"\\div", "÷"),
-        (r"\\pm", "±"), (r"\\leq", "≤"), (r"\\le", "≤"),
-        (r"\\geq", "≥"), (r"\\ge", "≥"), (r"\\neq", "≠"),
-        (r"\\approx", "≈"), (r"\\infty", "∞"),
-        (r"\\sum", "Σ"), (r"\\prod", "Π"), (r"\\int", "∫"),
-        (r"\\rightarrow", "→"), (r"\\to", "→"), (r"\\leftarrow", "←"),
-        (r"\\Rightarrow", "⇒"), (r"\\leftrightarrow", "↔"),
-        (r"\\in", "∈"), (r"\\notin", "∉"),
-        (r"\\subset", "⊂"), (r"\\supset", "⊃"),
-        (r"\\cup", "∪"), (r"\\cap", "∩"),
-        (r"\\forall", "∀"), (r"\\exists", "∃"),
-        (r"\\emptyset", "∅"), (r"\\angle", "∠"), (r"\\degree", "°"),
-        (r"\\ldots", "..."), (r"\\dots", "..."), (r"\\cdots", "..."),
-    ]
-    for cmd, repl in replacements:
-        text = re.sub(cmd, repl, text)
+    greek = {r"\\alpha":"α",r"\\beta":"β",r"\\gamma":"γ",r"\\delta":"δ",r"\\epsilon":"ε",
+        r"\\theta":"θ",r"\\lambda":"λ",r"\\mu":"μ",r"\\nu":"ν",r"\\pi":"π",r"\\rho":"ρ",
+        r"\\sigma":"σ",r"\\tau":"τ",r"\\phi":"φ",r"\\varphi":"φ",r"\\chi":"χ",r"\\psi":"ψ",
+        r"\\omega":"ω",r"\\Gamma":"Γ",r"\\Delta":"Δ",r"\\Theta":"Θ",r"\\Lambda":"Λ",
+        r"\\Pi":"Π",r"\\Sigma":"Σ",r"\\Phi":"Φ",r"\\Psi":"Ψ",r"\\Omega":"Ω"}
+    for cmd, repl in greek.items(): text = re.sub(cmd + r"\b", repl, text)
+    reps = [(r"\\cdot","·"),(r"\\times","×"),(r"\\div","÷"),(r"\\pm","±"),
+        (r"\\leq","≤"),(r"\\le","≤"),(r"\\geq","≥"),(r"\\ge","≥"),(r"\\neq","≠"),
+        (r"\\approx","≈"),(r"\\infty","∞"),(r"\\sum","Σ"),(r"\\prod","Π"),(r"\\int","∫"),
+        (r"\\rightarrow","→"),(r"\\to","→"),(r"\\leftarrow","←"),(r"\\Rightarrow","⇒"),
+        (r"\\leftrightarrow","↔"),(r"\\in","∈"),(r"\\notin","∉"),(r"\\subset","⊂"),
+        (r"\\supset","⊃"),(r"\\cup","∪"),(r"\\cap","∩"),(r"\\forall","∀"),
+        (r"\\exists","∃"),(r"\\emptyset","∅"),(r"\\angle","∠"),(r"\\degree","°"),
+        (r"\\ldots","..."),(r"\\dots","..."),(r"\\cdots","...")]
+    for cmd, repl in reps: text = re.sub(cmd, repl, text)
     text = re.sub(r"\\(sin|cos|tan|ctg|cot|log|ln|lg|exp|lim|max|min|arg|det|mod)\b", r"\1", text)
     text = re.sub(r"\\[a-zA-Z]*\{([^{}]*)\}", r"\1", text)
     text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
-    text = text.replace("{", "").replace("}", "")
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r" ?\n ?", "\n", text)
+    text = text.replace("{","").replace("}","")
+    text = re.sub(r"[ \t]+", " ", text); text = re.sub(r" ?\n ?", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
-
-def clean_markdown(text: str) -> str:
-    if not text:
-        return text
+def clean_markdown(text):
+    if not text: return text
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"__(.+?)__", r"\1", text, flags=re.DOTALL)
@@ -94,24 +62,19 @@ def clean_markdown(text: str) -> str:
     text = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"```[a-zA-Z]*\n?(.+?)```", r"\1", text, flags=re.DOTALL)
-    lines = text.split("\n")
-    out = []
+    lines = text.split("\n"); out = []
     for line in lines:
-        stripped = line.strip()
-        if re.fullmatch(r"\|?[\s\-:|]+\|?", stripped) and "-" in stripped:
-            continue
-        if stripped.startswith("|") and stripped.endswith("|"):
-            cells = [c.strip() for c in stripped.strip("|").split("|")]
-            cells = [c for c in cells if c]
+        s = line.strip()
+        if re.fullmatch(r"\|?[\s\-:|]+\|?", s) and "-" in s: continue
+        if s.startswith("|") and s.endswith("|"):
+            cells = [c.strip() for c in s.strip("|").split("|") if c.strip()]
             out.append("  ".join(cells))
-        else:
-            out.append(line)
+        else: out.append(line)
     text = "\n".join(out)
     text = re.sub(r"^[\-\*_]{3,}\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
 
 TOKEN = os.getenv("BOT_TOKEN", "")
 GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
@@ -121,41 +84,30 @@ ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
-
-ADMIN_BONUS_SOFT = 1000000
-ADMIN_BONUS_HARD = 10000
-
-EXCHANGE_RATE_SOFT_TO_HARD = 100
-
+ADMIN_BONUS_SHIFT = 1000000
+ADMIN_BONUS_NOVA = 10000
+EXCHANGE_RATE_SHIFT_TO_NOVA = 100
 BS_BET_OPTIONS = [10, 50, 100, 500]
 BS_TURN_TIMEOUT_SEC = 120
 
 if not TOKEN:
-    logging.error("BOT_TOKEN не задан!")
-    sys.exit(1)
+    logging.error("BOT_TOKEN не задан!"); sys.exit(1)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
 giga_client = None
 if GIGACHAT_CREDENTIALS:
     try:
         from gigachat import GigaChat
-        giga_client = GigaChat(
-            credentials=GIGACHAT_CREDENTIALS,
-            base_url="https://api.giga.chat/v1",
-            scope="GIGACHAT_API_PERS",
-            verify_ssl_certs=False,
-            model="GigaChat-2-Max",
-            timeout=600
-        )
+        giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS,
+            base_url="https://api.giga.chat/v1", scope="GIGACHAT_API_PERS",
+            verify_ssl_certs=False, model="GigaChat-2-Max", timeout=600)
         logging.info("GigaChat клиент инициализирован")
     except Exception as e:
         logging.error(f"GigaChat ошибка: {e}")
 
 DB_PATH = os.getenv("DB_PATH", "users.db")
 CACHE_TTL_HOURS = 2
-
 PRIORITY_LABELS = {1: "низкий", 2: "средний", 3: "высокий"}
 
 DAILY_QUOTES = [
@@ -181,58 +133,75 @@ DAILY_QUOTES = [
     "Дисциплина — это не про силу воли, а про систему.",
 ]
 
-
-GAMES = {
-    "flappy": {"name": "До пары успеть", "desc": "Пролетай между парами, не задень границы"},
-}
+GAMES = {"flappy": {"name": "До пары успеть", "desc": "Пролетай между парами, лови бонусы"}}
 
 ACHIEVEMENTS = {
-    "first_day":    {"name": "Первый день",      "icon": "🎓", "desc": "Зашёл в бота"},
-    "week_visit":   {"name": "Неделя в боте",    "icon": "📅", "desc": "7 дней подряд"},
-    "first_note":   {"name": "Первый конспект",  "icon": "📚", "desc": "Добавил первую заметку"},
-    "first_task":   {"name": "Сделал дело",      "icon": "✅", "desc": "Первая выполненная задача"},
-    "prod_50":      {"name": "Продуктивный",     "icon": "🔥", "desc": "50 выполненных задач"},
-    "excellent":    {"name": "Отличник",         "icon": "💯", "desc": "Средний балл 5.0 (мин. 3 предмета)"},
-    "flappy_30":    {"name": "Снайпер",          "icon": "🎯", "desc": "30 очков в «До пары успеть»"},
-    "legend_30":    {"name": "Легенда",          "icon": "💎", "desc": "30 уровень"},
-    "bs_first_win": {"name": "Морской волк",     "icon": "⚓", "desc": "Первая победа в морском бою"},
-    "bs_5_wins":    {"name": "Адмирал",          "icon": "🎖", "desc": "5 побед в морском бою"},
-    "bs_10_wins":   {"name": "Легенда флота",    "icon": "👑", "desc": "10 побед в морском бою"},
-    "exchange_1":   {"name": "Обменник",         "icon": "💱", "desc": "Первый обмен Стипух на Автоматы"},
+    "first_day":    {"name": "Первый день",      "icon": "ic-ach-first_day",    "desc": "Зашёл в бота"},
+    "week_visit":   {"name": "Неделя в боте",    "icon": "ic-ach-week_visit",   "desc": "7 дней подряд"},
+    "first_note":   {"name": "Первый конспект",  "icon": "ic-ach-first_note",   "desc": "Добавил первую заметку"},
+    "first_task":   {"name": "Сделал дело",      "icon": "ic-ach-first_task",   "desc": "Первая выполненная задача"},
+    "prod_50":      {"name": "Продуктивный",     "icon": "ic-ach-prod_50",      "desc": "50 выполненных задач"},
+    "excellent":    {"name": "Отличник",         "icon": "ic-ach-excellent",    "desc": "Средний балл 5.0 (мин. 3 предмета)"},
+    "flappy_30":    {"name": "Снайпер",          "icon": "ic-ach-flappy_30",    "desc": "30 очков в «До пары успеть»"},
+    "legend_30":    {"name": "Легенда",          "icon": "ic-ach-legend_30",    "desc": "30 уровень"},
+    "bs_first_win": {"name": "Морской волк",     "icon": "ic-ach-bs_first_win", "desc": "Первая победа в морском бою"},
+    "bs_5_wins":    {"name": "Адмирал",          "icon": "ic-ach-bs_5_wins",    "desc": "5 побед в морском бою"},
+    "bs_10_wins":   {"name": "Легенда флота",    "icon": "ic-ach-bs_10_wins",   "desc": "10 побед в морском бою"},
+    "exchange_1":   {"name": "Обменник",         "icon": "ic-ach-exchange_1",   "desc": "Первый обмен Шифт на Нова"},
 }
-
 ACHIEVEMENT_REWARDS = {
-    "first_day":    {"xp": 10,   "soft": 5,    "hard": 0},
-    "first_note":   {"xp": 20,   "soft": 10,   "hard": 0},
-    "first_task":   {"xp": 30,   "soft": 15,   "hard": 0},
-    "flappy_30":    {"xp": 50,   "soft": 30,   "hard": 1},
-    "week_visit":   {"xp": 100,  "soft": 50,   "hard": 1},
-    "prod_50":      {"xp": 200,  "soft": 100,  "hard": 2},
-    "excellent":    {"xp": 300,  "soft": 150,  "hard": 3},
-    "legend_30":    {"xp": 1000, "soft": 500,  "hard": 10},
-    "bs_first_win": {"xp": 100,  "soft": 50,   "hard": 1},
-    "bs_5_wins":    {"xp": 300,  "soft": 150,  "hard": 3},
-    "bs_10_wins":   {"xp": 800,  "soft": 400,  "hard": 8},
-    "exchange_1":   {"xp": 20,   "soft": 0,    "hard": 1},
+    "first_day":    {"xp": 10,   "shift": 5,    "nova": 0},
+    "first_note":   {"xp": 20,   "shift": 10,   "nova": 0},
+    "first_task":   {"xp": 30,   "shift": 15,   "nova": 0},
+    "flappy_30":    {"xp": 50,   "shift": 30,   "nova": 1},
+    "week_visit":   {"xp": 100,  "shift": 50,   "nova": 1},
+    "prod_50":      {"xp": 200,  "shift": 100,  "nova": 2},
+    "excellent":    {"xp": 300,  "shift": 150,  "nova": 3},
+    "legend_30":    {"xp": 1000, "shift": 500,  "nova": 10},
+    "bs_first_win": {"xp": 100,  "shift": 50,   "nova": 1},
+    "bs_5_wins":    {"xp": 300,  "shift": 150,  "nova": 3},
+    "bs_10_wins":   {"xp": 800,  "shift": 400,  "nova": 8},
+    "exchange_1":   {"xp": 20,   "shift": 0,    "nova": 1},
 }
-
-PREMIUM_CHEST_COST = 10
-
+CHESTS = {
+    "capsule": {"name":"Капсула","cooldown_h":24,"cost_shift":0,"cost_nova":0,"drops":[
+        {"type":"shift","min":10,"max":40,"chance":0.55},
+        {"type":"xp","min":50,"max":150,"chance":0.30},
+        {"type":"nova","min":1,"max":1,"chance":0.10},
+        {"type":"shift","min":100,"max":100,"chance":0.05}]},
+    "relic": {"name":"Реликт","cooldown_h":0,"cost_shift":50,"cost_nova":0,"drops":[
+        {"type":"shift","min":60,"max":150,"chance":0.50},
+        {"type":"xp","min":200,"max":500,"chance":0.30},
+        {"type":"nova","min":1,"max":3,"chance":0.18},
+        {"type":"nova","min":10,"max":10,"chance":0.02}]},
+    "artifact": {"name":"Артефакт","cooldown_h":0,"cost_shift":0,"cost_nova":15,"drops":[
+        {"type":"shift","min":500,"max":500,"chance":0.30},
+        {"type":"xp","min":1000,"max":1000,"chance":0.30},
+        {"type":"nova","min":5,"max":15,"chance":0.35},
+        {"type":"nova","min":50,"max":50,"chance":0.05}]},
+    "core": {"name":"Ядро","cooldown_h":0,"cost_shift":0,"cost_nova":80,"drops":[
+        {"type":"shift","min":2000,"max":2000,"chance":0.25},
+        {"type":"xp","min":5000,"max":5000,"chance":0.25},
+        {"type":"nova","min":30,"max":60,"chance":0.40},
+        {"type":"nova","min":200,"max":200,"chance":0.10}]},
+}
+LEVEL_REWARDS = {}
+for _lvl in range(1, 31):
+    if _lvl <= 5: LEVEL_REWARDS[_lvl] = {"shift":100,"nova":1,"xp":0}
+    elif _lvl <= 10: LEVEL_REWARDS[_lvl] = {"shift":250,"nova":3,"xp":0}
+    elif _lvl <= 20: LEVEL_REWARDS[_lvl] = {"shift":600,"nova":8,"xp":0}
+    else: LEVEL_REWARDS[_lvl] = {"shift":1500,"nova":25,"xp":0}
 
 def calc_level(xp):
-    lvl = 1
-    left = int(xp or 0)
+    lvl = 1; left = int(xp or 0)
     while lvl <= 30:
         need = lvl * 500
-        if left < need:
-            return lvl, left, need
-        left -= need
-        lvl += 1
+        if left < need: return lvl, left, need
+        left -= need; lvl += 1
     return 30, left, 500
 
-
 def level_title(lvl):
-    if lvl <= 5:  return "Первокурсник"
+    if lvl <= 5: return "Первокурсник"
     if lvl <= 10: return "Второкурсник"
     if lvl <= 15: return "Третьекурсник"
     if lvl <= 20: return "Старшекурсник"
@@ -240,710 +209,407 @@ def level_title(lvl):
     if lvl <= 29: return "Аспирант"
     return "Легенда ИРНИТУ"
 
+def roll_chest_drop(chest_id):
+    chest = CHESTS.get(chest_id)
+    if not chest: return None
+    r = random.random(); acc = 0.0
+    for drop in chest["drops"]:
+        acc += drop["chance"]
+        if r <= acc:
+            return {"type": drop["type"], "amount": random.randint(drop["min"], drop["max"])}
+    last = chest["drops"][-1]
+    return {"type": last["type"], "amount": random.randint(last["min"], last["max"])}
 
-def roll_chest_reward():
-    r = random.random()
-    if r < 0.60:
-        amount = random.randint(10, 30)
-        return {"type": "soft", "amount": amount, "label": f"+{amount} Стипух"}
-    elif r < 0.85:
-        amount = random.randint(50, 100)
-        return {"type": "xp", "amount": amount, "label": f"+{amount} XP"}
-    elif r < 0.95:
-        return {"type": "hard", "amount": 1, "label": "+1 Автомат"}
-    elif r < 0.99:
-        return {"type": "free_name", "amount": 0, "label": "Бесплатная смена ника"}
-    else:
-        return {"type": "hard", "amount": 5, "label": "+5 Автоматов (JACKPOT)"}
+def _now_irkutsk():
+    return datetime.now(timezone.utc) + timedelta(hours=8)
 
-
-def roll_premium_chest_reward():
-    soft_reward = 500
-    xp_reward = 1000
-    hard_reward = 0
-    bonus_label = ""
-    r = random.random()
-    if r < 0.40:
-        hard_reward = 3
-        bonus_label = "+3 Автомата"
-    elif r < 0.70:
-        hard_reward = 5
-        bonus_label = "+5 Автоматов"
-    elif r < 0.90:
-        hard_reward = 10
-        bonus_label = "+10 Автоматов"
-    else:
-        hard_reward = 25
-        bonus_label = "+25 Автоматов 🔥 JACKPOT"
-    return {
-        "type": "premium",
-        "soft": soft_reward,
-        "xp": xp_reward,
-        "hard": hard_reward,
-        "label": f"500 Стипух · 1000 XP · {bonus_label}",
-        "bonus_label": bonus_label,
-    }
-
+def _monday_of_week(d):
+    return d - timedelta(days=d.weekday())
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("""CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY, group_id TEXT, group_name TEXT,
-        notify_hour INTEGER DEFAULT -1, notify_minute INTEGER DEFAULT 0,
-        notify_changes INTEGER DEFAULT 0, subgroup INTEGER DEFAULT 0)""")
-    for alter in [
-        "ALTER TABLE users ADD COLUMN notify_changes INTEGER DEFAULT 0",
+    conn.execute("""CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, group_id TEXT, group_name TEXT,
+        notify_hour INTEGER DEFAULT -1, notify_minute INTEGER DEFAULT 0, notify_changes INTEGER DEFAULT 0, subgroup INTEGER DEFAULT 0)""")
+    for a in ["ALTER TABLE users ADD COLUMN notify_changes INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN subgroup INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN notify_type TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN last_notified_at TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN notify_before_min INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN username TEXT DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL",
-    ]:
-        try:
-            conn.execute(alter)
-        except sqlite3.OperationalError:
-            pass
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (
-        user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS scholarship (
-        user_id INTEGER PRIMARY KEY, current_amount INTEGER DEFAULT 0, updated_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS grades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL"]:
+        try: conn.execute(a)
+        except: pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS scholarship (user_id INTEGER PRIMARY KEY, current_amount INTEGER DEFAULT 0, updated_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
         subject TEXT, grade INTEGER, created_at TEXT, is_auto INTEGER DEFAULT 0)""")
-    for alter in [
-        "ALTER TABLE grades ADD COLUMN is_auto INTEGER DEFAULT 0",
-        "ALTER TABLE grades ADD COLUMN semester TEXT DEFAULT NULL",
-    ]:
-        try:
-            conn.execute(alter)
-        except sqlite3.OperationalError:
-            pass
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (
-        group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
-        PRIMARY KEY (group_id, week_start))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_snapshots (
-        group_id TEXT, week_start TEXT, snapshot TEXT, updated_at TEXT,
-        PRIMARY KEY (group_id, week_start))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS feedback (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT,
-        text TEXT, created_at TEXT, admin_msg_id INTEGER,
-        status TEXT DEFAULT 'new', answered_at TEXT, admin_reply TEXT DEFAULT NULL)""")
-    for alter in [
-        "ALTER TABLE feedback ADD COLUMN status TEXT DEFAULT 'new'",
-        "ALTER TABLE feedback ADD COLUMN answered_at TEXT",
-        "ALTER TABLE feedback ADD COLUMN admin_reply TEXT DEFAULT NULL",
-    ]:
-        try:
-            conn.execute(alter)
-        except sqlite3.OperationalError:
-            pass
+    for a in ["ALTER TABLE grades ADD COLUMN is_auto INTEGER DEFAULT 0","ALTER TABLE grades ADD COLUMN semester TEXT DEFAULT NULL"]:
+        try: conn.execute(a)
+        except: pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT, PRIMARY KEY (group_id, week_start))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_snapshots (group_id TEXT, week_start TEXT, snapshot TEXT, updated_at TEXT, PRIMARY KEY (group_id, week_start))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT,
+        text TEXT, created_at TEXT, admin_msg_id INTEGER, status TEXT DEFAULT 'new', answered_at TEXT, admin_reply TEXT DEFAULT NULL)""")
+    for a in ["ALTER TABLE feedback ADD COLUMN status TEXT DEFAULT 'new'","ALTER TABLE feedback ADD COLUMN answered_at TEXT","ALTER TABLE feedback ADD COLUMN admin_reply TEXT DEFAULT NULL"]:
+        try: conn.execute(a)
+        except: pass
     conn.execute("UPDATE feedback SET status='new' WHERE status IS NULL")
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, text TEXT,
-        due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT,
-        priority INTEGER DEFAULT 2, due_time TEXT, done_at TEXT)""")
-    for alter in [
-        "ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 2",
-        "ALTER TABLE tasks ADD COLUMN due_time TEXT",
-        "ALTER TABLE tasks ADD COLUMN done_at TEXT",
-    ]:
-        try:
-            conn.execute(alter)
-        except sqlite3.OperationalError:
-            pass
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT,
-        text TEXT, created_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS vip (
-        user_id INTEGER PRIMARY KEY, expiry TEXT,
-        tier TEXT DEFAULT 'premium', granted_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS ai_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, role TEXT,
+    conn.execute("""CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, text TEXT,
+        due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT, priority INTEGER DEFAULT 2, due_time TEXT, done_at TEXT)""")
+    for a in ["ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 2","ALTER TABLE tasks ADD COLUMN due_time TEXT","ALTER TABLE tasks ADD COLUMN done_at TEXT"]:
+        try: conn.execute(a)
+        except: pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT, text TEXT, created_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS ai_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, role TEXT,
         text TEXT, has_photo INTEGER DEFAULT 0, created_at TEXT)""")
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS attendance (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, date TEXT,
-        time TEXT, subject TEXT, status TEXT, updated_at TEXT,
-        UNIQUE(user_id, date, time, subject))""")
-
+    conn.execute("""CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, date TEXT,
+        time TEXT, subject TEXT, status TEXT, updated_at TEXT, UNIQUE(user_id, date, time, subject))""")
     try:
-        cur = conn.execute("PRAGMA table_info(game_scores)")
-        cols = [r[1] for r in cur.fetchall()]
+        cur = conn.execute("PRAGMA table_info(game_scores)"); cols = [r[1] for r in cur.fetchall()]
         if cols and "game_id" not in cols:
             conn.execute("ALTER TABLE game_scores RENAME TO game_scores_old")
-            conn.execute("""CREATE TABLE game_scores (
-                user_id INTEGER, game_id TEXT, best_score INTEGER DEFAULT 0,
-                plays_count INTEGER DEFAULT 0, updated_at TEXT,
-                PRIMARY KEY (user_id, game_id))""")
+            conn.execute("""CREATE TABLE game_scores (user_id INTEGER, game_id TEXT, best_score INTEGER DEFAULT 0,
+                plays_count INTEGER DEFAULT 0, updated_at TEXT, PRIMARY KEY (user_id, game_id))""")
             try:
-                conn.execute("""INSERT OR IGNORE INTO game_scores
-                    (user_id, game_id, best_score, plays_count, updated_at)
+                conn.execute("""INSERT OR IGNORE INTO game_scores (user_id, game_id, best_score, plays_count, updated_at)
                     SELECT user_id, 'flappy', best_score, plays_count, updated_at FROM game_scores_old""")
-            except Exception:
-                pass
+            except: pass
             conn.execute("DROP TABLE game_scores_old")
-    except Exception:
-        pass
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS game_scores (
-        user_id INTEGER, game_id TEXT, best_score INTEGER DEFAULT 0,
-        plays_count INTEGER DEFAULT 0, updated_at TEXT,
-        PRIMARY KEY (user_id, game_id))""")
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS wallet (
-        user_id INTEGER PRIMARY KEY,
-        xp INTEGER DEFAULT 0,
-        soft INTEGER DEFAULT 0,
-        hard INTEGER DEFAULT 0,
-        custom_name TEXT DEFAULT NULL,
-        avatar_idx INTEGER DEFAULT 0,
-        free_name_changes INTEGER DEFAULT 0,
-        chest_opened_at TEXT DEFAULT NULL,
-        created_at TEXT,
-        updated_at TEXT)""")
-    for alter in [
-        "ALTER TABLE wallet ADD COLUMN custom_name TEXT DEFAULT NULL",
-        "ALTER TABLE wallet ADD COLUMN avatar_idx INTEGER DEFAULT 0",
-        "ALTER TABLE wallet ADD COLUMN free_name_changes INTEGER DEFAULT 0",
-        "ALTER TABLE wallet ADD COLUMN chest_opened_at TEXT DEFAULT NULL",
-        "ALTER TABLE wallet ADD COLUMN created_at TEXT",
-    ]:
-        try:
-            conn.execute(alter)
-        except sqlite3.OperationalError:
-            pass
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS achievements (
-        user_id INTEGER, ach_id TEXT, unlocked_at TEXT,
-        PRIMARY KEY (user_id, ach_id))""")
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS user_stats (
-        user_id INTEGER PRIMARY KEY,
-        tasks_done INTEGER DEFAULT 0,
-        notes_added INTEGER DEFAULT 0,
-        first_seen TEXT,
-        last_seen TEXT,
-        streak INTEGER DEFAULT 0)""")
-    for alter in [
-        "ALTER TABLE user_stats ADD COLUMN tasks_done INTEGER DEFAULT 0",
-        "ALTER TABLE user_stats ADD COLUMN notes_added INTEGER DEFAULT 0",
-        "ALTER TABLE user_stats ADD COLUMN first_seen TEXT",
-        "ALTER TABLE user_stats ADD COLUMN last_seen TEXT",
-        "ALTER TABLE user_stats ADD COLUMN streak INTEGER DEFAULT 0",
-    ]:
-        try:
-            conn.execute(alter)
-        except sqlite3.OperationalError:
-            pass
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS bs_games (
-        game_id TEXT PRIMARY KEY,
-        code TEXT,
-        p1_id INTEGER,
-        p2_id INTEGER,
-        bet INTEGER DEFAULT 0,
-        status TEXT DEFAULT 'waiting',
-        turn INTEGER DEFAULT 0,
-        p1_ships TEXT DEFAULT NULL,
-        p2_ships TEXT DEFAULT NULL,
-        p1_ready INTEGER DEFAULT 0,
-        p2_ready INTEGER DEFAULT 0,
-        p1_shots TEXT DEFAULT '[]',
-        p2_shots TEXT DEFAULT '[]',
-        winner INTEGER DEFAULT 0,
-        surrender_by INTEGER DEFAULT 0,
-        created_at TEXT,
-        updated_at TEXT)""")
+    except: pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS game_scores (user_id INTEGER, game_id TEXT, best_score INTEGER DEFAULT 0,
+        plays_count INTEGER DEFAULT 0, updated_at TEXT, PRIMARY KEY (user_id, game_id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS wallet (user_id INTEGER PRIMARY KEY, xp INTEGER DEFAULT 0,
+        shift INTEGER DEFAULT 0, nova INTEGER DEFAULT 0, custom_name TEXT DEFAULT NULL, avatar_idx INTEGER DEFAULT 0,
+        free_name_changes INTEGER DEFAULT 0, capsule_opened_at TEXT DEFAULT NULL, created_at TEXT, updated_at TEXT)""")
+    for a in ["ALTER TABLE wallet ADD COLUMN shift INTEGER DEFAULT 0","ALTER TABLE wallet ADD COLUMN nova INTEGER DEFAULT 0",
+        "ALTER TABLE wallet ADD COLUMN custom_name TEXT DEFAULT NULL","ALTER TABLE wallet ADD COLUMN avatar_idx INTEGER DEFAULT 0",
+        "ALTER TABLE wallet ADD COLUMN free_name_changes INTEGER DEFAULT 0","ALTER TABLE wallet ADD COLUMN capsule_opened_at TEXT DEFAULT NULL",
+        "ALTER TABLE wallet ADD COLUMN created_at TEXT"]:
+        try: conn.execute(a)
+        except: pass
+    try:
+        cur = conn.execute("PRAGMA table_info(wallet)"); cols = [r[1] for r in cur.fetchall()]
+        if "soft" in cols: conn.execute("UPDATE wallet SET shift = COALESCE(shift,0) + COALESCE(soft,0)")
+        if "hard" in cols: conn.execute("UPDATE wallet SET nova = COALESCE(nova,0) + COALESCE(hard,0)")
+    except: pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS achievements (user_id INTEGER, ach_id TEXT, unlocked_at TEXT, PRIMARY KEY (user_id, ach_id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_stats (user_id INTEGER PRIMARY KEY, tasks_done INTEGER DEFAULT 0,
+        notes_added INTEGER DEFAULT 0, first_seen TEXT, last_seen TEXT, streak INTEGER DEFAULT 0)""")
+    for a in ["ALTER TABLE user_stats ADD COLUMN tasks_done INTEGER DEFAULT 0","ALTER TABLE user_stats ADD COLUMN notes_added INTEGER DEFAULT 0",
+        "ALTER TABLE user_stats ADD COLUMN first_seen TEXT","ALTER TABLE user_stats ADD COLUMN last_seen TEXT",
+        "ALTER TABLE user_stats ADD COLUMN streak INTEGER DEFAULT 0"]:
+        try: conn.execute(a)
+        except: pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS bs_games (game_id TEXT PRIMARY KEY, code TEXT, p1_id INTEGER, p2_id INTEGER,
+        bet INTEGER DEFAULT 0, status TEXT DEFAULT 'waiting', turn INTEGER DEFAULT 0, p1_ships TEXT DEFAULT NULL,
+        p2_ships TEXT DEFAULT NULL, p1_ready INTEGER DEFAULT 0, p2_ready INTEGER DEFAULT 0, p1_shots TEXT DEFAULT '[]',
+        p2_shots TEXT DEFAULT '[]', winner INTEGER DEFAULT 0, surrender_by INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)""")
     try:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_code ON bs_games(code)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_status ON bs_games(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_p1 ON bs_games(p1_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_p2 ON bs_games(p2_id)")
-    except Exception:
-        pass
-
-    conn.execute("""CREATE TABLE IF NOT EXISTS bs_meta (
-        key TEXT PRIMARY KEY, value TEXT)""")
-
-    # === НОВОЕ: таблицы для наград за достижения ===
-    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_claims (
-        user_id INTEGER, ach_id TEXT, claimed_at TEXT,
-        PRIMARY KEY (user_id, ach_id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_rewards (
-        user_id INTEGER, ach_id TEXT, xp INTEGER DEFAULT 0,
-        soft INTEGER DEFAULT 0, hard INTEGER DEFAULT 0, granted_at TEXT,
-        PRIMARY KEY (user_id, ach_id))""")
-
-    conn.commit()
-    conn.close()
-
+    except: pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS bs_meta (key TEXT PRIMARY KEY, value TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_claims (user_id INTEGER, ach_id TEXT, claimed_at TEXT, PRIMARY KEY (user_id, ach_id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_rewards (user_id INTEGER, ach_id TEXT, xp INTEGER DEFAULT 0,
+        shift INTEGER DEFAULT 0, nova INTEGER DEFAULT 0, granted_at TEXT, PRIMARY KEY (user_id, ach_id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS level_rewards (user_id INTEGER, level INTEGER, claimed_at TEXT, PRIMARY KEY (user_id, level))""")
+    conn.commit(); conn.close()
 
 def _ensure_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute("""INSERT OR IGNORE INTO wallet (user_id, created_at, updated_at)
-                    VALUES (?, ?, ?)""", (user_id, now, now))
+    conn.execute("INSERT OR IGNORE INTO wallet (user_id, created_at, updated_at) VALUES (?, ?, ?)", (user_id, now, now))
     if user_id == ADMIN_ID:
-        conn.execute("""UPDATE wallet SET
-                        soft = MAX(COALESCE(soft,0), ?),
-                        hard = MAX(COALESCE(hard,0), ?),
-                        updated_at = ?
-                        WHERE user_id = ?""",
-                     (ADMIN_BONUS_SOFT, ADMIN_BONUS_HARD, now, user_id))
-    conn.execute("""INSERT OR IGNORE INTO user_stats (user_id, first_seen, last_seen)
-                    VALUES (?, ?, ?)""", (user_id, now, now))
-    conn.commit()
-    conn.close()
-
+        conn.execute("""UPDATE wallet SET shift = MAX(COALESCE(shift,0), ?), nova = MAX(COALESCE(nova,0), ?),
+            updated_at = ? WHERE user_id = ?""", (ADMIN_BONUS_SHIFT, ADMIN_BONUS_NOVA, now, user_id))
+    conn.execute("INSERT OR IGNORE INTO user_stats (user_id, first_seen, last_seen) VALUES (?, ?, ?)", (user_id, now, now))
+    conn.commit(); conn.close()
 
 def _update_user_meta(user_id, username, first_name):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?",
-                 (username, first_name, user_id))
-    conn.commit()
-    conn.close()
-
+    conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (username, first_name, user_id))
+    conn.commit(); conn.close()
 
 def wallet_get(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("""SELECT xp, soft, hard, custom_name, avatar_idx,
-                                 free_name_changes, chest_opened_at
-                          FROM wallet WHERE user_id=?""", (user_id,)).fetchone()
+    row = conn.execute("""SELECT xp, shift, nova, custom_name, avatar_idx, free_name_changes, capsule_opened_at
+        FROM wallet WHERE user_id=?""", (user_id,)).fetchone()
     conn.close()
     if not row:
-        xp = soft = hard = 0
-        custom_name = None
-        avatar_idx = 0
-        free_name_changes = 0
-        chest_opened_at = None
+        xp = shift = nova = 0; custom_name = None; avatar_idx = 0; free_name_changes = 0; capsule_opened_at = None
     else:
-        xp, soft, hard, custom_name, avatar_idx, free_name_changes, chest_opened_at = row
-        xp = xp or 0
-        soft = soft or 0
-        hard = hard or 0
-        avatar_idx = avatar_idx or 0
-        free_name_changes = free_name_changes or 0
-
+        xp, shift, nova, custom_name, avatar_idx, free_name_changes, capsule_opened_at = row
+        xp = xp or 0; shift = shift or 0; nova = nova or 0; avatar_idx = avatar_idx or 0; free_name_changes = free_name_changes or 0
     if user_id == ADMIN_ID:
-        if soft < ADMIN_BONUS_SOFT or hard < ADMIN_BONUS_HARD:
+        if shift < ADMIN_BONUS_SHIFT or nova < ADMIN_BONUS_NOVA:
             conn = sqlite3.connect(DB_PATH)
-            conn.execute("""UPDATE wallet SET
-                            soft = MAX(soft, ?),
-                            hard = MAX(hard, ?)
-                            WHERE user_id = ?""",
-                         (ADMIN_BONUS_SOFT, ADMIN_BONUS_HARD, user_id))
-            conn.commit()
-            conn.close()
-            soft = max(soft, ADMIN_BONUS_SOFT)
-            hard = max(hard, ADMIN_BONUS_HARD)
-
+            conn.execute("""UPDATE wallet SET shift = MAX(shift, ?), nova = MAX(nova, ?) WHERE user_id = ?""",
+                (ADMIN_BONUS_SHIFT, ADMIN_BONUS_NOVA, user_id))
+            conn.commit(); conn.close()
+            shift = max(shift, ADMIN_BONUS_SHIFT); nova = max(nova, ADMIN_BONUS_NOVA)
     lvl, in_lvl, to_next = calc_level(xp)
-    return {
-        "xp": xp, "soft": soft, "hard": hard,
-        "custom_name": custom_name,
-        "avatar_idx": avatar_idx,
-        "free_name_changes": free_name_changes,
-        "chest_opened_at": chest_opened_at,
-        "level": lvl,
-        "level_title": level_title(lvl),
-        "xp_in_level": in_lvl,
-        "xp_to_next": to_next,
-    }
+    return {"xp": xp, "shift": shift, "nova": nova, "soft": shift, "hard": nova,
+        "custom_name": custom_name, "avatar_idx": avatar_idx, "free_name_changes": free_name_changes,
+        "capsule_opened_at": capsule_opened_at, "chest_opened_at": capsule_opened_at,
+        "level": lvl, "level_title": level_title(lvl), "xp_in_level": in_lvl, "xp_to_next": to_next}
 
-
-def wallet_add(user_id, xp=0, soft=0, hard=0):
+def wallet_add(user_id, xp=0, shift=0, nova=0):
     _ensure_user(user_id)
     now = datetime.now(timezone.utc).isoformat()
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("""UPDATE wallet SET
-                    xp = xp + ?, soft = soft + ?, hard = hard + ?, updated_at = ?
-                    WHERE user_id = ?""",
-                 (int(xp), int(soft), int(hard), now, user_id))
-    conn.commit()
-    conn.close()
-
+    conn.execute("UPDATE wallet SET xp = xp + ?, shift = shift + ?, nova = nova + ?, updated_at = ? WHERE user_id = ?",
+        (int(xp), int(shift), int(nova), now, user_id))
+    conn.commit(); conn.close()
 
 def wallet_set_name(user_id, name):
-    _ensure_user(user_id)
-    name = (name or "").strip()
-    if not name:
-        name = None
-    if name and len(name) > 24:
-        name = name[:24]
+    _ensure_user(user_id); name = (name or "").strip()
+    if not name: name = None
+    if name and len(name) > 24: name = name[:24]
     now = datetime.now(timezone.utc).isoformat()
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET custom_name=?, updated_at=? WHERE user_id=?",
-                 (name, now, user_id))
-    conn.commit()
-    conn.close()
-
+    conn.execute("UPDATE wallet SET custom_name=?, updated_at=? WHERE user_id=?", (name, now, user_id))
+    conn.commit(); conn.close()
 
 def wallet_set_avatar(user_id, idx):
-    _ensure_user(user_id)
-    idx = max(0, min(int(idx), 11))
+    _ensure_user(user_id); idx = max(0, min(int(idx), 11))
     now = datetime.now(timezone.utc).isoformat()
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET avatar_idx=?, updated_at=? WHERE user_id=?",
-                 (idx, now, user_id))
-    conn.commit()
-    conn.close()
+    conn.execute("UPDATE wallet SET avatar_idx=?, updated_at=? WHERE user_id=?", (idx, now, user_id))
+    conn.commit(); conn.close()
 
-
-def wallet_consume_hard(user_id, amount):
+def wallet_consume(user_id, currency, amount):
+    if currency not in ("shift", "nova"): return False
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT hard FROM wallet WHERE user_id=?", (user_id,)).fetchone()
+    row = conn.execute(f"SELECT {currency} FROM wallet WHERE user_id=?", (user_id,)).fetchone()
     if not row or (row[0] or 0) < amount:
-        conn.close()
-        return False
-    conn.execute("UPDATE wallet SET hard = hard - ? WHERE user_id=?", (amount, user_id))
-    conn.commit()
-    conn.close()
+        conn.close(); return False
+    conn.execute(f"UPDATE wallet SET {currency} = {currency} - ? WHERE user_id=?", (amount, user_id))
+    conn.commit(); conn.close()
     return True
-
-
-def wallet_consume_soft(user_id, amount):
-    _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT soft FROM wallet WHERE user_id=?", (user_id,)).fetchone()
-    if not row or (row[0] or 0) < amount:
-        conn.close()
-        return False
-    conn.execute("UPDATE wallet SET soft = soft - ? WHERE user_id=?", (amount, user_id))
-    conn.commit()
-    conn.close()
-    return True
-
 
 def wallet_use_free_name(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT free_name_changes FROM wallet WHERE user_id=?",
-                       (user_id,)).fetchone()
+    row = conn.execute("SELECT free_name_changes FROM wallet WHERE user_id=?", (user_id,)).fetchone()
     if not row or (row[0] or 0) <= 0:
-        conn.close()
-        return False
-    conn.execute("UPDATE wallet SET free_name_changes = free_name_changes - 1 WHERE user_id=?",
-                 (user_id,))
-    conn.commit()
-    conn.close()
+        conn.close(); return False
+    conn.execute("UPDATE wallet SET free_name_changes = free_name_changes - 1 WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
     return True
-
 
 def wallet_add_free_name(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET free_name_changes = free_name_changes + 1 WHERE user_id=?",
-                 (user_id,))
-    conn.commit()
-    conn.close()
+    conn.execute("UPDATE wallet SET free_name_changes = free_name_changes + 1 WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
 
+def wallet_leaderboard(limit=10):
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("""SELECT w.user_id, w.xp, COALESCE(w.custom_name, u.first_name, ''), COALESCE(u.username, '')
+        FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.xp > 0 ORDER BY w.xp DESC LIMIT ?""", (limit,)).fetchall()
+    conn.close()
+    return rows
 
 def stats_update_streak(user_id):
     _ensure_user(user_id)
-    now = _now_irkutsk()
-    today_str = now.strftime("%Y-%m-%d")
+    now = _now_irkutsk(); today_str = now.strftime("%Y-%m-%d")
     yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT last_seen, streak FROM user_stats WHERE user_id=?",
-                       (user_id,)).fetchone()
+    row = conn.execute("SELECT last_seen, streak FROM user_stats WHERE user_id=?", (user_id,)).fetchone()
     if not row:
-        conn.execute("""INSERT OR REPLACE INTO user_stats
-                        (user_id, last_seen, streak, first_seen)
-                        VALUES (?, ?, 1, ?)""",
-                     (user_id, today_str, now.isoformat()))
-        conn.commit()
-        conn.close()
-        return 1
-
-    last_seen, streak = row
-    streak = streak or 0
+        conn.execute("INSERT OR REPLACE INTO user_stats (user_id, last_seen, streak, first_seen) VALUES (?, ?, 1, ?)",
+            (user_id, today_str, now.isoformat()))
+        conn.commit(); conn.close(); return 1
+    last_seen, streak = row; streak = streak or 0
     if last_seen == today_str:
-        conn.close()
-        return streak
-
-    if last_seen == yesterday_str:
-        streak = streak + 1
-    else:
-        streak = 1
-
-    conn.execute("UPDATE user_stats SET last_seen=?, streak=? WHERE user_id=?",
-                 (today_str, streak, user_id))
-    conn.commit()
-    conn.close()
+        conn.close(); return streak
+    streak = streak + 1 if last_seen == yesterday_str else 1
+    conn.execute("UPDATE user_stats SET last_seen=?, streak=? WHERE user_id=?", (today_str, streak, user_id))
+    conn.commit(); conn.close()
     return streak
-
 
 def stats_inc(user_id, field, by=1):
     _ensure_user(user_id)
-    if field not in ("tasks_done", "notes_added"):
-        return
+    if field not in ("tasks_done", "notes_added"): return
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(f"UPDATE user_stats SET {field} = COALESCE({field}, 0) + ? WHERE user_id=?",
-                 (int(by), user_id))
-    conn.commit()
-    conn.close()
-
+    conn.execute(f"UPDATE user_stats SET {field} = COALESCE({field}, 0) + ? WHERE user_id=?", (int(by), user_id))
+    conn.commit(); conn.close()
 
 def stats_get(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("""SELECT tasks_done, notes_added, first_seen, last_seen, streak
-                          FROM user_stats WHERE user_id=?""", (user_id,)).fetchone()
+    row = conn.execute("SELECT tasks_done, notes_added, first_seen, last_seen, streak FROM user_stats WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
-    if not row:
-        return {"tasks_done": 0, "notes_added": 0, "first_seen": None, "last_seen": None, "streak": 0}
-    return {
-        "tasks_done": row[0] or 0,
-        "notes_added": row[1] or 0,
-        "first_seen": row[2],
-        "last_seen": row[3],
-        "streak": row[4] or 0,
-    }
-
+    if not row: return {"tasks_done":0,"notes_added":0,"first_seen":None,"last_seen":None,"streak":0}
+    return {"tasks_done": row[0] or 0, "notes_added": row[1] or 0, "first_seen": row[2], "last_seen": row[3], "streak": row[4] or 0}
 
 def achievements_get(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT ach_id, unlocked_at FROM achievements WHERE user_id=?",
-                        (user_id,)).fetchall()
+    rows = conn.execute("SELECT ach_id, unlocked_at FROM achievements WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     return {r[0]: r[1] for r in rows}
 
-
 def achievement_unlock(user_id, ach_id):
-    if ach_id not in ACHIEVEMENTS:
-        return False
+    if ach_id not in ACHIEVEMENTS: return False
     conn = sqlite3.connect(DB_PATH)
-    exists = conn.execute("SELECT 1 FROM achievements WHERE user_id=? AND ach_id=?",
-                          (user_id, ach_id)).fetchone()
-    if exists:
-        conn.close()
-        return False
+    if conn.execute("SELECT 1 FROM achievements WHERE user_id=? AND ach_id=?", (user_id, ach_id)).fetchone():
+        conn.close(); return False
     conn.execute("INSERT INTO achievements (user_id, ach_id, unlocked_at) VALUES (?, ?, ?)",
-                 (user_id, ach_id, datetime.now(timezone.utc).isoformat()))
-    conn.commit()
-    conn.close()
+        (user_id, ach_id, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
     return True
-
 
 def bs_count_wins(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT COUNT(*) FROM bs_games WHERE winner=? AND status='finished'",
-        (user_id,)
-    ).fetchone()
+    row = conn.execute("SELECT COUNT(*) FROM bs_games WHERE winner=? AND status='finished'", (user_id,)).fetchone()
     conn.close()
     return row[0] if row else 0
 
-
 def check_and_award_achievements(user_id):
-    """Разблокирует достижения и создаёт «ожидающие» награды (без автоначисления)."""
     newly = []
-    wallet = wallet_get(user_id)
-    stats = stats_get(user_id)
-
-    def _unlock(ach_id):
-        if not achievement_unlock(user_id, ach_id):
-            return False
-        newly.append(ach_id)
-        return True
-
+    wallet = wallet_get(user_id); stats = stats_get(user_id)
+    def _unlock(aid):
+        if not achievement_unlock(user_id, aid): return False
+        newly.append(aid); return True
     _unlock("first_day")
-    if stats["streak"] >= 7:
-        _unlock("week_visit")
-    if stats["notes_added"] >= 1:
-        _unlock("first_note")
-    if stats["tasks_done"] >= 1:
-        _unlock("first_task")
-    if stats["tasks_done"] >= 50:
-        _unlock("prod_50")
-    if wallet["level"] >= 30:
-        _unlock("legend_30")
-
+    if stats["streak"] >= 7: _unlock("week_visit")
+    if stats["notes_added"] >= 1: _unlock("first_note")
+    if stats["tasks_done"] >= 1: _unlock("first_task")
+    if stats["tasks_done"] >= 50: _unlock("prod_50")
+    if wallet["level"] >= 30: _unlock("legend_30")
     try:
         grades = get_grades(user_id)
         if grades and len(grades) >= 3:
             avg = sum(g[2] for g in grades) / len(grades)
-            if avg >= 5.0:
-                _unlock("excellent")
-    except Exception:
-        pass
-
+            if avg >= 5.0: _unlock("excellent")
+    except: pass
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT game_id, best_score FROM game_scores WHERE user_id=?",
-                        (user_id,)).fetchall()
+    rows = conn.execute("SELECT game_id, best_score FROM game_scores WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     best = {r[0]: r[1] for r in rows}
-    if best.get("flappy", 0) >= 30:
-        _unlock("flappy_30")
-
+    if best.get("flappy", 0) >= 30: _unlock("flappy_30")
     try:
         wins = bs_count_wins(user_id)
-        if wins >= 1:
-            _unlock("bs_first_win")
-        if wins >= 5:
-            _unlock("bs_5_wins")
-        if wins >= 10:
-            _unlock("bs_10_wins")
-    except Exception:
-        pass
-
-    # Создаём «ожидающие» награды для всех разблокированных достижений
+        if wins >= 1: _unlock("bs_first_win")
+        if wins >= 5: _unlock("bs_5_wins")
+        if wins >= 10: _unlock("bs_10_wins")
+    except: pass
     conn = sqlite3.connect(DB_PATH)
-    unlocked_rows = conn.execute(
-        "SELECT ach_id FROM achievements WHERE user_id=?", (user_id,)
-    ).fetchall()
+    unlocked_rows = conn.execute("SELECT ach_id FROM achievements WHERE user_id=?", (user_id,)).fetchall()
     for (aid,) in unlocked_rows:
         rw = ACHIEVEMENT_REWARDS.get(aid)
-        if not rw:
-            continue
-        has = conn.execute(
-            "SELECT 1 FROM achievement_rewards WHERE user_id=? AND ach_id=?",
-            (user_id, aid)
-        ).fetchone()
-        if has:
-            continue
-        conn.execute(
-            "INSERT INTO achievement_rewards (user_id, ach_id, xp, soft, hard, granted_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, aid, rw["xp"], rw["soft"], rw["hard"],
-             datetime.now(timezone.utc).isoformat())
-        )
-    conn.commit()
-    conn.close()
-
+        if not rw: continue
+        if conn.execute("SELECT 1 FROM achievement_rewards WHERE user_id=? AND ach_id=?", (user_id, aid)).fetchone(): continue
+        conn.execute("INSERT INTO achievement_rewards (user_id, ach_id, xp, shift, nova, granted_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, aid, rw["xp"], rw["shift"], rw["nova"], datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
     return newly
 
-
-def wallet_leaderboard(limit=10):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""SELECT w.user_id, w.xp,
-                                  COALESCE(w.custom_name, u.first_name, ''),
-                                  COALESCE(u.username, '')
-                           FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id
-                           WHERE w.xp > 0 ORDER BY w.xp DESC LIMIT ?""",
-                        (limit,)).fetchall()
-    conn.close()
-    return rows
-
-
-def chest_status(user_id):
-    wallet = wallet_get(user_id)
-    last = wallet.get("chest_opened_at")
-    can_open = True
-    next_at_iso = None
+def chest_status(user_id, chest_id="capsule"):
+    chest = CHESTS.get(chest_id)
+    if not chest: return {"can_open": False, "next_at": None, "last_opened": None}
+    cooldown_h = chest.get("cooldown_h", 0)
+    if cooldown_h <= 0: return {"can_open": True, "next_at": None, "last_opened": None}
+    wallet = wallet_get(user_id); last = wallet.get("capsule_opened_at")
+    can_open = True; next_at_iso = None
     if last:
         try:
             last_dt = datetime.fromisoformat(last)
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            if last_dt.tzinfo is None: last_dt = last_dt.replace(tzinfo=timezone.utc)
             elapsed = datetime.now(timezone.utc) - last_dt
-            if elapsed < timedelta(hours=24):
-                can_open = False
-                next_dt = last_dt + timedelta(hours=24)
-                next_at_iso = next_dt.isoformat()
-        except Exception:
-            pass
+            if elapsed < timedelta(hours=cooldown_h):
+                can_open = False; next_at_iso = (last_dt + timedelta(hours=cooldown_h)).isoformat()
+        except: pass
     return {"can_open": can_open, "next_at": next_at_iso, "last_opened": last}
 
-
-def chest_open(user_id):
-    st = chest_status(user_id)
-    if not st["can_open"]:
-        return None
-    reward = roll_chest_reward()
-
-    if reward["type"] == "soft":
-        wallet_add(user_id, soft=reward["amount"])
+def chest_open(user_id, chest_id):
+    chest = CHESTS.get(chest_id)
+    if not chest: return None, "bad_chest"
+    st = chest_status(user_id, chest_id)
+    if not st["can_open"]: return None, "already_opened"
+    cost_shift = chest.get("cost_shift", 0); cost_nova = chest.get("cost_nova", 0)
+    wallet = wallet_get(user_id)
+    if cost_shift > 0 and (wallet.get("shift") or 0) < cost_shift: return None, "not_enough_shift"
+    if cost_nova > 0 and (wallet.get("nova") or 0) < cost_nova: return None, "not_enough_nova"
+    if cost_shift > 0 and not wallet_consume(user_id, "shift", cost_shift): return None, "not_enough_shift"
+    if cost_nova > 0 and not wallet_consume(user_id, "nova", cost_nova): return None, "not_enough_nova"
+    reward = roll_chest_drop(chest_id)
+    if not reward: return None, "roll_failed"
+    if reward["type"] == "shift":
+        wallet_add(user_id, shift=reward["amount"]); label = f"+{reward['amount']} Шифт"
+    elif reward["type"] == "nova":
+        wallet_add(user_id, nova=reward["amount"]); label = f"+{reward['amount']} Нова"
     elif reward["type"] == "xp":
-        wallet_add(user_id, xp=reward["amount"])
-    elif reward["type"] == "hard":
-        wallet_add(user_id, hard=reward["amount"])
-    elif reward["type"] == "free_name":
-        wallet_add_free_name(user_id)
+        wallet_add(user_id, xp=reward["amount"]); label = f"+{reward['amount']} XP"
+    else: label = "Пусто"
+    if chest.get("cooldown_h", 0) > 0:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("UPDATE wallet SET capsule_opened_at=? WHERE user_id=?",
+            (datetime.now(timezone.utc).isoformat(), user_id))
+        conn.commit(); conn.close()
+    return {"type": reward["type"], "amount": reward["amount"], "label": label, "chest": chest_id}, None
 
+def level_rewards_claimed(user_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET chest_opened_at=? WHERE user_id=?",
-                 (datetime.now(timezone.utc).isoformat(), user_id))
-    conn.commit()
+    rows = conn.execute("SELECT level FROM level_rewards WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
+    return sorted([r[0] for r in rows])
 
-    return reward
-
+def level_reward_claim(user_id, lvl):
+    wallet = wallet_get(user_id)
+    if lvl < 1 or lvl > 30: return None, "bad_level"
+    if lvl > wallet["level"]: return None, "locked"
+    conn = sqlite3.connect(DB_PATH)
+    if conn.execute("SELECT 1 FROM level_rewards WHERE user_id=? AND level=?", (user_id, lvl)).fetchone():
+        conn.close(); return None, "already"
+    rw = LEVEL_REWARDS.get(lvl) or {"shift": 0, "nova": 0, "xp": 0}
+    wallet_add(user_id, shift=rw.get("shift", 0), nova=rw.get("nova", 0), xp=rw.get("xp", 0))
+    conn.execute("INSERT INTO level_rewards (user_id, level, claimed_at) VALUES (?, ?, ?)",
+        (user_id, lvl, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
+    return rw, None
 
 def game_get_scores(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""SELECT game_id, best_score, plays_count
-                           FROM game_scores WHERE user_id=?""", (user_id,)).fetchall()
+    rows = conn.execute("SELECT game_id, best_score, plays_count FROM game_scores WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
-    result = {}
-    for gid, best, plays in rows:
-        result[gid] = {"best": best or 0, "plays": plays or 0}
+    result = {gid: {"best": b or 0, "plays": p or 0} for gid, b, p in rows}
     for gid in GAMES:
-        if gid not in result:
-            result[gid] = {"best": 0, "plays": 0}
+        if gid not in result: result[gid] = {"best": 0, "plays": 0}
     return result
-
 
 def game_save_score(user_id, game_id, score):
-    if game_id not in GAMES:
-        return None
+    if game_id not in GAMES: return None
     score = max(0, min(int(score), 99999))
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("""SELECT best_score, plays_count FROM game_scores
-                          WHERE user_id=? AND game_id=?""", (user_id, game_id)).fetchone()
+    row = conn.execute("SELECT best_score, plays_count FROM game_scores WHERE user_id=? AND game_id=?", (user_id, game_id)).fetchone()
     now = datetime.now(timezone.utc).isoformat()
     if row:
-        old_best = row[0] or 0
-        plays = (row[1] or 0) + 1
-        new_best = max(old_best, score)
-        conn.execute("""UPDATE game_scores SET best_score=?, plays_count=?, updated_at=?
-                        WHERE user_id=? AND game_id=?""",
-                     (new_best, plays, now, user_id, game_id))
+        old_best = row[0] or 0; plays = (row[1] or 0) + 1; new_best = max(old_best, score)
+        conn.execute("UPDATE game_scores SET best_score=?, plays_count=?, updated_at=? WHERE user_id=? AND game_id=?",
+            (new_best, plays, now, user_id, game_id))
         is_record = score > old_best
     else:
-        new_best = score
-        plays = 1
-        conn.execute("""INSERT INTO game_scores
-                        (user_id, game_id, best_score, plays_count, updated_at)
-                        VALUES (?, ?, ?, ?, ?)""",
-                     (user_id, game_id, score, 1, now))
+        new_best = score; plays = 1
+        conn.execute("INSERT INTO game_scores (user_id, game_id, best_score, plays_count, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, game_id, score, 1, now))
         is_record = score > 0
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
     return {"best": new_best, "is_record": is_record, "plays": plays}
 
-
 def game_leaderboard(game_id, limit=10):
-    if game_id not in GAMES:
-        return []
+    if game_id not in GAMES: return []
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""SELECT g.user_id, g.best_score,
-                                  COALESCE(u.first_name, ''),
-                                  COALESCE(u.username, ''),
-                                  COALESCE(w.custom_name, '')
-                           FROM game_scores g
-                           LEFT JOIN users u ON u.user_id = g.user_id
-                           LEFT JOIN wallet w ON w.user_id = g.user_id
-                           WHERE g.game_id = ? AND g.best_score > 0
-                           ORDER BY g.best_score DESC LIMIT ?""",
-                        (game_id, limit)).fetchall()
+    rows = conn.execute("""SELECT g.user_id, g.best_score, COALESCE(u.first_name, ''), COALESCE(u.username, ''), COALESCE(w.custom_name, '')
+        FROM game_scores g LEFT JOIN users u ON u.user_id = g.user_id LEFT JOIN wallet w ON w.user_id = g.user_id
+        WHERE g.game_id = ? AND g.best_score > 0 ORDER BY g.best_score DESC LIMIT ?""", (game_id, limit)).fetchall()
     conn.close()
-    result = []
-    for uid, score, first_name, username, custom_name in rows:
-        display = custom_name or first_name or ''
-        result.append((uid, score, display, username))
-    return result
-
+    return [(uid, score, custom_name or first_name or '', username) for uid, score, first_name, username, custom_name in rows]
 
 def user_exists(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -951,19 +617,16 @@ def user_exists(user_id):
     conn.close()
     return row is not None
 
-
 def daily_subscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR IGNORE INTO daily_subscribers (user_id, subscribed_at) VALUES (?, ?)",
-                 (user_id, datetime.now(timezone.utc).isoformat()))
+        (user_id, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def daily_unsubscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def daily_is_subscribed(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -971,20 +634,17 @@ def daily_is_subscribed(user_id):
     conn.close()
     return row is not None
 
-
 def daily_get_all_subscribers():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
-
 def set_scholarship_amount(user_id, amount):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR REPLACE INTO scholarship (user_id, current_amount, updated_at) VALUES (?, ?, ?)",
-                 (user_id, amount, datetime.now(timezone.utc).isoformat()))
+        (user_id, amount, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def get_scholarship_amount(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -992,69 +652,51 @@ def get_scholarship_amount(user_id):
     conn.close()
     return row[0] if row else None
 
-
 def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?) AND COALESCE(semester,'')=COALESCE(?,'')",
-        (user_id, subject, semester)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?) AND COALESCE(semester,'')=COALESCE(?,'')",
+        (user_id, subject, semester)).fetchone()
     if row:
         conn.execute("UPDATE grades SET grade=?, subject=?, is_auto=?, semester=?, created_at=? WHERE id=?",
-                     (grade, subject, int(bool(is_auto)), semester,
-                      datetime.now(timezone.utc).isoformat(), row[0]))
+            (grade, subject, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat(), row[0]))
     else:
         conn.execute("INSERT INTO grades (user_id, subject, grade, is_auto, semester, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                     (user_id, subject, grade, int(bool(is_auto)), semester,
-                      datetime.now(timezone.utc).isoformat()))
+            (user_id, subject, grade, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def get_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') "
-        "FROM grades WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
+    rows = conn.execute("SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') FROM grades WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
 
-
 def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None, semester=None):
-    conn = sqlite3.connect(DB_PATH)
-    fields = []; values = []
+    conn = sqlite3.connect(DB_PATH); fields = []; values = []
     if subject is not None: fields.append("subject=?"); values.append(subject)
     if grade is not None: fields.append("grade=?"); values.append(grade)
     if is_auto is not None: fields.append("is_auto=?"); values.append(int(bool(is_auto)))
     if semester is not None: fields.append("semester=?"); values.append(semester)
-    if not fields:
-        conn.close(); return
+    if not fields: conn.close(); return
     values.extend([grade_id, user_id])
     conn.execute(f"UPDATE grades SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
-
 
 def delete_grade(grade_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
     conn.commit(); conn.close()
 
-
 def clear_grades(user_id, semester=None):
     conn = sqlite3.connect(DB_PATH)
-    if semester:
-        conn.execute("DELETE FROM grades WHERE user_id=? AND COALESCE(semester,'')=?", (user_id, semester))
-    else:
-        conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
+    if semester: conn.execute("DELETE FROM grades WHERE user_id=? AND COALESCE(semester,'')=?", (user_id, semester))
+    else: conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def save_user_group(user_id, group_id, group_name):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET group_id=?, group_name=? WHERE user_id=?",
-                 (group_id, group_name, user_id))
+    conn.execute("UPDATE users SET group_id=?, group_name=? WHERE user_id=?", (group_id, group_name, user_id))
     conn.commit(); conn.close()
-
 
 def get_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -1062,13 +704,10 @@ def get_user_group(user_id):
     conn.close()
     return row if row and row[0] else None
 
-
 def delete_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL WHERE user_id=?",
-                 (user_id,))
+    conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def set_user_subgroup(user_id, subgroup):
     _ensure_user(user_id)
@@ -1076,13 +715,11 @@ def set_user_subgroup(user_id, subgroup):
     conn.execute("UPDATE users SET subgroup=? WHERE user_id=?", (subgroup, user_id))
     conn.commit(); conn.close()
 
-
 def get_user_subgroup(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT subgroup FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row and row[0] else 0
-
 
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
@@ -1090,31 +727,25 @@ def set_notify_changes(user_id, enabled):
     conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?", (1 if enabled else 0, user_id))
     conn.commit(); conn.close()
 
-
 def get_notify_changes(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return bool(row and row[0])
 
-
 def set_notify_settings(user_id, ntype, hour, minute):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?",
-                 (ntype, hour, minute, user_id))
+    conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?", (ntype, hour, minute, user_id))
     conn.commit(); conn.close()
-
 
 def get_notify_settings(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?",
-                       (user_id,)).fetchone()
+    row = conn.execute("SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     if row and row[0]:
         return {"type": row[0], "hour": row[1] if row[1] is not None else 0, "minute": row[2] if row[2] is not None else 0}
     return None
-
 
 def set_notify_before_min(user_id, minutes):
     _ensure_user(user_id)
@@ -1122,41 +753,29 @@ def set_notify_before_min(user_id, minutes):
     conn.execute("UPDATE users SET notify_before_min=? WHERE user_id=?", (int(minutes), user_id))
     conn.commit(); conn.close()
 
-
 def get_notify_before_min(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT notify_before_min FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return int(row[0]) if row and row[0] is not None else 0
 
-
 def get_users_for_notification():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute "
-        "FROM users WHERE notify_type IS NOT NULL AND notify_type != '' "
-        "AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+    rows = conn.execute("SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute FROM users WHERE notify_type IS NOT NULL AND notify_type != '' AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
-
 
 def get_users_for_change_tracking():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT user_id, group_id, subgroup FROM users "
-        "WHERE notify_changes=1 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+    rows = conn.execute("SELECT user_id, group_id, subgroup FROM users WHERE notify_changes=1 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
-
 
 def get_users_for_lesson_reminder():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT user_id, group_id, subgroup, notify_before_min FROM users "
-        "WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+    rows = conn.execute("SELECT user_id, group_id, subgroup, notify_before_min FROM users WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
-
 
 def get_total_users():
     conn = sqlite3.connect(DB_PATH)
@@ -1164,158 +783,122 @@ def get_total_users():
     conn.close()
     return n
 
-
 def get_all_user_ids():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
-
 def is_vip(user_id):
     return True
 
-
 def get_cached_schedule(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT html, cached_at FROM schedule_cache WHERE group_id=? AND week_start=?",
-                       (group_id, week_start)).fetchone()
+    row = conn.execute("SELECT html, cached_at FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
     conn.close()
-    if not row:
-        return None
+    if not row: return None
     html, cached_at = row
     try:
-        if datetime.now(timezone.utc) - datetime.fromisoformat(cached_at) < timedelta(hours=CACHE_TTL_HOURS):
-            return html
-    except Exception:
-        pass
+        if datetime.now(timezone.utc) - datetime.fromisoformat(cached_at) < timedelta(hours=CACHE_TTL_HOURS): return html
+    except: pass
     return None
-
 
 def save_cached_schedule(group_id, week_start, html):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
-                 (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
+        (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def save_snapshot(group_id, week_start, snapshot_str):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR REPLACE INTO schedule_snapshots (group_id, week_start, snapshot, updated_at) VALUES (?, ?, ?, ?)",
-                 (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
+        (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def get_snapshot(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?",
-                       (group_id, week_start)).fetchone()
+    row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
     conn.close()
     return row[0] if row else None
-
 
 def make_snapshot_str(days):
     parts = []
     for d in days:
         day_key = d.get("date", "")
         for les in d.get("lessons", []):
-            parts.append(
-                f"{day_key}|{les.get('time','')}|{les.get('subject','')}|"
-                f"{les.get('type','')}|{les.get('teacher','')}|"
-                f"{les.get('auditorium','')}|{les.get('subgroup','')}")
+            parts.append(f"{day_key}|{les.get('time','')}|{les.get('subject','')}|{les.get('type','')}|{les.get('teacher','')}|{les.get('auditorium','')}|{les.get('subgroup','')}")
     return "\n".join(sorted(parts))
-
 
 def save_feedback(user_id, username, text, admin_msg_id=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
-                       (user_id, username, text, datetime.now(timezone.utc).isoformat(), admin_msg_id))
+        (user_id, username, text, datetime.now(timezone.utc).isoformat(), admin_msg_id))
     fid = cur.lastrowid
     conn.commit(); conn.close()
     return fid
-
 
 def update_feedback_admin_msg(feedback_id, admin_msg_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET admin_msg_id=? WHERE id=?", (admin_msg_id, feedback_id))
     conn.commit(); conn.close()
 
-
 def get_pending_feedback():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT id, user_id, username, text, created_at, COALESCE(status,'new') "
-        "FROM feedback WHERE COALESCE(status,'new') IN ('new', 'postponed') "
-        "ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC").fetchall()
+    rows = conn.execute("SELECT id, user_id, username, text, created_at, COALESCE(status,'new') FROM feedback WHERE COALESCE(status,'new') IN ('new', 'postponed') ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC").fetchall()
     conn.close()
     return rows
-
 
 def set_feedback_status(feedback_id, status):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
     conn.commit(); conn.close()
 
-
 def mark_feedback_answered(feedback_id, reply_text=None):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET status='answered', answered_at=?, admin_reply=? WHERE id=?",
-                 (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
+        (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
     conn.commit(); conn.close()
-
 
 def get_feedback_by_id(feedback_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?",
-                       (feedback_id,)).fetchone()
+    row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?", (feedback_id,)).fetchone()
     conn.close()
     return row
 
-
 def get_user_feedback(user_id, limit=30):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT id, text, COALESCE(status,'new'), created_at, answered_at, admin_reply "
-        "FROM feedback WHERE user_id=? ORDER BY id DESC LIMIT ?",
+    rows = conn.execute("SELECT id, text, COALESCE(status,'new'), created_at, answered_at, admin_reply FROM feedback WHERE user_id=? ORDER BY id DESC LIMIT ?",
         (user_id, limit)).fetchall()
     conn.close()
     return rows
 
-
 def add_task(user_id, text, due_date=None, priority=2, due_time=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time) VALUES (?, ?, ?, 0, ?, ?, ?)",
-                       (user_id, text, due_date, datetime.now(timezone.utc).isoformat(), priority, due_time))
+        (user_id, text, due_date, datetime.now(timezone.utc).isoformat(), priority, due_time))
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
 
-
 def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_time=None, reset_due=False):
-    conn = sqlite3.connect(DB_PATH)
-    fields = []; values = []
+    conn = sqlite3.connect(DB_PATH); fields = []; values = []
     if text is not None: fields.append("text=?"); values.append(text)
-    if reset_due:
-        fields.append("due_date=NULL"); fields.append("due_time=NULL")
+    if reset_due: fields.append("due_date=NULL"); fields.append("due_time=NULL")
     else:
         if due_date is not None: fields.append("due_date=?"); values.append(due_date)
         if due_time is not None: fields.append("due_time=?"); values.append(due_time)
     if priority is not None: fields.append("priority=?"); values.append(priority)
-    if not fields:
-        conn.close(); return
+    if not fields: conn.close(); return
     values.extend([task_id, user_id])
     conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
-
 def get_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at "
-        "FROM tasks WHERE id=? AND user_id=?", (task_id, user_id)).fetchone()
+    row = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE id=? AND user_id=?",
+        (task_id, user_id)).fetchone()
     conn.close()
     return row
-
 
 def get_user_tasks(user_id, only_active=True):
     conn = sqlite3.connect(DB_PATH)
@@ -1326,136 +909,104 @@ def get_user_tasks(user_id, only_active=True):
     conn.close()
     return rows
 
-
 def get_done_tasks(user_id, days=7):
     conn = sqlite3.connect(DB_PATH)
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    rows = conn.execute(
-        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at "
-        "FROM tasks WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? "
-        "ORDER BY done_at DESC", (user_id, threshold)).fetchall()
+    rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? ORDER BY done_at DESC",
+        (user_id, threshold)).fetchall()
     conn.close()
     return rows
-
 
 def mark_task_done(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
-                 (datetime.now(timezone.utc).isoformat(), task_id, user_id))
+        (datetime.now(timezone.utc).isoformat(), task_id, user_id))
     conn.commit(); conn.close()
-
 
 def delete_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
     conn.commit(); conn.close()
 
-
 def clear_done_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
     conn.commit(); conn.close()
 
-
 def count_user_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) "
-        "FROM tasks WHERE user_id=?", (user_id,)).fetchone()
+    row = conn.execute("SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return (row[0] or 0, row[1] or 0)
 
-
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
-                       (user_id, subject)).fetchone()
+    row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)", (user_id, subject)).fetchone()
     if row:
         conn.execute("UPDATE notes SET text=?, created_at=? WHERE id=?",
-                     (text, datetime.now(timezone.utc).isoformat(), row[0]))
+            (text, datetime.now(timezone.utc).isoformat(), row[0]))
     else:
         conn.execute("INSERT INTO notes (user_id, subject, text, created_at) VALUES (?, ?, ?, ?)",
-                     (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
+            (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def get_user_notes(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject",
-                        (user_id,)).fetchall()
+    rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
-
 
 def delete_note_by_id(note_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
     conn.commit(); conn.close()
 
-
 def attendance_set(user_id, date, time, subject, status):
-    if status not in ("", "was", "missed", "sick", "excused"):
-        return False
+    if status not in ("", "was", "missed", "sick", "excused"): return False
     conn = sqlite3.connect(DB_PATH)
     if status:
-        conn.execute(
-            "INSERT INTO attendance (user_id, date, time, subject, status, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(user_id, date, time, subject) DO UPDATE SET "
-            "status=excluded.status, updated_at=excluded.updated_at",
+        conn.execute("INSERT INTO attendance (user_id, date, time, subject, status, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, date, time, subject) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at",
             (user_id, date, time, subject, status, datetime.now(timezone.utc).isoformat()))
     else:
-        conn.execute("DELETE FROM attendance WHERE user_id=? AND date=? AND time=? AND subject=?",
-                     (user_id, date, time, subject))
+        conn.execute("DELETE FROM attendance WHERE user_id=? AND date=? AND time=? AND subject=?", (user_id, date, time, subject))
     conn.commit(); conn.close()
     return True
 
-
 def attendance_get_map(user_id, dates):
-    if not dates:
-        return {}
+    if not dates: return {}
     conn = sqlite3.connect(DB_PATH)
     placeholders = ",".join("?" * len(dates))
-    rows = conn.execute(
-        f"SELECT date, time, subject, status FROM attendance WHERE user_id=? AND date IN ({placeholders})",
+    rows = conn.execute(f"SELECT date, time, subject, status FROM attendance WHERE user_id=? AND date IN ({placeholders})",
         (user_id, *dates)).fetchall()
     conn.close()
     return {(d, t, s): st for d, t, s, st in rows}
 
-
 def attendance_stats(user_id):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status",
-                        (user_id,)).fetchall()
+    rows = conn.execute("SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status", (user_id,)).fetchall()
     conn.close()
     result = {"was": 0, "missed": 0, "sick": 0, "excused": 0}
     for status, count in rows:
-        if status in result:
-            result[status] = count
+        if status in result: result[status] = count
     return result
-
 
 def ai_get_history(user_id, limit=30):
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?",
-                        (user_id, limit)).fetchall()
+    rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
     conn.close()
     rows.reverse()
     return rows
 
-
 def ai_save_message(user_id, role, text, has_photo=0):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
-                 (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
+        (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def ai_clear_history(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def get_export_data(user_id):
     saved = get_user_group(user_id)
@@ -1465,285 +1016,145 @@ def get_export_data(user_id):
     amount = get_scholarship_amount(user_id)
     feedback = get_user_feedback(user_id, limit=100)
     att = attendance_stats(user_id)
-
     conn = sqlite3.connect(DB_PATH)
     meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
-    username = meta[0] if meta else None
-    first_name = meta[1] if meta else None
-
-    return {
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "user_id": user_id,
+    username = meta[0] if meta else None; first_name = meta[1] if meta else None
+    return {"exported_at": datetime.now(timezone.utc).isoformat(), "user_id": user_id,
         "username": username, "first_name": first_name,
-        "group": saved[1] if saved else None,
-        "group_id": saved[0] if saved else None,
-        "subgroup": get_user_subgroup(user_id),
-        "scholarship_amount": amount,
-        "tasks": [{"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]),
-                   "priority": t[5], "due_time": t[6]} for t in tasks],
+        "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
+        "subgroup": get_user_subgroup(user_id), "scholarship_amount": amount,
+        "tasks": [{"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]), "priority": t[5], "due_time": t[6]} for t in tasks],
         "notes": [{"id": n[0], "subject": n[1], "text": n[2]} for n in notes],
-        "grades": [{"id": g[0], "subject": g[1], "grade": g[2],
-                    "is_auto": bool(g[3]), "semester": g[4]} for g in grades],
-        "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3],
-                      "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
-        "attendance": att,
-    }
+        "grades": [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4]} for g in grades],
+        "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
+        "attendance": att}
 
-
-# ============================================================
-#              МОРСКОЙ БОЙ — ХЕЛПЕРЫ
-# ============================================================
-
-def _bs_now():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _bs_new_game_id():
-    return secrets.token_hex(8)
-
+def _bs_now(): return datetime.now(timezone.utc).isoformat()
+def _bs_new_game_id(): return secrets.token_hex(8)
 
 def _bs_new_code():
     for _ in range(50):
         code = f"{random.randint(100000, 999999)}"
         conn = sqlite3.connect(DB_PATH)
-        row = conn.execute(
-            "SELECT 1 FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing')",
-            (code,)
-        ).fetchone()
+        row = conn.execute("SELECT 1 FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing')", (code,)).fetchone()
         conn.close()
-        if not row:
-            return code
+        if not row: return code
     return f"{random.randint(100000, 999999)}"
 
-
-def _bs_empty_field():
-    return [[0] * 10 for _ in range(10)]
-
-
-def _bs_cells_have_conflict(ships):
+def _bs_validate_ships(ships):
+    if not ships or not isinstance(ships, list): return False
+    required = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]
+    if sorted([s.get("size") for s in ships], reverse=True) != required: return False
     occupied = set()
     for s in ships:
-        for x, y in s["cells"]:
-            if (x, y) in occupied:
-                return True
-            occupied.add((x, y))
-    for s in ships:
-        for x, y in s["cells"]:
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    nx, ny = x + dx, y + dy
-                    if nx < 0 or nx > 9 or ny < 0 or ny > 9:
-                        continue
-                    if (nx, ny) in occupied and (nx, ny) not in [(cx, cy) for cx, cy in s["cells"]]:
-                        for s2 in ships:
-                            if s2 is s:
-                                continue
-                            if (nx, ny) in [(cx, cy) for cx, cy in s2["cells"]]:
-                                return True
-    return False
-
-
-def _bs_validate_ships(ships):
-    if not ships or not isinstance(ships, list):
-        return False
-    sizes_required = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]
-    sizes_got = sorted([s.get("size") for s in ships], reverse=True)
-    if sizes_got != sizes_required:
-        return False
-    for s in ships:
         cells = s.get("cells", [])
-        if len(cells) != s.get("size"):
-            return False
-        xs = [c[0] for c in cells]
-        ys = [c[1] for c in cells]
-        if min(xs) < 0 or max(xs) > 9 or min(ys) < 0 or max(ys) > 9:
-            return False
-        if len(set(xs)) > 1 and len(set(ys)) > 1:
-            return False
-        sorted_cells = sorted(cells, key=lambda c: (c[1], c[0]))
-        for i in range(1, len(sorted_cells)):
-            prev = sorted_cells[i - 1]
-            cur = sorted_cells[i]
-            if abs(prev[0] - cur[0]) + abs(prev[1] - cur[1]) != 1:
-                return False
-    return not _bs_cells_have_conflict(ships)
-
+        if len(cells) != s.get("size"): return False
+        xs = [c[0] for c in cells]; ys = [c[1] for c in cells]
+        if min(xs) < 0 or max(xs) > 9 or min(ys) < 0 or max(ys) > 9: return False
+        if len(set(xs)) > 1 and len(set(ys)) > 1: return False
+        sc = sorted(cells, key=lambda c: (c[1], c[0]))
+        for i in range(1, len(sc)):
+            if abs(sc[i-1][0] - sc[i][0]) + abs(sc[i-1][1] - sc[i][1]) != 1: return False
+        for x, y in cells:
+            if (x, y) in occupied: return False
+            occupied.add((x, y))
+    return True
 
 def _bs_check_win(ships, shots):
-    if not ships:
-        return False
-    all_cells = set()
-    for s in ships:
-        for c in s["cells"]:
-            all_cells.add((c[0], c[1]))
+    if not ships: return False
+    all_cells = {(c[0], c[1]) for s in ships for c in s["cells"]}
     hit_cells = {(sh.get("x"), sh.get("y")) for sh in shots}
     return all_cells.issubset(hit_cells)
 
-
 def _bs_get_game(game_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM bs_games WHERE game_id=?", (game_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
 
-
 def _bs_get_game_by_code(code):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute(
-        "SELECT * FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing') "
-        "ORDER BY created_at DESC LIMIT 1", (code,)
-    ).fetchone()
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing') ORDER BY created_at DESC LIMIT 1", (code,)).fetchone()
     conn.close()
     return dict(row) if row else None
 
-
 def _bs_update_game(game_id, **fields):
-    if not fields:
-        return
+    if not fields: return
     fields["updated_at"] = _bs_now()
     keys = ", ".join(f"{k}=?" for k in fields.keys())
     values = list(fields.values()) + [game_id]
     conn = sqlite3.connect(DB_PATH)
     conn.execute(f"UPDATE bs_games SET {keys} WHERE game_id=?", values)
-    conn.commit()
-    conn.close()
-
+    conn.commit(); conn.close()
 
 def _bs_delete_game(game_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM bs_games WHERE game_id=?", (game_id,))
-    conn.commit()
-    conn.close()
-
+    conn.commit(); conn.close()
 
 def _bs_player_side(game, user_id):
-    if game["p1_id"] == user_id:
-        return 1
-    if game["p2_id"] == user_id:
-        return 2
+    if game["p1_id"] == user_id: return 1
+    if game["p2_id"] == user_id: return 2
     return 0
-
 
 def _bs_user_in_active_game(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT game_id FROM bs_games WHERE (p1_id=? OR p2_id=?) "
-        "AND status IN ('waiting','placing','playing') LIMIT 1",
-        (user_id, user_id)
-    ).fetchone()
+    row = conn.execute("SELECT game_id FROM bs_games WHERE (p1_id=? OR p2_id=?) AND status IN ('waiting','placing','playing') LIMIT 1", (user_id, user_id)).fetchone()
     conn.close()
     return row[0] if row else None
 
-
 def _bs_get_user_name(user_id):
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT COALESCE(custom_name, first_name, username, 'Игрок') "
-        "FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.user_id=?",
-        (user_id,)
-    ).fetchone()
+    row = conn.execute("SELECT COALESCE(custom_name, first_name, username, 'Игрок') FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.user_id=?", (user_id,)).fetchone()
     conn.close()
-    if row and row[0]:
-        return row[0]
-    return f"Игрок-{str(user_id)[-4:]}"
-
+    return row[0] if row and row[0] else f"Игрок-{str(user_id)[-4:]}"
 
 def _bs_finish_game(game_id, winner_id, surrender_by=0):
     game = _bs_get_game(game_id)
-    if not game:
-        return
-    if game["status"] == "finished":
-        return
+    if not game or game["status"] == "finished": return
     bet = game["bet"] or 0
-    p1_id = game["p1_id"]
-    p2_id = game["p2_id"]
-
     if winner_id == 0:
-        if p1_id: wallet_add(p1_id, soft=bet)
-        if p2_id: wallet_add(p2_id, soft=bet)
-        _bs_update_game(game_id, status="finished", winner=0,
-                        surrender_by=surrender_by)
+        if game["p1_id"]: wallet_add(game["p1_id"], shift=bet)
+        if game["p2_id"]: wallet_add(game["p2_id"], shift=bet)
+        _bs_update_game(game_id, status="finished", winner=0, surrender_by=surrender_by)
         return
-
-    if winner_id:
-        wallet_add(winner_id, soft=bet * 2, xp=50)
-
-    _bs_update_game(game_id, status="finished", winner=winner_id,
-                    surrender_by=surrender_by)
-
-
-def _bs_cancel_game_refund(game_id):
-    game = _bs_get_game(game_id)
-    if not game or game["status"] == "finished":
-        return
-    bet = game["bet"] or 0
-    if game["p1_id"]:
-        wallet_add(game["p1_id"], soft=bet)
-    if game["p2_id"]:
-        wallet_add(game["p2_id"], soft=bet)
-    _bs_delete_game(game_id)
-
+    wallet_add(winner_id, shift=bet * 2, xp=50)
+    _bs_update_game(game_id, status="finished", winner=winner_id, surrender_by=surrender_by)
 
 def _bs_cancel_any_waiting(user_id):
-    """Авто-отмена всех waiting-игр игрока (где он p1 без p2) с возвратом ставки."""
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT game_id, bet FROM bs_games "
-        "WHERE p1_id=? AND status='waiting' AND (p2_id IS NULL OR p2_id=0)",
-        (user_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT game_id, bet FROM bs_games WHERE p1_id=? AND status='waiting' AND (p2_id IS NULL OR p2_id=0)", (user_id,)).fetchall()
     conn.close()
     for game_id, bet in rows:
-        wallet_add(user_id, soft=bet or 0)
+        wallet_add(user_id, shift=bet or 0)
         _bs_delete_game(game_id)
-
 
 def _bs_cleanup_stale_games():
     threshold = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT game_id, p1_id, p2_id, bet FROM bs_games "
-        "WHERE status IN ('waiting','placing','playing') AND created_at < ?",
-        (threshold,)
-    ).fetchall()
+    rows = conn.execute("SELECT game_id, p1_id, p2_id, bet FROM bs_games WHERE status IN ('waiting','placing','playing') AND created_at < ?", (threshold,)).fetchall()
     conn.close()
     for game_id, p1_id, p2_id, bet in rows:
-        if p1_id:
-            wallet_add(p1_id, soft=bet or 0)
-        if p2_id:
-            wallet_add(p2_id, soft=bet or 0)
+        if p1_id: wallet_add(p1_id, shift=bet or 0)
+        if p2_id: wallet_add(p2_id, shift=bet or 0)
         _bs_delete_game(game_id)
 
-
-def exchange_soft_to_hard(user_id, amount_soft):
-    try:
-        amount_soft = int(amount_soft)
-    except Exception:
-        return None
-    if amount_soft <= 0:
-        return None
-    amount_hard = amount_soft // EXCHANGE_RATE_SOFT_TO_HARD
-    if amount_hard <= 0:
-        return None
-    if not wallet_consume_soft(user_id, amount_hard * EXCHANGE_RATE_SOFT_TO_HARD):
-        return None
-    wallet_add(user_id, hard=amount_hard)
+def exchange_shift_to_nova(user_id, amount_shift):
+    try: amount_shift = int(amount_shift)
+    except: return None
+    if amount_shift <= 0: return None
+    amount_nova = amount_shift // EXCHANGE_RATE_SHIFT_TO_NOVA
+    if amount_nova <= 0: return None
+    if not wallet_consume(user_id, "shift", amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA): return None
+    wallet_add(user_id, nova=amount_nova)
     achievement_unlock(user_id, "exchange_1")
     rw = ACHIEVEMENT_REWARDS.get("exchange_1")
-    if rw:
-        wallet_add(user_id, xp=rw["xp"], soft=rw["soft"], hard=rw["hard"])
-    return {
-        "soft_spent": amount_hard * EXCHANGE_RATE_SOFT_TO_HARD,
-        "hard_received": amount_hard,
-    }
+    if rw: wallet_add(user_id, xp=rw["xp"], shift=rw["shift"], nova=rw["nova"])
+    return {"soft_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA, "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
+        "hard_received": amount_nova, "nova_received": amount_nova}
 
-
-# ============================================================
-#                    ПОЛНЫЙ СЛОВАРЬ GROUPS
-# ============================================================
+# === GROUPS_ЗДЕСЬ ===
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -2073,34 +1484,18 @@ GROUPS = {
     ],
 }
 
-
-LESSON_TIMES = {
-    "8:15": "9:45", "8:30": "10:00", "10:00": "11:30", "10:10": "11:40",
-    "11:45": "13:15", "12:00": "13:30", "13:45": "15:15", "14:00": "15:30",
-    "15:30": "17:00", "15:45": "17:15", "17:10": "18:40", "17:25": "18:55",
-    "18:50": "20:20", "19:05": "20:35",
-}
-
-
-def _now_irkutsk():
-    return datetime.now(timezone.utc) + timedelta(hours=8)
-
-
-def _monday_of_week(d):
-    return d - timedelta(days=d.weekday())
-
+LESSON_TIMES = {"8:15":"9:45","8:30":"10:00","10:00":"11:30","10:10":"11:40",
+    "11:45":"13:15","12:00":"13:30","13:45":"15:15","14:00":"15:30",
+    "15:30":"17:00","15:45":"17:15","17:10":"18:40","17:25":"18:55",
+    "18:50":"20:20","19:05":"20:35"}
 
 def _filter_lessons_by_subgroup(lessons, subgroup):
-    if not subgroup:
-        return lessons
+    if not subgroup: return lessons
     result = []
     for les in lessons:
-        if not les["subgroup"]:
-            result.append(les)
-        elif str(subgroup) == str(les["subgroup"]):
-            result.append(les)
+        if not les["subgroup"]: result.append(les)
+        elif str(subgroup) == str(les["subgroup"]): result.append(les)
     return result
-
 
 def parse_schedule(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -2115,8 +1510,7 @@ def parse_schedule(html):
     for day_div in soup.find_all("div", class_="sch-list-day"):
         date_str = ""
         m = re.search(r"'date'\s*:\s*'([^']+)'", day_div.get("data-params", ""))
-        if m:
-            date_str = m.group(1)
+        if m: date_str = m.group(1)
         header = day_div.find("h2", class_="sch-list-day-header")
         day_name = header.get_text(strip=True) if header else date_str
         lessons = []
@@ -2128,11 +1522,9 @@ def parse_schedule(html):
                 week_type = "all"
                 if "week-even" in classes: week_type = "even"
                 elif "week-odd" in classes: week_type = "odd"
-                if week_type != "all" and week_parity != "all" and week_type != week_parity:
-                    continue
+                if week_type != "all" and week_parity != "all" and week_type != week_parity: continue
                 for cls in week_block.find_all("div", class_="schcls-item"):
-                    if "schcls-empty" in cls.get("class", []):
-                        continue
+                    if "schcls-empty" in cls.get("class", []): continue
                     name_div = cls.find("div", class_="schcls-item-name")
                     subject = name_div.get_text(strip=True) if name_div else ""
                     type_div = cls.find("div", class_="schcls-item-distype")
@@ -2147,17 +1539,15 @@ def parse_schedule(html):
                     aud_div = cls.find("div", class_="schcls-item-aud")
                     auditorium = aud_div.get_text(strip=True) if aud_div else ""
                     lessons.append({"time": time_str, "subject": subject, "type": lesson_type,
-                                    "teacher": teacher, "subgroup": subgroup, "auditorium": auditorium})
+                        "teacher": teacher, "subgroup": subgroup, "auditorium": auditorium})
         days.append({"date": date_str, "name": day_name, "lessons": lessons})
     return week_parity, days
-
 
 async def fetch_week_html(group_id, target_monday, use_cache=True):
     week_start_str = target_monday.strftime("%Y-%m-%d")
     if use_cache:
         cached = get_cached_schedule(group_id, week_start_str)
-        if cached:
-            return cached
+        if cached: return cached
     date_str = target_monday.strftime("%d.%m.%Y")
     url = f"https://www.istu.edu/raspisanie/grup/{group_id}/{date_str}/"
     headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ru-RU,ru;q=0.9"}
@@ -2165,34 +1555,27 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 html = await response.text()
-                if response.status == 200 and html:
-                    save_cached_schedule(group_id, week_start_str, html)
+                if response.status == 200 and html: save_cached_schedule(group_id, week_start_str, html)
                 return html
     except Exception as e:
         logging.error(f"[WEEK] Ошибка: {e}")
         if use_cache:
             conn = sqlite3.connect(DB_PATH)
-            row = conn.execute("SELECT html FROM schedule_cache WHERE group_id=? AND week_start=?",
-                             (group_id, week_start_str)).fetchone()
+            row = conn.execute("SELECT html FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start_str)).fetchone()
             conn.close()
-            if row:
-                return row[0]
+            if row: return row[0]
         return ""
 
-
-def _verify_webapp_init_full(init_data: str):
-    if not init_data:
-        return None
+def _verify_webapp_init_full(init_data):
+    if not init_data: return None
     try:
         data = safe_parse_webapp_init_data(token=TOKEN, init_data=init_data)
-        if data and data.user:
-            return data.user
+        if data and data.user: return data.user
     except Exception as e:
         logging.warning(f"[WEB] initData verify error: {e}")
     return None
 
-
-def _verify_webapp_init(init_data: str):
+def _verify_webapp_init(init_data):
     u = _verify_webapp_init_full(init_data)
     return u.id if u else None
 
@@ -2243,7 +1626,10 @@ async def api_week(request: web.Request):
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    offset = int(request.query.get("offset", "0"))
+    try:
+        offset = int(request.query.get("offset", "0"))
+    except Exception:
+        offset = 0
     saved = get_user_group(user_id)
     if not saved:
         return web.json_response({"error": "no_group"}, status=200)
@@ -2275,7 +1661,7 @@ async def api_week(request: web.Request):
 
 
 # ============================================================
-#                  API: ПРОФИЛЬ / ЮЗЕР
+#                  API: ПРОФИЛЬ
 # ============================================================
 
 async def api_me(request: web.Request):
@@ -2284,12 +1670,10 @@ async def api_me(request: web.Request):
     if not user_obj:
         return web.json_response({"error": "unauthorized"}, status=401)
     user_id = user_obj.id
-
     _ensure_user(user_id)
     _update_user_meta(user_id, user_obj.username, user_obj.first_name)
     streak = stats_update_streak(user_id)
     check_and_award_achievements(user_id)
-
     saved = get_user_group(user_id)
     active, done = count_user_tasks(user_id)
     notes = get_user_notes(user_id)
@@ -2297,50 +1681,36 @@ async def api_me(request: web.Request):
     grades = get_grades(user_id)
     daily = daily_is_subscribed(user_id)
     notif_settings = get_notify_settings(user_id)
-
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     att_stats = attendance_stats(user_id)
     wallet = wallet_get(user_id)
     ach = achievements_get(user_id)
-
     if wallet["custom_name"]:
         display_name = wallet["custom_name"]
     else:
         full = " ".join(p for p in [user_obj.first_name or "", user_obj.last_name or ""] if p).strip()
         display_name = full or "PLAYER"
     player_tag = f"PLAYER-{str(user_id)[-6:].upper()}"
-
     return web.json_response({
-        "user_id": user_id,
-        "is_admin": user_id == ADMIN_ID,
-        "group": saved[1] if saved else None,
-        "group_id": saved[0] if saved else None,
+        "user_id": user_id, "is_admin": user_id == ADMIN_ID,
+        "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id),
         "tasks_active": active, "tasks_done": done,
-        "notes_count": len(notes),
-        "scholarship_amount": amount,
-        "grades_count": len(grades),
-        "grades_avg": round(avg, 2),
+        "notes_count": len(notes), "scholarship_amount": amount,
+        "grades_count": len(grades), "grades_avg": round(avg, 2),
         "daily_subscribed": daily,
         "notify_type": notif_settings["type"] if notif_settings else None,
         "notify_hour": notif_settings["hour"] if notif_settings else -1,
         "notify_minute": notif_settings["minute"] if notif_settings else 0,
         "notify_changes": get_notify_changes(user_id),
         "notify_before_min": get_notify_before_min(user_id),
-        "attendance_was": att_stats["was"],
-        "attendance_missed": att_stats["missed"],
-        "attendance_sick": att_stats["sick"],
-        "attendance_excused": att_stats["excused"],
-        "attendance_total": att_stats["was"] + att_stats["missed"] + att_stats["sick"] + att_stats["excused"],
-        "username": user_obj.username,
-        "first_name": user_obj.first_name,
-        "last_name": user_obj.last_name,
-        "display_name": display_name,
-        "player_tag": player_tag,
-        "wallet": wallet,
-        "streak": streak,
-        "achievements": ach,
-        "chat_unread": 0,
+        "attendance_was": att_stats["was"], "attendance_missed": att_stats["missed"],
+        "attendance_sick": att_stats["sick"], "attendance_excused": att_stats["excused"],
+        "attendance_total": sum(att_stats.values()),
+        "username": user_obj.username, "first_name": user_obj.first_name,
+        "last_name": user_obj.last_name, "display_name": display_name,
+        "player_tag": player_tag, "wallet": wallet, "streak": streak,
+        "achievements": ach, "chat_unread": 0,
     })
 
 
@@ -2365,7 +1735,6 @@ async def api_set_name(request: web.Request):
     name = (body.get("name") or "").strip()
     if len(name) > 24:
         name = name[:24]
-
     wallet_before = wallet_get(user_id)
     used_free = False
     if wallet_before["custom_name"]:
@@ -2373,9 +1742,9 @@ async def api_set_name(request: web.Request):
             wallet_use_free_name(user_id)
             used_free = True
         else:
-            if not wallet_consume_hard(user_id, 5):
+            if not wallet_consume(user_id, "nova", 5):
                 return web.json_response({"error": "need_hard",
-                                          "message": "Нужно 5 Автоматов для смены ника"}, status=400)
+                                          "message": "Нужно 5 Нова для смены ника"}, status=400)
     wallet_set_name(user_id, name)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "used_free": used_free})
 
@@ -2401,7 +1770,7 @@ async def api_set_avatar(request: web.Request):
 #                  API: ОБМЕННИК
 # ============================================================
 
-async def api_exchange_soft_to_hard(request: web.Request):
+async def api_exchange_shift_to_nova(request: web.Request):
     try:
         body = await request.json()
     except Exception:
@@ -2415,38 +1784,25 @@ async def api_exchange_soft_to_hard(request: web.Request):
         return web.json_response({"error": "bad_amount"}, status=400)
     if amount <= 0:
         return web.json_response({"error": "bad_amount", "message": "Сумма должна быть > 0"}, status=400)
-
-    amount = (amount // EXCHANGE_RATE_SOFT_TO_HARD) * EXCHANGE_RATE_SOFT_TO_HARD
+    amount = (amount // EXCHANGE_RATE_SHIFT_TO_NOVA) * EXCHANGE_RATE_SHIFT_TO_NOVA
     if amount <= 0:
-        return web.json_response({
-            "error": "too_small",
-            "message": f"Минимум {EXCHANGE_RATE_SOFT_TO_HARD} Стипух для обмена"
-        }, status=400)
-
+        return web.json_response({"error": "too_small",
+            "message": f"Минимум {EXCHANGE_RATE_SHIFT_TO_NOVA} Шифт для обмена"}, status=400)
     w = wallet_get(user_id)
-    if (w.get("soft") or 0) < amount:
-        return web.json_response({
-            "error": "not_enough_soft",
-            "message": "Недостаточно Стипух",
-            "have": w.get("soft") or 0,
-            "need": amount,
-        }, status=400)
-
-    result = exchange_soft_to_hard(user_id, amount)
+    if (w.get("shift") or 0) < amount:
+        return web.json_response({"error": "not_enough_soft", "message": "Недостаточно Шифт",
+            "have": w.get("shift") or 0, "need": amount}, status=400)
+    result = exchange_shift_to_nova(user_id, amount)
     if not result:
         return web.json_response({"error": "exchange_failed"}, status=500)
-
     check_and_award_achievements(user_id)
-    return web.json_response({
-        "ok": True,
-        "soft_spent": result["soft_spent"],
-        "hard_received": result["hard_received"],
-        "wallet": wallet_get(user_id),
-    })
+    return web.json_response({"ok": True, "soft_spent": result["soft_spent"],
+        "hard_received": result["hard_received"], "shift_spent": result["shift_spent"],
+        "nova_received": result["nova_received"], "wallet": wallet_get(user_id)})
 
 
 # ============================================================
-#                  API: СУНДУКИ / ДОСТИЖЕНИЯ
+#                  API: КЕЙСЫ
 # ============================================================
 
 async def api_chest_status(request: web.Request):
@@ -2454,7 +1810,8 @@ async def api_chest_status(request: web.Request):
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    return web.json_response(chest_status(user_id))
+    chest_id = request.query.get("chest_id", "capsule")
+    return web.json_response(chest_status(user_id, chest_id))
 
 
 async def api_chest_open(request: web.Request):
@@ -2465,44 +1822,24 @@ async def api_chest_open(request: web.Request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    reward = chest_open(user_id)
-    if reward is None:
-        return web.json_response({"error": "already_opened",
-                                  "message": "Сундук уже открыт, приходи завтра"}, status=400)
+    chest_id = (body.get("type") or body.get("chest") or "capsule").strip()
+    if chest_id not in CHESTS:
+        chest_id = "capsule"
+    reward, err = chest_open(user_id, chest_id)
+    if err:
+        msg = {"already_opened": "Кейс уже открыт, приходи позже",
+               "not_enough_shift": "Недостаточно Шифт",
+               "not_enough_nova": "Недостаточно Нова",
+               "bad_chest": "Неизвестный кейс",
+               "roll_failed": "Ошибка розыгрыша"}.get(err, "Ошибка")
+        return web.json_response({"error": err, "message": msg}, status=400)
     check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "reward": reward, "wallet": wallet_get(user_id)})
 
 
-async def api_premium_chest_open(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    wallet = wallet_get(user_id)
-    if (wallet.get("hard") or 0) < PREMIUM_CHEST_COST:
-        return web.json_response({
-            "error": "need_hard",
-            "message": f"Нужно {PREMIUM_CHEST_COST} Автоматов",
-            "have": wallet.get("hard") or 0,
-        }, status=400)
-
-    if not wallet_consume_hard(user_id, PREMIUM_CHEST_COST):
-        return web.json_response({"error": "consume_failed"}, status=500)
-
-    reward = roll_premium_chest_reward()
-    wallet_add(user_id, xp=reward["xp"], soft=reward["soft"], hard=reward["hard"])
-
-    check_and_award_achievements(user_id)
-    return web.json_response({
-        "ok": True,
-        "reward": reward,
-        "wallet": wallet_get(user_id),
-    })
-
+# ============================================================
+#                  API: ДОСТИЖЕНИЯ
+# ============================================================
 
 async def api_achievements(request: web.Request):
     init_data = request.query.get("initData", "")
@@ -2512,50 +1849,36 @@ async def api_achievements(request: web.Request):
     _ensure_user(user_id)
     check_and_award_achievements(user_id)
     unlocked = achievements_get(user_id)
-
     conn = sqlite3.connect(DB_PATH)
-    rewards = conn.execute(
-        "SELECT ach_id, xp, soft, hard FROM achievement_rewards WHERE user_id=?",
-        (user_id,)
-    ).fetchall()
-    claimed = conn.execute(
-        "SELECT ach_id FROM achievement_claims WHERE user_id=?",
-        (user_id,)
-    ).fetchall()
+    rewards = conn.execute("SELECT ach_id, xp, shift, nova FROM achievement_rewards WHERE user_id=?",
+        (user_id,)).fetchall()
+    claimed = conn.execute("SELECT ach_id FROM achievement_claims WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
-    reward_map = {r[0]: {"xp": r[1], "soft": r[2], "hard": r[3]} for r in rewards}
+    reward_map = {r[0]: {"xp": r[1], "shift": r[2], "nova": r[3], "soft": r[2], "hard": r[3]} for r in rewards}
     claimed_set = {c[0] for c in claimed}
-
     items = []
     for aid, meta in ACHIEVEMENTS.items():
         is_unlocked = aid in unlocked
-        rw = reward_map.get(aid, ACHIEVEMENT_REWARDS.get(aid, {"xp": 0, "soft": 0, "hard": 0}))
-        items.append({
-            "id": aid,
-            "name": meta["name"],
-            "icon": meta["icon"],
-            "desc": meta["desc"],
-            "unlocked": is_unlocked,
-            "unlocked_at": unlocked.get(aid),
-            "reward": rw,
-            "claimed": aid in claimed_set,
-            "can_claim": is_unlocked and aid in reward_map and aid not in claimed_set,
-        })
-
-    total_reward = {"xp": 0, "soft": 0, "hard": 0}
+        rw_raw = reward_map.get(aid) or ACHIEVEMENT_REWARDS.get(aid, {"xp":0,"shift":0,"nova":0})
+        rw = {"xp": rw_raw.get("xp", 0), "shift": rw_raw.get("shift", rw_raw.get("soft", 0)),
+              "nova": rw_raw.get("nova", rw_raw.get("hard", 0)),
+              "soft": rw_raw.get("shift", rw_raw.get("soft", 0)),
+              "hard": rw_raw.get("nova", rw_raw.get("hard", 0))}
+        items.append({"id": aid, "name": meta["name"], "icon": meta.get("icon", ""),
+            "desc": meta["desc"], "unlocked": is_unlocked, "unlocked_at": unlocked.get(aid),
+            "reward": rw, "claimed": aid in claimed_set,
+            "can_claim": is_unlocked and aid in reward_map and aid not in claimed_set})
+    total_reward = {"xp": 0, "shift": 0, "nova": 0, "soft": 0, "hard": 0}
     for it in items:
         if it["can_claim"]:
-            total_reward["xp"]   += it["reward"]["xp"]
-            total_reward["soft"] += it["reward"]["soft"]
-            total_reward["hard"] += it["reward"]["hard"]
-
-    return web.json_response({
-        "items": items,
-        "total": len(ACHIEVEMENTS),
-        "got": len(unlocked),
-        "can_claim_count": sum(1 for x in items if x["can_claim"]),
-        "total_reward": total_reward,
-    })
+            total_reward["xp"]    += it["reward"]["xp"]
+            total_reward["shift"] += it["reward"]["shift"]
+            total_reward["nova"]  += it["reward"]["nova"]
+    total_reward["soft"] = total_reward["shift"]
+    total_reward["hard"] = total_reward["nova"]
+    return web.json_response({"items": items, "total": len(ACHIEVEMENTS),
+        "got": len(unlocked), "can_claim_count": sum(1 for x in items if x["can_claim"]),
+        "total_reward": total_reward})
 
 
 async def api_achievement_claim(request: web.Request):
@@ -2569,38 +1892,54 @@ async def api_achievement_claim(request: web.Request):
     ach_id = (body.get("ach_id") or "").strip()
     if not ach_id or ach_id not in ACHIEVEMENTS:
         return web.json_response({"error": "bad_id"}, status=400)
-
     conn = sqlite3.connect(DB_PATH)
-    has = conn.execute(
-        "SELECT xp, soft, hard FROM achievement_rewards WHERE user_id=? AND ach_id=?",
-        (user_id, ach_id)
-    ).fetchone()
-    claimed = conn.execute(
-        "SELECT 1 FROM achievement_claims WHERE user_id=? AND ach_id=?",
-        (user_id, ach_id)
-    ).fetchone()
+    has = conn.execute("SELECT xp, shift, nova FROM achievement_rewards WHERE user_id=? AND ach_id=?",
+        (user_id, ach_id)).fetchone()
+    claimed = conn.execute("SELECT 1 FROM achievement_claims WHERE user_id=? AND ach_id=?",
+        (user_id, ach_id)).fetchone()
     conn.close()
     if not has or claimed:
         return web.json_response({"error": "already_claimed"}, status=400)
-
-    xp, soft, hard = has
-    wallet_add(user_id, xp=xp, soft=soft, hard=hard)
-
+    xp, shift, nova = has
+    wallet_add(user_id, xp=xp, shift=shift, nova=nova)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT OR IGNORE INTO achievement_claims (user_id, ach_id, claimed_at) "
-        "VALUES (?, ?, ?)",
-        (user_id, ach_id, datetime.now(timezone.utc).isoformat())
-    )
-    conn.commit()
-    conn.close()
-
+    conn.execute("INSERT OR IGNORE INTO achievement_claims (user_id, ach_id, claimed_at) VALUES (?, ?, ?)",
+        (user_id, ach_id, datetime.now(timezone.utc).isoformat()))
+    conn.commit(); conn.close()
     check_and_award_achievements(user_id)
-    return web.json_response({
-        "ok": True,
-        "reward": {"xp": xp, "soft": soft, "hard": hard},
-        "wallet": wallet_get(user_id),
-    })
+    return web.json_response({"ok": True,
+        "reward": {"xp": xp, "shift": shift, "nova": nova, "soft": shift, "hard": nova},
+        "wallet": wallet_get(user_id)})
+
+
+# ============================================================
+#                  API: УРОВНИ
+# ============================================================
+
+async def api_level_rewards(request: web.Request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response({"claimed": level_rewards_claimed(user_id)})
+
+
+async def api_level_reward_claim(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        lvl = int(body.get("level", 0))
+    except Exception:
+        return web.json_response({"error": "bad_level"}, status=400)
+    rw, err = level_reward_claim(user_id, lvl)
+    if err:
+        return web.json_response({"error": err}, status=400)
+    return web.json_response({"ok": True, "reward": rw, "wallet": wallet_get(user_id)})
 
 
 async def api_wallet_leaderboard(request: web.Request):
@@ -2612,706 +1951,12 @@ async def api_wallet_leaderboard(request: web.Request):
     items = []
     for i, (uid, xp, custom_name, username) in enumerate(rows):
         lvl, _, _ = calc_level(xp or 0)
-        if custom_name:
-            display = custom_name
-        elif username:
-            display = "@" + username
-        else:
-            display = f"PLAYER-{str(uid)[-6:].upper()}"
-        items.append({
-            "rank": i + 1, "user_id": uid, "xp": xp or 0, "level": lvl,
-            "display": display, "is_me": uid == user_id,
-        })
+        if custom_name: display = custom_name
+        elif username: display = "@" + username
+        else: display = f"PLAYER-{str(uid)[-6:].upper()}"
+        items.append({"rank": i + 1, "user_id": uid, "xp": xp or 0, "level": lvl,
+            "display": display, "is_me": uid == user_id})
     return web.json_response({"items": items})
-
-
-# ============================================================
-#                  API: FLAPPY
-# ============================================================
-
-async def api_game_info(request: web.Request):
-    init_data = request.query.get("initData", "")
-    user_obj = _verify_webapp_init_full(init_data)
-    if not user_obj:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    user_id = user_obj.id
-    _ensure_user(user_id)
-    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
-
-    scores = game_get_scores(user_id)
-
-    tops = {}
-    for gid in GAMES:
-        rows = game_leaderboard(gid, 5)
-        items = []
-        for i, (uid, score, display_name, username) in enumerate(rows):
-            if display_name and username:
-                display = f"{display_name} (@{username})"
-            elif display_name:
-                display = display_name
-            elif username:
-                display = "@" + username
-            else:
-                display = f"PLAYER-{str(uid)[-6:].upper()}"
-            items.append({
-                "rank": i + 1, "user_id": uid, "score": score,
-                "display": display, "is_me": uid == user_id,
-            })
-        tops[gid] = items
-
-    games_out = []
-    for gid, meta in GAMES.items():
-        s = scores.get(gid, {"best": 0, "plays": 0})
-        games_out.append({
-            "id": gid, "name": meta["name"], "desc": meta["desc"],
-            "best": s["best"], "plays": s["plays"],
-        })
-
-    return web.json_response({"games": games_out, "scores": scores, "tops": tops})
-
-
-async def api_game_submit(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_obj = _verify_webapp_init_full(body.get("initData", ""))
-    if not user_obj:
-        return web.json_response({"error": "unauthorized"}, status=401)
-    user_id = user_obj.id
-    _ensure_user(user_id)
-    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
-
-    game_id = (body.get("game_id") or "flappy").strip()
-    if game_id not in GAMES:
-        return web.json_response({"error": "bad_game"}, status=400)
-
-    try:
-        score = int(body.get("score", 0))
-    except Exception:
-        score = 0
-    result = game_save_score(user_id, game_id, score)
-
-    soft_reward = max(1, score // 2)
-    xp_reward = max(1, score * 2)
-    hard_reward = 0
-    if result["is_record"] and score > 0:
-        hard_reward += 1
-    wallet_add(user_id, xp=xp_reward, soft=soft_reward, hard=hard_reward)
-
-    rows = game_leaderboard(game_id, 1)
-    if rows and rows[0][0] == user_id and score > 0:
-        wallet_add(user_id, hard=5)
-
-    check_and_award_achievements(user_id)
-    wallet = wallet_get(user_id)
-
-    lb_rows = game_leaderboard(game_id, 10)
-    items = []
-    for i, (uid, s, display_name, username) in enumerate(lb_rows):
-        if display_name and username:
-            display = f"{display_name} (@{username})"
-        elif display_name:
-            display = display_name
-        elif username:
-            display = "@" + username
-        else:
-            display = f"PLAYER-{str(uid)[-6:].upper()}"
-        items.append({
-            "rank": i + 1, "user_id": uid, "score": s,
-            "display": display, "is_me": uid == user_id,
-        })
-
-    return web.json_response({
-        "ok": True,
-        "best": result["best"],
-        "is_record": result["is_record"],
-        "plays": result["plays"],
-        "soft_reward": soft_reward,
-        "xp_reward": xp_reward,
-        "hard_reward": hard_reward,
-        "wallet": wallet,
-        "top": items,
-    })
-
-
-# ============================================================
-#                  API: МОРСКОЙ БОЙ
-# ============================================================
-
-def _bs_make_result_for(game, user_id):
-    winner = game.get("winner") or 0
-    bet = game.get("bet") or 0
-    if winner == 0:
-        return {"outcome": "draw", "reward": 0, "loss": 0, "wallet": wallet_get(user_id)}
-    if winner == user_id:
-        return {"outcome": "win", "reward": bet, "loss": 0, "wallet": wallet_get(user_id)}
-    return {"outcome": "lose", "reward": 0, "loss": bet, "wallet": wallet_get(user_id)}
-
-
-async def api_bs_create(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    try:
-        bet = int(body.get("bet", 0))
-    except Exception:
-        bet = 0
-    if bet not in BS_BET_OPTIONS:
-        return web.json_response({"error": "bad_bet",
-                                   "message": f"Ставка должна быть одной из: {BS_BET_OPTIONS}"},
-                                  status=400)
-
-    _ensure_user(user_id)
-    _bs_cleanup_stale_games()
-    _bs_cancel_any_waiting(user_id)
-
-    active = _bs_user_in_active_game(user_id)
-    if active:
-        return web.json_response({"error": "already_in_game",
-                                   "message": "Ты уже в активной игре",
-                                   "game_id": active}, status=400)
-
-    w = wallet_get(user_id)
-    if (w.get("soft") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft",
-                                   "message": "Недостаточно Стипух для ставки"}, status=400)
-
-    if not wallet_consume_soft(user_id, bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-
-    game_id = _bs_new_game_id()
-    code = _bs_new_code()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""INSERT INTO bs_games
-                    (game_id, code, p1_id, p2_id, bet, status, turn,
-                     p1_ships, p2_ships, p1_ready, p2_ready,
-                     p1_shots, p2_shots, winner, created_at, updated_at)
-                    VALUES (?, ?, ?, NULL, ?, 'waiting', 1,
-                            NULL, NULL, 0, 0,
-                            '[]', '[]', 0, ?, ?)""",
-                 (game_id, code, user_id, bet, _bs_now(), _bs_now()))
-    conn.commit()
-    conn.close()
-
-    return web.json_response({
-        "ok": True,
-        "status": "waiting",
-        "game_id": game_id,
-        "code": code,
-        "bet": bet,
-        "wallet": wallet_get(user_id),
-    })
-
-
-async def api_bs_join(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    code = (body.get("code") or "").strip()
-    if not code or len(code) != 6 or not code.isdigit():
-        return web.json_response({"error": "bad_code", "message": "Код должен быть 6 цифр"}, status=400)
-
-    _ensure_user(user_id)
-    _bs_cleanup_stale_games()
-
-    active = _bs_user_in_active_game(user_id)
-    if active:
-        return web.json_response({"error": "already_in_game",
-                                   "message": "Ты уже в активной игре",
-                                   "game_id": active}, status=400)
-
-    game = _bs_get_game_by_code(code)
-    if not game:
-        return web.json_response({"error": "not_found",
-                                   "message": "Игра не найдена или уже началась"}, status=404)
-
-    if game["p1_id"] == user_id:
-        return web.json_response({"error": "self_join",
-                                   "message": "Это твоя игра, жди соперника"}, status=400)
-
-    if game["status"] != "waiting":
-        return web.json_response({"error": "not_waiting",
-                                   "message": "Игра уже не ждёт соперника"}, status=400)
-
-    bet = game["bet"] or 0
-    w = wallet_get(user_id)
-    if (w.get("soft") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft",
-                                   "message": f"Нужно {bet} Стипух для ставки"}, status=400)
-
-    if not wallet_consume_soft(user_id, bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-
-    _bs_update_game(game["game_id"],
-                    p2_id=user_id,
-                    status="placing",
-                    turn=1)
-
-    opponent_name = _bs_get_user_name(game["p1_id"])
-    return web.json_response({
-        "ok": True,
-        "game_id": game["game_id"],
-        "opponent_name": opponent_name,
-        "bet": bet,
-        "side": 2,
-        "wallet": wallet_get(user_id),
-    })
-
-
-async def api_bs_find(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    try:
-        bet = int(body.get("bet", 0))
-    except Exception:
-        bet = 0
-    if bet not in BS_BET_OPTIONS:
-        return web.json_response({"error": "bad_bet"}, status=400)
-
-    _ensure_user(user_id)
-    _bs_cleanup_stale_games()
-    _bs_cancel_any_waiting(user_id)
-
-    active = _bs_user_in_active_game(user_id)
-    if active:
-        return web.json_response({"error": "already_in_game",
-                                   "game_id": active}, status=400)
-
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT game_id, p1_id FROM bs_games "
-        "WHERE status='waiting' AND bet=? AND p1_id != ? "
-        "ORDER BY created_at ASC LIMIT 1",
-        (bet, user_id)
-    ).fetchone()
-    conn.close()
-
-    if row:
-        game_id, p1_id = row
-        w = wallet_get(user_id)
-        if (w.get("soft") or 0) < bet:
-            return web.json_response({"error": "not_enough_soft"}, status=400)
-        if not wallet_consume_soft(user_id, bet):
-            return web.json_response({"error": "consume_failed"}, status=500)
-        _bs_update_game(game_id, p2_id=user_id, status="placing", turn=1)
-        return web.json_response({
-            "ok": True,
-            "status": "matched",
-            "game_id": game_id,
-            "opponent_name": _bs_get_user_name(p1_id),
-            "bet": bet,
-            "side": 2,
-            "wallet": wallet_get(user_id),
-        })
-
-    w = wallet_get(user_id)
-    if (w.get("soft") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft"}, status=400)
-    if not wallet_consume_soft(user_id, bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-
-    game_id = _bs_new_game_id()
-    code = _bs_new_code()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""INSERT INTO bs_games
-                    (game_id, code, p1_id, p2_id, bet, status, turn,
-                     p1_ships, p2_ships, p1_ready, p2_ready,
-                     p1_shots, p2_shots, winner, created_at, updated_at)
-                    VALUES (?, ?, ?, NULL, ?, 'waiting', 1,
-                            NULL, NULL, 0, 0,
-                            '[]', '[]', 0, ?, ?)""",
-                 (game_id, code, user_id, bet, _bs_now(), _bs_now()))
-    conn.commit()
-    conn.close()
-
-    return web.json_response({
-        "ok": True,
-        "status": "queued",
-        "game_id": game_id,
-        "code": code,
-        "bet": bet,
-        "wallet": wallet_get(user_id),
-    })
-
-
-async def api_bs_ready(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    game_id = (body.get("game_id") or "").strip()
-    ships = body.get("ships") or []
-
-    if not game_id:
-        return web.json_response({"error": "no_game"}, status=400)
-    if not _bs_validate_ships(ships):
-        return web.json_response({"error": "bad_ships",
-                                   "message": "Некорректная расстановка кораблей"}, status=400)
-
-    game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
-
-    side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
-
-    ships_json = json.dumps(ships, ensure_ascii=False)
-
-    if side == 1:
-        _bs_update_game(game_id, p1_ships=ships_json, p1_ready=1)
-    else:
-        _bs_update_game(game_id, p2_ships=ships_json, p2_ready=1)
-
-    game = _bs_get_game(game_id)
-    both_ready = game["p1_ready"] and game["p2_ready"]
-
-    if both_ready and game["status"] == "placing":
-        first = random.choice([1, 2])
-        _bs_update_game(game_id, status="playing", turn=first)
-
-    game = _bs_get_game(game_id)
-    return web.json_response({
-        "ok": True,
-        "status": "playing" if game["status"] == "playing" else "waiting",
-        "your_turn": (game["turn"] == side) if game["status"] == "playing" else False,
-    })
-
-
-async def api_bs_state(request: web.Request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    game_id = request.query.get("game_id", "")
-    if not game_id:
-        return web.json_response({"error": "no_game"}, status=400)
-
-    game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
-
-    side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
-
-    if game["status"] == "finished":
-        return web.json_response({
-            "status": "finished",
-            "result": _bs_make_result_for(game, user_id),
-        })
-
-    my_shots = json.loads(game["p1_shots"] if side == 1 else game["p2_shots"])
-    enemy_shots_raw = json.loads(game["p2_shots"] if side == 1 else game["p1_shots"])
-
-    enemy_ships_json = game["p2_ships"] if side == 1 else game["p1_ships"]
-    enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
-    my_ships_json = game["p1_ships"] if side == 1 else game["p2_ships"]
-    my_ships = json.loads(my_ships_json) if my_ships_json else []
-
-    my_shots_out = []
-    for sh in my_shots:
-        x = sh.get("x"); y = sh.get("y")
-        result = "miss"
-        for s in enemy_ships:
-            if any(c[0] == x and c[1] == y for c in s["cells"]):
-                sunk = all(
-                    any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in my_shots)
-                    for c in s["cells"]
-                )
-                result = "sunk" if sunk else "hit"
-                break
-        my_shots_out.append({"x": x, "y": y, "result": result})
-
-    enemy_shots_out = []
-    for sh in enemy_shots_raw:
-        x = sh.get("x"); y = sh.get("y")
-        result = "miss"
-        for s in my_ships:
-            if any(c[0] == x and c[1] == y for c in s["cells"]):
-                sunk = all(
-                    any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in enemy_shots_raw)
-                    for c in s["cells"]
-                )
-                result = "sunk" if sunk else "hit"
-                break
-        enemy_shots_out.append({"x": x, "y": y, "result": result})
-
-    opponent = game["p2_id"] if side == 1 else game["p1_id"]
-    opponent_name = _bs_get_user_name(opponent) if opponent else ""
-
-    log = []
-    for sh in enemy_shots_raw[-3:]:
-        log.append({"type": "miss", "text": f"Враг: ({sh.get('x',0)+1},{sh.get('y',0)+1})"})
-
-    return web.json_response({
-        "status": "playing" if game["status"] == "playing" else game["status"],
-        "your_turn": game["turn"] == side,
-        "my_ships": my_ships,
-        "my_shots": my_shots_out,
-        "enemy_shots": enemy_shots_out,
-        "enemy_ships": enemy_ships if game["status"] == "finished" else None,
-        "opponent_name": opponent_name,
-        "log": log,
-    })
-
-
-async def api_bs_fire(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    game_id = (body.get("game_id") or "").strip()
-    try:
-        x = int(body.get("x"))
-        y = int(body.get("y"))
-    except Exception:
-        return web.json_response({"error": "bad_coords"}, status=400)
-    if x < 0 or x > 9 or y < 0 or y > 9:
-        return web.json_response({"error": "bad_coords"}, status=400)
-
-    game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
-
-    side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
-
-    if game["status"] != "playing":
-        return web.json_response({"error": "not_playing"}, status=400)
-
-    if game["turn"] != side:
-        return web.json_response({"error": "not_your_turn",
-                                   "message": "Сейчас не твой ход"}, status=400)
-
-    if side == 1:
-        my_shots = json.loads(game["p1_shots"])
-        enemy_ships_json = game["p2_ships"]
-    else:
-        my_shots = json.loads(game["p2_shots"])
-        enemy_ships_json = game["p1_ships"]
-
-    enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
-
-    if any(sh.get("x") == x and sh.get("y") == y for sh in my_shots):
-        return web.json_response({"error": "already_fired"}, status=400)
-
-    hit_ship = None
-    for s in enemy_ships:
-        if any(c[0] == x and c[1] == y for c in s["cells"]):
-            hit_ship = s
-            break
-
-    if hit_ship is None:
-        my_shots.append({"x": x, "y": y})
-        turn_after = 2 if side == 1 else 1
-        result_type = "miss"
-        sunk_cells = None
-    else:
-        my_shots.append({"x": x, "y": y})
-        sunk = all(any(sh.get("x") == c[0] and sh.get("y") == c[1] for sh in my_shots)
-                   for c in hit_ship["cells"])
-        if sunk:
-            result_type = "sunk"
-            sunk_cells = [[c[0], c[1]] for c in hit_ship["cells"]]
-        else:
-            result_type = "hit"
-            sunk_cells = None
-        turn_after = side
-
-    if side == 1:
-        _bs_update_game(game_id, p1_shots=json.dumps(my_shots), turn=turn_after)
-    else:
-        _bs_update_game(game_id, p2_shots=json.dumps(my_shots), turn=turn_after)
-
-    winner = 0
-    if _bs_check_win(enemy_ships, my_shots):
-        winner = user_id
-
-    if winner:
-        _bs_finish_game(game_id, winner)
-        game = _bs_get_game(game_id)
-        check_and_award_achievements(winner)
-        return web.json_response({
-            "ok": True,
-            "result": result_type,
-            "sunk_ship": sunk_cells,
-            "your_turn": False,
-            "status": "finished",
-            "result_data": _bs_make_result_for(game, user_id),
-        })
-
-    game = _bs_get_game(game_id)
-    return web.json_response({
-        "ok": True,
-        "result": result_type,
-        "sunk_ship": sunk_cells,
-        "your_turn": game["turn"] == side,
-        "status": "playing",
-    })
-
-
-async def api_bs_surrender(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    game_id = (body.get("game_id") or "").strip()
-    game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"error": "not_found"}, status=404)
-
-    side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
-
-    if game["status"] == "finished":
-        return web.json_response({"error": "already_finished"}, status=400)
-
-    opponent = game["p2_id"] if side == 1 else game["p1_id"]
-    _bs_finish_game(game_id, opponent, surrender_by=user_id)
-
-    game = _bs_get_game(game_id)
-    return web.json_response({
-        "ok": True,
-        "result": _bs_make_result_for(game, user_id),
-    })
-
-
-async def api_bs_cancel(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    game_id = (body.get("game_id") or "").strip()
-    game = _bs_get_game(game_id)
-    if not game:
-        return web.json_response({"ok": True})
-
-    side = _bs_player_side(game, user_id)
-    if side == 0:
-        return web.json_response({"error": "not_in_game"}, status=403)
-
-    if game["status"] in ("waiting", "placing"):
-        bet = game["bet"] or 0
-        if game["p1_id"]:
-            wallet_add(game["p1_id"], soft=bet)
-        if game["p2_id"]:
-            wallet_add(game["p2_id"], soft=bet)
-        _bs_delete_game(game_id)
-        return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
-
-    return web.json_response({"error": "cant_cancel", "message": "Игра уже началась"}, status=400)
-
-
-async def api_bs_bot_start(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    try:
-        bet = int(body.get("bet", 0))
-    except Exception:
-        bet = 0
-    if bet not in BS_BET_OPTIONS:
-        return web.json_response({"error": "bad_bet"}, status=400)
-
-    _ensure_user(user_id)
-
-    w = wallet_get(user_id)
-    if (w.get("soft") or 0) < bet:
-        return web.json_response({"error": "not_enough_soft",
-                                   "message": "Недостаточно Стипух для ставки"}, status=400)
-
-    if not wallet_consume_soft(user_id, bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-
-    return web.json_response({
-        "ok": True,
-        "bet": bet,
-        "wallet": wallet_get(user_id),
-    })
-
-
-async def api_bs_finish_bot(request: web.Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id:
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    outcome = (body.get("outcome") or "").strip()
-    try:
-        bet = int(body.get("bet", 0))
-    except Exception:
-        bet = 0
-
-    if outcome not in ("win", "lose", "draw"):
-        return web.json_response({"error": "bad_outcome"}, status=400)
-    if bet not in BS_BET_OPTIONS:
-        bet = 0
-
-    _ensure_user(user_id)
-
-    reward = 0
-    loss = 0
-
-    if outcome == "win":
-        wallet_add(user_id, soft=bet * 2, xp=30)
-        reward = bet
-    elif outcome == "lose":
-        loss = bet
-    elif outcome == "draw":
-        wallet_add(user_id, soft=bet)
-
-    check_and_award_achievements(user_id)
-    return web.json_response({
-        "ok": True,
-        "reward": reward,
-        "loss": loss,
-        "wallet": wallet_get(user_id),
-    })
 
 
 # ============================================================
@@ -3390,7 +2035,7 @@ async def api_tasks(request: web.Request):
             p = priority if priority is not None else 2
             if p not in (1, 2, 3): p = 2
             tasks.append({"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
-                          "priority": p, "done": True, "done_at": done_at, "overdue": False})
+                "priority": p, "done": True, "done_at": done_at, "overdue": False})
     else:
         rows = get_user_tasks(user_id, only_active=True)
         tasks = [_task_to_dict(r) for r in rows]
@@ -3415,7 +2060,7 @@ async def api_task_add(request: web.Request):
     priority = int(body.get("priority", 2))
     if priority not in (1, 2, 3): priority = 2
     tid = add_task(user_id, text, due_date, priority, due_time)
-    wallet_add(user_id, xp=5, soft=1)
+    wallet_add(user_id, xp=5, shift=1)
     check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "id": tid, "wallet": wallet_get(user_id)})
 
@@ -3437,10 +2082,10 @@ async def api_task_update(request: web.Request):
     if body.get("done") is True:
         mark_task_done(tid, user_id)
         stats_inc(user_id, "tasks_done", 1)
-        wallet_add(user_id, xp=20, soft=5)
+        wallet_add(user_id, xp=20, shift=5)
         new_ach = check_and_award_achievements(user_id)
         return web.json_response({"ok": True, "done": True,
-                                   "wallet": wallet_get(user_id), "new_achievements": new_ach})
+            "wallet": wallet_get(user_id), "new_achievements": new_ach})
     text = body.get("text")
     due_date = body.get("due_date")
     due_time = body.get("due_time")
@@ -3449,12 +2094,9 @@ async def api_task_update(request: web.Request):
     if priority is not None:
         priority = int(priority)
         if priority not in (1, 2, 3): priority = 2
-    update_task(tid, user_id,
-                text=text if text is not None else None,
-                due_date=due_date if due_date else None,
-                priority=priority,
-                due_time=due_time if due_time is not None else None,
-                reset_due=reset_due)
+    update_task(tid, user_id, text=text if text is not None else None,
+        due_date=due_date if due_date else None, priority=priority,
+        due_time=due_time if due_time is not None else None, reset_due=reset_due)
     return web.json_response({"ok": True})
 
 
@@ -3514,7 +2156,7 @@ async def api_note_save(request: web.Request):
     if len(text) > 500: text = text[:500]
     add_or_update_note(user_id, subject, text)
     stats_inc(user_id, "notes_added", 1)
-    wallet_add(user_id, xp=3, soft=1)
+    wallet_add(user_id, xp=3, shift=1)
     new_ach = check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
 
@@ -3535,7 +2177,7 @@ async def api_note_delete(request: web.Request):
 
 
 # ============================================================
-#                  API: УВЕДОМЛЕНИЯ
+#                  API: УВЕДОМЛЕНИЯ / ЦИТАТЫ / СТИПЕНДИЯ / ПОСЕЩ
 # ============================================================
 
 async def api_notify_set(request: web.Request):
@@ -3556,15 +2198,14 @@ async def api_notify_set(request: web.Request):
     if ntype not in ("today", "tomorrow"):
         return web.json_response({"error": "bad_type"}, status=400)
     try:
-        hour = int(body.get("hour", 8))
-        minute = int(body.get("minute", 0))
+        hour = int(body.get("hour", 8)); minute = int(body.get("minute", 0))
     except Exception:
         return web.json_response({"error": "bad_time"}, status=400)
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         return web.json_response({"error": "bad_time"}, status=400)
     if ntype == "today" and hour > 10:
         return web.json_response({"error": "today_limit",
-                                   "message": "Для «Сегодня» — не позже 10:00"}, status=400)
+            "message": "Для «Сегодня» — не позже 10:00"}, status=400)
     set_notify_settings(user_id, ntype, hour, minute)
     return web.json_response({"ok": True, "type": ntype, "hour": hour, "minute": minute})
 
@@ -3581,15 +2222,10 @@ async def api_notify_set_before(request: web.Request):
         minutes = int(body.get("minutes", 0))
     except Exception:
         return web.json_response({"error": "bad_minutes"}, status=400)
-    if minutes not in (0, 5, 10, 15, 20, 30, 60):
-        minutes = 0
+    if minutes not in (0, 5, 10, 15, 20, 30, 60): minutes = 0
     set_notify_before_min(user_id, minutes)
     return web.json_response({"ok": True, "minutes": minutes})
 
-
-# ============================================================
-#                  API: ЦИТАТЫ
-# ============================================================
 
 async def api_quote(request: web.Request):
     init_data = request.query.get("initData", "")
@@ -3597,7 +2233,7 @@ async def api_quote(request: web.Request):
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
     return web.json_response({"quote": random.choice(DAILY_QUOTES),
-                               "subscribed": daily_is_subscribed(user_id)})
+        "subscribed": daily_is_subscribed(user_id)})
 
 
 async def api_quote_subscribe(request: web.Request):
@@ -3614,10 +2250,6 @@ async def api_quote_subscribe(request: web.Request):
     return web.json_response({"ok": True, "subscribed": sub})
 
 
-# ============================================================
-#                  API: СТИПЕНДИЯ
-# ============================================================
-
 async def api_scholarship(request: web.Request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -3625,7 +2257,8 @@ async def api_scholarship(request: web.Request):
         return web.json_response({"error": "unauthorized"}, status=401)
     amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id)
-    grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4] or ""} for g in grades]
+    grades_out = [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]),
+        "semester": g[4] or ""} for g in grades]
     semesters = sorted(set(g[4] for g in grades if g[4]))
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     count5 = sum(1 for g in grades if g[2] == 5)
@@ -3634,14 +2267,10 @@ async def api_scholarship(request: web.Request):
     count2 = sum(1 for g in grades if g[2] == 2)
     count_auto = sum(1 for g in grades if g[3])
     forecast = ""
-    if count2 > 0 or count3 > 0:
-        forecast = "На академическую не проходишь: есть тройки/двойки."
-    elif avg >= 4.5:
-        forecast = "Проходишь на академическую и можешь претендовать на повышенную."
-    elif avg >= 4.0:
-        forecast = f"Проходишь на академическую. До повышенной не хватает {4.5 - avg:.2f}."
-    elif grades:
-        forecast = "На академическую не проходишь: средний балл ниже 4.0."
+    if count2 > 0 or count3 > 0: forecast = "На академическую не проходишь: есть тройки/двойки."
+    elif avg >= 4.5: forecast = "Проходишь на академическую и можешь претендовать на повышенную."
+    elif avg >= 4.0: forecast = f"Проходишь на академическую. До повышенной не хватает {4.5 - avg:.2f}."
+    elif grades: forecast = "На академическую не проходишь: средний балл ниже 4.0."
     available_subjects = []
     saved = get_user_group(user_id)
     if saved:
@@ -3661,12 +2290,10 @@ async def api_scholarship(request: web.Request):
                 available_subjects = sorted(subjects)
         except Exception as e:
             logging.warning(f"[SCH] subjects fetch: {e}")
-    return web.json_response({
-        "amount": amount, "grades": grades_out, "avg": round(avg, 2),
+    return web.json_response({"amount": amount, "grades": grades_out, "avg": round(avg, 2),
         "count5": count5, "count4": count4, "count3": count3, "count2": count2,
         "count_auto": count_auto, "forecast": forecast,
-        "available_subjects": available_subjects, "semesters": semesters,
-    })
+        "available_subjects": available_subjects, "semesters": semesters})
 
 
 async def api_scholarship_set_amount(request: web.Request):
@@ -3701,7 +2328,7 @@ async def api_scholarship_add_grade(request: web.Request):
     if len(subject) > 100: subject = subject[:100]
     if semester and len(semester) > 40: semester = semester[:40]
     upsert_grade(user_id, subject, grade, is_auto, semester)
-    wallet_add(user_id, xp=5, soft=1)
+    wallet_add(user_id, xp=5, shift=1)
     new_ach = check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
 
@@ -3764,10 +2391,6 @@ async def api_scholarship_clear(request: web.Request):
     return web.json_response({"ok": True})
 
 
-# ============================================================
-#                  API: ПОСЕЩАЕМОСТЬ
-# ============================================================
-
 async def api_attendance_set(request: web.Request):
     try:
         body = await request.json()
@@ -3787,7 +2410,7 @@ async def api_attendance_set(request: web.Request):
     if len(subject) > 200: subject = subject[:200]
     attendance_set(user_id, date, time_, subject, status)
     if status == "was":
-        wallet_add(user_id, xp=3, soft=1)
+        wallet_add(user_id, xp=3, shift=1)
         check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "status": status, "wallet": wallet_get(user_id)})
 
@@ -3812,26 +2435,19 @@ async def api_ai(request: web.Request):
     if len(question) > 2000: question = question[:2000]
     ai_save_message(user_id, 'user', question, has_photo=0)
     try:
-        prompt = (
-            "Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
-            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
-            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-            "- НЕ используй LaTeX-команды.\n"
-            "- Формулы пиши обычным текстом.\n"
-            "- Структурируй текст простыми списками.\n"
-            "- Пиши без воды.\n\n"
-            f"Вопрос: {question}"
-        )
+        prompt = ("Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
+            "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+            "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
+            "- Структурируй текст простыми списками.\n- Пиши без воды.\n\n"
+            f"Вопрос: {question}")
         response = await giga_client.achat(prompt)
-        try:
-            answer = response.choices[0].message.content
+        try: answer = response.choices[0].message.content
         except AttributeError:
             answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
-        answer = clean_latex(answer)
-        answer = clean_markdown(answer)
+        answer = clean_latex(answer); answer = clean_markdown(answer)
         if len(answer) > 4000: answer = answer[:4000] + "\n... (обрезано)"
         ai_save_message(user_id, 'assistant', answer, has_photo=0)
-        wallet_add(user_id, xp=2, soft=1)
+        wallet_add(user_id, xp=2, shift=1)
         return web.json_response({"answer": answer})
     except Exception as e:
         logging.exception("[AI-WEB]")
@@ -3855,10 +2471,8 @@ async def api_ai_photo(request: web.Request):
     if not photo_data:
         return web.json_response({"error": "no_photo"}, status=400)
     b64 = photo_data.split(",", 1)[1] if "," in photo_data else photo_data
-    try:
-        img_bytes = base64.b64decode(b64)
-    except Exception:
-        return web.json_response({"error": "bad_photo"}, status=400)
+    try: img_bytes = base64.b64decode(b64)
+    except Exception: return web.json_response({"error": "bad_photo"}, status=400)
     if len(img_bytes) > 8 * 1024 * 1024:
         return web.json_response({"error": "too_big", "message": "Фото слишком большое (макс 8 МБ)"}, status=400)
     ai_save_message(user_id, 'user', question or 'Что на фото?', has_photo=1)
@@ -3875,8 +2489,7 @@ async def api_ai_photo(request: web.Request):
                     return web.json_response({"error": "ocr_failed", "message": f"OCR HTTP {resp.status}"}, status=500)
                 ocr_result = await resp.json()
         recognized_text = ""
-        try:
-            recognized_text = ocr_result["result"]["textAnnotation"]["fullText"] or ""
+        try: recognized_text = ocr_result["result"]["textAnnotation"]["fullText"] or ""
         except (KeyError, TypeError):
             try:
                 blocks = ocr_result["result"]["textAnnotation"]["blocks"]
@@ -3884,8 +2497,7 @@ async def api_ai_photo(request: web.Request):
                 for b in blocks:
                     for line in b.get("lines", []): parts.append(line.get("text", ""))
                 recognized_text = "\n".join(parts)
-            except Exception:
-                recognized_text = ""
+            except Exception: recognized_text = ""
         recognized_text = recognized_text.strip()
     except Exception as e:
         logging.exception("[OCR]")
@@ -3896,28 +2508,20 @@ async def api_ai_photo(request: web.Request):
     if not question: question = "Разберись, что это за задача или текст, и помоги студенту."
     if len(question) > 2000: question = question[:2000]
     try:
-        prompt = (
-            "Ты — студенческий помощник. Пользователь прислал фото, с которого распознан текст. "
+        prompt = ("Ты — студенческий помощник. Пользователь прислал фото, с которого распознан текст. "
             "Выполни задачу студента.\n\n"
-            "ТРЕБОВАНИЯ К ФОРМАТУ:\n"
-            "- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
-            "- НЕ используй LaTeX-команды.\n"
-            "- Формулы пиши обычным текстом.\n"
-            "- Структурируй текст простыми списками.\n"
-            "- Пиши без воды.\n\n"
-            f"Распознанный текст с фото:\n{recognized_text}\n\n"
-            f"Задача студента: {question}"
-        )
+            "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
+            "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
+            "- Структурируй текст простыми списками.\n- Пиши без воды.\n\n"
+            f"Распознанный текст с фото:\n{recognized_text}\n\nЗадача студента: {question}")
         response = await giga_client.achat(prompt)
-        try:
-            answer = response.choices[0].message.content
+        try: answer = response.choices[0].message.content
         except AttributeError:
             answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
-        answer = clean_latex(answer)
-        answer = clean_markdown(answer)
+        answer = clean_latex(answer); answer = clean_markdown(answer)
         if len(answer) > 4000: answer = answer[:4000] + "\n... (обрезано)"
         ai_save_message(user_id, 'assistant', answer, has_photo=0)
-        wallet_add(user_id, xp=5, soft=2)
+        wallet_add(user_id, xp=5, shift=2)
         return web.json_response({"answer": answer})
     except Exception as e:
         logging.exception("[AI-PHOTO-GIGA]")
@@ -3947,7 +2551,7 @@ async def api_ai_clear_history(request: web.Request):
 
 
 # ============================================================
-#                  API: ОБРАТНАЯ СВЯЗЬ
+#              API: ОБРАТНАЯ СВЯЗЬ
 # ============================================================
 
 async def api_feedback_my(request: web.Request):
@@ -3958,10 +2562,8 @@ async def api_feedback_my(request: web.Request):
     rows = get_user_feedback(user_id, limit=30)
     items = []
     for r in rows:
-        items.append({
-            "id": r[0], "text": r[1], "status": r[2], "created_at": r[3],
-            "answered_at": r[4], "admin_reply": r[5],
-        })
+        items.append({"id": r[0], "text": r[1], "status": r[2], "created_at": r[3],
+            "answered_at": r[4], "admin_reply": r[5]})
     return web.json_response({"items": items})
 
 
@@ -3987,25 +2589,470 @@ async def api_feedback(request: web.Request):
 
 
 # ============================================================
-#                  API: VIP / ЭКСПОРТ
+#                  API: ИГРЫ
 # ============================================================
 
-async def api_vip(request: web.Request):
+async def api_game_info(request: web.Request):
+    init_data = request.query.get("initData", "")
+    user_obj = _verify_webapp_init_full(init_data)
+    if not user_obj:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    user_id = user_obj.id
+    _ensure_user(user_id)
+    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+    scores = game_get_scores(user_id)
+    tops = {}
+    for gid in GAMES:
+        rows = game_leaderboard(gid, 5)
+        items = []
+        for i, (uid, score, display_name, username) in enumerate(rows):
+            if display_name and username: display = f"{display_name} (@{username})"
+            elif display_name: display = display_name
+            elif username: display = "@" + username
+            else: display = f"PLAYER-{str(uid)[-6:].upper()}"
+            items.append({"rank": i + 1, "user_id": uid, "score": score,
+                "display": display, "is_me": uid == user_id})
+        tops[gid] = items
+    games_out = []
+    for gid, meta in GAMES.items():
+        s = scores.get(gid, {"best": 0, "plays": 0})
+        games_out.append({"id": gid, "name": meta["name"], "desc": meta["desc"],
+            "best": s["best"], "plays": s["plays"]})
+    return web.json_response({"games": games_out, "scores": scores, "tops": tops})
+
+
+async def api_game_submit(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_obj = _verify_webapp_init_full(body.get("initData", ""))
+    if not user_obj:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    user_id = user_obj.id
+    _ensure_user(user_id)
+    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+    game_id = (body.get("game_id") or "flappy").strip()
+    if game_id not in GAMES:
+        return web.json_response({"error": "bad_game"}, status=400)
+    try: score = int(body.get("score", 0))
+    except Exception: score = 0
+    try: bonus_shift = int(body.get("bonus_shift", 0))
+    except Exception: bonus_shift = 0
+    bonus_shift = max(0, min(bonus_shift, 200))
+    result = game_save_score(user_id, game_id, score)
+    soft_reward = max(1, score // 2) + bonus_shift
+    xp_reward = max(1, score * 2)
+    hard_reward = 0
+    if result["is_record"] and score > 0: hard_reward += 1
+    wallet_add(user_id, xp=xp_reward, shift=soft_reward, nova=hard_reward)
+    rows = game_leaderboard(game_id, 1)
+    if rows and rows[0][0] == user_id and score > 0:
+        wallet_add(user_id, nova=5)
+    check_and_award_achievements(user_id)
+    wallet = wallet_get(user_id)
+    lb_rows = game_leaderboard(game_id, 10)
+    items = []
+    for i, (uid, s, display_name, username) in enumerate(lb_rows):
+        if display_name and username: display = f"{display_name} (@{username})"
+        elif display_name: display = display_name
+        elif username: display = "@" + username
+        else: display = f"PLAYER-{str(uid)[-6:].upper()}"
+        items.append({"rank": i + 1, "user_id": uid, "score": s,
+            "display": display, "is_me": uid == user_id})
+    return web.json_response({"ok": True, "best": result["best"],
+        "is_record": result["is_record"], "plays": result["plays"],
+        "soft_reward": soft_reward, "xp_reward": xp_reward, "hard_reward": hard_reward,
+        "wallet": wallet, "top": items})
+
+
+# ============================================================
+#                  API: МОРСКОЙ БОЙ
+# ============================================================
+
+def _bs_make_result_for(game, user_id):
+    winner = game.get("winner") or 0
+    bet = game.get("bet") or 0
+    if winner == 0: return {"outcome": "draw", "reward": 0, "loss": 0, "wallet": wallet_get(user_id)}
+    if winner == user_id: return {"outcome": "win", "reward": bet, "loss": 0, "wallet": wallet_get(user_id)}
+    return {"outcome": "lose", "reward": 0, "loss": bet, "wallet": wallet_get(user_id)}
+
+
+async def api_bs_create(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try: bet = int(body.get("bet", 0))
+    except Exception: bet = 0
+    if bet not in BS_BET_OPTIONS:
+        return web.json_response({"error": "bad_bet"}, status=400)
+    _ensure_user(user_id)
+    _bs_cleanup_stale_games()
+    _bs_cancel_any_waiting(user_id)
+    active = _bs_user_in_active_game(user_id)
+    if active:
+        return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
+    w = wallet_get(user_id)
+    if (w.get("shift") or 0) < bet:
+        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if not wallet_consume(user_id, "shift", bet):
+        return web.json_response({"error": "consume_failed"}, status=500)
+    game_id = _bs_new_game_id(); code = _bs_new_code()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""INSERT INTO bs_games (game_id, code, p1_id, p2_id, bet, status, turn,
+        p1_ships, p2_ships, p1_ready, p2_ready, p1_shots, p2_shots, winner, created_at, updated_at)
+        VALUES (?, ?, ?, NULL, ?, 'waiting', 1, NULL, NULL, 0, 0, '[]', '[]', 0, ?, ?)""",
+        (game_id, code, user_id, bet, _bs_now(), _bs_now()))
+    conn.commit(); conn.close()
+    return web.json_response({"ok": True, "status": "waiting", "game_id": game_id,
+        "code": code, "bet": bet, "wallet": wallet_get(user_id)})
+
+
+async def api_bs_join(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    code = (body.get("code") or "").strip()
+    if not code or len(code) != 6 or not code.isdigit():
+        return web.json_response({"error": "bad_code"}, status=400)
+    _ensure_user(user_id)
+    _bs_cleanup_stale_games()
+    active = _bs_user_in_active_game(user_id)
+    if active:
+        return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
+    game = _bs_get_game_by_code(code)
+    if not game:
+        return web.json_response({"error": "not_found"}, status=404)
+    if game["p1_id"] == user_id:
+        return web.json_response({"error": "self_join"}, status=400)
+    if game["status"] != "waiting":
+        return web.json_response({"error": "not_waiting"}, status=400)
+    bet = game["bet"] or 0
+    w = wallet_get(user_id)
+    if (w.get("shift") or 0) < bet:
+        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if not wallet_consume(user_id, "shift", bet):
+        return web.json_response({"error": "consume_failed"}, status=500)
+    _bs_update_game(game["game_id"], p2_id=user_id, status="placing", turn=1)
+    return web.json_response({"ok": True, "game_id": game["game_id"],
+        "opponent_name": _bs_get_user_name(game["p1_id"]), "bet": bet, "side": 2,
+        "wallet": wallet_get(user_id)})
+
+
+async def api_bs_find(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try: bet = int(body.get("bet", 0))
+    except Exception: bet = 0
+    if bet not in BS_BET_OPTIONS:
+        return web.json_response({"error": "bad_bet"}, status=400)
+    _ensure_user(user_id)
+    _bs_cleanup_stale_games()
+    _bs_cancel_any_waiting(user_id)
+    active = _bs_user_in_active_game(user_id)
+    if active:
+        return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT game_id, p1_id FROM bs_games WHERE status='waiting' AND bet=? AND p1_id != ? ORDER BY created_at ASC LIMIT 1",
+        (bet, user_id)).fetchone()
+    conn.close()
+    if row:
+        game_id, p1_id = row
+        w = wallet_get(user_id)
+        if (w.get("shift") or 0) < bet:
+            return web.json_response({"error": "not_enough_soft"}, status=400)
+        if not wallet_consume(user_id, "shift", bet):
+            return web.json_response({"error": "consume_failed"}, status=500)
+        _bs_update_game(game_id, p2_id=user_id, status="placing", turn=1)
+        return web.json_response({"ok": True, "status": "matched", "game_id": game_id,
+            "opponent_name": _bs_get_user_name(p1_id), "bet": bet, "side": 2,
+            "wallet": wallet_get(user_id)})
+    w = wallet_get(user_id)
+    if (w.get("shift") or 0) < bet:
+        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if not wallet_consume(user_id, "shift", bet):
+        return web.json_response({"error": "consume_failed"}, status=500)
+    game_id = _bs_new_game_id(); code = _bs_new_code()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""INSERT INTO bs_games (game_id, code, p1_id, p2_id, bet, status, turn,
+        p1_ships, p2_ships, p1_ready, p2_ready, p1_shots, p2_shots, winner, created_at, updated_at)
+        VALUES (?, ?, ?, NULL, ?, 'waiting', 1, NULL, NULL, 0, 0, '[]', '[]', 0, ?, ?)""",
+        (game_id, code, user_id, bet, _bs_now(), _bs_now()))
+    conn.commit(); conn.close()
+    return web.json_response({"ok": True, "status": "queued", "game_id": game_id,
+        "code": code, "bet": bet, "wallet": wallet_get(user_id)})
+
+
+async def api_bs_ready(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    game_id = (body.get("game_id") or "").strip()
+    ships = body.get("ships") or []
+    if not game_id:
+        return web.json_response({"error": "no_game"}, status=400)
+    if not _bs_validate_ships(ships):
+        return web.json_response({"error": "bad_ships"}, status=400)
+    game = _bs_get_game(game_id)
+    if not game:
+        return web.json_response({"error": "not_found"}, status=404)
+    side = _bs_player_side(game, user_id)
+    if side == 0:
+        return web.json_response({"error": "not_in_game"}, status=403)
+    ships_json = json.dumps(ships, ensure_ascii=False)
+    if side == 1: _bs_update_game(game_id, p1_ships=ships_json, p1_ready=1)
+    else: _bs_update_game(game_id, p2_ships=ships_json, p2_ready=1)
+    game = _bs_get_game(game_id)
+    both_ready = game["p1_ready"] and game["p2_ready"]
+    if both_ready and game["status"] == "placing":
+        first = random.choice([1, 2])
+        _bs_update_game(game_id, status="playing", turn=first)
+    game = _bs_get_game(game_id)
+    return web.json_response({"ok": True,
+        "status": "playing" if game["status"] == "playing" else "waiting",
+        "your_turn": (game["turn"] == side) if game["status"] == "playing" else False})
+
+
+async def api_bs_state(request: web.Request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    return web.json_response({"is_vip": True})
+    game_id = request.query.get("game_id", "")
+    if not game_id:
+        return web.json_response({"error": "no_game"}, status=400)
+    game = _bs_get_game(game_id)
+    if not game:
+        return web.json_response({"error": "not_found"}, status=404)
+    side = _bs_player_side(game, user_id)
+    if side == 0:
+        return web.json_response({"error": "not_in_game"}, status=403)
+    if game["status"] == "finished":
+        return web.json_response({"status": "finished", "result": _bs_make_result_for(game, user_id)})
+    my_shots = json.loads(game["p1_shots"] if side == 1 else game["p2_shots"])
+    enemy_shots_raw = json.loads(game["p2_shots"] if side == 1 else game["p1_shots"])
+    enemy_ships_json = game["p2_ships"] if side == 1 else game["p1_ships"]
+    enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
+    my_ships_json = game["p1_ships"] if side == 1 else game["p2_ships"]
+    my_ships = json.loads(my_ships_json) if my_ships_json else []
+    my_shots_out = []
+    for sh in my_shots:
+        x = sh.get("x"); y = sh.get("y"); result = "miss"
+        for s in enemy_ships:
+            if any(c[0] == x and c[1] == y for c in s["cells"]):
+                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in my_shots)
+                    for c in s["cells"])
+                result = "sunk" if sunk else "hit"
+                break
+        my_shots_out.append({"x": x, "y": y, "result": result})
+    enemy_shots_out = []
+    for sh in enemy_shots_raw:
+        x = sh.get("x"); y = sh.get("y"); result = "miss"
+        for s in my_ships:
+            if any(c[0] == x and c[1] == y for c in s["cells"]):
+                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in enemy_shots_raw)
+                    for c in s["cells"])
+                result = "sunk" if sunk else "hit"
+                break
+        enemy_shots_out.append({"x": x, "y": y, "result": result})
+    opponent = game["p2_id"] if side == 1 else game["p1_id"]
+    opponent_name = _bs_get_user_name(opponent) if opponent else ""
+    log = [{"type": "miss", "text": f"Враг: ({sh.get('x',0)+1},{sh.get('y',0)+1})"}
+           for sh in enemy_shots_raw[-3:]]
+    return web.json_response({"status": "playing" if game["status"] == "playing" else game["status"],
+        "your_turn": game["turn"] == side, "my_ships": my_ships, "my_shots": my_shots_out,
+        "enemy_shots": enemy_shots_out,
+        "enemy_ships": enemy_ships if game["status"] == "finished" else None,
+        "opponent_name": opponent_name, "log": log})
 
+
+async def api_bs_fire(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    game_id = (body.get("game_id") or "").strip()
+    try:
+        x = int(body.get("x")); y = int(body.get("y"))
+    except Exception:
+        return web.json_response({"error": "bad_coords"}, status=400)
+    if x < 0 or x > 9 or y < 0 or y > 9:
+        return web.json_response({"error": "bad_coords"}, status=400)
+    game = _bs_get_game(game_id)
+    if not game:
+        return web.json_response({"error": "not_found"}, status=404)
+    side = _bs_player_side(game, user_id)
+    if side == 0:
+        return web.json_response({"error": "not_in_game"}, status=403)
+    if game["status"] != "playing":
+        return web.json_response({"error": "not_playing"}, status=400)
+    if game["turn"] != side:
+        return web.json_response({"error": "not_your_turn"}, status=400)
+    if side == 1:
+        my_shots = json.loads(game["p1_shots"]); enemy_ships_json = game["p2_ships"]
+    else:
+        my_shots = json.loads(game["p2_shots"]); enemy_ships_json = game["p1_ships"]
+    enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
+    if any(sh.get("x") == x and sh.get("y") == y for sh in my_shots):
+        return web.json_response({"error": "already_fired"}, status=400)
+    hit_ship = None
+    for s in enemy_ships:
+        if any(c[0] == x and c[1] == y for c in s["cells"]): hit_ship = s; break
+    if hit_ship is None:
+        my_shots.append({"x": x, "y": y})
+        turn_after = 2 if side == 1 else 1
+        result_type = "miss"; sunk_cells = None
+    else:
+        my_shots.append({"x": x, "y": y})
+        sunk = all(any(sh.get("x") == c[0] and sh.get("y") == c[1] for sh in my_shots)
+                   for c in hit_ship["cells"])
+        if sunk:
+            result_type = "sunk"; sunk_cells = [[c[0], c[1]] for c in hit_ship["cells"]]
+        else:
+            result_type = "hit"; sunk_cells = None
+        turn_after = side
+    if side == 1: _bs_update_game(game_id, p1_shots=json.dumps(my_shots), turn=turn_after)
+    else: _bs_update_game(game_id, p2_shots=json.dumps(my_shots), turn=turn_after)
+    winner = 0
+    if _bs_check_win(enemy_ships, my_shots): winner = user_id
+    if winner:
+        _bs_finish_game(game_id, winner)
+        game = _bs_get_game(game_id)
+        check_and_award_achievements(winner)
+        return web.json_response({"ok": True, "result": result_type, "sunk_ship": sunk_cells,
+            "your_turn": False, "status": "finished",
+            "result_data": _bs_make_result_for(game, user_id)})
+    game = _bs_get_game(game_id)
+    return web.json_response({"ok": True, "result": result_type, "sunk_ship": sunk_cells,
+        "your_turn": game["turn"] == side, "status": "playing"})
+
+
+async def api_bs_surrender(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    game_id = (body.get("game_id") or "").strip()
+    game = _bs_get_game(game_id)
+    if not game:
+        return web.json_response({"error": "not_found"}, status=404)
+    side = _bs_player_side(game, user_id)
+    if side == 0:
+        return web.json_response({"error": "not_in_game"}, status=403)
+    if game["status"] == "finished":
+        return web.json_response({"error": "already_finished"}, status=400)
+    opponent = game["p2_id"] if side == 1 else game["p1_id"]
+    _bs_finish_game(game_id, opponent, surrender_by=user_id)
+    game = _bs_get_game(game_id)
+    return web.json_response({"ok": True, "result": _bs_make_result_for(game, user_id)})
+
+
+async def api_bs_cancel(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    game_id = (body.get("game_id") or "").strip()
+    game = _bs_get_game(game_id)
+    if not game:
+        return web.json_response({"ok": True})
+    side = _bs_player_side(game, user_id)
+    if side == 0:
+        return web.json_response({"error": "not_in_game"}, status=403)
+    if game["status"] in ("waiting", "placing"):
+        bet = game["bet"] or 0
+        if game["p1_id"]: wallet_add(game["p1_id"], shift=bet)
+        if game["p2_id"]: wallet_add(game["p2_id"], shift=bet)
+        _bs_delete_game(game_id)
+        return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
+    return web.json_response({"error": "cant_cancel"}, status=400)
+
+
+async def api_bs_bot_start(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try: bet = int(body.get("bet", 0))
+    except Exception: bet = 0
+    if bet not in BS_BET_OPTIONS:
+        return web.json_response({"error": "bad_bet"}, status=400)
+    _ensure_user(user_id)
+    w = wallet_get(user_id)
+    if (w.get("shift") or 0) < bet:
+        return web.json_response({"error": "not_enough_soft"}, status=400)
+    if not wallet_consume(user_id, "shift", bet):
+        return web.json_response({"error": "consume_failed"}, status=500)
+    return web.json_response({"ok": True, "bet": bet, "wallet": wallet_get(user_id)})
+
+
+async def api_bs_finish_bot(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    outcome = (body.get("outcome") or "").strip()
+    try: bet = int(body.get("bet", 0))
+    except Exception: bet = 0
+    if outcome not in ("win", "lose", "draw"):
+        return web.json_response({"error": "bad_outcome"}, status=400)
+    if bet not in BS_BET_OPTIONS: bet = 0
+    _ensure_user(user_id)
+    reward = 0; loss = 0
+    if outcome == "win":
+        wallet_add(user_id, shift=bet * 2, xp=30); reward = bet
+    elif outcome == "lose": loss = bet
+    elif outcome == "draw": wallet_add(user_id, shift=bet)
+    check_and_award_achievements(user_id)
+    return web.json_response({"ok": True, "reward": reward, "loss": loss,
+        "wallet": wallet_get(user_id)})
+
+
+# ============================================================
+#                  API: ЭКСПОРТ PDF
+# ============================================================
 
 def _find_or_download_pdf_font():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
+        os.path.join(base_dir, "fonts", "DejaVuSans.ttf"),
+        os.path.join(base_dir, "webapp", "fonts", "DejaVuSans.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        os.path.join(base_dir, "fonts", "DejaVuSans.ttf"),
         "fonts/DejaVuSans.ttf",
     ]
     for p in candidates:
@@ -4016,16 +3063,18 @@ def _find_or_download_pdf_font():
         target = os.path.join(target_dir, "DejaVuSans.ttf")
         import urllib.request
         urls = [
-            "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf",
             "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSans.ttf",
+            "https://github.com/dejavu-fonts/dejavu-fonts/raw/refs/heads/master/ttf/DejaVuSans.ttf",
         ]
         for url in urls:
             try:
-                with urllib.request.urlopen(url, timeout=45) as resp:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=45) as resp:
                     data = resp.read()
                     if len(data) > 100000:
                         with open(target, "wb") as f: f.write(data)
-                        logging.info(f"[PDF FONT] скачан: {target}")
+                        logging.info(f"[PDF FONT] скачан: {target} ({len(data)} байт)")
                         return target
             except Exception as e:
                 logging.warning(f"[PDF FONT] {url}: {e}")
@@ -4046,7 +3095,7 @@ def generate_user_pdf(user_id):
         raise RuntimeError("fpdf2 не установлена")
     font_path = _find_or_download_pdf_font()
     if not font_path:
-        raise RuntimeError("Не удалось найти шрифт для PDF")
+        raise RuntimeError("Не удалось найти шрифт для PDF. Положи DejaVuSans.ttf в папку fonts/ проекта.")
     data = get_export_data(user_id)
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -4060,14 +3109,15 @@ def generate_user_pdf(user_id):
 
     def section(title):
         pdf.ln(3); pdf.set_font("Main", size=14); pdf.set_text_color(0, 180, 160)
-        pdf.cell(0, 8, title, ln=True); pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Main", size=11); hr()
+        pdf.cell(0, 8, title, ln=True)
+        pdf.set_text_color(0, 0, 0); pdf.set_font("Main", size=11); hr()
 
-    pdf.set_font("Main", size=22); pdf.cell(0, 12, "Student IRK", ln=True)
+    pdf.set_font("Main", size=22)
+    pdf.cell(0, 12, "Student IRK", ln=True)
     pdf.set_font("Main", size=10); pdf.set_text_color(120, 120, 120)
     now_str = _now_irkutsk().strftime("%d.%m.%Y в %H:%M")
-    pdf.cell(0, 6, f"Отчёт от {now_str}", ln=True); pdf.set_text_color(0, 0, 0); pdf.ln(4)
-
+    pdf.cell(0, 6, f"Отчёт от {now_str}", ln=True)
+    pdf.set_text_color(0, 0, 0); pdf.ln(4)
     pdf.set_font("Main", size=12)
     name = data.get("first_name") or "Не указано"
     uname = data.get("username")
@@ -4079,7 +3129,6 @@ def generate_user_pdf(user_id):
         g = data["group"]
         if data.get("subgroup"): g += f" · подгруппа {data['subgroup']}"
         pdf.cell(0, 6, f"Группа: {g}", ln=True)
-
     tasks = data.get("tasks", [])
     section(f"Задачи (всего {len(tasks)})")
     if not tasks: pdf.cell(0, 6, "Нет задач", ln=True)
@@ -4098,7 +3147,6 @@ def generate_user_pdf(user_id):
             pdf.set_font("Main", size=9); pdf.set_text_color(130, 130, 130)
             pdf.cell(0, 5, "    " + " · ".join(meta), ln=True)
             pdf.set_text_color(0, 0, 0); pdf.set_font("Main", size=11)
-
     notes = data.get("notes", [])
     section(f"Заметки ({len(notes)})")
     if not notes: pdf.cell(0, 6, "Нет заметок", ln=True)
@@ -4108,7 +3156,6 @@ def generate_user_pdf(user_id):
             pdf.set_font("Main", size=10); pdf.set_text_color(70, 70, 70)
             pdf.multi_cell(0, 5, "    " + _pdf_short(n["text"], 400))
             pdf.set_text_color(0, 0, 0); pdf.ln(1)
-
     section("Стипендия")
     amount = data.get("scholarship_amount")
     if amount is None or amount == 0: pdf.cell(0, 6, "Сумма не указана", ln=True)
@@ -4123,9 +3170,8 @@ def generate_user_pdf(user_id):
             sem = f" · {g['semester']}" if g.get("semester") else ""
             pdf.cell(0, 5.5, f"  {g['subject']}: {g['grade']}{auto}{sem}", ln=True)
     else: pdf.cell(0, 6, "Оценок нет", ln=True)
-
     att = data.get("attendance", {})
-    total = att.get("was", 0) + att.get("missed", 0) + att.get("sick", 0) + att.get("excused", 0)
+    total = sum(att.values())
     section(f"Посещаемость (отмечено {total})")
     if total == 0: pdf.cell(0, 6, "Отметок нет", ln=True)
     else:
@@ -4133,7 +3179,6 @@ def generate_user_pdf(user_id):
         pdf.cell(0, 6, f"Пропущено: {att.get('missed', 0)}", ln=True)
         pdf.cell(0, 6, f"По болезни: {att.get('sick', 0)}", ln=True)
         pdf.cell(0, 6, f"Уважительная: {att.get('excused', 0)}", ln=True)
-
     feedback = data.get("feedback", [])
     if feedback:
         section(f"Обращения ({len(feedback)})")
@@ -4147,11 +3192,9 @@ def generate_user_pdf(user_id):
                 pdf.multi_cell(0, 5, "    Ответ: " + _pdf_short(f["admin_reply"], 400))
                 pdf.set_text_color(0, 0, 0)
             pdf.ln(1)
-
     pdf.ln(6); hr()
     pdf.set_font("Main", size=9); pdf.set_text_color(150, 150, 150)
     pdf.cell(0, 5, "Сгенерировано Student IRK", ln=True, align="C")
-
     out = pdf.output()
     if isinstance(out, str): out = out.encode("latin-1")
     return bytes(out)
@@ -4194,11 +3237,8 @@ async def api_admin_stats(request: web.Request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data):
         return web.json_response({"error": "forbidden"}, status=403)
-    return web.json_response({
-        "total_users": get_total_users(),
-        "vip_count": 0,
-        "pending_feedback": len(get_pending_feedback()),
-    })
+    return web.json_response({"total_users": get_total_users(), "vip_count": 0,
+        "pending_feedback": len(get_pending_feedback())})
 
 
 async def api_admin_feedback_list(request: web.Request):
@@ -4206,9 +3246,9 @@ async def api_admin_feedback_list(request: web.Request):
     if not _admin_only(init_data):
         return web.json_response({"error": "forbidden"}, status=403)
     rows = get_pending_feedback()
-    return web.json_response({"items": [
-        {"id": fid, "user_id": uid, "username": uname, "text": text,
-         "created": created, "status": status} for fid, uid, uname, text, created, status in rows]})
+    return web.json_response({"items": [{"id": fid, "user_id": uid, "username": uname,
+        "text": text, "created": created, "status": status}
+        for fid, uid, uname, text, created, status in rows]})
 
 
 async def api_admin_feedback_reply(request: web.Request):
@@ -4218,8 +3258,7 @@ async def api_admin_feedback_reply(request: web.Request):
         return web.json_response({"error": "bad_json"}, status=400)
     if not _admin_only(body.get("initData", "")):
         return web.json_response({"error": "forbidden"}, status=403)
-    fid = int(body.get("id", 0))
-    reply = (body.get("text") or "").strip()
+    fid = int(body.get("id", 0)); reply = (body.get("text") or "").strip()
     if not fid or not reply:
         return web.json_response({"error": "empty"}, status=400)
     row = get_feedback_by_id(fid)
@@ -4258,19 +3297,15 @@ async def api_admin_broadcast(request: web.Request):
     text = (body.get("text") or "").strip()
     if not text:
         return web.json_response({"error": "empty"}, status=400)
-
     async def _run():
         user_ids = get_all_user_ids()
         sent = failed = 0
         for uid in user_ids:
             try:
-                await bot.send_message(uid, text)
-                sent += 1
-            except Exception:
-                failed += 1
+                await bot.send_message(uid, text); sent += 1
+            except Exception: failed += 1
             await asyncio.sleep(0.05)
         logging.info(f"[BROADCAST] отправлено {sent}, не доставлено {failed}")
-
     asyncio.create_task(_run())
     return web.json_response({"ok": True, "started": True})
 
@@ -4299,71 +3334,43 @@ async def start_webapp():
     possible_paths = [
         os.path.join(base_dir, "webapp"),
         os.path.join(os.getcwd(), "webapp"),
-        "/app/webapp",
-        "webapp",
+        "/app/webapp", "webapp",
     ]
     webapp_dir = None
     for p in possible_paths:
-        if os.path.isdir(p):
-            webapp_dir = p
-            break
-
+        if os.path.isdir(p): webapp_dir = p; break
     app = web.Application()
-
-    # ==== Расписание ====
     app.router.add_get("/api/schedule", api_schedule)
     app.router.add_get("/api/week", api_week)
-
-    # ==== Пользователь ====
     app.router.add_get("/api/me", api_me)
     app.router.add_get("/api/wallet", api_wallet)
     app.router.add_post("/api/set-name", api_set_name)
     app.router.add_post("/api/set-avatar", api_set_avatar)
-
-    # ==== Обменник ====
-    app.router.add_post("/api/exchange-soft-to-hard", api_exchange_soft_to_hard)
-
-    # ==== Группы ====
+    app.router.add_post("/api/exchange-soft-to-hard", api_exchange_shift_to_nova)
     app.router.add_get("/api/groups", api_groups)
     app.router.add_post("/api/set-group", api_set_group)
     app.router.add_post("/api/set-subgroup", api_set_subgroup)
-
-    # ==== Задачи ====
     app.router.add_get("/api/tasks", api_tasks)
     app.router.add_post("/api/task-add", api_task_add)
     app.router.add_post("/api/task-update", api_task_update)
     app.router.add_post("/api/task-delete", api_task_delete)
     app.router.add_post("/api/task-clear", api_task_clear)
-
-    # ==== Заметки ====
     app.router.add_get("/api/notes", api_notes)
     app.router.add_post("/api/note-save", api_note_save)
     app.router.add_post("/api/note-delete", api_note_delete)
-
-    # ==== Уведомления ====
     app.router.add_post("/api/notify-set", api_notify_set)
     app.router.add_post("/api/notify-set-before", api_notify_set_before)
-
-    # ==== Цитаты ====
     app.router.add_get("/api/quote", api_quote)
     app.router.add_post("/api/quote-subscribe", api_quote_subscribe)
-
-    # ==== Стипендия ====
     app.router.add_get("/api/scholarship", api_scholarship)
     app.router.add_post("/api/scholarship-set-amount", api_scholarship_set_amount)
     app.router.add_post("/api/scholarship-add-grade", api_scholarship_add_grade)
     app.router.add_post("/api/scholarship-update-grade", api_scholarship_update_grade)
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
-
-    # ==== Посещаемость ====
     app.router.add_post("/api/attendance-set", api_attendance_set)
-
-    # ==== Игры (flappy) ====
     app.router.add_get("/api/game/info", api_game_info)
     app.router.add_post("/api/game/submit", api_game_submit)
-
-    # ==== Морской бой ====
     app.router.add_post("/api/bs/create", api_bs_create)
     app.router.add_post("/api/bs/join", api_bs_join)
     app.router.add_post("/api/bs/find", api_bs_find)
@@ -4374,30 +3381,20 @@ async def start_webapp():
     app.router.add_post("/api/bs/cancel", api_bs_cancel)
     app.router.add_post("/api/bs/bot-start", api_bs_bot_start)
     app.router.add_post("/api/bs/finish-bot", api_bs_finish_bot)
-
-    # ==== AI ====
     app.router.add_get("/api/ai/history", api_ai_history)
     app.router.add_post("/api/ai/clear-history", api_ai_clear_history)
     app.router.add_post("/api/ai", api_ai)
     app.router.add_post("/api/ai-photo", api_ai_photo)
-
-    # ==== Обратная связь / экспорт ====
     app.router.add_post("/api/feedback", api_feedback)
     app.router.add_get("/api/feedback/my", api_feedback_my)
     app.router.add_post("/api/export", api_export)
-
-    # ==== VIP ====
-    app.router.add_get("/api/vip", api_vip)
-
-    # ==== Достижения / кошелёк ====
     app.router.add_get("/api/chest/status", api_chest_status)
     app.router.add_post("/api/chest/open", api_chest_open)
-    app.router.add_post("/api/premium-chest/open", api_premium_chest_open)
     app.router.add_get("/api/achievements", api_achievements)
     app.router.add_post("/api/achievement-claim", api_achievement_claim)
+    app.router.add_get("/api/level-rewards", api_level_rewards)
+    app.router.add_post("/api/level-reward-claim", api_level_reward_claim)
     app.router.add_get("/api/wallet/leaderboard", api_wallet_leaderboard)
-
-    # ==== Админ ====
     app.router.add_get("/api/admin/stats", api_admin_stats)
     app.router.add_get("/api/admin/feedback-list", api_admin_feedback_list)
     app.router.add_post("/api/admin/feedback-reply", api_admin_feedback_reply)
@@ -4407,38 +3404,28 @@ async def start_webapp():
 
     if webapp_dir:
         logging.info(f"[WEB] отдаю статику из {webapp_dir}")
-
         async def index_handler(request):
             index_path = os.path.join(webapp_dir, "index.html")
-            if os.path.isfile(index_path):
-                return web.FileResponse(index_path)
+            if os.path.isfile(index_path): return web.FileResponse(index_path)
             return web.Response(text="index.html not found", status=404)
-
         async def style_handler(request):
             path = os.path.join(webapp_dir, "style.css")
-            if os.path.isfile(path):
-                return web.FileResponse(path, headers={"Content-Type": "text/css"})
+            if os.path.isfile(path): return web.FileResponse(path, headers={"Content-Type": "text/css"})
             return web.Response(text="not found", status=404)
-
         async def appjs_handler(request):
             path = os.path.join(webapp_dir, "app.js")
-            if os.path.isfile(path):
-                return web.FileResponse(path, headers={"Content-Type": "application/javascript"})
+            if os.path.isfile(path): return web.FileResponse(path, headers={"Content-Type": "application/javascript"})
             return web.Response(text="not found", status=404)
-
         async def favicon_handler(request):
             return web.Response(status=204)
-
         async def asset_handler(request):
             name = request.match_info.get("name", "")
             safe_name = os.path.basename(name)
             if not safe_name or safe_name.startswith("."):
                 return web.Response(status=404)
             path = os.path.join(webapp_dir, "assets", safe_name)
-            if os.path.isfile(path):
-                return web.FileResponse(path)
+            if os.path.isfile(path): return web.FileResponse(path)
             return web.Response(status=404)
-
         app.router.add_get("/", index_handler)
         app.router.add_get("/index.html", index_handler)
         app.router.add_get("/style.css", style_handler)
@@ -4447,10 +3434,8 @@ async def start_webapp():
         app.router.add_get("/assets/{name}", asset_handler)
     else:
         logging.warning("[WEB] папка webapp не найдена")
-        async def root(request):
-            return web.Response(text="webapp not found", status=404)
+        async def root(request): return web.Response(text="webapp not found", status=404)
         app.router.add_get("/", root)
-
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
@@ -4469,16 +3454,13 @@ async def cmd_start(message: Message):
         _update_user_meta(message.from_user.id, message.from_user.username, message.from_user.first_name)
     except Exception:
         pass
-
     if not WEBAPP_URL:
         await message.answer("Приложение ещё не настроено. Обратись к администратору.")
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]
     ])
-    await message.answer(
-        "Привет! Открой приложение — там расписание, задачи, заметки и многое другое.",
-        reply_markup=kb)
+    await message.answer("Привет! Открой приложение — там расписание, задачи, заметки и многое другое.", reply_markup=kb)
 
 
 @dp.message(Command("admin"))
@@ -4486,18 +3468,13 @@ async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("Только для админа.")
         return
-    await message.answer(
-        "АДМИН-КОМАНДЫ (всё остальное — в Mini App, вкладка «Админ»):\n\n"
-        "/backup — прислать файл users.db\n"
-        "/restore — восстановить базу (пришли .db с подписью /restore)\n"
-        "/admin — эта справка"
-    )
+    await message.answer("АДМИН-КОМАНДЫ (всё остальное — в Mini App, вкладка «Админ»):\n\n"
+        "/backup — прислать файл users.db\n/restore — восстановить базу (пришли .db с подписью /restore)\n/admin — эта справка")
 
 
 @dp.message(Command("backup"))
 async def cmd_backup(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
+    if message.from_user.id != ADMIN_ID: return
     try:
         total = get_total_users()
         doc = FSInputFile(DB_PATH, filename="users_backup.db")
@@ -4508,8 +3485,7 @@ async def cmd_backup(message: Message):
 
 @dp.message(Command("restore"))
 async def cmd_restore(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
+    if message.from_user.id != ADMIN_ID: return
     if not message.document:
         await message.answer("Пришли файл .db с командой /restore в подписи.")
         return
@@ -4619,8 +3595,7 @@ async def lesson_reminder_worker():
                 try:
                     monday = _monday_of_week(now)
                     key_cache = (gid, monday.strftime("%Y-%m-%d"))
-                    if key_cache in html_cache:
-                        html = html_cache[key_cache]
+                    if key_cache in html_cache: html = html_cache[key_cache]
                     else:
                         html = await fetch_week_html(gid, monday, use_cache=True)
                         html_cache[key_cache] = html
@@ -4660,8 +3635,7 @@ async def check_schedule_changes():
                 target_monday = _monday_of_week(now) + timedelta(days=7 * offset)
                 week_start_str = target_monday.strftime("%Y-%m-%d")
                 cache_key = (group_id, week_start_str)
-                if cache_key in html_cache:
-                    html = html_cache[cache_key]
+                if cache_key in html_cache: html = html_cache[cache_key]
                 else:
                     html = await fetch_week_html(group_id, target_monday, use_cache=False)
                     html_cache[cache_key] = html
@@ -4670,15 +3644,13 @@ async def check_schedule_changes():
                 new_snap = make_snapshot_str(days)
                 old_snap = get_snapshot(group_id, week_start_str)
                 if old_snap is None:
-                    save_snapshot(group_id, week_start_str, new_snap)
-                    continue
+                    save_snapshot(group_id, week_start_str, new_snap); continue
                 if old_snap != new_snap:
                     save_snapshot(group_id, week_start_str, new_snap)
                     label = "текущей" if offset == 0 else "следующей"
                     try:
                         await bot.send_message(uid,
-                            f"Изменения в расписании\n\nОбнаружены правки на {label} неделе.",
-                            parse_mode=None)
+                            f"Изменения в расписании\n\nОбнаружены правки на {label} неделе.", parse_mode=None)
                     except Exception as e:
                         logging.error(f"[CHANGE] notify user={uid}: {e}")
         except Exception as e:
@@ -4712,8 +3684,8 @@ async def bs_cleanup_worker():
 
 async def main():
     logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s | %(levelname)s | %(message)s",
-                        stream=sys.stdout, force=True)
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        stream=sys.stdout, force=True)
     init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Webhook удалён, polling")
@@ -4722,7 +3694,6 @@ async def main():
             await asyncio.to_thread(_find_or_download_pdf_font)
     except Exception as e:
         logging.warning(f"[PDF FONT preload] {e}")
-
     asyncio.create_task(start_webapp())
     asyncio.create_task(notification_worker())
     asyncio.create_task(lesson_reminder_worker())
