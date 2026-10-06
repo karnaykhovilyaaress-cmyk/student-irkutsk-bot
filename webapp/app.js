@@ -1,6 +1,10 @@
 const tg = window.Telegram.WebApp;
-tg.ready(); tg.expand();
+tg.ready();
+tg.expand();
+try { tg.requestFullscreen?.(); } catch(e){}
+try { tg.lockOrientation?.('portrait'); } catch(e){}
 try { tg.disableVerticalSwipes?.(); } catch(e){}
+try { tg.enableClosingConfirmation?.(); } catch(e){}
 
 const tgUser = tg.initDataUnsafe?.user || { first_name:'Гость', last_name:'', username:'', id:0 };
 const INIT_DATA = tg.initData || '';
@@ -25,6 +29,20 @@ const state = {
   adminStats:null, adminFeedback:[], adminMonitor:null, adminBusy:false,
   achData:null,
 };
+
+/* ============================================================
+   SVG helpers
+   ============================================================ */
+function icon(id, size=16, cls='') {
+  return `<svg width="${size}" height="${size}" class="${cls}"><use href="#${id}"/></svg>`;
+}
+function icSoft(size=16)  { return icon('ic-soft', size, 'ic-soft-c'); }
+function icHard(size=16)  { return icon('ic-hard', size, 'ic-hard-c'); }
+function icXp(size=16)    { return icon('ic-xp', size); }
+
+/* Эмодзи-фильтр для текстов с сервера */
+const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{2764}\u{2705}\u{274C}\u{2757}\u{2728}\u{2764}\u{1F4A5}\u{1F525}\u{1F4E6}\u{1F48E}\u{1F3C6}\u{1F389}\u{1F381}\u{1F4B0}\u{1F4B8}\u{1F4B5}]/gu;
+function stripEmoji(s){ return (s||'').replace(EMOJI_RE,'').replace(/\s+/g,' ').trim(); }
 
 /* ============================================================
    API
@@ -71,23 +89,23 @@ function haptic(t='light') {
     else if (t==='error') tg.HapticFeedback?.notificationOccurred('error');
   } catch(e){}
 }
-function popEmoji(c) {
+function popIcon(id){
   const el = document.createElement('div');
-  el.textContent = c;
-  el.style.cssText = 'position:fixed;top:50%;left:50%;font-size:56px;transform:translate(-50%,-50%);animation:pop .6s ease-out;z-index:99999;pointer-events:none';
+  el.innerHTML = `<svg width="72" height="72"><use href="#${id}"/></svg>`;
+  el.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);animation:pop .6s ease-out;z-index:99999;pointer-events:none';
   document.body.appendChild(el);
   setTimeout(()=>el.remove(), 600);
 }
 
 /* ============================================================
-   TOAST
+   TOAST / MODAL
    ============================================================ */
 function toast(text, type='info') {
   const wrap = document.getElementById('toastWrap');
   if (!wrap) return;
   const el = document.createElement('div');
   el.className = 'toast ' + type;
-  el.textContent = text;
+  el.textContent = stripEmoji(text);
   wrap.appendChild(el);
   setTimeout(()=>{
     el.style.opacity = '0';
@@ -95,20 +113,16 @@ function toast(text, type='info') {
     setTimeout(()=>el.remove(), 300);
   }, 2200);
 }
-
-/* ============================================================
-   MODAL
-   ============================================================ */
 function modalOpen({title, body, actions}) {
   const m = document.getElementById('modal');
-  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalTitle').innerHTML = title;
   document.getElementById('modalBody').innerHTML = body;
   const acts = document.getElementById('modalActions');
   acts.innerHTML = '';
   (actions||[]).forEach(a => {
     const b = document.createElement('button');
     b.className = 'btn ' + (a.style || '');
-    b.textContent = a.label;
+    b.innerHTML = a.label;
     b.onclick = () => {
       if (!a.keepOpen) modalClose();
       a.onClick && a.onClick();
@@ -129,6 +143,32 @@ function modalConfirm(title, text, onYes, yesLabel='ПОДТВЕРДИТЬ') {
       {label:yesLabel, style:'btn-red', onClick:onYes}
     ]
   });
+}
+
+/* ============================================================
+   DATE HELPERS
+   ============================================================ */
+function nowIrkutsk() {
+  const d = new Date();
+  // UTC+8 от UTC
+  const utc = d.getTime() + d.getTimezoneOffset() * 60000;
+  return new Date(utc + 8 * 3600000);
+}
+function fmtDate(d) {
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+}
+function addDays(d, n) {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+function findDayByDate(days, dateStr) {
+  if (!days) return null;
+  for (const d of days) if (d.date === dateStr) return d;
+  return null;
 }
 
 /* ============================================================
@@ -211,7 +251,7 @@ function renderUserBar() {
       <div class="user-bar-meta">${escapeHtml(metaParts.join(' · ')||'профиль не заполнен')}</div>
     </div>
     <div class="user-bar-badges">
-      <div class="user-badge">✅ <span>${p?.tasks_active ?? 0}</span></div>
+      <div class="user-badge">${icon('ic-task',16)} <span>${p?.tasks_active ?? 0}</span></div>
     </div>
   </div>`;
 }
@@ -238,17 +278,17 @@ function renderLesson(les) {
       ${date ? `<div class="att-row">
         <button class="att-circle ${att==='was'?'on-was':''}" data-att="was"
           data-date="${escapeHtml(date)}" data-time="${escapeHtml(time)}" data-subject="${escapeHtml(subj)}"
-          title="Был">✅</button>
+          title="Был">${icon('ic-was',18)}</button>
         <button class="att-circle ${att==='missed'?'on-missed':''}" data-att="missed"
           data-date="${escapeHtml(date)}" data-time="${escapeHtml(time)}" data-subject="${escapeHtml(subj)}"
-          title="Пропустил">❌</button>
+          title="Пропустил">${icon('ic-missed',18)}</button>
         <button class="att-circle ${att==='sick'?'on-sick':''}" data-att="sick"
           data-date="${escapeHtml(date)}" data-time="${escapeHtml(time)}" data-subject="${escapeHtml(subj)}"
-          title="Болел">🤒</button>
+          title="Болел">${icon('ic-sick',18)}</button>
         <button class="att-circle ${att==='excused'?'on-excused':''}" data-att="excused"
           data-date="${escapeHtml(date)}" data-time="${escapeHtml(time)}" data-subject="${escapeHtml(subj)}"
-          title="Уважительная">📄</button>
-        <button class="att-help" data-action="att-help">?</button>
+          title="Уважительная">${icon('ic-excused',18)}</button>
+        <button class="att-help" data-action="att-help">${icon('ic-help',20)}</button>
       </div>` : ''}
     </div>
   </div>`;
@@ -259,29 +299,6 @@ function renderDaySwitch() {
     <button data-action="day-today" class="${state.scheduleDay==='today'?'active':''}">Сегодня</button>
     <button data-action="day-tomorrow" class="${state.scheduleDay==='tomorrow'?'active':''}">Завтра</button>
   </div>`;
-}
-
-function getTomorrowData() {
-  const wd = state.weekDays;
-  if (!wd?.days?.length) return null;
-  const today = new Date();
-  const jsDay = today.getDay();
-  const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
-  const tomorrowIdx = (todayIdx + 1) % 7;
-  if (wd.days.length >= 7) return wd.days[tomorrowIdx] || null;
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
-  const dd = String(tomorrow.getDate()).padStart(2,'0');
-  const mm = String(tomorrow.getMonth()+1).padStart(2,'0');
-  const yyyy = tomorrow.getFullYear();
-  const tstr = `${dd}.${mm}.${yyyy}`;
-  for (const d of wd.days) if (d.date === tstr) return d;
-  return null;
-}
-
-async function ensureWeekLoaded() {
-  if (state.weekDays?.days?.length) return true;
-  try { state.weekDays = await apiGet('/api/week', {offset:0}); return true; }
-  catch(e){ return false; }
 }
 
 function renderDayCard(day, label) {
@@ -298,7 +315,7 @@ function renderSchedule() {
   if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
     return renderUserBar() + `<div class="card">
       <div class="card-title">Как начать</div>
-      <div class="card-subtitle">1. Профиль → «Выбрать группу»</div>
+      <div class="card-subtitle">1. Профиль и «Выбрать группу»</div>
       <div class="card-subtitle">2. Укажи институт, курс и группу</div>
       <div class="card-subtitle">3. Вернись — расписание появится</div>
       <div class="actions-row"><button class="btn" data-action="go-profile">Выбрать группу</button></div>
@@ -308,30 +325,69 @@ function renderSchedule() {
   let html = renderUserBar() + renderDaySwitch();
   html += `<div class="swipe-wrap"><div class="swipe-pane" id="swipePane">`;
 
-  if (state.scheduleDay === 'tomorrow') {
-    if (!state.weekDays) { html += '<div class="skeleton-card"></div>'; }
-    else {
-      const tomorrow = getTomorrowData();
-      html += tomorrow ? renderDayCard(tomorrow, 'Завтра') : '<div class="empty">Не удалось загрузить расписание на завтра</div>';
-    }
-  } else {
-    if (!s) html += '<div class="empty">Нет данных о расписании</div>';
-    else if (s.error) html += `<div class="empty">${escapeHtml(s.message||'Ошибка загрузки')}</div>`;
-    else {
-      const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
-      html += `<div class="day-header">${escapeHtml(header)}</div>`;
-      if (s.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${s.subgroup?` · подгруппа ${escapeHtml(s.subgroup)}`:''}</div>`;
-      if (!s.lessons?.length) html += '<div class="empty">Занятий нет</div>';
-      else for (const les of s.lessons) html += renderLesson(les);
-    }
+  if (state.scheduleViewMode === 'week' && state.weekDays) {
+    html += renderWeekView();
+  } else if (state.scheduleDay === 'tomorrow') {
+    html += renderTomorrowBlock();
+  } else if (state.scheduleDay === 'today') {
+    html += renderTodayBlock();
   }
 
   html += `</div></div>`;
   html += `<div class="actions-row" style="margin-top:16px">
-    <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+    <button class="btn btn-secondary" data-action="week-prev">${icon('ic-chevron-left',16)} Прошлая</button>
     <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
-    <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
+    <button class="btn btn-secondary" data-action="week-next">Следующая ${icon('ic-chevron-right',16)}</button>
   </div>`;
+  return html;
+}
+
+function renderTodayBlock() {
+  const s = state.schedule;
+  if (!s) return '<div class="empty">Нет данных о расписании</div>';
+  if (s.error) return `<div class="empty">${escapeHtml(s.message||'Ошибка загрузки')}</div>`;
+  const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
+  let html = `<div class="day-header">${escapeHtml(header)}</div>`;
+  if (s.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${s.subgroup?` · подгруппа ${escapeHtml(s.subgroup)}`:''}</div>`;
+  if (!s.lessons?.length) html += '<div class="empty">Занятий нет</div>';
+  else for (const les of s.lessons) html += renderLesson(les);
+  return html;
+}
+
+function renderTomorrowBlock() {
+  const wd = state.weekDays;
+  const tomorrow = addDays(nowIrkutsk(), 1);
+  const tomorrowStr = fmtDate(tomorrow);
+
+  if (!wd?.days?.length) {
+    return '<div class="skeleton-card"></div>';
+  }
+  let day = findDayByDate(wd.days, tomorrowStr);
+
+  // Если завтра воскресенье или его нет в этой неделе — оно в начале следующей
+  if (!day) {
+    return `<div class="empty">Расписание на завтра (${tomorrowStr}) пока недоступно.<br>Нажми «Текущая неделя» или «Следующая», чтобы загрузить.</div>`;
+  }
+  return renderDayCard(day, 'Завтра');
+}
+
+function renderWeekView() {
+  const wd = state.weekDays;
+  if (!wd?.days?.length) return '<div class="empty">Не удалось загрузить расписание на неделю</div>';
+
+  let title;
+  if (state.weekOffset === 0) title = 'Текущая неделя';
+  else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
+  else title = `Неделя ${state.weekOffset}`;
+
+  let html = `<div class="day-header">${escapeHtml(title)}</div>`;
+  if (wd.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(wd.group)}${wd.subgroup?` · подгруппа ${escapeHtml(wd.subgroup)}`:''}</div>`;
+
+  for (const day of wd.days) {
+    html += `<div class="day-header" style="margin-top:16px">${escapeHtml(day.name || day.date)}${day.date ? ' · ' + escapeHtml(day.date) : ''}</div>`;
+    if (!day.lessons?.length) html += '<div class="card-subtitle" style="padding:8px 0">Занятий нет</div>';
+    else for (const les of day.lessons) html += renderLesson(les);
+  }
   return html;
 }
 
@@ -399,7 +455,7 @@ function renderInstitutePicker() {
   const groups = state.groups || {};
   const institutes = Object.keys(groups);
   let html = `<div class="picker-header">
-    <button class="picker-back" data-action="picker-back">←</button>
+    <button class="picker-back" data-action="picker-back">${icon('ic-chevron-left',20)}</button>
     <div class="picker-title">Выбери институт</div>
   </div>`;
   if (!institutes.length) { html += '<div class="picker-empty">Список не загружен</div>'; return html; }
@@ -409,7 +465,7 @@ function renderInstitutePicker() {
     const selected = state.profile?.group && groups[inst]?.some(g => g.name === state.profile.group);
     html += `<button class="picker-item ${selected?'selected':''}" data-action="picker-choose-institute" data-value="${escapeHtml(inst)}">
       <div class="picker-group-item"><span>${escapeHtml(inst)}</span><span class="picker-item-sub">${count} групп</span></div>
-      <span class="picker-item-arrow">›</span>
+      <span class="picker-item-arrow">${icon('ic-chevron-right',18)}</span>
     </button>`;
   }
   html += '</div>';
@@ -419,7 +475,7 @@ function renderCoursePicker() {
   const inst = state.pickerInstitute;
   const courses = getCoursesForInstitute(inst);
   let html = `<div class="picker-header">
-    <button class="picker-back" data-action="picker-back">←</button>
+    <button class="picker-back" data-action="picker-back">${icon('ic-chevron-left',20)}</button>
     <div class="picker-title">${escapeHtml(inst)} · Курс</div>
   </div>`;
   if (!courses.length) { html += '<div class="picker-empty">Нет курсов</div>'; return html; }
@@ -429,7 +485,7 @@ function renderCoursePicker() {
     const count = groups.filter(g => getCourseFromGroup(g.name) === c).length;
     html += `<button class="picker-item" data-action="picker-choose-course" data-value="${c}">
       <div class="picker-group-item"><span>${c} курс</span><span class="picker-item-sub">${count} групп</span></div>
-      <span class="picker-item-arrow">›</span>
+      <span class="picker-item-arrow">${icon('ic-chevron-right',18)}</span>
     </button>`;
   }
   html += '</div>';
@@ -441,7 +497,7 @@ function renderGroupPicker() {
   const allGroups = (state.groups && state.groups[inst]) || [];
   const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
   let html = `<div class="picker-header">
-    <button class="picker-back" data-action="picker-back">←</button>
+    <button class="picker-back" data-action="picker-back">${icon('ic-chevron-left',20)}</button>
     <div class="picker-title">${escapeHtml(inst)} · ${course} курс</div>
   </div>
   <input class="picker-search" id="picker-search" placeholder="Поиск группы..." value="${escapeHtml(state.pickerSearch)}" autocomplete="off">
@@ -453,7 +509,7 @@ function renderGroupPicker() {
     const selected = state.profile?.group === g.name;
     html += `<button class="picker-item ${selected?'selected':''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
       <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
-      ${selected?'<span class="picker-item-arrow">✓</span>':'<span class="picker-item-arrow">›</span>'}
+      <span class="picker-item-arrow">${selected?icon('ic-check',18):icon('ic-chevron-right',18)}</span>
     </button>`;
   }
   html += '</div>';
@@ -484,7 +540,7 @@ function renderNotifyEditor() {
   const timeVal = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   return `
     <div class="picker-header">
-      <button class="picker-back" data-action="notify-back">←</button>
+      <button class="picker-back" data-action="notify-back">${icon('ic-chevron-left',20)}</button>
       <div class="picker-title">Уведомления</div>
     </div>
     <div class="card">
@@ -519,7 +575,7 @@ function renderTasks() {
     <button data-action="tasks-show-active" class="${state.tasksView==='active'?'active':''}">Активные (${stats.active})</button>
     <button data-action="tasks-show-done" class="${state.tasksView==='done'?'active':''}">Выполненные (${stats.done})</button>
   </div>`;
-  if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
+  if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить задачу</button>`;
   if (!tasks?.length) {
     if (state.tasksView === 'active') html += '<div class="empty">Задач нет. Добавь первую!</div>';
     else html += '<div class="empty">Нет выполненных</div>';
@@ -534,7 +590,7 @@ function renderTasks() {
       <div class="card-title">${escapeHtml(t.text)}</div>
       <div class="card-meta">${pLabel} ${dueStr}</div>
       <div class="actions-row">
-        ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">Готово</button>` : ''}
+        ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">${icon('ic-check',14)} Готово</button>` : ''}
         <button class="btn btn-secondary" data-action="task-edit-open" data-id="${t.id}">Изменить</button>
         <button class="btn btn-secondary" data-action="task-delete" data-id="${t.id}">Удалить</button>
       </div>
@@ -550,7 +606,7 @@ function renderTasks() {
    NOTES
    ============================================================ */
 function renderNotes() {
-  let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
+  let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить заметку</button>`;
   if (!state.notes?.length) {
     html += '<div class="empty">Заметок нет. Запиши что-нибудь по предметам.</div>';
     return html;
@@ -574,15 +630,15 @@ function renderNotes() {
 function renderGames() {
   return `<div class="games-list">
     <div class="game-card">
-      <div class="game-card-title">ДО ПАРЫ УСПЕТЬ</div>
-      <div class="game-card-sub">Flappy-игра. Пролетай между парами, ставь рекорды, получай Софт и XP.</div>
+      <div class="game-card-title">${icon('ic-game-flappy',28)} ДО ПАРЫ УСПЕТЬ</div>
+      <div class="game-card-sub">Пролетай между парами, ставь рекорды, получай Софт и XP.</div>
       <div class="actions-row">
         <button class="btn" data-action="open-flappy">ИГРАТЬ</button>
         <button class="btn btn-secondary" data-action="open-flappy-records">РЕКОРДЫ</button>
       </div>
     </div>
     <div class="game-card">
-      <div class="game-card-title">МОРСКОЙ БОЙ</div>
+      <div class="game-card-title">${icon('ic-game-bs',28)} МОРСКОЙ БОЙ</div>
       <div class="game-card-sub">PvP по коду или с ботом. Ставки: 10 / 50 / 100 / 500 Софт.</div>
       <div class="actions-row">
         <button class="btn" data-action="open-bs">ОТКРЫТЬ</button>
@@ -603,17 +659,18 @@ function renderAI() {
     </div>`;
   } else {
     for (const m of state.aiMessages) {
+      const txt = stripEmoji(m.text);
       if (m.role === 'user') {
         if (m.photo) {
           html += `<div class="card" style="background:var(--cyan);color:#0A0E0F;padding:10px">
             <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="">
-            <div style="font-weight:600">${escapeHtml(m.text||'')}</div>
+            <div style="font-weight:600">${escapeHtml(txt||'')}</div>
           </div>`;
         } else {
-          html += `<div class="card" style="background:var(--cyan);color:#0A0E0F"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
+          html += `<div class="card" style="background:var(--cyan);color:#0A0E0F"><div style="font-weight:600">${escapeHtml(txt)}</div></div>`;
         }
       } else {
-        html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(m.text)}</div></div>`;
+        html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(txt)}</div></div>`;
       }
     }
   }
@@ -624,13 +681,13 @@ function renderAI() {
   if (hasPhoto) {
     html += `<div style="position:relative;margin-bottom:8px">
       <img src="${state.aiPendingPhoto}" style="width:100%;border-radius:16px;display:block;max-height:200px;object-fit:cover" alt="">
-      <button data-action="ai-photo-remove" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:rgba(10,14,15,.85);color:#FFF;border:none;font-size:14px;font-weight:700;cursor:pointer">✕</button>
+      <button data-action="ai-photo-remove" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:rgba(10,14,15,.85);color:#FFF;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">${icon('ic-close',14)}</button>
     </div>`;
   }
   html += `<textarea class="input" id="ai-input" placeholder="Напиши вопрос или что сделать с фото..." rows="3" ${state.aiPending?'disabled':''}></textarea>
     <div style="display:flex;gap:8px;margin-top:6px">
-      <button class="btn btn-secondary" data-action="ai-photo-open" ${state.aiPending?'disabled':''} style="flex:0;padding:12px 18px">📎</button>
-      <button class="btn" data-action="ai-send" ${state.aiPending?'disabled':''} style="flex:1">Отправить</button>
+      <button class="btn btn-secondary" data-action="ai-photo-open" ${state.aiPending?'disabled':''} style="flex:0;padding:12px 18px">${icon('ic-attach',20)}</button>
+      <button class="btn" data-action="ai-send" ${state.aiPending?'disabled':''} style="flex:1">${icon('ic-send',18)} Отправить</button>
     </div>
     <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
     <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
@@ -716,26 +773,26 @@ function renderProfile() {
     <div class="card-title">Сундуки</div>
     <div class="card-subtitle">Обычный — раз в 24 часа. Премиум — 10 Автоматов.</div>
     <div class="actions-row">
-      <button class="btn" data-action="chest-open">🎁 ОТКРЫТЬ</button>
-      <button class="btn btn-secondary" data-action="premium-chest-open">💎 ПРЕМИУМ</button>
+      <button class="btn" data-action="chest-open">${icon('ic-gift',16)} ОТКРЫТЬ</button>
+      <button class="btn btn-secondary" data-action="premium-chest-open">${icon('ic-diamond',16)} ПРЕМИУМ</button>
     </div>
   </div>`;
 
   html += `<div class="card">
     <div class="card-title">Обменник</div>
-    <div class="card-subtitle">100 Стипух = 1 Автомат</div>
-    <div class="actions-row"><button class="btn" data-action="exchange">ОБМЕНЯТЬ</button></div>
+    <div class="card-subtitle">100 ${icSoft(14)} Софт = 1 ${icHard(14)} Хард</div>
+    <div class="actions-row"><button class="btn" data-action="exchange">${icon('ic-exchange',16)} ОБМЕНЯТЬ</button></div>
   </div>`;
 
   const achCanClaim = state.achData?.can_claim_count || 0;
   const achGot = state.achData?.got || 0;
   const achTotal = state.achData?.total || 0;
   html += `<div class="card">
-    <div class="card-title">Достижения${achCanClaim>0 ? ` · ${achCanClaim} 🎁` : ''}</div>
+    <div class="card-title">Достижения${achCanClaim>0 ? ` · ${achCanClaim}` : ''}</div>
     <div class="card-subtitle">${achTotal ? `${achGot} из ${achTotal} разблокировано` : '12 достижений за активность'}</div>
     <div class="actions-row">
       <button class="btn ${achCanClaim>0?'':'btn-secondary'}" data-action="show-achievements">
-        ${achCanClaim>0 ? `ЗАБРАТЬ ${achCanClaim} НАГРАД` : 'ПОСМОТРЕТЬ'}
+        ${achCanClaim>0 ? `${icon('ic-gift',16)} ЗАБРАТЬ ${achCanClaim}` : 'ПОСМОТРЕТЬ'}
       </button>
     </div>
   </div>`;
@@ -743,7 +800,7 @@ function renderProfile() {
   html += `<div class="card">
     <div class="card-title">Профиль</div>
     <div class="actions-row">
-      <button class="btn btn-secondary" data-action="set-name">Сменить ник</button>
+      <button class="btn btn-secondary" data-action="set-name">${icon('ic-pencil',14)} Сменить ник</button>
       <button class="btn btn-secondary" data-action="set-avatar">Аватар</button>
     </div>
   </div>`;
@@ -807,10 +864,10 @@ function renderProfile() {
   html += `<div class="card"><div class="card-title">Стипендия</div>`;
   if (state.scholarship) {
     const s = state.scholarship;
-    html += `<div class="card-subtitle">Текущая: ${s.amount != null ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
+    html += `<div class="card-subtitle">Текущая: ${s.amount != null ? escapeHtml(s.amount) + ' руб./мес' : 'не указана'}</div>`;
     html += `<div class="card-subtitle">Оценок: ${s.grades.length}</div>`;
     if (s.grades.length) html += `<div class="card-subtitle">Средний балл: ${s.avg}</div>`;
-    if (s.forecast) html += `<div class="card-subtitle">${escapeHtml(s.forecast)}</div>`;
+    if (s.forecast) html += `<div class="card-subtitle">${escapeHtml(stripEmoji(s.forecast))}</div>`;
   }
   if (state.scholarship?.grades?.length) {
     for (const g of state.scholarship.grades) {
@@ -829,8 +886,8 @@ function renderProfile() {
   html += `<div class="card">
     <div class="card-title">Экспорт и обращения</div>
     <div class="actions-row">
-      <button class="btn btn-secondary" data-action="export-pdf">📄 PDF</button>
-      <button class="btn btn-secondary" data-action="show-my-feedback">💬 Мои обращения</button>
+      <button class="btn btn-secondary" data-action="export-pdf">${icon('ic-pdf',14)} PDF</button>
+      <button class="btn btn-secondary" data-action="show-my-feedback">${icon('ic-chat',14)} Мои обращения</button>
     </div>
   </div>`;
 
@@ -865,9 +922,9 @@ async function loadWalletIntoProfile() {
         <span class="levels-xpbar-cur" style="font-size:13px">${lv.inLevel}XP</span>
         <span class="levels-xpbar-next" style="font-size:13px">${total}XP</span>
       </div>
-      <div style="display:flex;gap:18px;margin-top:12px;font-weight:800;font-size:15px">
-        <div>❄ <span style="color:var(--cyan-dark)">${wallet.soft || 0}</span></div>
-        <div>🔥 <span style="color:var(--yellow)">${wallet.hard || 0}</span></div>
+      <div style="display:flex;gap:18px;margin-top:12px;font-weight:800;font-size:15px;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">${icSoft(18)} <span style="color:var(--cyan-dark)">${wallet.soft || 0}</span></div>
+        <div style="display:flex;align-items:center;gap:6px">${icHard(18)} <span style="color:var(--yellow)">${wallet.hard || 0}</span></div>
       </div>
     `;
     if (ach) {
@@ -876,7 +933,7 @@ async function loadWalletIntoProfile() {
       const btn = card?.nextElementSibling?.querySelector?.('[data-action="show-achievements"]');
       if (btn) {
         const cc = ach.can_claim_count || 0;
-        btn.textContent = cc > 0 ? `ЗАБРАТЬ ${cc} НАГРАД` : 'ПОСМОТРЕТЬ';
+        btn.innerHTML = cc > 0 ? `${icon('ic-gift',16)} ЗАБРАТЬ ${cc}` : 'ПОСМОТРЕТЬ';
         btn.classList.toggle('btn-secondary', cc === 0);
       }
     }
@@ -962,6 +1019,12 @@ async function loadTabData(tab) {
   render();
 }
 
+async function ensureWeekLoaded() {
+  if (state.weekDays?.days?.length) return true;
+  try { state.weekDays = await apiGet('/api/week', {offset:0}); return true; }
+  catch(e){ return false; }
+}
+
 async function loadWeekAndRender() {
   try {
     const r = await apiGet('/api/week', {offset: state.weekOffset});
@@ -1001,10 +1064,10 @@ function levelTitleByLevel(lvl) {
   return 'Легенда ИРНИТУ';
 }
 function levelRewardByLevel(lvl) {
-  if (lvl <= 5) return '+10 🔥';
-  if (lvl <= 10) return '+25 🔥';
-  if (lvl <= 20) return '+50 🔥';
-  return '+100 🔥';
+  if (lvl <= 5) return `+10 ${icHard(14)}`;
+  if (lvl <= 10) return `+25 ${icHard(14)}`;
+  if (lvl <= 20) return `+50 ${icHard(14)}`;
+  return `+100 ${icHard(14)}`;
 }
 
 async function openLevels() {
@@ -1060,7 +1123,7 @@ async function openLeaderboard() {
     const rows = d.items.map(it => `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--divider)">
       <span style="font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan-dark);min-width:28px;font-size:18px">${it.rank}</span>
       <span style="flex:1;font-weight:600${it.is_me?';color:var(--cyan-dark)':''}">${escapeHtml(it.display)}${it.is_me?' (ты)':''}</span>
-      <span style="font-family:'Anton',sans-serif;font-style:italic">${it.xp} XP</span>
+      <span style="font-family:'Anton',sans-serif;font-style:italic;display:flex;align-items:center;gap:4px">${it.xp} ${icXp(14)}</span>
     </div>`).join('');
     modalOpen({
       title:'ТОП ИГРОКОВ',
@@ -1278,7 +1341,7 @@ function flappyGameOver() {
         Flappy.best = r.best || Math.max(Flappy.best, score);
         document.getElementById('flappyBestTop').textContent = Flappy.best;
         Flappy.top = r.top || Flappy.top;
-        if (r.is_record) popEmoji('🏆');
+        if (r.is_record) popIcon('ic-trophy');
       })
       .catch(()=>{});
   }
@@ -1305,7 +1368,7 @@ function flappyShowOverlay(mode, score) {
   } else if (mode === 'gameover') {
     title.textContent = 'ИГРА ОКОНЧЕНА';
     const isRecord = score >= Flappy.best && score > 0;
-    sub.textContent = isRecord ? '🏆 Новый рекорд!' : 'Попробуй ещё раз';
+    sub.textContent = isRecord ? 'Новый рекорд!' : 'Попробуй ещё раз';
     scoreEl.innerHTML = `Очки: <b>${score}</b> · Рекорд: <b>${Flappy.best}</b>`;
     startBtn.textContent = 'ЕЩЁ РАЗ';
     startBtn.onclick = flappyStart;
@@ -1387,7 +1450,7 @@ function bsRenderBets() {
   [10,50,100,500].forEach(v => {
     const b = document.createElement('button');
     b.className = 'bs-bet' + (v === BS.bet ? ' active' : '');
-    b.textContent = v;
+    b.innerHTML = `${v} ${icSoft(14)}`;
     b.onclick = () => { BS.bet = v; bsRenderBets(); };
     box.appendChild(b);
   });
@@ -1584,7 +1647,7 @@ async function bsFire(x, y) {
       BS.status = 'finished';
       document.getElementById('bsStatus').textContent = 'Ты победил!';
       apiPost('/api/bs/finish-bot', {bet: BS.bet, outcome:'win'}).catch(()=>{});
-      popEmoji('🏆');
+      popIcon('ic-trophy');
       return;
     }
     if (!sunk) return;
@@ -1600,7 +1663,7 @@ async function bsFire(x, y) {
     if (r.status === 'finished') {
       BS.status = 'finished';
       const res = r.result_data || {};
-      if (res.outcome === 'win') { document.getElementById('bsStatus').textContent = 'Победа!'; popEmoji('🏆'); }
+      if (res.outcome === 'win') { document.getElementById('bsStatus').textContent = 'Победа!'; popIcon('ic-trophy'); }
       else if (res.outcome === 'lose') document.getElementById('bsStatus').textContent = 'Поражение';
       else document.getElementById('bsStatus').textContent = 'Ничья';
     }
@@ -1778,7 +1841,7 @@ async function actionFeedbackSend() {
 async function actionTaskDone(id) {
   try {
     await apiPost('/api/task-update', {id, done: true});
-    haptic('success'); popEmoji('✅');
+    haptic('success'); popIcon('ic-check');
     await loadTasks(); render();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -1801,10 +1864,9 @@ async function actionTasksClear() {
   }, 'ОЧИСТИТЬ');
 }
 
-/* MODAL: добавить задачу */
 function actionTaskAdd() {
   let form = {text:'', priority:2, due:'none'};
-  const render = () => {
+  const renderBody = () => {
     const due = form.due;
     const prio = form.priority;
     return `
@@ -1819,9 +1881,9 @@ function actionTaskAdd() {
       </div>
       <div class="label">ПРИОРИТЕТ</div>
       <div class="choice-row">
-        <button class="choice ${prio===1?'active':''}" data-prio="1">🔵 Низкий</button>
-        <button class="choice ${prio===2?'active':''}" data-prio="2">🟡 Средний</button>
-        <button class="choice ${prio===3?'active':''}" data-prio="3">🔴 Высокий</button>
+        <button class="choice ${prio===1?'active':''}" data-prio="1">Низкий</button>
+        <button class="choice ${prio===2?'active':''}" data-prio="2">Средний</button>
+        <button class="choice ${prio===3?'active':''}" data-prio="3">Высокий</button>
       </div>
     `;
   };
@@ -1829,19 +1891,19 @@ function actionTaskAdd() {
     const ti = document.getElementById('task-text');
     if (ti) ti.oninput = (e) => { form.text = e.target.value; };
     document.querySelectorAll('[data-due]').forEach(b => b.onclick = () => {
-      form.due = b.dataset.due; modalRefresh();
+      form.due = b.dataset.due;
+      document.getElementById('modalBody').innerHTML = renderBody();
+      attach();
     });
     document.querySelectorAll('[data-prio]').forEach(b => b.onclick = () => {
-      form.priority = parseInt(b.dataset.prio); modalRefresh();
+      form.priority = parseInt(b.dataset.prio);
+      document.getElementById('modalBody').innerHTML = renderBody();
+      attach();
     });
-  };
-  const modalRefresh = () => {
-    document.getElementById('modalBody').innerHTML = render();
-    attach();
   };
   modalOpen({
     title:'НОВАЯ ЗАДАЧА',
-    body: render(),
+    body: renderBody(),
     actions: [
       {label:'ОТМЕНА', style:'btn-secondary'},
       {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
@@ -1849,11 +1911,10 @@ function actionTaskAdd() {
         const text = (ti?.value || form.text || '').trim();
         if (!text) { toast('Введи текст', 'error'); return; }
         let due_date = null;
-        const today = new Date();
-        const fmt = (d) => String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + d.getFullYear();
-        if (form.due === 'today') due_date = fmt(today);
-        else if (form.due === 'tomorrow') { const t = new Date(today); t.setDate(t.getDate()+1); due_date = fmt(t); }
-        else if (form.due === 'week') { const t = new Date(today); t.setDate(t.getDate()+7); due_date = fmt(t); }
+        const today = nowIrkutsk();
+        if (form.due === 'today') due_date = fmtDate(today);
+        else if (form.due === 'tomorrow') due_date = fmtDate(addDays(today,1));
+        else if (form.due === 'week') due_date = fmtDate(addDays(today,7));
         try {
           await apiPost('/api/task-add', {text, due_date, priority: form.priority});
           haptic('success'); toast('Задача добавлена', 'success');
@@ -1865,7 +1926,6 @@ function actionTaskAdd() {
   attach();
 }
 
-/* MODAL: редактировать задачу */
 function actionTaskEdit(id) {
   const t = state.tasks.find(x => x.id === id);
   if (!t) return;
@@ -1875,9 +1935,9 @@ function actionTaskEdit(id) {
     <input class="input" id="task-edit-text" value="${escapeHtml(form.text)}" maxlength="200">
     <div class="label">ПРИОРИТЕТ</div>
     <div class="choice-row">
-      <button class="choice ${form.priority===1?'active':''}" data-prio="1">🔵 Низкий</button>
-      <button class="choice ${form.priority===2?'active':''}" data-prio="2">🟡 Средний</button>
-      <button class="choice ${form.priority===3?'active':''}" data-prio="3">🔴 Высокий</button>
+      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
+      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
+      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
     </div>
   `;
   const attach = () => {
@@ -1907,7 +1967,6 @@ function actionTaskEdit(id) {
   attach();
 }
 
-/* MODAL: заметка */
 function actionNoteAdd() {
   let form = {subject:'', text:''};
   const subjOptions = () => {
@@ -1958,14 +2017,13 @@ function actionNoteAdd() {
 function actionNoteEdit(id) {
   const n = state.notes.find(x => x.id === id);
   if (!n) return;
-  let form = {subject: n.subject, text: n.text};
   modalOpen({
     title:'ИЗМЕНИТЬ ЗАМЕТКУ',
     body: `
       <div class="label">ПРЕДМЕТ</div>
-      <input class="input" id="note-edit-subj" value="${escapeHtml(form.subject)}" maxlength="100">
+      <input class="input" id="note-edit-subj" value="${escapeHtml(n.subject)}" maxlength="100">
       <div class="label">ТЕКСТ</div>
-      <textarea class="input" id="note-edit-text" rows="4" maxlength="500">${escapeHtml(form.text)}</textarea>
+      <textarea class="input" id="note-edit-text" rows="4" maxlength="500">${escapeHtml(n.text)}</textarea>
     `,
     actions:[
       {label:'ОТМЕНА', style:'btn-secondary'},
@@ -1993,13 +2051,12 @@ async function actionNoteDelete(id) {
   }, 'УДАЛИТЬ');
 }
 
-/* Стипендия */
 function actionScholarshipSetAmount() {
   let amount = state.scholarship?.amount || 0;
   modalOpen({
     title:'СУММА СТИПЕНДИИ',
     body: `
-      <div class="label">₽ в месяц</div>
+      <div class="label">руб. в месяц</div>
       <input class="input" id="sch-amount" type="number" min="0" max="100000" value="${amount}">
       <div class="choice-row">
         <button class="choice" data-amt="0">Не получаю</button>
@@ -2083,7 +2140,6 @@ async function actionScholarshipClear() {
   }, 'ОЧИСТИТЬ');
 }
 
-/* AI */
 async function actionAISend() {
   const el = document.getElementById('ai-input');
   const question = (el?.value || '').trim();
@@ -2187,7 +2243,7 @@ function actionAdminBroadcast() {
   const el = document.getElementById('admin-broadcast-text');
   const text = (el?.value || '').trim();
   if (!text) { toast('Пустое сообщение', 'error'); return; }
-  modalConfirm('ОТПРАВИТЬ ВСЕМ?', `Уйдёт всем пользователям бота.`, async () => {
+  modalConfirm('ОТПРАВИТЬ ВСЕМ?', 'Уйдёт всем пользователям бота.', async () => {
     try {
       await apiPost('/api/admin/broadcast', {text});
       if (el) el.value = '';
@@ -2224,7 +2280,6 @@ async function actionAdminFbPostpone(fid) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-/* Кошелёк */
 function actionSetName() {
   modalOpen({
     title:'НОВЫЙ НИК',
@@ -2276,11 +2331,12 @@ function actionSetAvatar() {
 async function actionChestOpen() {
   try {
     const r = await apiPost('/api/chest/open');
-    haptic('success'); popEmoji('🎁');
+    haptic('success'); popIcon('ic-gift');
+    const label = stripEmoji(r.reward.label);
     modalOpen({
-      title:'🎁 НАГРАДА',
-      body: `<div style="font-family:'Anton',sans-serif;font-size:22px;text-align:center;color:var(--cyan-dark);font-style:italic">${escapeHtml(r.reward.label)}</div>`,
-      actions:[{label:'КРУТО!', style:'btn'}]
+      title:'НАГРАДА',
+      body: `<div style="font-family:'Anton',sans-serif;font-size:22px;text-align:center;color:var(--cyan-dark);font-style:italic">${escapeHtml(label)}</div>`,
+      actions:[{label:'ОК', style:'btn'}]
     });
     await loadProfile(); render();
   } catch (e) {
@@ -2289,14 +2345,15 @@ async function actionChestOpen() {
   }
 }
 function actionPremiumChestOpen() {
-  modalConfirm('ПРЕМИУМ-СУНДУК?', 'Откроется за 10 Автоматов. Внутри — 500 Стипух, 1000 XP и от 3 до 25 Автоматов.', async () => {
+  modalConfirm('ПРЕМИУМ-СУНДУК?', 'Откроется за 10 Автоматов. Внутри — 500 Софта, 1000 XP и от 3 до 25 Автоматов.', async () => {
     try {
       const r = await apiPost('/api/premium-chest/open');
-      haptic('success'); popEmoji('💎');
+      haptic('success'); popIcon('ic-diamond');
+      const label = stripEmoji(r.reward.label);
       modalOpen({
-        title:'💎 НАГРАДА',
-        body: `<div style="font-family:'Anton',sans-serif;font-size:20px;text-align:center;color:var(--cyan-dark);font-style:italic">${escapeHtml(r.reward.label)}</div>`,
-        actions:[{label:'КРУТО!', style:'btn'}]
+        title:'НАГРАДА',
+        body: `<div style="font-family:'Anton',sans-serif;font-size:20px;text-align:center;color:var(--cyan-dark);font-style:italic">${escapeHtml(label)}</div>`,
+        actions:[{label:'ОК', style:'btn'}]
       });
       await loadProfile(); render();
     } catch (e) { toast(e.message, 'error'); }
@@ -2306,8 +2363,10 @@ function actionExchange() {
   modalOpen({
     title:'ОБМЕННИК',
     body: `
-      <div class="card-subtitle" style="text-align:center;margin-bottom:12px">100 Стипух = 1 Автомат</div>
-      <div class="label">СКОЛЬКО СТИПУХ</div>
+      <div class="card-subtitle" style="text-align:center;margin-bottom:12px;display:flex;align-items:center;gap:8px;justify-content:center">
+        100 ${icSoft(16)} Софт = 1 ${icHard(16)} Хард
+      </div>
+      <div class="label">СКОЛЬКО СОФТА</div>
       <input class="input" id="ex-amount" type="number" min="100" step="100" value="100">
       <div class="choice-row">
         <button class="choice" data-ex="100">100</button>
@@ -2323,8 +2382,8 @@ function actionExchange() {
         if (amount < 100) { toast('Минимум 100', 'error'); return; }
         try {
           const r = await apiPost('/api/exchange-soft-to-hard', {amount});
-          haptic('success'); popEmoji('💱');
-          toast(`${r.soft_spent} Стипух → ${r.hard_received} Автоматов`, 'success');
+          haptic('success'); popIcon('ic-exchange');
+          toast(`${r.soft_spent} Софта → ${r.hard_received} Харда`, 'success');
           await loadProfile(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
@@ -2336,6 +2395,10 @@ function actionExchange() {
       if (inp) inp.value = b.dataset.ex;
     });
   }, 0);
+}
+
+function achIconById(id) {
+  return `ic-ach-${id}`;
 }
 
 async function actionShowAchievements() {
@@ -2357,8 +2420,10 @@ function renderAchievementsModal(d) {
     const tr = d.total_reward;
     body += `<div class="card" style="background:var(--cyan);color:#0A0E0F;border:none">
       <div style="font-weight:800;text-align:center;margin-bottom:8px">Доступно наград: ${claimable.length}</div>
-      <div style="text-align:center;font-family:'Anton',sans-serif;font-style:italic">
-        +${tr.xp} XP · +${tr.soft} ❄ · +${tr.hard} 🔥
+      <div style="text-align:center;font-family:'Anton',sans-serif;font-style:italic;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap">
+        <span>+${tr.xp} ${icXp(14)}</span>
+        <span>+${tr.soft} ${icSoft(14)}</span>
+        <span>+${tr.hard} ${icHard(14)}</span>
       </div>
       <button class="btn btn-red" data-action="ach-claim-all" style="width:100%;margin-top:12px;background:#0A0E0F;color:#FFF">ЗАБРАТЬ ВСЁ</button>
     </div>`;
@@ -2367,18 +2432,22 @@ function renderAchievementsModal(d) {
   body += '<div class="ach-grid">';
   for (const a of d.items) {
     const cls = !a.unlocked ? 'locked' : (a.can_claim ? 'claimable' : (a.claimed ? 'claimed' : ''));
-    const reward = `+${a.reward.xp} XP${a.reward.soft ? ` · +${a.reward.soft} ❄` : ''}${a.reward.hard ? ` · +${a.reward.hard} 🔥` : ''}`;
+    const rewardHtml = `
+      +${a.reward.xp} ${icXp(14)}
+      ${a.reward.soft ? `· +${a.reward.soft} ${icSoft(14)}` : ''}
+      ${a.reward.hard ? `· +${a.reward.hard} ${icHard(14)}` : ''}
+    `;
     body += `<div class="ach-card ${cls}">
-      <div class="ach-icon">${a.unlocked ? a.icon : '🔒'}</div>
+      <div class="ach-icon">${icon(achIconById(a.id),36)}</div>
       <div class="ach-body">
         <div class="ach-name">${escapeHtml(a.name)}</div>
         <div class="ach-desc">${escapeHtml(a.desc)}</div>
-        <div class="ach-reward">${reward}</div>
+        <div class="ach-reward">${rewardHtml}</div>
       </div>
       ${a.can_claim
         ? `<button class="ach-claim" data-action="ach-claim" data-id="${a.id}">ЗАБРАТЬ</button>`
         : a.claimed
-          ? `<button class="ach-claim claimed" disabled>✓</button>`
+          ? `<button class="ach-claim claimed" disabled>${icon('ic-check',14)}</button>`
           : ''
       }
     </div>`;
@@ -2396,8 +2465,8 @@ function renderAchievementsModal(d) {
       b.onclick = async () => {
         try {
           const r = await apiPost('/api/achievement-claim', {ach_id: b.dataset.id});
-          haptic('success'); popEmoji('🎁');
-          toast(`+${r.reward.xp} XP · +${r.reward.soft} ❄ · +${r.reward.hard} 🔥`, 'success');
+          haptic('success'); popIcon('ic-gift');
+          toast(`+${r.reward.xp} XP · +${r.reward.soft} Софт · +${r.reward.hard} Хард`, 'success');
           await loadProfile();
           const dd = await apiGet('/api/achievements');
           state.achData = dd;
@@ -2415,8 +2484,8 @@ function renderAchievementsModal(d) {
           totalXp += r.reward.xp; totalSoft += r.reward.soft; totalHard += r.reward.hard;
         } catch(e){}
       }
-      haptic('success'); popEmoji('🎁');
-      toast(`+${totalXp} XP · +${totalSoft} ❄ · +${totalHard} 🔥`, 'success');
+      haptic('success'); popIcon('ic-gift');
+      toast(`+${totalXp} XP · +${totalSoft} Софт · +${totalHard} Хард`, 'success');
       await loadProfile();
       const dd = await apiGet('/api/achievements');
       state.achData = dd;
@@ -2491,13 +2560,13 @@ function actionAttHelp() {
   modalOpen({
     title:'КАК РАБОТАЕТ',
     body: `
-      <div class="label">ЗЕЛЁНЫЙ — БЫЛ</div>
-      <div class="card-subtitle">Ты был на паре. +3 XP и +1 Стипуха за каждую отметку.</div>
-      <div class="label">КРАСНЫЙ — ПРОПУСТИЛ</div>
+      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-was',18)} ПОСЕЩЕНО</div>
+      <div class="card-subtitle">Ты был на паре. +3 XP и +1 Софт за каждую отметку.</div>
+      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-missed',18)} ПРОПУЩЕНО</div>
       <div class="card-subtitle">Пропуск без причины. Снижает шанс на повышенную стипендию.</div>
-      <div class="label">ЖЁЛТЫЙ — БОЛЕЛ</div>
+      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-sick',18)} БОЛЕЛ</div>
       <div class="card-subtitle">Пропуск по болезни. Справка есть, но в статистике учитывается отдельно.</div>
-      <div class="label">МЯТНЫЙ — УВАЖИТЕЛЬНАЯ</div>
+      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-excused',18)} УВАЖИТЕЛЬНАЯ</div>
       <div class="card-subtitle">Уважительная причина (соревнования, олимпиады и т.д.). Не влияет на стипендию.</div>
       <div class="card-subtitle" style="margin-top:14px;font-weight:600;color:var(--text)">Все отметки видны только тебе и не уходят преподавателю.</div>
     `,
@@ -2585,9 +2654,16 @@ function handleAction(el) {
   else if (a === 'notify-off') actionNotifyOff();
   else if (a === 'notify-before') actionSetNotifyBefore();
   else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
-  else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
-  else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
-  else if (a === 'week-current') { state.weekOffset = 0; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+  else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; state.scheduleDay = null; loadWeekAndRender(); }
+  else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; state.scheduleDay = null; loadWeekAndRender(); }
+  else if (a === 'week-current') {
+    // Если сегодня воскресенье — показываем следующую неделю
+    const now = nowIrkutsk();
+    state.weekOffset = (now.getDay() === 0) ? 1 : 0;
+    state.scheduleViewMode = 'week';
+    state.scheduleDay = null;
+    loadWeekAndRender();
+  }
   else if (a === 'week-today') { loadTodayAndRender(); }
   else if (a === 'day-today') { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
   else if (a === 'day-tomorrow') {
