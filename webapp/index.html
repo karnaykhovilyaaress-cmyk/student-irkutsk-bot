@@ -3,33 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Студент ИРНИТУ</title>
+    <title>STUDENT IRK</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="style.css?v=14">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
     <div id="splash">
         <div class="splash-logo">
-            <svg viewBox="0 0 100 100" width="120" height="120">
+            <svg viewBox="0 0 120 160" width="140" height="180" xmlns="http://www.w3.org/2000/svg">
                 <defs>
-                    <linearGradient id="splashGrad" x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stop-color="#00E5D0"/>
-                        <stop offset="100%" stop-color="#1E88E5"/>
+                    <linearGradient id="flameGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#3EE6D2"/>
+                        <stop offset="100%" stop-color="#7FE9FF"/>
                     </linearGradient>
                 </defs>
-                <path d="M50 8 L58 38 L88 32 L66 52 L92 62 L60 64 L64 92 L50 68 L36 92 L40 64 L8 62 L34 52 L12 32 L42 38 Z"
-                      fill="url(#splashGrad)" stroke="none"/>
-                <polygon points="50,42 55,54 48,54 54,68 44,54 51,54"
-                         fill="#FFFFFF" opacity="0.9"/>
+                <path d="M60 5 C70 40 95 60 95 95 C95 130 80 155 60 155 C40 155 25 130 25 95 C25 70 40 55 45 40 C48 55 55 65 65 65 C65 45 60 25 60 5 Z" fill="url(#flameGrad)"/>
+                <path d="M65 60 L45 100 L60 100 L50 140 L85 90 L68 90 L78 60 Z" fill="#FFFFFF"/>
             </svg>
         </div>
         <div class="splash-text">STUDENT IRK</div>
-        <div class="splash-dots">
-            <span></span><span></span><span></span>
-        </div>
     </div>
 
     <div id="app" style="display:none">
@@ -97,6 +93,6 @@
         </nav>
     </div>
 
-    <script src="app.js?v=14"></script>
+    <script src="app.js?v=15"></script>
 </body>
 </html>
