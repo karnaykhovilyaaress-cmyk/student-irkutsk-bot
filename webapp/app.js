@@ -27,13 +27,13 @@ const state = {
   notifyEditor:false, notifyEditorType:'today', notifyEditorHour:8, notifyEditorMinute:0,
   aiMessages:[], aiPending:false, aiPendingPhoto:null,
   adminStats:null, adminFeedback:[], adminMonitor:null, adminBusy:false,
-  achData:null,
-  chestStatus:null, chestTimer:null,
+  achData:null, chestStatus:null, chestTimer:null,
+  wallTab:'general', wallScope:'general', wallCategory:null, wallSubject:null,
+  wallPosts:[], wallPost:null, wallComments:[], wallSearch:'',
+  wallForm:{text:'', category:'question', subject:'', scope:'general'},
+  wallModReports:[],
 };
 
-/* ============================================================
-   ICONS
-   ============================================================ */
 function icon(id, size=16, cls='') {
   return `<svg width="${size}" height="${size}" class="${cls}"><use href="#${id}"/></svg>`;
 }
@@ -44,9 +44,6 @@ function icXp(size=16)    { return icon('ic-xp',    size); }
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{2764}\u{2705}\u{274C}\u{2757}\u{2728}\u{1F4A5}\u{1F525}\u{1F4E6}\u{1F48E}\u{1F3C6}\u{1F389}\u{1F381}\u{1F4B0}\u{1F4B8}\u{1F4B5}]/gu;
 function stripEmoji(s){ return (s||'').replace(EMOJI_RE,'').replace(/\s+/g,' ').trim(); }
 
-/* ============================================================
-   API
-   ============================================================ */
 async function apiGet(path, params={}) {
   const url = new URL(path, location.origin);
   url.searchParams.set('initData', INIT_DATA);
@@ -74,9 +71,6 @@ async function apiPost(path, body={}) {
   return r.json();
 }
 
-/* ============================================================
-   UTILS
-   ============================================================ */
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -98,9 +92,6 @@ function popIcon(id){
   setTimeout(()=>el.remove(), 600);
 }
 
-/* ============================================================
-   TOAST / MODAL
-   ============================================================ */
 function toast(text, type='info') {
   const wrap = document.getElementById('toastWrap');
   if (!wrap) return;
@@ -133,9 +124,7 @@ function modalOpen({title, body, actions}) {
   m.style.display = 'flex';
   m.querySelector('.modal-backdrop').onclick = modalClose;
 }
-function modalClose() {
-  document.getElementById('modal').style.display = 'none';
-}
+function modalClose() { document.getElementById('modal').style.display = 'none'; }
 function modalConfirm(title, text, onYes, yesLabel='ПОДТВЕРДИТЬ') {
   modalOpen({
     title, body: text,
@@ -146,9 +135,6 @@ function modalConfirm(title, text, onYes, yesLabel='ПОДТВЕРДИТЬ') {
   });
 }
 
-/* ============================================================
-   DATE HELPERS
-   ============================================================ */
 function nowIrkutsk() {
   const d = new Date();
   const utc = d.getTime() + d.getTimezoneOffset() * 60000;
@@ -159,11 +145,6 @@ function fmtDate(d) {
   const mm = String(d.getMonth()+1).padStart(2,'0');
   const yyyy = d.getFullYear();
   return `${dd}.${mm}.${yyyy}`;
-}
-function fmtDateISO(d) {
-  const dd = String(d.getDate()).padStart(2,'0');
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 function findDayByDate(days, dateStr) {
@@ -180,16 +161,13 @@ function fmtCountdown(ms) {
   return `${h}:${m}:${s}`;
 }
 
-/* ============================================================
-   RENDER
-   ============================================================ */
 function render() {
   const content = document.getElementById('content');
   const title = document.getElementById('page-title');
   const appEl = document.getElementById('app');
   const navEl = document.getElementById('bottom-nav');
-
-  const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры', ai:'AI', admin:'Админ', profile:'Профиль'};
+  const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры',
+    ai:'AI', admin:'Админ', profile:'Профиль', hub:'СтудХаб'};
 
   if (state.notifyEditor) {
     appEl?.classList.add('picker-open');
@@ -230,6 +208,7 @@ function render() {
       case 'ai': html = renderAI(); break;
       case 'admin': html = renderAdmin(); break;
       case 'profile': html = renderProfile(); break;
+      case 'hub': html = renderHub(); break;
     }
   }
   content.innerHTML = html;
@@ -243,9 +222,6 @@ function render() {
   if (state.tab === 'schedule' && !state.loading) attachSwipe();
 }
 
-/* ============================================================
-   USER BAR
-   ============================================================ */
 function renderUserBar() {
   const u = state.user;
   const p = state.profile;
@@ -265,9 +241,6 @@ function renderUserBar() {
   </div>`;
 }
 
-/* ============================================================
-   SCHEDULE
-   ============================================================ */
 function renderLesson(les) {
   const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
   const details = [];
@@ -277,7 +250,6 @@ function renderLesson(les) {
   const date = les.date || '';
   const subj = les.subject || '';
   const time = les.time || '';
-
   return `<div class="lesson">
     <div class="lesson-time">${escapeHtml(timeRange)}</div>
     <div class="lesson-body">
@@ -302,14 +274,12 @@ function renderLesson(les) {
     </div>
   </div>`;
 }
-
 function renderDaySwitch() {
   return `<div class="day-switch">
     <button data-action="day-today" class="${state.scheduleDay==='today'?'active':''}">Сегодня</button>
     <button data-action="day-tomorrow" class="${state.scheduleDay==='tomorrow'?'active':''}">Завтра</button>
   </div>`;
 }
-
 function renderDayCard(day, label) {
   let html = `<div class="day-header">${escapeHtml(label)}${day.name ? ' · ' + escapeHtml(day.name) : ''}${day.date ? ', ' + escapeHtml(day.date) : ''}</div>`;
   const p = state.profile;
@@ -318,7 +288,6 @@ function renderDayCard(day, label) {
   else for (const les of day.lessons) html += renderLesson(les);
   return html;
 }
-
 function renderSchedule() {
   const s = state.schedule;
   if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
@@ -330,27 +299,19 @@ function renderSchedule() {
       <div class="actions-row"><button class="btn" data-action="go-profile">Выбрать группу</button></div>
     </div>`;
   }
-
   let html = renderUserBar() + renderDaySwitch();
   html += `<div class="swipe-wrap"><div class="swipe-pane" id="swipePane">`;
-
-  if (state.scheduleViewMode === 'week' && state.weekDays) {
-    html += renderWeekView();
-  } else if (state.scheduleDay === 'tomorrow') {
-    html += renderTomorrowBlock();
-  } else if (state.scheduleDay === 'today') {
-    html += renderTodayBlock();
-  }
-
+  if (state.scheduleViewMode === 'week' && state.weekDays) html += renderWeekView();
+  else if (state.scheduleDay === 'tomorrow') html += renderTomorrowBlock();
+  else if (state.scheduleDay === 'today') html += renderTodayBlock();
   html += `</div></div>`;
   html += `<div class="actions-row" style="margin-top:16px">
     <button class="btn btn-secondary" data-action="week-prev">${icon('ic-chevron-left',16)} Прошлая</button>
-    <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
+    <button class="btn btn-secondary" data-action="week-current">Текущая</button>
     <button class="btn btn-secondary" data-action="week-next">Следующая ${icon('ic-chevron-right',16)}</button>
   </div>`;
   return html;
 }
-
 function renderTodayBlock() {
   const s = state.schedule;
   if (!s) return '<div class="empty">Нет данных о расписании</div>';
@@ -362,20 +323,18 @@ function renderTodayBlock() {
   else for (const les of s.lessons) html += renderLesson(les);
   return html;
 }
-
 function renderTomorrowBlock() {
   const wd = state.weekDays;
   const tomorrow = addDays(nowIrkutsk(), 1);
   const tomorrowStr = fmtDate(tomorrow);
   if (!wd?.days?.length) return '<div class="skeleton-card"></div>';
   let day = findDayByDate(wd.days, tomorrowStr);
-  if (!day) return `<div class="empty">Расписание на завтра (${tomorrowStr}) пока недоступно.<br>Нажми «Текущая неделя» или «Следующая», чтобы загрузить.</div>`;
+  if (!day) return `<div class="empty">Расписание на завтра (${tomorrowStr}) пока недоступно.</div>`;
   return renderDayCard(day, 'Завтра');
 }
-
 function renderWeekView() {
   const wd = state.weekDays;
-  if (!wd?.days?.length) return '<div class="empty">Не удалось загрузить расписание на неделю</div>';
+  if (!wd?.days?.length) return '<div class="empty">Не удалось загрузить</div>';
   let title;
   if (state.weekOffset === 0) title = 'Текущая неделя';
   else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
@@ -389,7 +348,6 @@ function renderWeekView() {
   }
   return html;
 }
-
 function attachSwipe() {
   const wrap = document.querySelector('.swipe-wrap');
   const pane = document.getElementById('swipePane');
@@ -426,9 +384,6 @@ function attachSwipe() {
   });
 }
 
-/* ============================================================
-   PICKER
-   ============================================================ */
 function getCourseFromGroup(name) {
   const m = String(name).match(/-(\d{2})-/);
   if (!m) return null;
@@ -519,10 +474,6 @@ function pickerAttachSearch() {
     }, 0);
   });
 }
-
-/* ============================================================
-   NOTIFY EDITOR
-   ============================================================ */
 function renderNotifyEditor() {
   const cur = state.notifyEditorType;
   const hh = state.notifyEditorHour;
@@ -539,9 +490,7 @@ function renderNotifyEditor() {
         <button data-action="notify-set-type" data-value="today" class="${cur==='today'?'active':''}">Сегодня</button>
         <button data-action="notify-set-type" data-value="tomorrow" class="${cur==='tomorrow'?'active':''}">Завтра</button>
       </div>
-      <div class="card-subtitle">
-        ${cur==='today' ? 'Расписание на сегодня. Время — до 10:00.' : 'Расписание на завтра. Время — любое.'}
-      </div>
+      <div class="card-subtitle">${cur==='today' ? 'Расписание на сегодня. До 10:00.' : 'Расписание на завтра. Любое время.'}</div>
     </div>
     <div class="card">
       <div class="card-title">Во сколько</div>
@@ -555,9 +504,6 @@ function renderNotifyEditor() {
   `;
 }
 
-/* ============================================================
-   TASKS — ЦВЕТНЫЕ ПРИОРИТЕТЫ
-   ============================================================ */
 function renderTasks() {
   const tasks = state.tasks;
   const stats = state.tasksStats;
@@ -572,11 +518,7 @@ function renderTasks() {
       : '<div class="empty">Нет выполненных</div>';
     return html;
   }
-  const prioMap = {
-    1: {cls:'low', label:'Низкий'},
-    2: {cls:'medium', label:'Средний'},
-    3: {cls:'high', label:'Высокий'}
-  };
+  const prioMap = {1: {cls:'low', label:'Низкий'}, 2: {cls:'medium', label:'Средний'}, 3: {cls:'high', label:'Высокий'}};
   for (const t of tasks) {
     const p = prioMap[t.priority] || prioMap[2];
     const dueStr = t.due_date
@@ -601,13 +543,10 @@ function renderTasks() {
   return html;
 }
 
-/* ============================================================
-   NOTES
-   ============================================================ */
 function renderNotes() {
   let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить заметку</button>`;
   if (!state.notes?.length) {
-    html += '<div class="empty">Заметок нет. Запиши что-нибудь по предметам.</div>';
+    html += '<div class="empty">Заметок нет.</div>';
     return html;
   }
   for (const n of state.notes) {
@@ -623,14 +562,11 @@ function renderNotes() {
   return html;
 }
 
-/* ============================================================
-   GAMES
-   ============================================================ */
 function renderGames() {
   return `<div class="games-list">
     <div class="game-card">
       <div class="game-card-title">${icon('ic-game-flappy',28)} ДО ПАРЫ УСПЕТЬ</div>
-      <div class="game-card-sub">Пролетай между парами, собирай бонусы (щит, замедление, шифты), ставь рекорды.</div>
+      <div class="game-card-sub">Пролетай между парами, собирай бонусы, ставь рекорды.</div>
       <div class="actions-row">
         <button class="btn" data-action="open-flappy">ИГРАТЬ</button>
         <button class="btn btn-secondary" data-action="open-flappy-records">РЕКОРДЫ</button>
@@ -646,15 +582,12 @@ function renderGames() {
   </div>`;
 }
 
-/* ============================================================
-   AI
-   ============================================================ */
 function renderAI() {
   let html = '';
   if (!state.aiMessages.length) {
     html += `<div class="card">
       <div class="card-title">AI Помощник</div>
-      <div class="card-subtitle">Задай вопрос по учёбе или прикрепи фото с задачей — AI разберётся.</div>
+      <div class="card-subtitle">Задай вопрос или прикрепи фото с задачей.</div>
     </div>`;
   } else {
     for (const m of state.aiMessages) {
@@ -682,7 +615,7 @@ function renderAI() {
       <button data-action="ai-photo-remove" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:rgba(10,14,15,.85);color:#FFF;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">${icon('ic-close',14)}</button>
     </div>`;
   }
-  html += `<textarea class="input" id="ai-input" placeholder="Напиши вопрос или что сделать с фото..." rows="3" ${state.aiPending?'disabled':''}></textarea>
+  html += `<textarea class="input" id="ai-input" placeholder="Напиши вопрос..." rows="3" ${state.aiPending?'disabled':''}></textarea>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-secondary" data-action="ai-photo-open" ${state.aiPending?'disabled':''} style="flex:0;padding:12px 18px">${icon('ic-attach',20)}</button>
       <button class="btn" data-action="ai-send" ${state.aiPending?'disabled':''} style="flex:1">${icon('ic-send',18)} Отправить</button>
@@ -693,31 +626,27 @@ function renderAI() {
   return html;
 }
 
-/* ============================================================
-   ADMIN
-   ============================================================ */
 function renderAdmin() {
-  if (!state.isAdmin) return '<div class="empty">Доступ только для администратора</div>';
+  if (!state.isAdmin) return '<div class="empty">Доступ только для админа</div>';
   let html = '';
   if (state.adminStats) {
     html += `<div class="card">
       <div class="card-title">Статистика</div>
       <div class="card-subtitle">Пользователей: ${state.adminStats.total_users}</div>
-      <div class="card-subtitle">Обращений в ожидании: ${state.adminStats.pending_feedback}</div>
+      <div class="card-subtitle">Обращений: ${state.adminStats.pending_feedback}</div>
     </div>`;
   } else html += '<div class="skeleton-card"></div>';
   html += `<div class="card">
     <div class="card-title">Мониторинг ИРНИТУ</div>
     ${state.adminMonitor
       ? (state.adminMonitor.ok
-          ? `<div class="card-subtitle" style="color:var(--green)">Сайт отвечает (HTTP ${state.adminMonitor.status})</div>`
-          : `<div class="card-subtitle overdue">Сайт не отвечает</div>`)
+          ? `<div class="card-subtitle" style="color:var(--green)">Отвечает (HTTP ${state.adminMonitor.status})</div>`
+          : `<div class="card-subtitle overdue">Не отвечает</div>`)
       : '<div class="card-subtitle">Не проверено</div>'}
     <div class="actions-row"><button class="btn btn-secondary" data-action="admin-monitor">Проверить</button></div>
   </div>`;
   html += `<div class="card">
     <div class="card-title">Рассылка</div>
-    <div class="card-subtitle">Уйдёт всем пользователям бота.</div>
     <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
     <button class="btn" data-action="admin-broadcast">Отправить</button>
   </div>`;
@@ -735,14 +664,11 @@ function renderAdmin() {
     }
     html += '</div>';
   } else {
-    html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
+    html += `<div class="card"><div class="card-subtitle">Обращений нет.</div></div>`;
   }
   return html;
 }
 
-/* ============================================================
-   PROFILE
-   ============================================================ */
 function renderProfile() {
   const p = state.profile;
   const u = state.user;
@@ -751,13 +677,11 @@ function renderProfile() {
   const metaParts = [];
   if (p?.group) metaParts.push(p.group + (p.subgroup ? ` (подгр. ${p.subgroup})` : ''));
   if (u.username) metaParts.push('@' + u.username);
-
   let html = `<div class="profile-header">
     <div class="profile-avatar">${escapeHtml(initials)}</div>
     <div class="profile-name">${escapeHtml(fullName)}</div>
     ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
   </div>`;
-
   html += `<div class="card" id="wallet-card">
     <div class="card-title">Уровень и кошелёк</div>
     <div id="wallet-body" class="card-subtitle">Загрузка...</div>
@@ -766,11 +690,9 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="open-leaderboard">ТОП</button>
     </div>
   </div>`;
-
-  // ===== КЕЙСЫ =====
   html += `<div class="card">
     <div class="card-title">Кейсы</div>
-    <div class="card-subtitle">Капсула — бесплатно раз в 24 часа. Остальные за валюту.</div>
+    <div class="card-subtitle">Капсула — бесплатно раз в 24 часа.</div>
     <div class="chests-grid">
       ${renderChestTile('capsule', 'Капсула', 'Раз в 24 часа')}
       ${renderChestTile('relic', 'Реликт', '50 Шифт')}
@@ -778,29 +700,23 @@ function renderProfile() {
       ${renderChestTile('core', 'Ядро', '80 Нова')}
     </div>
   </div>`;
-
-  // ===== ОБМЕННИК =====
   html += `<div class="card">
     <div class="card-title">Обменник</div>
     <div class="card-subtitle">100 ${icShift(14)} Шифт = 1 ${icNova(14)} Нова</div>
     <div class="actions-row"><button class="btn" data-action="exchange">${icon('ic-exchange',16)} ОБМЕНЯТЬ</button></div>
   </div>`;
-
-  // ===== ДОСТИЖЕНИЯ =====
   const achCanClaim = state.achData?.can_claim_count || 0;
   const achGot = state.achData?.got || 0;
   const achTotal = state.achData?.total || 0;
   html += `<div class="card">
     <div class="card-title">Достижения${achCanClaim>0 ? ` · ${achCanClaim}` : ''}</div>
-    <div class="card-subtitle">${achTotal ? `${achGot} из ${achTotal} разблокировано` : '12 достижений за активность'}</div>
+    <div class="card-subtitle">${achTotal ? `${achGot} из ${achTotal}` : '12 достижений'}</div>
     <div class="actions-row">
       <button class="btn ${achCanClaim>0?'':'btn-secondary'}" data-action="show-achievements">
         ${achCanClaim>0 ? `${icon('ic-gift',16)} ЗАБРАТЬ ${achCanClaim}` : 'ПОСМОТРЕТЬ'}
       </button>
     </div>
   </div>`;
-
-  // ===== ПРОФИЛЬ =====
   html += `<div class="card">
     <div class="card-title">Профиль</div>
     <div class="actions-row">
@@ -808,11 +724,8 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="set-avatar">Аватар</button>
     </div>
   </div>`;
-
-  // ===== XP ТАБЛИЦА =====
   html += `<div class="card">
     <div class="card-title">Как заработать XP</div>
-    <div class="card-subtitle">Уровни 1–30. Каждый уровень N = 500·N XP.</div>
     <div class="xp-table">
       <div class="xp-row"><span>Выполнить задачу</span><b>+20</b></div>
       <div class="xp-row"><span>Добавить задачу</span><b>+5</b></div>
@@ -821,25 +734,24 @@ function renderProfile() {
       <div class="xp-row"><span>Посещение пары</span><b>+3</b></div>
       <div class="xp-row"><span>Игра (за очко)</span><b>+2</b></div>
       <div class="xp-row"><span>Новый рекорд</span><b>+30</b></div>
-      <div class="xp-row"><span>Победа в Морском бою</span><b>+50</b></div>
-      <div class="xp-row"><span>Достижение</span><b>+10…+1000</b></div>
+      <div class="xp-row"><span>Победа в бою</span><b>+50</b></div>
+      <div class="xp-row"><span>Пост в Хабе</span><b>+5</b></div>
+      <div class="xp-row"><span>Решение отмечено</span><b>+30</b></div>
     </div>
   </div>`;
-
-  // ===== КАК ЗАРАБОТАТЬ ВАЛЮТУ =====
   html += `<div class="card">
-    <div class="card-title">Как заработать</div>
+    <div class="card-title">Как заработать валюту</div>
     <div class="xp-table">
       <div class="xp-row"><span>Выполнить задачу</span><b>+5 ${icShift(12)}</b></div>
       <div class="xp-row"><span>Посещение пары</span><b>+1 ${icShift(12)}</b></div>
       <div class="xp-row"><span>Flappy за очко</span><b>+1 ${icShift(12)}</b></div>
       <div class="xp-row"><span>Новый рекорд Flappy</span><b>+1 ${icNova(12)}</b></div>
       <div class="xp-row"><span>Победа в бою</span><b>×2 ставки</b></div>
-      <div class="xp-row"><span>Ежедневный кейс</span><b>10–40 ${icShift(12)}</b></div>
-      <div class="xp-row"><span>Топ-1 Flappy</span><b>+2 ${icNova(12)}</b></div>
+      <div class="xp-row"><span>Капсула</span><b>10–40 ${icShift(12)}</b></div>
+      <div class="xp-row"><span>Пост в Хабе</span><b>+1 ${icShift(12)}</b></div>
+      <div class="xp-row"><span>Ответ (решение)</span><b>+10 ${icShift(12)} · +1 ${icNova(12)}</b></div>
     </div>
   </div>`;
-
   if (p) {
     html += `<div class="card">
       <div class="card-title">Статистика</div>
@@ -849,7 +761,6 @@ function renderProfile() {
       <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
     </div>`;
   }
-
   html += `<div class="card">
     <div class="card-title">Моя группа</div>
     <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
@@ -858,7 +769,6 @@ function renderProfile() {
       ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
     </div>
   </div>`;
-
   html += `<div class="card">
     <div class="card-title">Подгруппа</div>
     <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
@@ -868,24 +778,21 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
     </div>
   </div>`;
-
   const notifyOn = !!p?.notify_type;
   const notifyLabel = notifyOn ? `${p.notify_type==='today'?'Сегодня':'Завтра'} в ${String(p.notify_hour).padStart(2,'0')}:${String(p.notify_minute||0).padStart(2,'0')}` : 'выключены';
-
   html += `<div class="card">
     <div class="card-title">Уведомления</div>
     <div class="card-subtitle">Расписание: ${escapeHtml(notifyLabel)}</div>
-    <div class="card-subtitle">За N минут до пары: ${p?.notify_before_min ? p.notify_before_min + ' мин' : 'выкл'}</div>
+    <div class="card-subtitle">За N минут: ${p?.notify_before_min ? p.notify_before_min + ' мин' : 'выкл'}</div>
     <div class="actions-row">
       <button class="btn" data-action="notify-open">${notifyOn?'Изменить':'Включить'}</button>
       <button class="btn btn-secondary" data-action="notify-before">За N минут</button>
     </div>
-    <label class="checkbox-row" style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;font-weight:500">
+    <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;font-weight:500">
       <input type="checkbox" id="notify-changes" ${p?.notify_changes?'checked':''} style="width:20px;height:20px;accent-color:var(--cyan)">
       <span>Следить за изменениями расписания</span>
     </label>
   </div>`;
-
   html += `<div class="card">
     <div class="card-title">Цитата дня</div>
     <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
@@ -895,7 +802,6 @@ function renderProfile() {
         : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
     </div>
   </div>`;
-
   html += `<div class="card"><div class="card-title">Стипендия</div>`;
   if (state.scholarship) {
     const s = state.scholarship;
@@ -906,7 +812,7 @@ function renderProfile() {
   }
   if (state.scholarship?.grades?.length) {
     for (const g of state.scholarship.grades) {
-      html += `<div class="grade-row" style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider)">
+      html += `<div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider)">
         <span>${escapeHtml(g.subject)}</span>
         <span style="font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan-dark);font-size:20px">${g.grade}</span>
       </div>`;
@@ -917,7 +823,6 @@ function renderProfile() {
     <button class="btn btn-secondary" data-action="sch-add-grade">Добавить оценку</button>
     <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
   </div></div>`;
-
   html += `<div class="card">
     <div class="card-title">Экспорт и обращения</div>
     <div class="actions-row">
@@ -925,13 +830,11 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="show-my-feedback">${icon('ic-chat',14)} Мои обращения</button>
     </div>
   </div>`;
-
   html += `<div class="card">
     <div class="card-title">Обратная связь</div>
     <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
     <button class="btn" data-action="feedback-send">Отправить</button>
   </div>`;
-
   return html;
 }
 
@@ -948,23 +851,19 @@ function renderChestTile(id, name, sub) {
     <div class="chest-sub">${escapeHtml(sub)}</div>
   </div>`;
 }
-
 function startChestTimer() {
   if (state.chestTimer) clearInterval(state.chestTimer);
   const update = () => {
     document.querySelectorAll('[data-chest-timer]').forEach(el => {
       const iso = el.getAttribute('data-chest-timer');
       const target = new Date(iso).getTime();
-      const now = Date.now();
-      const left = target - now;
-      if (left <= 0) { el.textContent = 'ГОТОВО'; return; }
-      el.textContent = fmtCountdown(left);
+      const left = target - Date.now();
+      el.textContent = left <= 0 ? 'ГОТОВО' : fmtCountdown(left);
     });
   };
   update();
   state.chestTimer = setInterval(update, 1000);
 }
-
 async function loadWalletIntoProfile() {
   const box = document.getElementById('wallet-body');
   if (!box) return;
@@ -996,13 +895,7 @@ async function loadWalletIntoProfile() {
     `;
     if (ach) {
       state.achData = ach;
-      const card = box.closest('.card');
-      const btn = card?.nextElementSibling?.querySelector?.('[data-action="show-achievements"]');
-      if (btn) {
-        const cc = ach.can_claim_count || 0;
-        btn.innerHTML = cc > 0 ? `${icon('ic-gift',16)} ЗАБРАТЬ ${cc}` : 'ПОСМОТРЕТЬ';
-        btn.classList.toggle('btn-secondary', cc === 0);
-      }
+      const cc = ach.can_claim_count || 0;
     }
     startChestTimer();
   } catch (e) {
@@ -1010,9 +903,6 @@ async function loadWalletIntoProfile() {
   }
 }
 
-/* ============================================================
-   LOADERS
-   ============================================================ */
 async function loadSchedule() {
   try { state.schedule = await apiGet('/api/schedule'); }
   catch (e) { state.schedule = {error:'load_error', message:e.message}; }
@@ -1056,6 +946,15 @@ async function loadAdminFeedback() {
   try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
   catch (e) { state.adminFeedback = []; }
 }
+async function loadWallPosts() {
+  try {
+    const params = {scope: state.wallScope};
+    if (state.wallCategory) params.category = state.wallCategory;
+    if (state.wallSubject) params.subject = state.wallSubject;
+    const r = await apiGet('/api/wall', params);
+    state.wallPosts = r.items || [];
+  } catch (e) { state.wallPosts = []; }
+}
 
 async function loadTabData(tab) {
   state.loading = true;
@@ -1081,6 +980,9 @@ async function loadTabData(tab) {
     } else if (tab === 'profile') {
       await loadProfile();
       await loadScholarship();
+    } else if (tab === 'hub') {
+      await loadProfile();
+      await loadWallPosts();
     }
   } catch (e) { console.error(e); state.error = e.message; }
   state.loading = false;
@@ -1092,7 +994,6 @@ async function ensureWeekLoaded() {
   try { state.weekDays = await apiGet('/api/week', {offset:0}); return true; }
   catch(e){ return false; }
 }
-
 async function loadWeekAndRender() {
   try {
     const r = await apiGet('/api/week', {offset: state.weekOffset});
@@ -1110,9 +1011,6 @@ async function loadTodayAndRender() {
   render();
 }
 
-/* ============================================================
-   LEVELS
-   ============================================================ */
 function calcLevelInfo(xp) {
   let lvl = 1, left = xp || 0;
   while (lvl <= 30) {
@@ -1137,34 +1035,28 @@ function levelRewardByLevel(lvl) {
   if (lvl <= 20) return `+600 ${icShift(14)} · +8 ${icNova(14)}`;
   return `+1500 ${icShift(14)} · +25 ${icNova(14)}`;
 }
-
 async function openLevels() {
   const screen = document.getElementById('screen-levels');
   if (!screen) return;
   screen.style.display = 'block';
   document.getElementById('bottom-nav').style.display = 'none';
   document.getElementById('levelsBack').onclick = closeLevels;
-
   const w = await apiGet('/api/wallet').catch(()=>null);
   if (!w) return;
   const wallet = w.wallet || {};
   const xp = wallet.xp || 0;
   const lv = calcLevelInfo(xp);
-
   document.getElementById('levelsCurrent').textContent = lv.level;
   document.getElementById('levelsLeft').textContent = lv.toNext + 'XP';
   document.getElementById('levelsSoft').textContent = wallet.shift ?? wallet.soft ?? 0;
   document.getElementById('levelsHard').textContent = wallet.nova ?? wallet.hard ?? 0;
-
   const total = lv.inLevel + lv.toNext;
   const pct = total ? (lv.inLevel / total) * 100 : 0;
   document.getElementById('levelsXpFill').style.width = pct + '%';
   document.getElementById('levelsXpCur').textContent = lv.inLevel + 'XP';
   document.getElementById('levelsXpNext').textContent = total + 'XP';
-
   const claimed = await apiGet('/api/level-rewards').catch(()=>({claimed:[]}));
   const claimedSet = new Set(claimed.claimed || []);
-
   const list = document.getElementById('levelsList');
   let html = '';
   for (let i = 1; i <= 30; i++) {
@@ -1184,18 +1076,15 @@ async function openLevels() {
     </div>`;
   }
   list.innerHTML = html;
-
   list.querySelectorAll('button[data-level]').forEach(btn => {
     btn.onclick = async () => {
       const lvl = parseInt(btn.dataset.level, 10);
       try {
         const r = await apiPost('/api/level-reward-claim', {level: lvl});
-        haptic('success');
-        popIcon('ic-gift');
+        haptic('success'); popIcon('ic-gift');
         const rw = r.reward || {};
         toast(`+${rw.shift||0} Шифт · +${rw.nova||0} Нова`, 'success');
-        closeLevels();
-        openLevels();
+        closeLevels(); openLevels();
       } catch (e) {
         if (e.code === 'already') toast('Уже получено', 'error');
         else if (e.code === 'locked') toast('Уровень не достигнут', 'error');
@@ -1209,7 +1098,6 @@ function closeLevels() {
   document.getElementById('bottom-nav').style.display = '';
   if (state && state.tab === 'profile') loadTabData('profile');
 }
-
 async function openLeaderboard() {
   try {
     const d = await apiGet('/api/wallet/leaderboard');
@@ -1218,17 +1106,11 @@ async function openLeaderboard() {
       <span style="flex:1;font-weight:600${it.is_me?';color:var(--cyan-dark)':''}">${escapeHtml(it.display)}${it.is_me?' (ты)':''}</span>
       <span style="font-family:'Anton',sans-serif;font-style:italic;display:flex;align-items:center;gap:4px">${it.xp} ${icXp(14)}</span>
     </div>`).join('');
-    modalOpen({
-      title:'ТОП ИГРОКОВ',
-      body: rows || '<div class="empty">Пока нет игроков</div>',
-      actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]
-    });
+    modalOpen({title:'ТОП ИГРОКОВ', body: rows || '<div class="empty">Пока нет игроков</div>',
+      actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
   } catch (e) { toast('Ошибка', 'error'); }
 }
 
-/* ============================================================
-   FLAPPY — с бонусами
-   ============================================================ */
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
   score:0, best:0, top:[],
@@ -1236,11 +1118,8 @@ const Flappy = {
   pipes:[], bonuses:[], frame:0,
   gravity:0.45, jump:-7.5, speed:2.6, gap:150, pipeW:62,
   spawnEvery:88, width:0, height:0, groundH:100,
-  resizeBound:false, lastT:0,
-  shieldUntil:0, slowUntil:0,
-  bonusesCollected:0,
+  resizeBound:false, lastT:0, shieldUntil:0, slowUntil:0, bonusesCollected:0,
 };
-
 async function openFlappy(recordsOnly) {
   const screen = document.getElementById('screen-flappy');
   if (!screen) return;
@@ -1295,8 +1174,7 @@ function flappyReset() {
   Flappy.bird.y = Flappy.height * 0.45;
   Flappy.bird.vy = 0; Flappy.bird.rot = 0;
   Flappy.pipes = []; Flappy.bonuses = []; Flappy.frame = 0; Flappy.score = 0;
-  Flappy.bonusesCollected = 0;
-  Flappy.shieldUntil = 0; Flappy.slowUntil = 0;
+  Flappy.bonusesCollected = 0; Flappy.shieldUntil = 0; Flappy.slowUntil = 0;
   const el = document.getElementById('flappyScore');
   if (el) el.textContent = '0';
 }
@@ -1330,7 +1208,6 @@ function flappyUpdate(dt) {
   const now = performance.now();
   const slowed = now < Flappy.slowUntil;
   const effSpeed = slowed ? Flappy.speed * 0.5 : Flappy.speed;
-
   b.vy += Flappy.gravity * dt;
   b.y += b.vy * dt;
   b.rot = Math.max(-0.5, Math.min(0.7, b.vy / 12));
@@ -1343,8 +1220,6 @@ function flappyUpdate(dt) {
     const topMax = Flappy.height - Flappy.groundH - Flappy.gap - 60;
     const topH = topMin + Math.random() * Math.max(20, topMax - topMin);
     Flappy.pipes.push({x: Flappy.width+10, top: topH, gap: Flappy.gap, passed: false});
-
-    // Спавн бонуса с вероятностью 30%
     if (Math.random() < 0.3) {
       const bx = Flappy.width + 10 + Flappy.pipeW + 60;
       const by = 80 + Math.random() * (Flappy.height - Flappy.groundH - 160);
@@ -1354,16 +1229,13 @@ function flappyUpdate(dt) {
   }
   for (const p of Flappy.pipes) p.x -= effSpeed * dt;
   Flappy.pipes = Flappy.pipes.filter(p => p.x + Flappy.pipeW > -20);
-
   for (const bo of Flappy.bonuses) bo.x -= effSpeed * dt;
   Flappy.bonuses = Flappy.bonuses.filter(b => b.x > -40 && !b.taken);
-
-  // Столкновения с трубами
   const shielded = now < Flappy.shieldUntil;
   for (const p of Flappy.pipes) {
     if (b.x + b.r > p.x && b.x - b.r < p.x + Flappy.pipeW) {
       if (b.y - b.r < p.top || b.y + b.r > p.top + p.gap) {
-        if (shielded) { Flappy.shieldUntil = 0; continue; } // съедаем щит
+        if (shielded) { Flappy.shieldUntil = 0; continue; }
         flappyGameOver(); return;
       }
     }
@@ -1374,7 +1246,6 @@ function flappyUpdate(dt) {
       haptic('light');
     }
   }
-  // Сбор бонусов
   for (const bo of Flappy.bonuses) {
     if (bo.taken) continue;
     const dist = Math.hypot(bo.x - b.x, bo.y - b.y);
@@ -1391,11 +1262,8 @@ function flappyDraw() {
   const ctx = Flappy.ctx;
   const W = Flappy.width, H = Flappy.height, GH = Flappy.groundH;
   const sky = ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,'#B8F4FF');
-  sky.addColorStop(0.6,'#7FE9FF');
-  sky.addColorStop(1,'#3EE6D2');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0,0,W,H);
+  sky.addColorStop(0,'#B8F4FF'); sky.addColorStop(0.6,'#7FE9FF'); sky.addColorStop(1,'#3EE6D2');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
   const bw = 70;
   for (let i=0; i<6; i++) {
@@ -1409,74 +1277,48 @@ function flappyDraw() {
   ctx.fillText('STUDENT', W/2, H*0.28);
   ctx.fillText('IRK', W/2, H*0.38);
   ctx.globalAlpha = 1;
-
   for (const p of Flappy.pipes) {
     flappyDrawPipe(p.x, 0, Flappy.pipeW, p.top, true);
     flappyDrawPipe(p.x, p.top+p.gap, Flappy.pipeW, H-GH-p.top-p.gap, false);
   }
-
-  // Бонусы
   for (const bo of Flappy.bonuses) {
     if (bo.taken) continue;
-    ctx.save();
-    ctx.translate(bo.x, bo.y);
+    ctx.save(); ctx.translate(bo.x, bo.y);
     if (bo.type === 'shift') {
       ctx.fillStyle = '#3EE6D2';
-      ctx.beginPath();
-      ctx.moveTo(0,-14); ctx.lineTo(14,0); ctx.lineTo(0,14); ctx.lineTo(-14,0);
+      ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(14,0); ctx.lineTo(0,14); ctx.lineTo(-14,0);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#0A0E0F';
-      ctx.font = 'bold 11px Anton';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#0A0E0F'; ctx.font = 'bold 11px Anton'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('S', 0, 1);
     } else if (bo.type === 'shield') {
       ctx.fillStyle = '#22A06B';
-      ctx.beginPath();
-      ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#FFF';
-      ctx.font = 'bold 14px Anton';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.beginPath(); ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#FFF'; ctx.font = 'bold 14px Anton'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('+', 0, 1);
     } else {
       ctx.fillStyle = '#FFA42B';
-      ctx.beginPath();
-      ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#0A0E0F';
-      ctx.font = 'bold 14px Anton';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.beginPath(); ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#0A0E0F'; ctx.font = 'bold 14px Anton'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('~', 0, 1);
     }
     ctx.restore();
   }
-
-  ctx.fillStyle = '#0A0E0F';
-  ctx.fillRect(0, H-GH, W, GH);
-  ctx.fillStyle = '#1FB8A6';
-  ctx.fillRect(0, H-GH, W, 6);
-
+  ctx.fillStyle = '#0A0E0F'; ctx.fillRect(0, H-GH, W, GH);
+  ctx.fillStyle = '#1FB8A6'; ctx.fillRect(0, H-GH, W, 6);
   const b = Flappy.bird;
-  ctx.save();
-  ctx.translate(b.x, b.y);
-  ctx.rotate(b.rot);
+  ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot);
   const g = ctx.createRadialGradient(0,-4,2,0,0,b.r+6);
-  g.addColorStop(0,'#7FE9FF');
-  g.addColorStop(1,'#1FB8A6');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(0,0,b.r,0,Math.PI*2); ctx.fill();
+  g.addColorStop(0,'#7FE9FF'); g.addColorStop(1,'#1FB8A6');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0,0,b.r,0,Math.PI*2); ctx.fill();
   ctx.fillStyle = '#3EE6D2';
   ctx.beginPath();
   ctx.moveTo(-b.r,0); ctx.lineTo(-b.r-14,-6); ctx.lineTo(-b.r-10,0); ctx.lineTo(-b.r-14,6);
   ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#0A0E0F';
-  ctx.beginPath(); ctx.arc(4,-3,2.6,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0A0E0F'; ctx.beginPath(); ctx.arc(4,-3,2.6,0,Math.PI*2); ctx.fill();
   ctx.fillStyle = '#FFA42B';
-  ctx.beginPath();
-  ctx.moveTo(b.r-2,-2); ctx.lineTo(b.r+8,2); ctx.lineTo(b.r-2,6);
-  ctx.closePath(); ctx.fill();
-  // Щит вокруг птички
+  ctx.beginPath(); ctx.moveTo(b.r-2,-2); ctx.lineTo(b.r+8,2); ctx.lineTo(b.r-2,6); ctx.closePath(); ctx.fill();
   if (performance.now() < Flappy.shieldUntil) {
-    ctx.strokeStyle = 'rgba(34,160,107,.9)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(34,160,107,.9)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0,0,b.r+8,0,Math.PI*2); ctx.stroke();
   }
   ctx.restore();
@@ -1484,18 +1326,14 @@ function flappyDraw() {
 function flappyDrawPipe(x,y,w,h,isTop) {
   const ctx = Flappy.ctx;
   const grad = ctx.createLinearGradient(x,0,x+w,0);
-  grad.addColorStop(0,'#1FB8A6');
-  grad.addColorStop(0.5,'#3EE6D2');
-  grad.addColorStop(1,'#1FB8A6');
-  ctx.fillStyle = grad;
-  ctx.fillRect(x,y,w,h);
-  ctx.strokeStyle = '#0E6A63';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(x,y,w,h);
+  grad.addColorStop(0,'#1FB8A6'); grad.addColorStop(0.5,'#3EE6D2'); grad.addColorStop(1,'#1FB8A6');
+  ctx.fillStyle = grad; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle = '#0E6A63'; ctx.lineWidth = 3; ctx.strokeRect(x,y,w,h);
   const capH = 18;
   const capY = isTop ? y+h-capH : y;
-  ctx.fillStyle = '#0E6A63';
-  ctx.fillRect(x-4, capY, w+8, capH);
+  ctx.fillStyle = '#0E6A63'; ctx.fillRect(x-4, capY, w+8, capH);
+  ctx.strokeStyle = '#0A0E0F'; ctx.strokeRect(x-4, capY, w+8, capH);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(x+6, y, 6, h);
 }
 function flappyGameOver() {
   flappyStop();
@@ -1524,10 +1362,9 @@ function flappyShowOverlay(mode, score) {
   const old = overlay.querySelector('.flappy-records');
   if (old) old.remove();
   overlay.classList.remove('hidden');
-
   if (mode === 'start') {
     title.textContent = 'ДО ПАРЫ УСПЕТЬ';
-    sub.textContent = 'Лови бонусы: S — очки, + — щит, ~ — замедление';
+    sub.textContent = 'S — очки, + — щит, ~ — замедление';
     scoreEl.innerHTML = '';
     startBtn.textContent = 'ИГРАТЬ';
     startBtn.onclick = flappyStart;
@@ -1560,14 +1397,9 @@ function flappyShowOverlay(mode, score) {
     overlay.querySelector('.flappy-card').appendChild(list);
   }
 }
-function flappyHideOverlay() {
-  document.getElementById('flappyOverlay').classList.add('hidden');
-}
+function flappyHideOverlay() { document.getElementById('flappyOverlay').classList.add('hidden'); }
 function flappyShowRecords() { flappyShowOverlay('records'); }
 
-/* ============================================================
-   МОРСКОЙ БОЙ (без изменений, кроме терминологии Шифт)
-   ============================================================ */
 const BS = {
   bet:10, gameId:null, side:0,
   myShips:[], myShots:[], enemyShots:[],
@@ -1575,7 +1407,6 @@ const BS = {
   botShips:[], botShots:[],
 };
 const BS_SHIPS = [{size:4,count:1},{size:3,count:2},{size:2,count:3},{size:1,count:4}];
-
 function openBs() {
   const screen = document.getElementById('screen-bs');
   if (!screen) return;
@@ -1625,8 +1456,7 @@ function bsRenderBets() {
 function bsShowLobby() {
   document.getElementById('bsLobby').style.display = '';
   document.getElementById('bsGame').style.display = 'none';
-  BS.status = 'lobby';
-  BS.isBot = false;
+  BS.status = 'lobby'; BS.isBot = false;
   BS.myShips = []; BS.myShots = []; BS.enemyShots = [];
 }
 function bsShowGame() {
@@ -1637,15 +1467,10 @@ async function bsCreate() {
   try {
     const r = await apiPost('/api/bs/create', {bet: BS.bet});
     BS.gameId = r.game_id; BS.side = 1;
-    haptic('success');
-    bsShowGame();
-    bsRandomShips();
-    bsRenderFleet();
-    modalOpen({
-      title:'ИГРА СОЗДАНА',
-      body:`Код для соперника: <div style="font-family:'Anton',sans-serif;font-size:36px;text-align:center;color:var(--cyan-dark);letter-spacing:6px;margin:12px 0">${r.code}</div>`,
-      actions:[{label:'ОК', style:'btn'}]
-    });
+    haptic('success'); bsShowGame(); bsRandomShips(); bsRenderFleet();
+    modalOpen({title:'ИГРА СОЗДАНА',
+      body:`Код: <div style="font-family:'Anton',sans-serif;font-size:36px;text-align:center;color:var(--cyan-dark);letter-spacing:6px;margin:12px 0">${r.code}</div>`,
+      actions:[{label:'ОК', style:'btn'}]});
     bsPollStart();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -1655,25 +1480,15 @@ async function bsJoin() {
   try {
     const r = await apiPost('/api/bs/join', {code});
     BS.gameId = r.game_id; BS.side = 2;
-    haptic('success');
-    bsShowGame();
-    bsRandomShips();
-    bsRenderFleet();
-    bsPollStart();
+    haptic('success'); bsShowGame(); bsRandomShips(); bsRenderFleet(); bsPollStart();
   } catch (e) { toast(e.message, 'error'); }
 }
 async function bsFind() {
   try {
     const r = await apiPost('/api/bs/find', {bet: BS.bet});
-    BS.gameId = r.game_id;
-    BS.side = r.side || 1;
-    haptic('success');
-    bsShowGame();
-    bsRandomShips();
-    bsRenderFleet();
-    if (r.status === 'queued') {
-      document.getElementById('bsStatus').textContent = 'Ожидание соперника...';
-    }
+    BS.gameId = r.game_id; BS.side = r.side || 1;
+    haptic('success'); bsShowGame(); bsRandomShips(); bsRenderFleet();
+    if (r.status === 'queued') document.getElementById('bsStatus').textContent = 'Ожидание соперника...';
     bsPollStart();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -1681,19 +1496,15 @@ async function bsBotStart() {
   try {
     await apiPost('/api/bs/bot-start', {bet: BS.bet});
     BS.isBot = true; BS.gameId = 'bot'; BS.side = 1;
-    haptic('success');
-    bsShowGame();
-    BS.botShips = bsEmptyShips();
-    BS.botShots = [];
-    bsRandomShips();
-    bsRenderFleet();
+    haptic('success'); bsShowGame();
+    BS.botShips = bsEmptyShips(); BS.botShots = [];
+    bsRandomShips(); bsRenderFleet();
     BS.status = 'placing';
     document.getElementById('bsStatus').textContent = 'Расставляй корабли и жми ГОТОВ';
   } catch (e) { toast(e.message, 'error'); }
 }
 function bsEmptyShips() {
-  const res = [];
-  const sizes = [];
+  const res = []; const sizes = [];
   BS_SHIPS.forEach(s => { for (let i=0; i<s.count; i++) sizes.push(s.size); });
   const grid = Array.from({length:10}, () => Array(10).fill(0));
   for (const size of sizes) {
@@ -1723,8 +1534,7 @@ function bsEmptyShips() {
 }
 function bsRandomShips() {
   BS.myShips = bsEmptyShips();
-  bsRenderMyField();
-  bsRenderEnemyField();
+  bsRenderMyField(); bsRenderEnemyField();
 }
 function bsRenderMyField() {
   const box = document.getElementById('bsMyField');
@@ -1765,28 +1575,22 @@ function bsRenderFleet() {
   BS_SHIPS.forEach(s => left[s.size] = (left[s.size]||0) + s.count);
   BS.myShips.forEach(s => { left[s.size] = Math.max(0, (left[s.size]||0) - 1); });
   box.innerHTML = BS_SHIPS.map(sh =>
-    `<div class="bs-fleet-item">${sh.size}-палуб: ${left[sh.size] || 0}/${sh.count}</div>`
-  ).join('');
+    `<div class="bs-fleet-item">${sh.size}-палуб: ${left[sh.size] || 0}/${sh.count}</div>`).join('');
 }
 async function bsReady() {
   if (!BS.myShips.length) { toast('Расставь корабли', 'error'); return; }
   if (BS.isBot) {
-    BS.status = 'playing';
-    bsRenderEnemyField(); bsRenderMyField();
+    BS.status = 'playing'; bsRenderEnemyField(); bsRenderMyField();
     document.getElementById('bsStatus').textContent = 'Твой ход';
-    haptic('success');
-    return;
+    haptic('success'); return;
   }
   try {
     const r = await apiPost('/api/bs/ready', {game_id: BS.gameId, ships: BS.myShips});
     haptic('success');
     if (r.status === 'playing') {
-      BS.status = 'playing';
-      bsRenderEnemyField();
+      BS.status = 'playing'; bsRenderEnemyField();
       document.getElementById('bsStatus').textContent = r.your_turn ? 'Твой ход' : 'Ход соперника';
-    } else {
-      document.getElementById('bsStatus').textContent = 'Ждём соперника...';
-    }
+    } else document.getElementById('bsStatus').textContent = 'Ждём соперника...';
   } catch (e) { toast(e.message, 'error'); }
 }
 async function bsFire(x, y) {
@@ -1795,29 +1599,23 @@ async function bsFire(x, y) {
     let hitShip = null;
     for (const s of BS.botShips) if (s.cells.some(c => c.x === x && c.y === y)) { hitShip = s; break; }
     if (!hitShip) {
-      BS.myShots.push({x, y, result:'miss'});
-      bsRenderEnemyField();
-      haptic('error');
-      setTimeout(bsBotFire, 500);
-      return;
+      BS.myShots.push({x, y, result:'miss'}); bsRenderEnemyField();
+      haptic('error'); setTimeout(bsBotFire, 500); return;
     }
     const sunk = hitShip.cells.every(c =>
       BS.myShots.some(s => s.x === c.x && s.y === c.y) || (c.x === x && c.y === y));
     BS.myShots.push({x, y, result: sunk ? 'sunk' : 'hit'});
-    bsRenderEnemyField();
-    haptic('success');
+    bsRenderEnemyField(); haptic('success');
     const allEnemyCells = BS.botShips.flatMap(s => s.cells);
     const allHit = allEnemyCells.every(c => BS.myShots.some(s => s.x === c.x && s.y === c.y));
     if (allHit) {
       BS.status = 'finished';
       document.getElementById('bsStatus').textContent = 'Ты победил!';
       apiPost('/api/bs/finish-bot', {bet: BS.bet, outcome:'win'}).catch(()=>{});
-      popIcon('ic-trophy');
-      return;
+      popIcon('ic-trophy'); return;
     }
     if (!sunk) return;
-    setTimeout(bsBotFire, 500);
-    return;
+    setTimeout(bsBotFire, 500); return;
   }
   try {
     const r = await apiPost('/api/bs/fire', {game_id: BS.gameId, x, y});
@@ -1896,7 +1694,376 @@ function bsPollStart() {
 }
 
 /* ============================================================
-   ACTIONS
+                       СТУДХАБ
+   ============================================================ */
+const WALL_CATS = {
+  question: {label:'Вопрос', cls:'quest', icon:'ic-comment'},
+  homework: {label:'ДЗ', cls:'hw', icon:'ic-task'},
+  help:     {label:'Просьба', cls:'help', icon:'ic-hub'},
+  announce: {label:'Объявление', cls:'ann', icon:'ic-flag'},
+};
+function wallFmtTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = (now - d) / 1000;
+    if (diff < 60) return 'только что';
+    if (diff < 3600) return Math.floor(diff/60) + ' мин назад';
+    if (diff < 86400) return Math.floor(diff/3600) + ' ч назад';
+    if (diff < 604800) return Math.floor(diff/86400) + ' дн назад';
+    return d.toLocaleDateString('ru-RU');
+  } catch(e) { return ''; }
+}
+function wallCatBadge(cat) {
+  const c = WALL_CATS[cat] || WALL_CATS.question;
+  return `<span class="wall-post-badge ${c.cls}">${c.label}</span>`;
+}
+function wallInitials(name) {
+  return (name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+}
+function renderHub() {
+  if (state.wallPost) return renderWallDetail();
+  let html = '';
+  html += `<div class="wall-tabs">
+    <button data-action="wall-scope" data-value="general" class="${state.wallScope==='general'?'active':''}">Общая</button>
+    <button data-action="wall-scope" data-value="group" class="${state.wallScope==='group'?'active':''}">Моя группа</button>
+  </div>`;
+  html += `<button class="btn wall-new-btn" data-action="wall-new">${icon('ic-plus',18)} Новый пост</button>`;
+  html += `<div class="wall-cats">
+    <button class="wall-cat ${!state.wallCategory?'active':''}" data-action="wall-cat" data-value="">Все</button>
+    ${Object.entries(WALL_CATS).map(([k,v]) =>
+      `<button class="wall-cat ${v.cls} ${state.wallCategory===k?'active':''}" data-action="wall-cat" data-value="${k}">${v.label}</button>`
+    ).join('')}
+  </div>`;
+  html += `<input class="wall-search" id="wall-search" placeholder="Поиск по постам..." value="${escapeHtml(state.wallSearch)}">`;
+  const q = (state.wallSearch || '').toLowerCase().trim();
+  const posts = (state.wallPosts || []).filter(p => {
+    if (!q) return true;
+    return (p.text || '').toLowerCase().includes(q) || (p.author || '').toLowerCase().includes(q);
+  });
+  if (!posts.length) {
+    html += `<div class="wall-empty">${state.wallScope==='group' ? 'В стене группы пока пусто' : 'Пока постов нет. Напиши первый!'}</div>`;
+    return html;
+  }
+  for (const p of posts) html += renderWallPostCard(p);
+  return html;
+}
+function renderWallPostCard(p) {
+  const cat = WALL_CATS[p.category] || WALL_CATS.question;
+  const initial = wallInitials(p.author);
+  const subjectTag = p.subject ? `<div class="wall-post-subject">${icon('ic-note',12)} ${escapeHtml(p.subject)}</div>` : '';
+  const mineActions = (p.is_mine || p.is_admin) ? `
+    <button class="wall-act" data-action="wall-edit-post" data-id="${p.id}">${icon('ic-edit',16)}</button>
+    <button class="wall-act" data-action="wall-del-post" data-id="${p.id}">${icon('ic-trash',16)}</button>
+  ` : '';
+  const reportBtn = (!p.is_mine && !p.is_admin) ? `
+    <button class="wall-act" data-action="wall-report" data-type="post" data-id="${p.id}">${icon('ic-flag',16)}</button>
+  ` : '';
+  return `<div class="wall-post cat-${cat.cls}" data-action="wall-open-post" data-id="${p.id}">
+    <div class="wall-post-head">
+      <div class="wall-post-av">${escapeHtml(initial)}</div>
+      <div class="wall-post-meta">
+        <div class="wall-post-author">${escapeHtml(p.author)}</div>
+        <div class="wall-post-time">${wallFmtTime(p.created_at)}${p.edited?' · изменён':''}</div>
+      </div>
+      ${wallCatBadge(p.category)}
+    </div>
+    ${subjectTag}
+    <div class="wall-post-text">${escapeHtml(p.text)}</div>
+    <div class="wall-post-actions" onclick="event.stopPropagation()">
+      <button class="wall-act ${p.liked?'liked':''}" data-action="wall-like" data-type="post" data-id="${p.id}">
+        ${icon(p.liked?'ic-like-fill':'ic-like',18)} ${p.likes}
+      </button>
+      <button class="wall-act" data-action="wall-open-post" data-id="${p.id}">
+        ${icon('ic-comment',18)} ${p.comments_count}
+      </button>
+      ${p.solved ? `<span class="wall-act solved-badge">${icon('ic-solve',16)} Решено</span>` : ''}
+      ${mineActions}
+      ${reportBtn}
+    </div>
+  </div>`;
+}
+function renderWallDetail() {
+  const post = state.wallPost;
+  if (!post) return '<div class="wall-empty">Пост не найден</div>';
+  const cat = WALL_CATS[post.category] || WALL_CATS.question;
+  const initial = wallInitials(post.author);
+  const subjectTag = post.subject ? `<div class="wall-post-subject">${icon('ic-note',12)} ${escapeHtml(post.subject)}</div>` : '';
+  let html = `<button class="btn btn-secondary" data-action="wall-back" style="margin-bottom:12px">${icon('ic-chevron-left',16)} К списку</button>`;
+  html += `<div class="wall-detail-head">
+    <div class="wall-post-head">
+      <div class="wall-post-av">${escapeHtml(initial)}</div>
+      <div class="wall-post-meta">
+        <div class="wall-post-author">${escapeHtml(post.author)}</div>
+        <div class="wall-post-time">${wallFmtTime(post.created_at)}${post.edited?' · изменён':''}</div>
+      </div>
+      ${wallCatBadge(post.category)}
+    </div>
+    ${subjectTag}
+    <div class="wall-post-text">${escapeHtml(post.text)}</div>
+    <div class="wall-post-actions">
+      <button class="wall-act ${post.liked?'liked':''}" data-action="wall-like" data-type="post" data-id="${post.id}">
+        ${icon(post.liked?'ic-like-fill':'ic-like',18)} ${post.likes}
+      </button>
+      ${post.solved ? `<span class="wall-act solved-badge">${icon('ic-solve',16)} Решено</span>` : ''}
+    </div>
+  </div>`;
+  html += `<div class="card-title" style="margin-bottom:10px">Комментарии (${state.wallComments.length})</div>`;
+  if (!state.wallComments.length) html += `<div class="wall-empty">Пока ни одного ответа</div>`;
+  else for (const c of state.wallComments) html += renderWallComment(c, post);
+  html += `<div class="card" style="margin-top:12px">
+    <textarea class="input" id="wall-comment-input" placeholder="Написать ответ..." rows="3"></textarea>
+    <button class="btn" data-action="wall-comment-send" style="width:100%">${icon('ic-send',16)} Отправить</button>
+  </div>`;
+  return html;
+}
+function renderWallComment(c, post) {
+  const initial = wallInitials(c.author);
+  const canSolve = (post.is_mine || post.is_admin) && !c.is_solution;
+  const canUnsolve = (post.is_mine || post.is_admin) && c.is_solution;
+  const mineActions = (c.is_mine || c.is_admin) ? `
+    <button class="wall-act" data-action="wall-edit-comment" data-id="${c.id}">${icon('ic-edit',14)}</button>
+    <button class="wall-act" data-action="wall-del-comment" data-id="${c.id}">${icon('ic-trash',14)}</button>
+  ` : '';
+  const reportBtn = (!c.is_mine && !c.is_admin) ? `
+    <button class="wall-act" data-action="wall-report" data-type="comment" data-id="${c.id}">${icon('ic-flag',14)}</button>
+  ` : '';
+  return `<div class="wall-comment ${c.is_solution?'is-solution':''}">
+    ${c.is_solution ? `<div class="wall-solved-tag">${icon('ic-solve',10)} Решение</div>` : ''}
+    <div class="wall-comment-head">
+      <div class="wall-comment-av">${escapeHtml(initial)}</div>
+      <div class="wall-comment-author">${escapeHtml(c.author)}</div>
+      <div class="wall-comment-time">${wallFmtTime(c.created_at)}</div>
+    </div>
+    <div class="wall-comment-text">${escapeHtml(c.text)}</div>
+    <div class="wall-comment-actions">
+      <button class="wall-act ${c.liked?'liked':''}" data-action="wall-like" data-type="comment" data-id="${c.id}">
+        ${icon(c.liked?'ic-like-fill':'ic-like',16)} ${c.likes}
+      </button>
+      ${canSolve ? `<button class="wall-act" data-action="wall-solve" data-id="${c.id}">${icon('ic-solve',14)} Решение</button>` : ''}
+      ${canUnsolve ? `<button class="wall-act solved-badge" data-action="wall-solve" data-id="${c.id}">${icon('ic-solve',14)} Снять</button>` : ''}
+      ${mineActions}
+      ${reportBtn}
+    </div>
+  </div>`;
+}
+async function wallSetScope(scope) {
+  state.wallScope = scope;
+  await loadWallPosts();
+  render();
+}
+async function wallSetCategory(cat) {
+  state.wallCategory = cat || null;
+  await loadWallPosts();
+  render();
+}
+async function wallOpenPost(postId) {
+  try {
+    const r = await apiGet('/api/wall/post', {id: postId});
+    state.wallPost = r.post;
+    state.wallComments = r.comments || [];
+    render();
+  } catch (e) { toast('Не удалось открыть', 'error'); }
+}
+async function wallLike(targetType, targetId) {
+  try {
+    const r = await apiPost('/api/wall/like', {target_type: targetType, target_id: targetId});
+    if (targetType === 'post') {
+      if (state.wallPost && state.wallPost.id === targetId) {
+        state.wallPost.likes = r.likes; state.wallPost.liked = r.liked;
+      } else {
+        const p = state.wallPosts.find(x => x.id === targetId);
+        if (p) { p.likes = r.likes; p.liked = r.liked; }
+      }
+    } else {
+      const c = state.wallComments.find(x => x.id === targetId);
+      if (c) { c.likes = r.likes; c.liked = r.liked; }
+    }
+    haptic('light'); render();
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function wallSendComment() {
+  const el = document.getElementById('wall-comment-input');
+  const text = (el?.value || '').trim();
+  if (!text) { toast('Пусто', 'error'); return; }
+  if (!state.wallPost) return;
+  try {
+    await apiPost('/api/wall/comment', {post_id: state.wallPost.id, text});
+    haptic('success'); popIcon('ic-check');
+    await wallOpenPost(state.wallPost.id);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function wallToggleSolve(commentId) {
+  if (!state.wallPost) return;
+  try {
+    await apiPost('/api/wall/solve', {post_id: state.wallPost.id, comment_id: commentId});
+    haptic('success');
+    await wallOpenPost(state.wallPost.id);
+  } catch (e) { toast(e.message, 'error'); }
+}
+function wallNewPost() {
+  const subs = state.scholarship?.available_subjects || [];
+  const cats = [
+    {k:'question', l:'Вопрос'}, {k:'homework', l:'ДЗ'},
+    {k:'help', l:'Просьба'}, {k:'announce', l:'Объявление'},
+  ];
+  const renderBody = () => `
+    <div class="label">КАТЕГОРИЯ</div>
+    <div class="wall-form-cat">
+      ${cats.map(c => `<button class="${state.wallForm.category===c.k?'active':''}" data-cat="${c.k}">${c.l}</button>`).join('')}
+    </div>
+    <div class="label">КУДА</div>
+    <div class="wall-scope-row">
+      <button class="${state.wallForm.scope==='general'?'active':''}" data-scope="general">Общая</button>
+      <button class="${state.wallForm.scope==='group'?'active':''}" data-scope="group">Моя группа</button>
+    </div>
+    <div class="label">ПРЕДМЕТ (необязательно)</div>
+    <input class="input" id="wall-subject" placeholder="Например: Матан" value="${escapeHtml(state.wallForm.subject)}" maxlength="100">
+    ${subs.length ? `<div class="choice-row" style="max-height:120px;overflow-y:auto">${subs.slice(0,15).map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
+    <div class="label">ТЕКСТ</div>
+    <textarea class="input" id="wall-text" rows="5" maxlength="1500" placeholder="Расскажи, что нужно...">${escapeHtml(state.wallForm.text)}</textarea>
+  `;
+  const attach = () => {
+    document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+      state.wallForm.category = b.dataset.cat;
+      document.getElementById('modalBody').innerHTML = renderBody();
+      attach();
+    });
+    document.querySelectorAll('[data-scope]').forEach(b => b.onclick = () => {
+      state.wallForm.scope = b.dataset.scope;
+      document.getElementById('modalBody').innerHTML = renderBody();
+      attach();
+    });
+    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => {
+      state.wallForm.subject = b.dataset.subj;
+      document.getElementById('wall-subject').value = b.dataset.subj;
+      document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+    const si = document.getElementById('wall-subject');
+    if (si) si.oninput = (e) => state.wallForm.subject = e.target.value;
+    const ti = document.getElementById('wall-text');
+    if (ti) ti.oninput = (e) => state.wallForm.text = e.target.value;
+  };
+  modalOpen({
+    title:'НОВЫЙ ПОСТ',
+    body: renderBody(),
+    actions:[
+      {label:'ОТМЕНА', style:'btn-secondary'},
+      {label:'ОПУБЛИКОВАТЬ', style:'btn', onClick: async () => {
+        const text = (document.getElementById('wall-text')?.value || '').trim();
+        const subject = (document.getElementById('wall-subject')?.value || '').trim();
+        if (!text) { toast('Введи текст', 'error'); return; }
+        try {
+          await apiPost('/api/wall/create', {
+            text, subject, category: state.wallForm.category, scope: state.wallForm.scope,
+          });
+          state.wallForm = {text:'', category:'question', subject:'', scope:'general'};
+          haptic('success'); toast('Опубликовано', 'success');
+          await loadWallPosts(); render();
+        } catch (e) { toast(e.message, 'error'); }
+      }}
+    ]
+  });
+  attach();
+}
+function wallEditPost(postId) {
+  const p = state.wallPosts.find(x => x.id === postId) || (state.wallPost?.id===postId ? state.wallPost : null);
+  if (!p) return;
+  let form = {text: p.text, category: p.category, subject: p.subject || ''};
+  const cats = [
+    {k:'question', l:'Вопрос'}, {k:'homework', l:'ДЗ'},
+    {k:'help', l:'Просьба'}, {k:'announce', l:'Объявление'},
+  ];
+  const renderBody = () => `
+    <div class="label">КАТЕГОРИЯ</div>
+    <div class="wall-form-cat">
+      ${cats.map(c => `<button class="${form.category===c.k?'active':''}" data-cat="${c.k}">${c.l}</button>`).join('')}
+    </div>
+    <div class="label">ПРЕДМЕТ</div>
+    <input class="input" id="wall-edit-subject" value="${escapeHtml(form.subject)}" maxlength="100">
+    <div class="label">ТЕКСТ</div>
+    <textarea class="input" id="wall-edit-text" rows="5" maxlength="1500">${escapeHtml(form.text)}</textarea>
+  `;
+  const attach = () => {
+    document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+      form.category = b.dataset.cat;
+      document.getElementById('modalBody').innerHTML = renderBody();
+      attach();
+    });
+  };
+  modalOpen({
+    title:'РЕДАКТИРОВАТЬ',
+    body: renderBody(),
+    actions:[
+      {label:'ОТМЕНА', style:'btn-secondary'},
+      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+        const text = (document.getElementById('wall-edit-text')?.value || '').trim();
+        const subject = (document.getElementById('wall-edit-subject')?.value || '').trim();
+        if (!text) { toast('Пусто', 'error'); return; }
+        try {
+          await apiPost('/api/wall/edit', {target_type:'post', target_id: postId, text, subject, category: form.category});
+          haptic('success'); toast('Сохранено', 'success');
+          await loadWallPosts();
+          if (state.wallPost?.id === postId) await wallOpenPost(postId);
+          render();
+        } catch (e) { toast(e.message, 'error'); }
+      }}
+    ]
+  });
+  attach();
+}
+function wallEditComment(commentId) {
+  const c = state.wallComments.find(x => x.id === commentId);
+  if (!c) return;
+  modalOpen({
+    title:'РЕДАКТИРОВАТЬ',
+    body: `<div class="label">ТЕКСТ</div><textarea class="input" id="wall-edit-c" rows="4" maxlength="1000">${escapeHtml(c.text)}</textarea>`,
+    actions:[
+      {label:'ОТМЕНА', style:'btn-secondary'},
+      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+        const text = (document.getElementById('wall-edit-c')?.value || '').trim();
+        if (!text) { toast('Пусто', 'error'); return; }
+        try {
+          await apiPost('/api/wall/edit', {target_type:'comment', target_id: commentId, text});
+          haptic('success');
+          if (state.wallPost) await wallOpenPost(state.wallPost.id);
+        } catch (e) { toast(e.message, 'error'); }
+      }}
+    ]
+  });
+}
+function wallDelete(targetType, targetId) {
+  modalConfirm('УДАЛИТЬ?', 'Отменить нельзя.', async () => {
+    try {
+      await apiPost('/api/wall/delete', {target_type: targetType, target_id: targetId});
+      haptic('success');
+      if (targetType === 'post') { state.wallPost = null; await loadWallPosts(); }
+      else if (state.wallPost) await wallOpenPost(state.wallPost.id);
+      render();
+    } catch (e) { toast(e.message, 'error'); }
+  }, 'УДАЛИТЬ');
+}
+function wallReport(targetType, targetId) {
+  modalOpen({
+    title:'ЖАЛОБА',
+    body: `<div class="label">ПРИЧИНА</div><textarea class="input" id="wall-report-reason" rows="3" placeholder="Опиши, что не так" maxlength="500"></textarea>`,
+    actions:[
+      {label:'ОТМЕНА', style:'btn-secondary'},
+      {label:'ОТПРАВИТЬ', style:'btn-red', onClick: async () => {
+        const reason = (document.getElementById('wall-report-reason')?.value || '').trim();
+        try {
+          await apiPost('/api/wall/report', {target_type: targetType, target_id: targetId, reason});
+          haptic('success'); toast('Жалоба отправлена', 'success');
+        } catch (e) { toast(e.message, 'error'); }
+      }}
+    ]
+  });
+}
+
+/* ============================================================
+   ДЕЙСТВИЯ
    ============================================================ */
 function actionOpenNotifyEditor() {
   haptic('light');
@@ -1926,21 +2093,15 @@ async function actionNotifySave() {
   if (state.notifyEditorType === 'today' && hh > 10) { toast('Для «Сегодня» — не позже 10:00', 'error'); return; }
   try {
     await apiPost('/api/notify-set', {type: state.notifyEditorType, hour: hh, minute: mm});
-    state.notifyEditor = false;
-    haptic('success');
-    toast('Сохранено', 'success');
-    await loadProfile();
-    render();
+    state.notifyEditor = false; haptic('success'); toast('Сохранено', 'success');
+    await loadProfile(); render();
   } catch (e) { toast(e.message, 'error'); }
 }
 async function actionNotifyOff() {
   try {
     await apiPost('/api/notify-set', {type: null});
-    state.notifyEditor = false;
-    haptic('success');
-    toast('Уведомления выключены');
-    await loadProfile();
-    render();
+    state.notifyEditor = false; haptic('success'); toast('Уведомления выключены');
+    await loadProfile(); render();
   } catch (e) { toast(e.message, 'error'); }
 }
 async function actionChooseGroup() {
@@ -1979,16 +2140,14 @@ async function actionSetSubgroup(value) {
   try {
     await apiPost('/api/set-subgroup', {subgroup: value});
     if (state.profile) state.profile.subgroup = value;
-    haptic('success');
-    render();
+    haptic('success'); render();
   } catch (e) { toast(e.message, 'error'); }
 }
 async function actionQuoteSubscribe(value) {
   try {
     await apiPost('/api/quote-subscribe', {subscribe: value === 1});
     if (state.profile) state.profile.daily_subscribed = value === 1;
-    haptic('success');
-    render();
+    haptic('success'); render();
   } catch (e) { toast(e.message, 'error'); }
 }
 async function actionFeedbackSend() {
@@ -1998,9 +2157,7 @@ async function actionFeedbackSend() {
   if (!text) { toast('Пустое сообщение', 'error'); return; }
   try {
     await apiPost('/api/feedback', {text});
-    el.value = '';
-    haptic('success');
-    toast('Отправлено', 'success');
+    el.value = ''; haptic('success'); toast('Отправлено', 'success');
   } catch (e) { toast(e.message, 'error'); }
 }
 async function actionTaskDone(id) {
@@ -2014,21 +2171,18 @@ async function actionTaskDelete(id) {
   modalConfirm('УДАЛИТЬ ЗАДАЧУ?', 'Отменить не получится.', async () => {
     try {
       await apiPost('/api/task-delete', {id});
-      haptic('success');
-      await loadTasks(); render();
+      haptic('success'); await loadTasks(); render();
     } catch (e) { toast(e.message, 'error'); }
   }, 'УДАЛИТЬ');
 }
 async function actionTasksClear() {
-  modalConfirm('ОЧИСТИТЬ ВЫПОЛНЕННЫЕ?', 'Все выполненные задачи удалятся.', async () => {
+  modalConfirm('ОЧИСТИТЬ?', 'Все выполненные задачи удалятся.', async () => {
     try {
       await apiPost('/api/task-clear');
-      haptic('success');
-      await loadTasks(); render();
+      haptic('success'); await loadTasks(); render();
     } catch (e) { toast(e.message, 'error'); }
   }, 'ОЧИСТИТЬ');
 }
-
 function actionTaskAdd() {
   let form = {text:'', priority:2, due:'none', customDate:'', customTime:''};
   const renderBody = () => `
@@ -2099,7 +2253,6 @@ function actionTaskAdd() {
   });
   attach();
 }
-
 function actionTaskEdit(id) {
   const t = state.tasks.find(x => x.id === id);
   if (!t) return;
@@ -2140,7 +2293,6 @@ function actionTaskEdit(id) {
   });
   attach();
 }
-
 function actionNoteAdd() {
   let form = {subject:'', text:''};
   const renderBody = () => `
@@ -2181,7 +2333,6 @@ function actionNoteAdd() {
   });
   attach();
 }
-
 function actionNoteEdit(id) {
   const n = state.notes.find(x => x.id === id);
   if (!n) return;
@@ -2208,17 +2359,14 @@ function actionNoteEdit(id) {
     ]
   });
 }
-
 async function actionNoteDelete(id) {
   modalConfirm('УДАЛИТЬ ЗАМЕТКУ?', 'Восстановить нельзя.', async () => {
     try {
       await apiPost('/api/note-delete', {id});
-      haptic('success');
-      await loadNotes(); render();
+      haptic('success'); await loadNotes(); render();
     } catch (e) { toast(e.message, 'error'); }
   }, 'УДАЛИТЬ');
 }
-
 function actionScholarshipSetAmount() {
   let amount = state.scholarship?.amount || 0;
   modalOpen({
@@ -2252,7 +2400,6 @@ function actionScholarshipSetAmount() {
     });
   }, 0);
 }
-
 function actionScholarshipAddGrade() {
   let form = {subject:'', grade:5};
   const subs = state.scholarship?.available_subjects || [];
@@ -2261,9 +2408,7 @@ function actionScholarshipAddGrade() {
     <input class="input" id="gr-subj" placeholder="Название" value="${escapeHtml(form.subject)}" maxlength="100">
     ${subs.length ? `<div class="choice-row" style="margin-top:4px;max-height:140px;overflow-y:auto">${subs.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
     <div class="label">ОЦЕНКА</div>
-    <div class="choice-row">
-      ${[2,3,4,5].map(g => `<button class="choice ${form.grade===g?'active':''}" data-grade="${g}">${g}</button>`).join('')}
-    </div>
+    <div class="choice-row">${[2,3,4,5].map(g => `<button class="choice ${form.grade===g?'active':''}" data-grade="${g}">${g}</button>`).join('')}</div>
   `;
   const attach = () => {
     const si = document.getElementById('gr-subj');
@@ -2298,7 +2443,6 @@ function actionScholarshipAddGrade() {
   });
   attach();
 }
-
 async function actionScholarshipClear() {
   modalConfirm('ОЧИСТИТЬ ОЦЕНКИ?', 'Все оценки удалятся.', async () => {
     try {
@@ -2307,13 +2451,11 @@ async function actionScholarshipClear() {
     } catch (e) { toast(e.message, 'error'); }
   }, 'ОЧИСТИТЬ');
 }
-
 async function actionAISend() {
   const el = document.getElementById('ai-input');
   const question = (el?.value || '').trim();
   const hasPhoto = !!state.aiPendingPhoto;
   if (!question && !hasPhoto) { toast('Введи вопрос', 'error'); return; }
-
   if (hasPhoto) {
     state.aiMessages.push({role:'user', text: question || 'Что на фото?', photo: state.aiPendingPhoto});
     const photo = state.aiPendingPhoto;
@@ -2331,7 +2473,6 @@ async function actionAISend() {
     } finally { state.aiPending = false; render(); }
     return;
   }
-
   state.aiMessages.push({role:'user', text: question});
   state.aiPending = true;
   if (el) el.value = '';
@@ -2346,9 +2487,8 @@ async function actionAISend() {
   } finally { state.aiPending = false; render(); }
 }
 function actionAIClear() {
-  modalConfirm('ОЧИСТИТЬ ЧАТ?', 'История сообщений удалится.', async () => {
-    state.aiMessages = [];
-    state.aiPendingPhoto = null;
+  modalConfirm('ОЧИСТИТЬ ЧАТ?', 'История удалится.', async () => {
+    state.aiMessages = []; state.aiPendingPhoto = null;
     try { await apiPost('/api/ai/clear-history'); } catch(e){}
     render();
   }, 'ОЧИСТИТЬ');
@@ -2357,10 +2497,7 @@ function actionAIPhotoOpen() {
   const input = document.getElementById('ai-photo-input');
   if (input) input.click();
 }
-function actionAIPhotoRemove() {
-  state.aiPendingPhoto = null;
-  render();
-}
+function actionAIPhotoRemove() { state.aiPendingPhoto = null; render(); }
 function actionAIPhotoSelected(file) {
   if (!file) return;
   if (file.size > 8 * 1024 * 1024) { toast('Фото до 8 МБ', 'error'); return; }
@@ -2386,7 +2523,6 @@ function actionAIPhotoSelected(file) {
   };
   reader.readAsDataURL(file);
 }
-
 async function actionForgetGroup() {
   modalConfirm('ЗАБЫТЬ ГРУППУ?', 'Расписание перестанет показываться.', async () => {
     try {
@@ -2396,12 +2532,6 @@ async function actionForgetGroup() {
     } catch (e) { toast(e.message, 'error'); }
   }, 'ЗАБЫТЬ');
 }
-function actionCopyMyId() {
-  const id = String(state.user?.id || '');
-  if (!id) return;
-  try { navigator.clipboard.writeText(id); haptic('success'); toast('ID: ' + id, 'success'); }
-  catch(e) { toast('ID: ' + id); }
-}
 async function actionAdminMonitor() {
   try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
   catch (e) { state.adminMonitor = {ok:false, status:0, error:e.message}; }
@@ -2410,8 +2540,8 @@ async function actionAdminMonitor() {
 function actionAdminBroadcast() {
   const el = document.getElementById('admin-broadcast-text');
   const text = (el?.value || '').trim();
-  if (!text) { toast('Пустое сообщение', 'error'); return; }
-  modalConfirm('ОТПРАВИТЬ ВСЕМ?', 'Уйдёт всем пользователям бота.', async () => {
+  if (!text) { toast('Пустое', 'error'); return; }
+  modalConfirm('ОТПРАВИТЬ ВСЕМ?', 'Уйдёт всем.', async () => {
     try {
       await apiPost('/api/admin/broadcast', {text});
       if (el) el.value = '';
@@ -2421,11 +2551,8 @@ function actionAdminBroadcast() {
 }
 function actionAdminFbReply(fid) {
   modalOpen({
-    title:'ОТВЕТ НА ОБРАЩЕНИЕ',
-    body: `
-      <div class="label">ТЕКСТ ОТВЕТА</div>
-      <textarea class="input" id="fb-reply-text" rows="4" placeholder="Что ответить..."></textarea>
-    `,
+    title:'ОТВЕТ',
+    body: `<div class="label">ТЕКСТ</div><textarea class="input" id="fb-reply-text" rows="4"></textarea>`,
     actions:[
       {label:'ОТМЕНА', style:'btn-secondary'},
       {label:'ОТПРАВИТЬ', style:'btn', onClick: async () => {
@@ -2447,7 +2574,6 @@ async function actionAdminFbPostpone(fid) {
     await loadAdminFeedback(); await loadAdminStats(); render();
   } catch (e) { toast(e.message, 'error'); }
 }
-
 function actionSetName() {
   modalOpen({
     title:'НОВЫЙ НИК',
@@ -2474,14 +2600,10 @@ function actionSetName() {
   });
   setTimeout(() => document.getElementById('set-name-input')?.focus(), 100);
 }
-
 function actionSetAvatar() {
   modalOpen({
     title:'АВАТАР',
-    body: `
-      <div class="label">ИНДЕКС 0–11</div>
-      <input class="input" id="avatar-idx" type="number" min="0" max="11" value="${state.profile?.wallet?.avatar_idx || 0}">
-    `,
+    body: `<div class="label">ИНДЕКС 0–11</div><input class="input" id="avatar-idx" type="number" min="0" max="11" value="${state.profile?.wallet?.avatar_idx || 0}">`,
     actions:[
       {label:'ОТМЕНА', style:'btn-secondary'},
       {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
@@ -2495,8 +2617,6 @@ function actionSetAvatar() {
     ]
   });
 }
-
-/* ===== КЕЙСЫ ===== */
 const CHEST_META = {
   capsule:  {name:'Капсула',  icon:'ic-case-capsule',  costLabel:'Бесплатно (раз в 24 ч)',
              drops:[['Шифт 10–40','55%'],['XP 50–150','30%'],['Нова ×1','10%'],['Шифт ×100','5%']]},
@@ -2507,7 +2627,6 @@ const CHEST_META = {
   core:     {name:'Ядро',     icon:'ic-case-core',     costLabel:'80 Нова',
              drops:[['Шифт ×2000','25%'],['XP ×5000','25%'],['Нова 30–60','40%'],['Нова ×200','10%']]},
 };
-
 function actionChestModal(id) {
   const meta = CHEST_META[id];
   if (!meta) return;
@@ -2531,22 +2650,17 @@ function actionChestModal(id) {
     `,
     actions: [
       {label:'ЗАКРЫТЬ', style:'btn-secondary'},
-      {label: isCapsule ? (canOpenCapsule ? 'ОТКРЫТЬ' : 'ЖДИ') : 'ОТКРЫТЬ',
-       style: 'btn',
+      {label: isCapsule ? (canOpenCapsule ? 'ОТКРЫТЬ' : 'ЖДИ') : 'ОТКРЫТЬ', style: 'btn',
        onClick: async () => {
          if (isCapsule && !canOpenCapsule) { toast('Ещё рано', 'error'); return; }
          try {
            const r = await apiPost('/api/chest/open', {type: id});
            haptic('success'); popIcon(meta.icon);
-           const reward = r.reward || {};
-           const label = reward.label || '';
-           toast(label, 'success');
+           toast(r.reward?.label || '', 'success');
            state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
-           await loadProfile();
-           render();
-           startChestTimer();
+           await loadProfile(); render(); startChestTimer();
          } catch (e) {
-           if (e.code === 'already_opened') toast('Уже открыт, приходи позже', 'error');
+           if (e.code === 'already_opened') toast('Уже открыт', 'error');
            else if (e.code === 'not_enough_shift') toast('Недостаточно Шифт', 'error');
            else if (e.code === 'not_enough_nova') toast('Недостаточно Нова', 'error');
            else toast(e.message, 'error');
@@ -2556,9 +2670,6 @@ function actionChestModal(id) {
   });
   startChestTimer();
 }
-
-function actionPremiumChestOpen() { /* устарело, оставлено как заглушка */ }
-
 function actionExchange() {
   modalOpen({
     title:'ОБМЕННИК',
@@ -2596,9 +2707,7 @@ function actionExchange() {
     });
   }, 0);
 }
-
 function achIconById(id) { return `ic-ach-${id}`; }
-
 async function actionShowAchievements() {
   try {
     const d = await apiGet('/api/achievements');
@@ -2606,18 +2715,13 @@ async function actionShowAchievements() {
     renderAchievementsModal(d);
   } catch (e) { toast(e.message, 'error'); }
 }
-
 function renderAchievementsModal(d) {
   const claimable = d.items.filter(x => x.can_claim);
-  let body = `<div class="ach-progress">
-    <div class="ach-progress-num">${d.got} / ${d.total}</div>
-    <div class="ach-progress-label">Разблокировано</div>
-  </div>`;
-
+  let body = `<div class="ach-progress"><div class="ach-progress-num">${d.got} / ${d.total}</div><div class="ach-progress-label">Разблокировано</div></div>`;
   if (claimable.length > 0) {
     const tr = d.total_reward;
     body += `<div class="card" style="background:var(--cyan);color:#0A0E0F;border:none">
-      <div style="font-weight:800;text-align:center;margin-bottom:8px">Доступно наград: ${claimable.length}</div>
+      <div style="font-weight:800;text-align:center;margin-bottom:8px">Доступно: ${claimable.length}</div>
       <div style="text-align:center;font-family:'Anton',sans-serif;font-style:italic;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap">
         <span>+${tr.xp} ${icXp(14)}</span>
         <span>+${tr.soft} ${icShift(14)}</span>
@@ -2626,38 +2730,22 @@ function renderAchievementsModal(d) {
       <button class="btn btn-red" data-action="ach-claim-all" style="width:100%;margin-top:12px;background:#0A0E0F;color:#FFF">ЗАБРАТЬ ВСЁ</button>
     </div>`;
   }
-
   body += '<div class="ach-grid">';
   for (const a of d.items) {
     const cls = !a.unlocked ? 'locked' : (a.can_claim ? 'claimable' : (a.claimed ? 'claimed' : ''));
-    const rewardHtml = `
-      +${a.reward.xp} ${icXp(14)}
-      ${a.reward.soft ? `· +${a.reward.soft} ${icShift(14)}` : ''}
-      ${a.reward.hard ? `· +${a.reward.hard} ${icNova(14)}` : ''}
-    `;
     body += `<div class="ach-card ${cls}">
       <div class="ach-icon">${icon(achIconById(a.id),36)}</div>
       <div class="ach-body">
         <div class="ach-name">${escapeHtml(a.name)}</div>
         <div class="ach-desc">${escapeHtml(a.desc)}</div>
-        <div class="ach-reward">${rewardHtml}</div>
+        <div class="ach-reward">+${a.reward.xp} ${icXp(14)}${a.reward.soft ? ` · +${a.reward.soft} ${icShift(14)}` : ''}${a.reward.hard ? ` · +${a.reward.hard} ${icNova(14)}` : ''}</div>
       </div>
-      ${a.can_claim
-        ? `<button class="ach-claim" data-action="ach-claim" data-id="${a.id}">ЗАБРАТЬ</button>`
-        : a.claimed
-          ? `<button class="ach-claim claimed" disabled>${icon('ic-check',14)}</button>`
-          : ''
-      }
+      ${a.can_claim ? `<button class="ach-claim" data-action="ach-claim" data-id="${a.id}">ЗАБРАТЬ</button>`
+        : a.claimed ? `<button class="ach-claim claimed" disabled>${icon('ic-check',14)}</button>` : ''}
     </div>`;
   }
   body += '</div>';
-
-  modalOpen({
-    title:'ДОСТИЖЕНИЯ',
-    body,
-    actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]
-  });
-
+  modalOpen({title:'ДОСТИЖЕНИЯ', body, actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
   setTimeout(() => {
     document.querySelectorAll('[data-action="ach-claim"]').forEach(b => {
       b.onclick = async () => {
@@ -2691,9 +2779,8 @@ function renderAchievementsModal(d) {
     };
   }, 0);
 }
-
 function actionExportPdf() {
-  modalConfirm('ЭКСПОРТ PDF?', 'PDF со всеми твоими данными придёт в чат с ботом.', async () => {
+  modalConfirm('ЭКСПОРТ PDF?', 'PDF придёт в чат с ботом.', async () => {
     try {
       await apiPost('/api/export');
       haptic('success'); toast('PDF отправлен в Telegram', 'success');
@@ -2711,22 +2798,13 @@ async function actionShowMyFeedback() {
         ${f.admin_reply ? `<div style="margin-top:6px;color:var(--cyan-dark);font-weight:600">Ответ: ${escapeHtml(f.admin_reply)}</div>` : ''}
       </div>
     `).join('');
-    modalOpen({
-      title:'МОИ ОБРАЩЕНИЯ',
-      body,
-      actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]
-    });
+    modalOpen({title:'МОИ ОБРАЩЕНИЯ', body, actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
   } catch (e) { toast(e.message, 'error'); }
 }
 function actionSetNotifyBefore() {
   modalOpen({
     title:'НАПОМИНАНИЕ',
-    body: `
-      <div class="card-subtitle">За сколько минут до пары напоминать</div>
-      <div class="choice-row">
-        ${[0,5,10,15,20,30,60].map(v => `<button class="choice" data-nb="${v}">${v===0?'Выкл':v+' мин'}</button>`).join('')}
-      </div>
-    `,
+    body: `<div class="card-subtitle">За сколько минут до пары</div><div class="choice-row">${[0,5,10,15,20,30,60].map(v => `<button class="choice" data-nb="${v}">${v===0?'Выкл':v+' мин'}</button>`).join('')}</div>`,
     actions:[
       {label:'ОТМЕНА', style:'btn-secondary'},
       {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
@@ -2748,32 +2826,22 @@ function actionSetNotifyBefore() {
   }, 0);
 }
 async function actionAttendanceSet(date, time, subject, status) {
-  try {
-    await apiPost('/api/attendance-set', {date, time, subject, status});
-    haptic('success');
-  } catch (e) { toast(e.message, 'error'); }
+  try { await apiPost('/api/attendance-set', {date, time, subject, status}); haptic('success'); }
+  catch (e) { toast(e.message, 'error'); }
 }
-
 function actionAttHelp() {
   modalOpen({
     title:'КАК РАБОТАЕТ',
     body: `
-      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-was',18)} ПОСЕЩЕНО</div>
-      <div class="card-subtitle">Ты был на паре. +3 XP и +1 Шифт.</div>
-      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-missed',18)} ПРОПУЩЕНО</div>
-      <div class="card-subtitle">Пропуск без причины.</div>
-      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-sick',18)} БОЛЕЛ</div>
-      <div class="card-subtitle">Пропуск по болезни.</div>
-      <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-excused',18)} УВАЖИТЕЛЬНАЯ</div>
-      <div class="card-subtitle">Уважительная причина.</div>
+      <div class="label">${icon('ic-was',18)} ПОСЕЩЕНО</div><div class="card-subtitle">+3 XP и +1 Шифт.</div>
+      <div class="label">${icon('ic-missed',18)} ПРОПУЩЕНО</div><div class="card-subtitle">Пропуск без причины.</div>
+      <div class="label">${icon('ic-sick',18)} БОЛЕЛ</div><div class="card-subtitle">Пропуск по болезни.</div>
+      <div class="label">${icon('ic-excused',18)} УВАЖИТЕЛЬНАЯ</div><div class="card-subtitle">Уважительная причина.</div>
     `,
     actions:[{label:'ПОНЯТНО', style:'btn'}]
   });
 }
 
-/* ============================================================
-   HANDLERS
-   ============================================================ */
 function attachHandlers() {
   document.querySelectorAll('[data-action]').forEach(el => {
     if (el._bound) return;
@@ -2792,7 +2860,6 @@ function attachHandlers() {
       await actionAttendanceSet(el.dataset.date, el.dataset.time, el.dataset.subject, att);
     });
   });
-
   const notifyCb = document.getElementById('notify-changes');
   if (notifyCb) notifyCb.addEventListener('change', async (e) => {
     const val = e.target.checked;
@@ -2801,18 +2868,30 @@ function attachHandlers() {
       if (state.profile) state.profile.notify_changes = val;
       haptic('success');
     } catch (err) {
-      haptic('error');
-      toast(err.message, 'error');
+      haptic('error'); toast(err.message, 'error');
       e.target.checked = !val;
     }
   });
-
   const aiPhotoInput = document.getElementById('ai-photo-input');
   if (aiPhotoInput) aiPhotoInput.addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];
     if (file) actionAIPhotoSelected(file);
     e.target.value = '';
   });
+  const wallSearch = document.getElementById('wall-search');
+  if (wallSearch && !wallSearch._bound) {
+    wallSearch._bound = true;
+    let timer = null;
+    wallSearch.addEventListener('input', (e) => {
+      state.wallSearch = e.target.value;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        render();
+        const inp = document.getElementById('wall-search');
+        if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+      }, 250);
+    });
+  }
 }
 
 function handleAction(el) {
@@ -2839,7 +2918,6 @@ function handleAction(el) {
   else if (a === 'ai-photo-remove') actionAIPhotoRemove();
   else if (a === 'choose-group') actionChooseGroup();
   else if (a === 'forget-group') actionForgetGroup();
-  else if (a === 'copy-my-id') actionCopyMyId();
   else if (a === 'picker-back') actionPickerBack();
   else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
   else if (a === 'picker-choose-course') actionPickerChooseCourse(el.dataset.value);
@@ -2856,8 +2934,7 @@ function handleAction(el) {
   else if (a === 'week-current') {
     const now = nowIrkutsk();
     state.weekOffset = (now.getDay() === 0) ? 1 : 0;
-    state.scheduleViewMode = 'week';
-    state.scheduleDay = null;
+    state.scheduleViewMode = 'week'; state.scheduleDay = null;
     loadWeekAndRender();
   }
   else if (a === 'week-today') { loadTodayAndRender(); }
@@ -2878,26 +2955,33 @@ function handleAction(el) {
   else if (a === 'set-name') actionSetName();
   else if (a === 'set-avatar') actionSetAvatar();
   else if (a === 'chest-modal') actionChestModal(el.dataset.id);
-  else if (a === 'premium-chest-open') actionPremiumChestOpen();
   else if (a === 'exchange') actionExchange();
   else if (a === 'show-achievements') actionShowAchievements();
   else if (a === 'export-pdf') actionExportPdf();
   else if (a === 'show-my-feedback') actionShowMyFeedback();
   else if (a === 'att-help') actionAttHelp();
+  else if (a === 'wall-scope') wallSetScope(el.dataset.value);
+  else if (a === 'wall-cat') wallSetCategory(el.dataset.value);
+  else if (a === 'wall-new') wallNewPost();
+  else if (a === 'wall-open-post') wallOpenPost(parseInt(el.dataset.id));
+  else if (a === 'wall-back') { state.wallPost = null; state.wallComments = []; render(); }
+  else if (a === 'wall-like') wallLike(el.dataset.type, parseInt(el.dataset.id));
+  else if (a === 'wall-comment-send') wallSendComment();
+  else if (a === 'wall-solve') wallToggleSolve(parseInt(el.dataset.id));
+  else if (a === 'wall-edit-post') wallEditPost(parseInt(el.dataset.id));
+  else if (a === 'wall-edit-comment') wallEditComment(parseInt(el.dataset.id));
+  else if (a === 'wall-del-post') wallDelete('post', parseInt(el.dataset.id));
+  else if (a === 'wall-del-comment') wallDelete('comment', parseInt(el.dataset.id));
+  else if (a === 'wall-report') wallReport(el.dataset.type, parseInt(el.dataset.id));
 }
-
 function actionDayToday() {
-  state.scheduleDay = 'today';
-  state.scheduleViewMode = 'today';
-  render();
+  state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; render();
 }
 function actionDayTomorrow() {
-  state.scheduleDay = 'tomorrow';
-  state.scheduleViewMode = 'today';
+  state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today';
   if (!state.weekDays) { render(); ensureWeekLoaded().then(render); } else render();
 }
 
-/* NAV */
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const tab = btn.dataset.tab;
@@ -2907,14 +2991,12 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     await loadTabData(tab);
   });
 });
-
 document.getElementById('refresh-btn').addEventListener('click', async () => {
   haptic('light');
   if (state.tab === 'schedule' && state.scheduleViewMode === 'week') await loadWeekAndRender();
   else await loadTabData(state.tab);
 });
 
-/* INIT */
 (async function init() {
   await loadTabData(state.tab);
 })();
