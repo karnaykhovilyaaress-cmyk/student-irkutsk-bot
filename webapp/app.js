@@ -28,20 +28,20 @@ const state = {
   aiMessages:[], aiPending:false, aiPendingPhoto:null,
   adminStats:null, adminFeedback:[], adminMonitor:null, adminBusy:false,
   achData:null,
+  chestStatus:null, chestTimer:null,
 };
 
 /* ============================================================
-   SVG helpers
+   ICONS
    ============================================================ */
 function icon(id, size=16, cls='') {
   return `<svg width="${size}" height="${size}" class="${cls}"><use href="#${id}"/></svg>`;
 }
-function icSoft(size=16)  { return icon('ic-soft', size, 'ic-soft-c'); }
-function icHard(size=16)  { return icon('ic-hard', size, 'ic-hard-c'); }
-function icXp(size=16)    { return icon('ic-xp', size); }
+function icShift(size=16) { return icon('ic-shift', size, 'ic-shift-c'); }
+function icNova(size=16)  { return icon('ic-nova',  size, 'ic-nova-c'); }
+function icXp(size=16)    { return icon('ic-xp',    size); }
 
-/* Эмодзи-фильтр для текстов с сервера */
-const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{2764}\u{2705}\u{274C}\u{2757}\u{2728}\u{2764}\u{1F4A5}\u{1F525}\u{1F4E6}\u{1F48E}\u{1F3C6}\u{1F389}\u{1F381}\u{1F4B0}\u{1F4B8}\u{1F4B5}]/gu;
+const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{2764}\u{2705}\u{274C}\u{2757}\u{2728}\u{1F4A5}\u{1F525}\u{1F4E6}\u{1F48E}\u{1F3C6}\u{1F389}\u{1F381}\u{1F4B0}\u{1F4B8}\u{1F4B5}]/gu;
 function stripEmoji(s){ return (s||'').replace(EMOJI_RE,'').replace(/\s+/g,' ').trim(); }
 
 /* ============================================================
@@ -68,6 +68,7 @@ async function apiPost(path, body={}) {
     const err = await r.json().catch(()=>({}));
     const e = new Error(err.message || err.error || `HTTP ${r.status}`);
     e.code = err.error;
+    e.data = err;
     throw e;
   }
   return r.json();
@@ -150,7 +151,6 @@ function modalConfirm(title, text, onYes, yesLabel='ПОДТВЕРДИТЬ') {
    ============================================================ */
 function nowIrkutsk() {
   const d = new Date();
-  // UTC+8 от UTC
   const utc = d.getTime() + d.getTimezoneOffset() * 60000;
   return new Date(utc + 8 * 3600000);
 }
@@ -160,15 +160,24 @@ function fmtDate(d) {
   const yyyy = d.getFullYear();
   return `${dd}.${mm}.${yyyy}`;
 }
-function addDays(d, n) {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
+function fmtDateISO(d) {
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 function findDayByDate(days, dateStr) {
   if (!days) return null;
   for (const d of days) if (d.date === dateStr) return d;
   return null;
+}
+function fmtCountdown(ms) {
+  if (ms <= 0) return '00:00:00';
+  const total = Math.floor(ms / 1000);
+  const h = String(Math.floor(total / 3600)).padStart(2,'0');
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2,'0');
+  const s = String(total % 60).padStart(2,'0');
+  return `${h}:${m}:${s}`;
 }
 
 /* ============================================================
@@ -358,31 +367,21 @@ function renderTomorrowBlock() {
   const wd = state.weekDays;
   const tomorrow = addDays(nowIrkutsk(), 1);
   const tomorrowStr = fmtDate(tomorrow);
-
-  if (!wd?.days?.length) {
-    return '<div class="skeleton-card"></div>';
-  }
+  if (!wd?.days?.length) return '<div class="skeleton-card"></div>';
   let day = findDayByDate(wd.days, tomorrowStr);
-
-  // Если завтра воскресенье или его нет в этой неделе — оно в начале следующей
-  if (!day) {
-    return `<div class="empty">Расписание на завтра (${tomorrowStr}) пока недоступно.<br>Нажми «Текущая неделя» или «Следующая», чтобы загрузить.</div>`;
-  }
+  if (!day) return `<div class="empty">Расписание на завтра (${tomorrowStr}) пока недоступно.<br>Нажми «Текущая неделя» или «Следующая», чтобы загрузить.</div>`;
   return renderDayCard(day, 'Завтра');
 }
 
 function renderWeekView() {
   const wd = state.weekDays;
   if (!wd?.days?.length) return '<div class="empty">Не удалось загрузить расписание на неделю</div>';
-
   let title;
   if (state.weekOffset === 0) title = 'Текущая неделя';
   else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
   else title = `Неделя ${state.weekOffset}`;
-
   let html = `<div class="day-header">${escapeHtml(title)}</div>`;
   if (wd.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(wd.group)}${wd.subgroup?` · подгруппа ${escapeHtml(wd.subgroup)}`:''}</div>`;
-
   for (const day of wd.days) {
     html += `<div class="day-header" style="margin-top:16px">${escapeHtml(day.name || day.date)}${day.date ? ' · ' + escapeHtml(day.date) : ''}</div>`;
     if (!day.lessons?.length) html += '<div class="card-subtitle" style="padding:8px 0">Занятий нет</div>';
@@ -395,16 +394,13 @@ function attachSwipe() {
   const wrap = document.querySelector('.swipe-wrap');
   const pane = document.getElementById('swipePane');
   if (!wrap || !pane) return;
-
   let startX = 0, startY = 0, dx = 0, active = false, locked = false;
-
   wrap.addEventListener('touchstart', (e) => {
     const t = e.touches[0];
     startX = t.clientX; startY = t.clientY;
     dx = 0; active = true; locked = false;
     pane.style.transition = 'none';
   }, {passive:true});
-
   wrap.addEventListener('touchmove', (e) => {
     if (!active) return;
     const t = e.touches[0];
@@ -419,19 +415,13 @@ function attachSwipe() {
       pane.style.transform = `translateX(${dx * 0.45}px)`;
     }
   }, {passive:true});
-
   wrap.addEventListener('touchend', () => {
     if (!active) return;
     active = false;
     pane.style.transition = '';
     pane.style.transform = '';
-    if (dx < -70 && state.scheduleDay === 'today') {
-      haptic('light');
-      actionDayTomorrow();
-    } else if (dx > 70 && state.scheduleDay === 'tomorrow') {
-      haptic('light');
-      actionDayToday();
-    }
+    if (dx < -70 && state.scheduleDay === 'today') { haptic('light'); actionDayTomorrow(); }
+    else if (dx > 70 && state.scheduleDay === 'tomorrow') { haptic('light'); actionDayToday(); }
     dx = 0;
   });
 }
@@ -566,7 +556,7 @@ function renderNotifyEditor() {
 }
 
 /* ============================================================
-   TASKS
+   TASKS — ЦВЕТНЫЕ ПРИОРИТЕТЫ
    ============================================================ */
 function renderTasks() {
   const tasks = state.tasks;
@@ -577,18 +567,27 @@ function renderTasks() {
   </div>`;
   if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить задачу</button>`;
   if (!tasks?.length) {
-    if (state.tasksView === 'active') html += '<div class="empty">Задач нет. Добавь первую!</div>';
-    else html += '<div class="empty">Нет выполненных</div>';
+    html += state.tasksView === 'active'
+      ? '<div class="empty">Задач нет. Добавь первую!</div>'
+      : '<div class="empty">Нет выполненных</div>';
     return html;
   }
+  const prioMap = {
+    1: {cls:'low', label:'Низкий'},
+    2: {cls:'medium', label:'Средний'},
+    3: {cls:'high', label:'Высокий'}
+  };
   for (const t of tasks) {
-    const dueStr = t.due_date ? `<span class="${t.overdue?'overdue':''}">до ${escapeHtml(t.due_date)}${t.due_time?' '+escapeHtml(t.due_time):''}${t.overdue?' — просрочено':''}</span>` : '';
-    const pLabel = t.priority === 3 ? '<span class="priority priority-high">Высокий</span>'
-      : t.priority === 2 ? '<span class="priority priority-medium">Средний</span>'
-      : '<span class="priority priority-low">Низкий</span>';
-    html += `<div class="card">
+    const p = prioMap[t.priority] || prioMap[2];
+    const dueStr = t.due_date
+      ? `<span class="${t.overdue?'overdue':''}">до ${escapeHtml(t.due_date)}${t.due_time?' '+escapeHtml(t.due_time):''}${t.overdue?' — просрочено':''}</span>`
+      : '<span style="color:var(--text-2)">без срока</span>';
+    html += `<div class="card task-card prio-${p.cls}">
       <div class="card-title">${escapeHtml(t.text)}</div>
-      <div class="card-meta">${pLabel} ${dueStr}</div>
+      <div class="card-meta">
+        <span class="task-prio-badge ${p.cls}">${p.label}</span>
+        ${dueStr}
+      </div>
       <div class="actions-row">
         ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">${icon('ic-check',14)} Готово</button>` : ''}
         <button class="btn btn-secondary" data-action="task-edit-open" data-id="${t.id}">Изменить</button>
@@ -631,7 +630,7 @@ function renderGames() {
   return `<div class="games-list">
     <div class="game-card">
       <div class="game-card-title">${icon('ic-game-flappy',28)} ДО ПАРЫ УСПЕТЬ</div>
-      <div class="game-card-sub">Пролетай между парами, ставь рекорды, получай Софт и XP.</div>
+      <div class="game-card-sub">Пролетай между парами, собирай бонусы (щит, замедление, шифты), ставь рекорды.</div>
       <div class="actions-row">
         <button class="btn" data-action="open-flappy">ИГРАТЬ</button>
         <button class="btn btn-secondary" data-action="open-flappy-records">РЕКОРДЫ</button>
@@ -639,7 +638,7 @@ function renderGames() {
     </div>
     <div class="game-card">
       <div class="game-card-title">${icon('ic-game-bs',28)} МОРСКОЙ БОЙ</div>
-      <div class="game-card-sub">PvP по коду или с ботом. Ставки: 10 / 50 / 100 / 500 Софт.</div>
+      <div class="game-card-sub">PvP по коду или с ботом. Ставки: 10 / 50 / 100 / 500 Шифт.</div>
       <div class="actions-row">
         <button class="btn" data-action="open-bs">ОТКРЫТЬ</button>
       </div>
@@ -675,7 +674,6 @@ function renderAI() {
     }
   }
   if (state.aiPending) html += '<div class="skeleton-card"></div>';
-
   const hasPhoto = !!state.aiPendingPhoto;
   html += `<div style="margin-top:12px">`;
   if (hasPhoto) {
@@ -769,21 +767,26 @@ function renderProfile() {
     </div>
   </div>`;
 
+  // ===== КЕЙСЫ =====
   html += `<div class="card">
-    <div class="card-title">Сундуки</div>
-    <div class="card-subtitle">Обычный — раз в 24 часа. Премиум — 10 Автоматов.</div>
-    <div class="actions-row">
-      <button class="btn" data-action="chest-open">${icon('ic-gift',16)} ОТКРЫТЬ</button>
-      <button class="btn btn-secondary" data-action="premium-chest-open">${icon('ic-diamond',16)} ПРЕМИУМ</button>
+    <div class="card-title">Кейсы</div>
+    <div class="card-subtitle">Капсула — бесплатно раз в 24 часа. Остальные за валюту.</div>
+    <div class="chests-grid">
+      ${renderChestTile('capsule', 'Капсула', 'Раз в 24 часа')}
+      ${renderChestTile('relic', 'Реликт', '50 Шифт')}
+      ${renderChestTile('artifact', 'Артефакт', '15 Нова')}
+      ${renderChestTile('core', 'Ядро', '80 Нова')}
     </div>
   </div>`;
 
+  // ===== ОБМЕННИК =====
   html += `<div class="card">
     <div class="card-title">Обменник</div>
-    <div class="card-subtitle">100 ${icSoft(14)} Софт = 1 ${icHard(14)} Хард</div>
+    <div class="card-subtitle">100 ${icShift(14)} Шифт = 1 ${icNova(14)} Нова</div>
     <div class="actions-row"><button class="btn" data-action="exchange">${icon('ic-exchange',16)} ОБМЕНЯТЬ</button></div>
   </div>`;
 
+  // ===== ДОСТИЖЕНИЯ =====
   const achCanClaim = state.achData?.can_claim_count || 0;
   const achGot = state.achData?.got || 0;
   const achTotal = state.achData?.total || 0;
@@ -797,11 +800,43 @@ function renderProfile() {
     </div>
   </div>`;
 
+  // ===== ПРОФИЛЬ =====
   html += `<div class="card">
     <div class="card-title">Профиль</div>
     <div class="actions-row">
       <button class="btn btn-secondary" data-action="set-name">${icon('ic-pencil',14)} Сменить ник</button>
       <button class="btn btn-secondary" data-action="set-avatar">Аватар</button>
+    </div>
+  </div>`;
+
+  // ===== XP ТАБЛИЦА =====
+  html += `<div class="card">
+    <div class="card-title">Как заработать XP</div>
+    <div class="card-subtitle">Уровни 1–30. Каждый уровень N = 500·N XP.</div>
+    <div class="xp-table">
+      <div class="xp-row"><span>Выполнить задачу</span><b>+20</b></div>
+      <div class="xp-row"><span>Добавить задачу</span><b>+5</b></div>
+      <div class="xp-row"><span>Заметка</span><b>+3</b></div>
+      <div class="xp-row"><span>Оценка</span><b>+5</b></div>
+      <div class="xp-row"><span>Посещение пары</span><b>+3</b></div>
+      <div class="xp-row"><span>Игра (за очко)</span><b>+2</b></div>
+      <div class="xp-row"><span>Новый рекорд</span><b>+30</b></div>
+      <div class="xp-row"><span>Победа в Морском бою</span><b>+50</b></div>
+      <div class="xp-row"><span>Достижение</span><b>+10…+1000</b></div>
+    </div>
+  </div>`;
+
+  // ===== КАК ЗАРАБОТАТЬ ВАЛЮТУ =====
+  html += `<div class="card">
+    <div class="card-title">Как заработать</div>
+    <div class="xp-table">
+      <div class="xp-row"><span>Выполнить задачу</span><b>+5 ${icShift(12)}</b></div>
+      <div class="xp-row"><span>Посещение пары</span><b>+1 ${icShift(12)}</b></div>
+      <div class="xp-row"><span>Flappy за очко</span><b>+1 ${icShift(12)}</b></div>
+      <div class="xp-row"><span>Новый рекорд Flappy</span><b>+1 ${icNova(12)}</b></div>
+      <div class="xp-row"><span>Победа в бою</span><b>×2 ставки</b></div>
+      <div class="xp-row"><span>Ежедневный кейс</span><b>10–40 ${icShift(12)}</b></div>
+      <div class="xp-row"><span>Топ-1 Flappy</span><b>+2 ${icNova(12)}</b></div>
     </div>
   </div>`;
 
@@ -900,14 +935,46 @@ function renderProfile() {
   return html;
 }
 
+function renderChestTile(id, name, sub) {
+  const status = state.chestStatus || {};
+  const canOpen = id !== 'capsule' || status.can_open !== false;
+  const timer = id === 'capsule' && status.next_at
+    ? `<div class="chest-timer" data-chest-timer="${escapeHtml(status.next_at)}">--:--:--</div>`
+    : '';
+  return `<div class="chest-card ${canOpen?'':'locked'}" data-action="chest-modal" data-id="${id}">
+    ${timer}
+    <div class="chest-icon">${icon('ic-case-'+id, 56)}</div>
+    <div class="chest-name">${escapeHtml(name)}</div>
+    <div class="chest-sub">${escapeHtml(sub)}</div>
+  </div>`;
+}
+
+function startChestTimer() {
+  if (state.chestTimer) clearInterval(state.chestTimer);
+  const update = () => {
+    document.querySelectorAll('[data-chest-timer]').forEach(el => {
+      const iso = el.getAttribute('data-chest-timer');
+      const target = new Date(iso).getTime();
+      const now = Date.now();
+      const left = target - now;
+      if (left <= 0) { el.textContent = 'ГОТОВО'; return; }
+      el.textContent = fmtCountdown(left);
+    });
+  };
+  update();
+  state.chestTimer = setInterval(update, 1000);
+}
+
 async function loadWalletIntoProfile() {
   const box = document.getElementById('wallet-body');
   if (!box) return;
   try {
-    const [w, ach] = await Promise.all([
+    const [w, ach, chest] = await Promise.all([
       apiGet('/api/wallet'),
       apiGet('/api/achievements').catch(() => null),
+      apiGet('/api/chest/status').catch(() => null),
     ]);
+    state.chestStatus = chest;
     const wallet = w.wallet || {};
     const xp = wallet.xp || 0;
     const lv = calcLevelInfo(xp);
@@ -923,8 +990,8 @@ async function loadWalletIntoProfile() {
         <span class="levels-xpbar-next" style="font-size:13px">${total}XP</span>
       </div>
       <div style="display:flex;gap:18px;margin-top:12px;font-weight:800;font-size:15px;align-items:center">
-        <div style="display:flex;align-items:center;gap:6px">${icSoft(18)} <span style="color:var(--cyan-dark)">${wallet.soft || 0}</span></div>
-        <div style="display:flex;align-items:center;gap:6px">${icHard(18)} <span style="color:var(--yellow)">${wallet.hard || 0}</span></div>
+        <div style="display:flex;align-items:center;gap:6px">${icShift(18)} <span style="color:var(--cyan-dark)">${wallet.shift ?? wallet.soft ?? 0}</span></div>
+        <div style="display:flex;align-items:center;gap:6px">${icNova(18)} <span style="color:var(--yellow)">${wallet.nova ?? wallet.hard ?? 0}</span></div>
       </div>
     `;
     if (ach) {
@@ -937,6 +1004,7 @@ async function loadWalletIntoProfile() {
         btn.classList.toggle('btn-secondary', cc === 0);
       }
     }
+    startChestTimer();
   } catch (e) {
     box.textContent = 'Не удалось загрузить';
   }
@@ -1064,10 +1132,10 @@ function levelTitleByLevel(lvl) {
   return 'Легенда ИРНИТУ';
 }
 function levelRewardByLevel(lvl) {
-  if (lvl <= 5) return `+10 ${icHard(14)}`;
-  if (lvl <= 10) return `+25 ${icHard(14)}`;
-  if (lvl <= 20) return `+50 ${icHard(14)}`;
-  return `+100 ${icHard(14)}`;
+  if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
+  if (lvl <= 10) return `+250 ${icShift(14)} · +3 ${icNova(14)}`;
+  if (lvl <= 20) return `+600 ${icShift(14)} · +8 ${icNova(14)}`;
+  return `+1500 ${icShift(14)} · +25 ${icNova(14)}`;
 }
 
 async function openLevels() {
@@ -1085,8 +1153,8 @@ async function openLevels() {
 
   document.getElementById('levelsCurrent').textContent = lv.level;
   document.getElementById('levelsLeft').textContent = lv.toNext + 'XP';
-  document.getElementById('levelsSoft').textContent = wallet.soft || 0;
-  document.getElementById('levelsHard').textContent = wallet.hard || 0;
+  document.getElementById('levelsSoft').textContent = wallet.shift ?? wallet.soft ?? 0;
+  document.getElementById('levelsHard').textContent = wallet.nova ?? wallet.hard ?? 0;
 
   const total = lv.inLevel + lv.toNext;
   const pct = total ? (lv.inLevel / total) * 100 : 0;
@@ -1094,22 +1162,47 @@ async function openLevels() {
   document.getElementById('levelsXpCur').textContent = lv.inLevel + 'XP';
   document.getElementById('levelsXpNext').textContent = total + 'XP';
 
+  const claimed = await apiGet('/api/level-rewards').catch(()=>({claimed:[]}));
+  const claimedSet = new Set(claimed.claimed || []);
+
   const list = document.getElementById('levelsList');
   let html = '';
   for (let i = 1; i <= 30; i++) {
     const need = i * 500;
-    const cls = i < lv.level ? 'done' : (i === lv.level ? 'current' : 'locked');
-    const btn = i < lv.level ? 'ПОЛУЧЕНО' : (i === lv.level ? 'СОБРАТЬ' : 'ЗАКРЫТО');
+    const canClaim = lv.level >= i;
+    const isClaimed = claimedSet.has(i);
+    const cls = isClaimed ? 'done' : (i === lv.level ? 'current' : (i < lv.level ? 'done' : 'locked'));
+    const btnLabel = isClaimed ? 'ПОЛУЧЕНО' : (canClaim ? 'ЗАБРАТЬ' : 'ЗАКРЫТО');
+    const disabled = !canClaim || isClaimed;
     html += `<div class="levels-row ${cls}">
       <div class="levels-row-left">
         <div class="levels-row-name">УРОВЕНЬ ${i}</div>
         <div class="levels-row-sub">от ${need.toLocaleString('ru-RU')}XP · ${levelTitleByLevel(i)}</div>
         <div class="levels-row-reward">${levelRewardByLevel(i)}</div>
       </div>
-      <button class="levels-row-btn" disabled>${btn}</button>
+      <button class="levels-row-btn" data-level="${i}" ${disabled?'disabled':''}>${btnLabel}</button>
     </div>`;
   }
   list.innerHTML = html;
+
+  list.querySelectorAll('button[data-level]').forEach(btn => {
+    btn.onclick = async () => {
+      const lvl = parseInt(btn.dataset.level, 10);
+      try {
+        const r = await apiPost('/api/level-reward-claim', {level: lvl});
+        haptic('success');
+        popIcon('ic-gift');
+        const rw = r.reward || {};
+        toast(`+${rw.shift||0} Шифт · +${rw.nova||0} Нова`, 'success');
+        closeLevels();
+        openLevels();
+      } catch (e) {
+        if (e.code === 'already') toast('Уже получено', 'error');
+        else if (e.code === 'locked') toast('Уровень не достигнут', 'error');
+        else toast(e.message, 'error');
+      }
+    };
+  });
 }
 function closeLevels() {
   document.getElementById('screen-levels').style.display = 'none';
@@ -1134,16 +1227,18 @@ async function openLeaderboard() {
 }
 
 /* ============================================================
-   FLAPPY
+   FLAPPY — с бонусами
    ============================================================ */
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
   score:0, best:0, top:[],
   bird:{x:0,y:0,vy:0,r:14,rot:0},
-  pipes:[], frame:0,
+  pipes:[], bonuses:[], frame:0,
   gravity:0.45, jump:-7.5, speed:2.6, gap:150, pipeW:62,
   spawnEvery:88, width:0, height:0, groundH:100,
   resizeBound:false, lastT:0,
+  shieldUntil:0, slowUntil:0,
+  bonusesCollected:0,
 };
 
 async function openFlappy(recordsOnly) {
@@ -1199,7 +1294,9 @@ function flappyReset() {
   Flappy.bird.x = Flappy.width * 0.3;
   Flappy.bird.y = Flappy.height * 0.45;
   Flappy.bird.vy = 0; Flappy.bird.rot = 0;
-  Flappy.pipes = []; Flappy.frame = 0; Flappy.score = 0;
+  Flappy.pipes = []; Flappy.bonuses = []; Flappy.frame = 0; Flappy.score = 0;
+  Flappy.bonusesCollected = 0;
+  Flappy.shieldUntil = 0; Flappy.slowUntil = 0;
   const el = document.getElementById('flappyScore');
   if (el) el.textContent = '0';
 }
@@ -1230,6 +1327,10 @@ function flappyLoop(t) {
 }
 function flappyUpdate(dt) {
   const b = Flappy.bird;
+  const now = performance.now();
+  const slowed = now < Flappy.slowUntil;
+  const effSpeed = slowed ? Flappy.speed * 0.5 : Flappy.speed;
+
   b.vy += Flappy.gravity * dt;
   b.y += b.vy * dt;
   b.rot = Math.max(-0.5, Math.min(0.7, b.vy / 12));
@@ -1242,19 +1343,47 @@ function flappyUpdate(dt) {
     const topMax = Flappy.height - Flappy.groundH - Flappy.gap - 60;
     const topH = topMin + Math.random() * Math.max(20, topMax - topMin);
     Flappy.pipes.push({x: Flappy.width+10, top: topH, gap: Flappy.gap, passed: false});
+
+    // Спавн бонуса с вероятностью 30%
+    if (Math.random() < 0.3) {
+      const bx = Flappy.width + 10 + Flappy.pipeW + 60;
+      const by = 80 + Math.random() * (Flappy.height - Flappy.groundH - 160);
+      const types = ['shift','shift','shield','slow'];
+      Flappy.bonuses.push({x: bx, y: by, type: types[Math.floor(Math.random()*types.length)], taken:false});
+    }
   }
-  for (const p of Flappy.pipes) p.x -= Flappy.speed * dt;
+  for (const p of Flappy.pipes) p.x -= effSpeed * dt;
   Flappy.pipes = Flappy.pipes.filter(p => p.x + Flappy.pipeW > -20);
+
+  for (const bo of Flappy.bonuses) bo.x -= effSpeed * dt;
+  Flappy.bonuses = Flappy.bonuses.filter(b => b.x > -40 && !b.taken);
+
+  // Столкновения с трубами
+  const shielded = now < Flappy.shieldUntil;
   for (const p of Flappy.pipes) {
     if (b.x + b.r > p.x && b.x - b.r < p.x + Flappy.pipeW) {
-      if (b.y - b.r < p.top) { flappyGameOver(); return; }
-      if (b.y + b.r > p.top + p.gap) { flappyGameOver(); return; }
+      if (b.y - b.r < p.top || b.y + b.r > p.top + p.gap) {
+        if (shielded) { Flappy.shieldUntil = 0; continue; } // съедаем щит
+        flappyGameOver(); return;
+      }
     }
     if (!p.passed && p.x + Flappy.pipeW < b.x - b.r) {
       p.passed = true;
       Flappy.score++;
       document.getElementById('flappyScore').textContent = Flappy.score;
       haptic('light');
+    }
+  }
+  // Сбор бонусов
+  for (const bo of Flappy.bonuses) {
+    if (bo.taken) continue;
+    const dist = Math.hypot(bo.x - b.x, bo.y - b.y);
+    if (dist < b.r + 16) {
+      bo.taken = true;
+      Flappy.bonusesCollected++;
+      if (bo.type === 'shift') { Flappy.score += 2; haptic('success'); }
+      if (bo.type === 'shield') { Flappy.shieldUntil = now + 3000; haptic('success'); }
+      if (bo.type === 'slow') { Flappy.slowUntil = now + 3000; haptic('success'); }
     }
   }
 }
@@ -1280,16 +1409,51 @@ function flappyDraw() {
   ctx.fillText('STUDENT', W/2, H*0.28);
   ctx.fillText('IRK', W/2, H*0.38);
   ctx.globalAlpha = 1;
+
   for (const p of Flappy.pipes) {
     flappyDrawPipe(p.x, 0, Flappy.pipeW, p.top, true);
     flappyDrawPipe(p.x, p.top+p.gap, Flappy.pipeW, H-GH-p.top-p.gap, false);
   }
+
+  // Бонусы
+  for (const bo of Flappy.bonuses) {
+    if (bo.taken) continue;
+    ctx.save();
+    ctx.translate(bo.x, bo.y);
+    if (bo.type === 'shift') {
+      ctx.fillStyle = '#3EE6D2';
+      ctx.beginPath();
+      ctx.moveTo(0,-14); ctx.lineTo(14,0); ctx.lineTo(0,14); ctx.lineTo(-14,0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#0A0E0F';
+      ctx.font = 'bold 11px Anton';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('S', 0, 1);
+    } else if (bo.type === 'shield') {
+      ctx.fillStyle = '#22A06B';
+      ctx.beginPath();
+      ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#FFF';
+      ctx.font = 'bold 14px Anton';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('+', 0, 1);
+    } else {
+      ctx.fillStyle = '#FFA42B';
+      ctx.beginPath();
+      ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#0A0E0F';
+      ctx.font = 'bold 14px Anton';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('~', 0, 1);
+    }
+    ctx.restore();
+  }
+
   ctx.fillStyle = '#0A0E0F';
   ctx.fillRect(0, H-GH, W, GH);
   ctx.fillStyle = '#1FB8A6';
   ctx.fillRect(0, H-GH, W, 6);
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  for (let i=0; i<W; i+=40) ctx.fillRect(i, H-GH+20, 20, 4);
+
   const b = Flappy.bird;
   ctx.save();
   ctx.translate(b.x, b.y);
@@ -1309,6 +1473,12 @@ function flappyDraw() {
   ctx.beginPath();
   ctx.moveTo(b.r-2,-2); ctx.lineTo(b.r+8,2); ctx.lineTo(b.r-2,6);
   ctx.closePath(); ctx.fill();
+  // Щит вокруг птички
+  if (performance.now() < Flappy.shieldUntil) {
+    ctx.strokeStyle = 'rgba(34,160,107,.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0,0,b.r+8,0,Math.PI*2); ctx.stroke();
+  }
   ctx.restore();
 }
 function flappyDrawPipe(x,y,w,h,isTop) {
@@ -1326,17 +1496,14 @@ function flappyDrawPipe(x,y,w,h,isTop) {
   const capY = isTop ? y+h-capH : y;
   ctx.fillStyle = '#0E6A63';
   ctx.fillRect(x-4, capY, w+8, capH);
-  ctx.strokeStyle = '#0A0E0F';
-  ctx.strokeRect(x-4, capY, w+8, capH);
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.fillRect(x+6, y, 6, h);
 }
 function flappyGameOver() {
   flappyStop();
   haptic('error');
   const score = Flappy.score;
-  if (score > 0) {
-    apiPost('/api/game/submit', {game_id:'flappy', score})
+  const bonusShift = Flappy.bonusesCollected;
+  if (score > 0 || bonusShift > 0) {
+    apiPost('/api/game/submit', {game_id:'flappy', score, bonus_shift: bonusShift})
       .then(r => {
         Flappy.best = r.best || Math.max(Flappy.best, score);
         document.getElementById('flappyBestTop').textContent = Flappy.best;
@@ -1360,7 +1527,7 @@ function flappyShowOverlay(mode, score) {
 
   if (mode === 'start') {
     title.textContent = 'ДО ПАРЫ УСПЕТЬ';
-    sub.textContent = 'Пролетай между парами, не задень границы';
+    sub.textContent = 'Лови бонусы: S — очки, + — щит, ~ — замедление';
     scoreEl.innerHTML = '';
     startBtn.textContent = 'ИГРАТЬ';
     startBtn.onclick = flappyStart;
@@ -1369,7 +1536,7 @@ function flappyShowOverlay(mode, score) {
     title.textContent = 'ИГРА ОКОНЧЕНА';
     const isRecord = score >= Flappy.best && score > 0;
     sub.textContent = isRecord ? 'Новый рекорд!' : 'Попробуй ещё раз';
-    scoreEl.innerHTML = `Очки: <b>${score}</b> · Рекорд: <b>${Flappy.best}</b>`;
+    scoreEl.innerHTML = `Очки: <b>${score}</b> · Рекорд: <b>${Flappy.best}</b> · Бонусов: <b>${Flappy.bonusesCollected}</b>`;
     startBtn.textContent = 'ЕЩЁ РАЗ';
     startBtn.onclick = flappyStart;
     recordsBtn.style.display = '';
@@ -1399,7 +1566,7 @@ function flappyHideOverlay() {
 function flappyShowRecords() { flappyShowOverlay('records'); }
 
 /* ============================================================
-   МОРСКОЙ БОЙ
+   МОРСКОЙ БОЙ (без изменений, кроме терминологии Шифт)
    ============================================================ */
 const BS = {
   bet:10, gameId:null, side:0,
@@ -1450,7 +1617,7 @@ function bsRenderBets() {
   [10,50,100,500].forEach(v => {
     const b = document.createElement('button');
     b.className = 'bs-bet' + (v === BS.bet ? ' active' : '');
-    b.innerHTML = `${v} ${icSoft(14)}`;
+    b.innerHTML = `${v} ${icShift(14)}`;
     b.onclick = () => { BS.bet = v; bsRenderBets(); };
     box.appendChild(b);
   });
@@ -1466,7 +1633,6 @@ function bsShowGame() {
   document.getElementById('bsLobby').style.display = 'none';
   document.getElementById('bsGame').style.display = '';
 }
-
 async function bsCreate() {
   try {
     const r = await apiPost('/api/bs/create', {bet: BS.bet});
@@ -1525,7 +1691,6 @@ async function bsBotStart() {
     document.getElementById('bsStatus').textContent = 'Расставляй корабли и жми ГОТОВ';
   } catch (e) { toast(e.message, 'error'); }
 }
-
 function bsEmptyShips() {
   const res = [];
   const sizes = [];
@@ -1865,31 +2030,36 @@ async function actionTasksClear() {
 }
 
 function actionTaskAdd() {
-  let form = {text:'', priority:2, due:'none'};
-  const renderBody = () => {
-    const due = form.due;
-    const prio = form.priority;
-    return `
-      <div class="label">ЧТО СДЕЛАТЬ</div>
-      <input class="input" id="task-text" placeholder="Например: сдать лабу" value="${escapeHtml(form.text)}" maxlength="200">
-      <div class="label">КОГДА</div>
-      <div class="choice-row">
-        <button class="choice ${due==='none'?'active':''}" data-due="none">Без срока</button>
-        <button class="choice ${due==='today'?'active':''}" data-due="today">Сегодня</button>
-        <button class="choice ${due==='tomorrow'?'active':''}" data-due="tomorrow">Завтра</button>
-        <button class="choice ${due==='week'?'active':''}" data-due="week">Эта неделя</button>
-      </div>
-      <div class="label">ПРИОРИТЕТ</div>
-      <div class="choice-row">
-        <button class="choice ${prio===1?'active':''}" data-prio="1">Низкий</button>
-        <button class="choice ${prio===2?'active':''}" data-prio="2">Средний</button>
-        <button class="choice ${prio===3?'active':''}" data-prio="3">Высокий</button>
-      </div>
-    `;
-  };
+  let form = {text:'', priority:2, due:'none', customDate:'', customTime:''};
+  const renderBody = () => `
+    <div class="label">ЧТО СДЕЛАТЬ</div>
+    <input class="input" id="task-text" placeholder="Например: сдать лабу" value="${escapeHtml(form.text)}" maxlength="200">
+    <div class="label">ПРИОРИТЕТ</div>
+    <div class="choice-row">
+      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
+      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
+      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
+    </div>
+    <div class="label">КОГДА</div>
+    <div class="choice-row">
+      <button class="choice ${form.due==='none'?'active':''}" data-due="none">Без срока</button>
+      <button class="choice ${form.due==='today'?'active':''}" data-due="today">Сегодня</button>
+      <button class="choice ${form.due==='tomorrow'?'active':''}" data-due="tomorrow">Завтра</button>
+      <button class="choice ${form.due==='custom'?'active':''}" data-due="custom">Своя дата</button>
+    </div>
+    ${form.due==='custom' ? `
+      <div class="date-input-row">
+        <input type="date" id="task-date" value="${escapeHtml(form.customDate)}">
+        <input type="time" id="task-time" value="${escapeHtml(form.customTime)}">
+      </div>` : ''}
+  `;
   const attach = () => {
     const ti = document.getElementById('task-text');
-    if (ti) ti.oninput = (e) => { form.text = e.target.value; };
+    if (ti) ti.oninput = (e) => form.text = e.target.value;
+    const di = document.getElementById('task-date');
+    if (di) di.onchange = (e) => form.customDate = e.target.value;
+    const ti2 = document.getElementById('task-time');
+    if (ti2) ti2.onchange = (e) => form.customTime = e.target.value;
     document.querySelectorAll('[data-due]').forEach(b => b.onclick = () => {
       form.due = b.dataset.due;
       document.getElementById('modalBody').innerHTML = renderBody();
@@ -1910,13 +2080,17 @@ function actionTaskAdd() {
         const ti = document.getElementById('task-text');
         const text = (ti?.value || form.text || '').trim();
         if (!text) { toast('Введи текст', 'error'); return; }
-        let due_date = null;
+        let due_date = null, due_time = null;
         const today = nowIrkutsk();
         if (form.due === 'today') due_date = fmtDate(today);
         else if (form.due === 'tomorrow') due_date = fmtDate(addDays(today,1));
-        else if (form.due === 'week') due_date = fmtDate(addDays(today,7));
+        else if (form.due === 'custom' && form.customDate) {
+          const [y,m,d] = form.customDate.split('-');
+          due_date = `${d}.${m}.${y}`;
+          if (form.customTime) due_time = form.customTime;
+        }
         try {
-          await apiPost('/api/task-add', {text, due_date, priority: form.priority});
+          await apiPost('/api/task-add', {text, due_date, due_time, priority: form.priority});
           haptic('success'); toast('Задача добавлена', 'success');
           await loadTasks(); render();
         } catch (e) { toast(e.message, 'error'); }
@@ -1969,16 +2143,10 @@ function actionTaskEdit(id) {
 
 function actionNoteAdd() {
   let form = {subject:'', text:''};
-  const subjOptions = () => {
-    const subs = state.notesSubjects || [];
-    return subs.length
-      ? subs.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')
-      : '';
-  };
   const renderBody = () => `
     <div class="label">ПРЕДМЕТ</div>
     <input class="input" id="note-subj" placeholder="Название предмета" value="${escapeHtml(form.subject)}" maxlength="100">
-    ${state.notesSubjects?.length ? `<div class="choice-row" style="margin-top:4px">${subjOptions()}</div>` : ''}
+    ${state.notesSubjects?.length ? `<div class="choice-row" style="margin-top:4px">${state.notesSubjects.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
     <div class="label">ТЕКСТ</div>
     <textarea class="input" id="note-text" rows="4" maxlength="500">${escapeHtml(form.text)}</textarea>
   `;
@@ -2286,7 +2454,7 @@ function actionSetName() {
     body: `
       <div class="label">ДО 24 СИМВОЛОВ</div>
       <input class="input" id="set-name-input" maxlength="24" placeholder="Например: АСУб-23-1">
-      <div class="card-subtitle" style="margin-top:8px">Первая смена — бесплатно. Дальше — 5 Автоматов.</div>
+      <div class="card-subtitle" style="margin-top:8px">Первая смена — бесплатно. Дальше — 5 Нова.</div>
     `,
     actions:[
       {label:'ОТМЕНА', style:'btn-secondary'},
@@ -2298,7 +2466,7 @@ function actionSetName() {
           haptic('success'); toast('Ник обновлён', 'success');
           await loadProfile(); render();
         } catch (e) {
-          if (e.code === 'need_hard') toast('Нужно 5 Автоматов', 'error');
+          if (e.code === 'need_hard') toast('Нужно 5 Нова', 'error');
           else toast(e.message, 'error');
         }
       }}
@@ -2328,45 +2496,77 @@ function actionSetAvatar() {
   });
 }
 
-async function actionChestOpen() {
-  try {
-    const r = await apiPost('/api/chest/open');
-    haptic('success'); popIcon('ic-gift');
-    const label = stripEmoji(r.reward.label);
-    modalOpen({
-      title:'НАГРАДА',
-      body: `<div style="font-family:'Anton',sans-serif;font-size:22px;text-align:center;color:var(--cyan-dark);font-style:italic">${escapeHtml(label)}</div>`,
-      actions:[{label:'ОК', style:'btn'}]
-    });
-    await loadProfile(); render();
-  } catch (e) {
-    if (e.code === 'already_opened') toast('Уже открыт, приходи завтра', 'error');
-    else toast(e.message, 'error');
-  }
+/* ===== КЕЙСЫ ===== */
+const CHEST_META = {
+  capsule:  {name:'Капсула',  icon:'ic-case-capsule',  costLabel:'Бесплатно (раз в 24 ч)',
+             drops:[['Шифт 10–40','55%'],['XP 50–150','30%'],['Нова ×1','10%'],['Шифт ×100','5%']]},
+  relic:    {name:'Реликт',   icon:'ic-case-relic',    costLabel:'50 Шифт',
+             drops:[['Шифт 60–150','50%'],['XP 200–500','30%'],['Нова 1–3','18%'],['Нова ×10','2%']]},
+  artifact: {name:'Артефакт', icon:'ic-case-artifact', costLabel:'15 Нова',
+             drops:[['Шифт ×500','30%'],['XP ×1000','30%'],['Нова 5–15','35%'],['Нова ×50','5%']]},
+  core:     {name:'Ядро',     icon:'ic-case-core',     costLabel:'80 Нова',
+             drops:[['Шифт ×2000','25%'],['XP ×5000','25%'],['Нова 30–60','40%'],['Нова ×200','10%']]},
+};
+
+function actionChestModal(id) {
+  const meta = CHEST_META[id];
+  if (!meta) return;
+  const isCapsule = id === 'capsule';
+  const st = state.chestStatus || {};
+  const canOpenCapsule = !isCapsule || st.can_open !== false;
+  const dropsHtml = meta.drops.map(d =>
+    `<div class="chest-drop"><span>${escapeHtml(d[0])}</span><span class="chance">${escapeHtml(d[1])}</span></div>`
+  ).join('');
+  const timerHtml = isCapsule && !canOpenCapsule && st.next_at
+    ? `<div class="card-subtitle" style="text-align:center;margin-top:10px">Доступно через <b data-chest-timer="${escapeHtml(st.next_at)}">--:--:--</b></div>`
+    : '';
+  modalOpen({
+    title: meta.name.toUpperCase(),
+    body: `
+      <div style="text-align:center;margin-bottom:8px">${icon(meta.icon, 96)}</div>
+      <div class="card-subtitle" style="text-align:center;margin-bottom:12px">${escapeHtml(meta.costLabel)}</div>
+      <div class="label">Что может выпасть</div>
+      <div class="chest-drops">${dropsHtml}</div>
+      ${timerHtml}
+    `,
+    actions: [
+      {label:'ЗАКРЫТЬ', style:'btn-secondary'},
+      {label: isCapsule ? (canOpenCapsule ? 'ОТКРЫТЬ' : 'ЖДИ') : 'ОТКРЫТЬ',
+       style: 'btn',
+       onClick: async () => {
+         if (isCapsule && !canOpenCapsule) { toast('Ещё рано', 'error'); return; }
+         try {
+           const r = await apiPost('/api/chest/open', {type: id});
+           haptic('success'); popIcon(meta.icon);
+           const reward = r.reward || {};
+           const label = reward.label || '';
+           toast(label, 'success');
+           state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
+           await loadProfile();
+           render();
+           startChestTimer();
+         } catch (e) {
+           if (e.code === 'already_opened') toast('Уже открыт, приходи позже', 'error');
+           else if (e.code === 'not_enough_shift') toast('Недостаточно Шифт', 'error');
+           else if (e.code === 'not_enough_nova') toast('Недостаточно Нова', 'error');
+           else toast(e.message, 'error');
+         }
+       }}
+    ]
+  });
+  startChestTimer();
 }
-function actionPremiumChestOpen() {
-  modalConfirm('ПРЕМИУМ-СУНДУК?', 'Откроется за 10 Автоматов. Внутри — 500 Софта, 1000 XP и от 3 до 25 Автоматов.', async () => {
-    try {
-      const r = await apiPost('/api/premium-chest/open');
-      haptic('success'); popIcon('ic-diamond');
-      const label = stripEmoji(r.reward.label);
-      modalOpen({
-        title:'НАГРАДА',
-        body: `<div style="font-family:'Anton',sans-serif;font-size:20px;text-align:center;color:var(--cyan-dark);font-style:italic">${escapeHtml(label)}</div>`,
-        actions:[{label:'ОК', style:'btn'}]
-      });
-      await loadProfile(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ОТКРЫТЬ');
-}
+
+function actionPremiumChestOpen() { /* устарело, оставлено как заглушка */ }
+
 function actionExchange() {
   modalOpen({
     title:'ОБМЕННИК',
     body: `
       <div class="card-subtitle" style="text-align:center;margin-bottom:12px;display:flex;align-items:center;gap:8px;justify-content:center">
-        100 ${icSoft(16)} Софт = 1 ${icHard(16)} Хард
+        100 ${icShift(16)} Шифт = 1 ${icNova(16)} Нова
       </div>
-      <div class="label">СКОЛЬКО СОФТА</div>
+      <div class="label">СКОЛЬКО ШИФТ</div>
       <input class="input" id="ex-amount" type="number" min="100" step="100" value="100">
       <div class="choice-row">
         <button class="choice" data-ex="100">100</button>
@@ -2383,7 +2583,7 @@ function actionExchange() {
         try {
           const r = await apiPost('/api/exchange-soft-to-hard', {amount});
           haptic('success'); popIcon('ic-exchange');
-          toast(`${r.soft_spent} Софта → ${r.hard_received} Харда`, 'success');
+          toast(`${r.soft_spent} Шифт → ${r.hard_received} Нова`, 'success');
           await loadProfile(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
@@ -2397,9 +2597,7 @@ function actionExchange() {
   }, 0);
 }
 
-function achIconById(id) {
-  return `ic-ach-${id}`;
-}
+function achIconById(id) { return `ic-ach-${id}`; }
 
 async function actionShowAchievements() {
   try {
@@ -2411,7 +2609,7 @@ async function actionShowAchievements() {
 
 function renderAchievementsModal(d) {
   const claimable = d.items.filter(x => x.can_claim);
-  let body = `<div class="ach-progress" style="background:var(--bg-2);padding:14px;border-radius:16px;margin-bottom:14px;text-align:center">
+  let body = `<div class="ach-progress">
     <div class="ach-progress-num">${d.got} / ${d.total}</div>
     <div class="ach-progress-label">Разблокировано</div>
   </div>`;
@@ -2422,8 +2620,8 @@ function renderAchievementsModal(d) {
       <div style="font-weight:800;text-align:center;margin-bottom:8px">Доступно наград: ${claimable.length}</div>
       <div style="text-align:center;font-family:'Anton',sans-serif;font-style:italic;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap">
         <span>+${tr.xp} ${icXp(14)}</span>
-        <span>+${tr.soft} ${icSoft(14)}</span>
-        <span>+${tr.hard} ${icHard(14)}</span>
+        <span>+${tr.soft} ${icShift(14)}</span>
+        <span>+${tr.hard} ${icNova(14)}</span>
       </div>
       <button class="btn btn-red" data-action="ach-claim-all" style="width:100%;margin-top:12px;background:#0A0E0F;color:#FFF">ЗАБРАТЬ ВСЁ</button>
     </div>`;
@@ -2434,8 +2632,8 @@ function renderAchievementsModal(d) {
     const cls = !a.unlocked ? 'locked' : (a.can_claim ? 'claimable' : (a.claimed ? 'claimed' : ''));
     const rewardHtml = `
       +${a.reward.xp} ${icXp(14)}
-      ${a.reward.soft ? `· +${a.reward.soft} ${icSoft(14)}` : ''}
-      ${a.reward.hard ? `· +${a.reward.hard} ${icHard(14)}` : ''}
+      ${a.reward.soft ? `· +${a.reward.soft} ${icShift(14)}` : ''}
+      ${a.reward.hard ? `· +${a.reward.hard} ${icNova(14)}` : ''}
     `;
     body += `<div class="ach-card ${cls}">
       <div class="ach-icon">${icon(achIconById(a.id),36)}</div>
@@ -2466,7 +2664,7 @@ function renderAchievementsModal(d) {
         try {
           const r = await apiPost('/api/achievement-claim', {ach_id: b.dataset.id});
           haptic('success'); popIcon('ic-gift');
-          toast(`+${r.reward.xp} XP · +${r.reward.soft} Софт · +${r.reward.hard} Хард`, 'success');
+          toast(`+${r.reward.xp} XP · +${r.reward.soft} Шифт · +${r.reward.hard} Нова`, 'success');
           await loadProfile();
           const dd = await apiGet('/api/achievements');
           state.achData = dd;
@@ -2485,7 +2683,7 @@ function renderAchievementsModal(d) {
         } catch(e){}
       }
       haptic('success'); popIcon('ic-gift');
-      toast(`+${totalXp} XP · +${totalSoft} Софт · +${totalHard} Хард`, 'success');
+      toast(`+${totalXp} XP · +${totalSoft} Шифт · +${totalHard} Нова`, 'success');
       await loadProfile();
       const dd = await apiGet('/api/achievements');
       state.achData = dd;
@@ -2561,14 +2759,13 @@ function actionAttHelp() {
     title:'КАК РАБОТАЕТ',
     body: `
       <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-was',18)} ПОСЕЩЕНО</div>
-      <div class="card-subtitle">Ты был на паре. +3 XP и +1 Софт за каждую отметку.</div>
+      <div class="card-subtitle">Ты был на паре. +3 XP и +1 Шифт.</div>
       <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-missed',18)} ПРОПУЩЕНО</div>
-      <div class="card-subtitle">Пропуск без причины. Снижает шанс на повышенную стипендию.</div>
+      <div class="card-subtitle">Пропуск без причины.</div>
       <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-sick',18)} БОЛЕЛ</div>
-      <div class="card-subtitle">Пропуск по болезни. Справка есть, но в статистике учитывается отдельно.</div>
+      <div class="card-subtitle">Пропуск по болезни.</div>
       <div class="label" style="display:flex;align-items:center;gap:8px">${icon('ic-excused',18)} УВАЖИТЕЛЬНАЯ</div>
-      <div class="card-subtitle">Уважительная причина (соревнования, олимпиады и т.д.). Не влияет на стипендию.</div>
-      <div class="card-subtitle" style="margin-top:14px;font-weight:600;color:var(--text)">Все отметки видны только тебе и не уходят преподавателю.</div>
+      <div class="card-subtitle">Уважительная причина.</div>
     `,
     actions:[{label:'ПОНЯТНО', style:'btn'}]
   });
@@ -2657,7 +2854,6 @@ function handleAction(el) {
   else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; state.scheduleDay = null; loadWeekAndRender(); }
   else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; state.scheduleDay = null; loadWeekAndRender(); }
   else if (a === 'week-current') {
-    // Если сегодня воскресенье — показываем следующую неделю
     const now = nowIrkutsk();
     state.weekOffset = (now.getDay() === 0) ? 1 : 0;
     state.scheduleViewMode = 'week';
@@ -2681,7 +2877,7 @@ function handleAction(el) {
   else if (a === 'open-leaderboard') openLeaderboard();
   else if (a === 'set-name') actionSetName();
   else if (a === 'set-avatar') actionSetAvatar();
-  else if (a === 'chest-open') actionChestOpen();
+  else if (a === 'chest-modal') actionChestModal(el.dataset.id);
   else if (a === 'premium-chest-open') actionPremiumChestOpen();
   else if (a === 'exchange') actionExchange();
   else if (a === 'show-achievements') actionShowAchievements();
