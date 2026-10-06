@@ -1,118 +1,304 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>STUDENT IRK || APP</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="style.css?v=52">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>LIT ENERGY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 
-    <!-- SPLASH -->
-    <div id="splash">
-        <div class="splash-logo"></div>
-        <div class="splash-text">
-            <div>STUDENT <span class="accent">IRK</span></div>
-            <div class="splash-sub">|| APP</div>
+<!-- SPLASH -->
+<div id="splash" class="splash">
+  <div class="splash__logo">LIT ENERGY</div>
+  <div class="splash__icon">
+    <svg viewBox="0 0 120 160" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#3EE6D2"/>
+          <stop offset="100%" stop-color="#7FE9FF"/>
+        </linearGradient>
+      </defs>
+      <path d="M60 5 C70 40 95 60 95 95 C95 130 80 155 60 155 C40 155 25 130 25 95 C25 70 40 55 45 40 C48 55 55 65 65 65 C65 45 60 25 60 5 Z" fill="url(#flame)"/>
+      <path d="M65 60 L45 100 L60 100 L50 140 L85 90 L68 90 L78 60 Z" fill="#fff"/>
+    </svg>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="app hidden">
+
+  <!-- HEADER -->
+  <header class="topbar">
+    <button class="topbar__close" onclick="tg.close()">✕ Закрыть</button>
+    <div class="topbar__right">
+      <button class="topbar__chev">⌄</button>
+      <button class="topbar__dots">⋯</button>
+    </div>
+  </header>
+
+  <!-- SCREEN: PROFILE -->
+  <section class="screen active" data-screen="profile">
+    <div class="profile">
+      <div class="profile__name-row">
+        <h1 id="pName" class="profile__name">PLAYER-XXXXXX</h1>
+        <button id="btnEditName" class="profile__edit">✎</button>
+      </div>
+
+      <div class="profile__avatar-wrap">
+        <img id="pHead" class="profile__head" src="assets/head-1.png" alt="">
+        <div id="pLevelTag" class="profile__level-tag">1 LVL</div>
+      </div>
+
+      <div class="xpbar">
+        <div class="xpbar__fill" id="xpFill"></div>
+        <span class="xpbar__cur" id="xpCur">0XP</span>
+        <span class="xpbar__next" id="xpNext">500XP</span>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat">
+          <img src="assets/soft.png" class="stat__icon" alt="">
+          <div class="stat__label">СОФТ</div>
+          <div class="stat__val stat__val--soft" id="wSoft">0</div>
         </div>
-        <div class="splash-dots">
-            <span></span><span></span><span></span>
+        <div class="stat">
+          <img src="assets/hard.png" class="stat__icon" alt="">
+          <div class="stat__label">ХАРД</div>
+          <div class="stat__val stat__val--hard" id="wHard">0</div>
         </div>
+      </div>
     </div>
 
-    <!-- МУЗЫКА -->
-    <audio id="game-music" loop preload="auto" playsinline src="assets/music.mp3"></audio>
-
-    <!-- APP -->
-    <div id="app" style="display:none">
-
-        <header class="header">
-            <div class="header-left">
-                <div class="header-logo"></div>
-                <h1>STUDENT <span class="accent">IRK</span></h1>
-            </div>
-            <div class="header-actions">
-                <div class="header-currency">
-                    <div class="header-currency-item">
-                        <span>0</span>
-                    </div>
-                </div>
-                <button class="header-btn" id="refresh-btn" title="Обновить">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
-                </button>
-            </div>
-        </header>
-
-        <main class="content" id="content">
-            <div class="loading">Загрузка...</div>
-        </main>
-
-        <nav class="bottom-nav" id="bottom-nav">
-            <button class="nav-btn active" data-tab="schedule">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                <span>Пары</span>
-            </button>
-            <button class="nav-btn" data-tab="tasks">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 11 12 14 22 4"></polyline>
-                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                </svg>
-                <span>Задачи</span>
-            </button>
-            <button class="nav-btn" data-tab="notes">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                </svg>
-                <span>Заметки</span>
-            </button>
-            <button class="nav-btn" data-tab="games">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="6" width="20" height="14" rx="4" ry="4"></rect>
-                    <line x1="7" y1="13" x2="11" y2="13"></line>
-                    <line x1="9" y1="11" x2="9" y2="15"></line>
-                    <circle cx="16" cy="12" r="1"></circle>
-                    <circle cx="18" cy="15" r="1"></circle>
-                </svg>
-                <span>Игры</span>
-            </button>
-            <button class="nav-btn" data-tab="ai">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-                <span>AI</span>
-            </button>
-            <button class="nav-btn" data-tab="admin" style="display:none">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"></path>
-                </svg>
-                <span>Админ</span>
-            </button>
-            <button class="nav-btn" data-tab="profile">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                <span>Профиль</span>
-            </button>
-        </nav>
+    <!-- TICKER -->
+    <div class="ticker">
+      <div class="ticker__track">
+        <span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
+        <span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
+        <span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
+      </div>
     </div>
 
-    <script src="app.js?v=52"></script>
+    <!-- MYSTERY BOXES -->
+    <div class="chest-row">
+      <div class="chest-card" id="chestDaily">
+        <div class="chest-card__badge">MYSTERY BOX</div>
+        <div class="chest-card__title">СТАРТ</div>
+        <img class="chest-card__img" src="assets/chest.png" alt="">
+        <button class="btn btn--cyan chest-card__btn">ОТКРЫТЬ</button>
+      </div>
+      <div class="chest-card chest-card--premium" id="chestPremium">
+        <div class="chest-card__badge">MYSTERY BOX</div>
+        <div class="chest-card__title">ПРЕМИУМ</div>
+        <img class="chest-card__img" src="assets/chest.png" alt="">
+        <button class="btn btn--gold chest-card__btn">10 🔥</button>
+      </div>
+    </div>
+
+    <!-- АКЦИЯ -->
+    <div class="promo-card">
+      <div class="promo-card__left">
+        <div class="promo-card__sub">Выполняй задания<br>от Пятёрочки</div>
+        <div class="promo-card__title">ПОЛУЧАЙ<br>ПОВЫШЕННЫЙ<br>КЭШБЕК</div>
+      </div>
+      <div class="promo-card__badge">5</div>
+    </div>
+
+    <!-- GRID ICONS -->
+    <div class="icon-grid">
+      <button class="icon-tile" data-goto="games"><span>🎮</span><label>Игры</label></button>
+      <button class="icon-tile" data-goto="tasks"><span>✅</span><label>Задания</label></button>
+      <button class="icon-tile" data-goto="shop"><span>🛒</span><label>Магазин</label></button>
+      <button class="icon-tile" data-goto="checks"><span>🎫</span><label>Чеки</label></button>
+    </div>
+
+    <!-- СТАТИСТИКА -->
+    <h2 class="section-title"><span>🔥</span> ТВОЯ СТАТИСТИКА</h2>
+    <div class="stat-blobs">
+      <div class="blob"><div class="blob__num" id="stNotes">0</div><div class="blob__label">QR-кодов<br>отсканировано</div></div>
+      <div class="blob blob--big"><div class="blob__num" id="stStreak">0</div><div class="blob__label">Дней<br>подряд</div></div>
+      <div class="blob"><div class="blob__num" id="stTasks">0</div><div class="blob__label">Заданий<br>выполнено</div></div>
+    </div>
+
+    <!-- МЕНЮ -->
+    <h2 class="section-title"><span>🔥</span> МЕНЮ</h2>
+    <div class="menu-list">
+      <button class="menu-item" id="btnShare">Рассказать другу <span>›</span></button>
+      <button class="menu-item menu-item--accordion" id="btnMenuAcc">Меню <span>⌄</span></button>
+      <div class="menu-sub hidden" id="menuSub">
+        <button class="menu-sub__item" data-goto="schedule">Расписание</button>
+        <button class="menu-sub__item" data-goto="scholarship">Стипендия</button>
+        <button class="menu-sub__item" data-goto="notes">Заметки</button>
+        <button class="menu-sub__item" data-goto="ai">AI-помощник</button>
+        <button class="menu-sub__item" data-goto="achievements">Достижения</button>
+        <button class="menu-sub__item" data-goto="leaderboard">Топ игроков</button>
+        <button class="menu-sub__item" data-goto="exchange">Обменник</button>
+        <button class="menu-sub__item" data-goto="settings">Настройки</button>
+        <button class="menu-sub__item" data-goto="feedback">Обратная связь</button>
+        <button class="menu-sub__item" id="btnExport">Экспорт PDF</button>
+      </div>
+      <button class="menu-item menu-item--danger" id="btnDelete">Удалить аккаунт</button>
+    </div>
+  </section>
+
+  <!-- SCREEN: LEVELS -->
+  <section class="screen" data-screen="levels">
+    <div class="levels-head">
+      <button class="back-btn" onclick="go('profile')">‹</button>
+      <div class="levels-pill"><span>🔥</span> <b id="lvSoft">0</b> / <span>🔥</span> <b id="lvHard">0</b></div>
+    </div>
+    <h1 class="lv-big">УРОВЕНЬ <span id="lvNum">1</span></h1>
+    <div class="lv-sub">до следующего <b id="lvLeft">500XP</b></div>
+    <div class="xpbar xpbar--big">
+      <div class="xpbar__fill" id="lvFill"></div>
+      <span class="xpbar__cur" id="lvCur">0XP</span>
+      <span class="xpbar__next" id="lvNext">500XP</span>
+    </div>
+    <div class="lv-hint">Заработать больше опыта</div>
+    <div class="ticker ticker--sm"><div class="ticker__track"><span>КОПИ XP В ЗАДАНИЯХ</span><span>🔥</span><span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span><span>КОПИ XP В ЗАДАНИЯХ</span><span>🔥</span></div></div>
+    <div id="levelsList" class="levels-list"></div>
+  </section>
+
+  <!-- SCREEN: GAMES -->
+  <section class="screen" data-screen="games">
+    <div class="games-head">
+      <div class="levels-pill"><span>🔥</span> <b id="gmSoft">0</b> / <span>🔥</span> <b id="gmHard">0</b></div>
+    </div>
+    <div class="games-title">ИГРАЙ С<br><span>LIT ENERGY</span></div>
+    <p class="games-sub">Чем больше побед в мини-играх ты одержишь, тем больше мистери-боксов заработаешь!</p>
+    <div class="progress-line"><div class="progress-line__fill" id="gmProgress"></div><span class="progress-line__num" id="gmProgressNum">0/11</span><span class="progress-line__chest">📦</span></div>
+    <div id="gamesList" class="games-list"></div>
+  </section>
+
+  <!-- SCREEN: TASKS -->
+  <section class="screen" data-screen="tasks">
+    <h2 class="section-title"><span>🔥</span> ЗАДАНИЯ</h2>
+    <div class="tasks-add">
+      <input id="taskInput" placeholder="Новое задание..." maxlength="200">
+      <button class="btn btn--cyan" id="taskAddBtn">+</button>
+    </div>
+    <div id="tasksList" class="tasks-list"></div>
+  </section>
+
+  <!-- SCREEN: SCHEDULE -->
+  <section class="screen" data-screen="schedule">
+    <h2 class="section-title"><span>🔥</span> РАСПИСАНИЕ</h2>
+    <div class="sched-nav">
+      <button class="btn btn--ghost" onclick="loadWeek(-1)">‹ Прошлая</button>
+      <button class="btn btn--ghost" onclick="loadWeek(0)">Текущая</button>
+      <button class="btn btn--ghost" onclick="loadWeek(1)">Следующая ›</button>
+    </div>
+    <div id="schedDays" class="sched-days"></div>
+  </section>
+
+  <!-- SCREEN: NOTES -->
+  <section class="screen" data-screen="notes">
+    <h2 class="section-title"><span>🔥</span> ЗАМЕТКИ</h2>
+    <div class="tasks-add">
+      <input id="noteSubject" placeholder="Предмет" maxlength="100">
+      <input id="noteText" placeholder="Текст" maxlength="500">
+      <button class="btn btn--cyan" id="noteAddBtn">+</button>
+    </div>
+    <div id="notesList" class="notes-list"></div>
+  </section>
+
+  <!-- SCREEN: AI -->
+  <section class="screen" data-screen="ai">
+    <h2 class="section-title"><span>🔥</span> AI-ПОМОЩНИК</h2>
+    <div id="aiChat" class="ai-chat"></div>
+    <div class="tasks-add">
+      <input id="aiInput" placeholder="Спроси что-нибудь..." maxlength="2000">
+      <button class="btn btn--cyan" id="aiSend">➤</button>
+    </div>
+  </section>
+
+  <!-- SCREEN: ACHIEVEMENTS -->
+  <section class="screen" data-screen="achievements">
+    <h2 class="section-title"><span>🔥</span> ДОСТИЖЕНИЯ</h2>
+    <div id="achList" class="ach-list"></div>
+  </section>
+
+  <!-- SCREEN: LEADERBOARD -->
+  <section class="screen" data-screen="leaderboard">
+    <h2 class="section-title"><span>🔥</span> ТОП ИГРОКОВ</h2>
+    <div id="lbList" class="lb-list"></div>
+  </section>
+
+  <!-- SCREEN: EXCHANGE -->
+  <section class="screen" data-screen="exchange">
+    <h2 class="section-title"><span>🔥</span> ОБМЕННИК</h2>
+    <p class="muted">100 Софт = 1 Хард</p>
+    <div class="tasks-add">
+      <input id="exAmount" type="number" placeholder="Софт" min="100" step="100">
+      <button class="btn btn--gold" id="exBtn">Обменять</button>
+    </div>
+    <div id="exResult" class="muted"></div>
+  </section>
+
+  <!-- SCREEN: SCHOLARSHIP -->
+  <section class="screen" data-screen="scholarship">
+    <h2 class="section-title"><span>🔥</span> СТИПЕНДИЯ</h2>
+    <div id="schContent" class="sch-content"></div>
+  </section>
+
+  <!-- SCREEN: SETTINGS -->
+  <section class="screen" data-screen="settings">
+    <h2 class="section-title"><span>🔥</span> НАСТРОЙКИ</h2>
+    <div id="settingsContent" class="settings-content"></div>
+  </section>
+
+  <!-- SCREEN: FEEDBACK -->
+  <section class="screen" data-screen="feedback">
+    <h2 class="section-title"><span>🔥</span> ОБРАТНАЯ СВЯЗЬ</h2>
+    <div class="tasks-add">
+      <input id="fbInput" placeholder="Твоё сообщение..." maxlength="2000">
+      <button class="btn btn--cyan" id="fbSend">➤</button>
+    </div>
+    <div id="fbList" class="fb-list"></div>
+  </section>
+
+  <!-- SCREEN: SHOP -->
+  <section class="screen" data-screen="shop">
+    <div class="shop-head">
+      <div class="levels-pill"><span>🔥</span> <b id="shSoft">0</b> / <span>🔥</span> <b id="shHard">0</b></div>
+      <button class="shop-cart">🛒</button>
+    </div>
+    <h2 class="section-title"><span>🔥</span> МАГАЗИН <span>🔥</span></h2>
+    <div class="shop-tier">БРОНЗОВАЯ ЛИГА</div>
+    <div class="shop-grid" id="shopGrid"></div>
+  </section>
+
+  <!-- SCREEN: CHECKS -->
+  <section class="screen" data-screen="checks">
+    <h2 class="section-title"><span>🔥</span> ЧЕКИ</h2>
+    <p class="muted">Сканируй чеки и участвуй в розыгрыше</p>
+    <div class="checks-grid" id="checksGrid"></div>
+  </section>
+
+  <!-- BOTTOM DOCK -->
+  <nav class="dock">
+    <button class="dock__btn active" data-goto="profile">👤</button>
+    <button class="dock__btn" data-goto="tasks">✅</button>
+    <button class="dock__btn" data-goto="schedule">📅</button>
+    <button class="dock__btn" data-goto="games">🎮</button>
+    <button class="dock__btn" data-goto="shop">🎁</button>
+  </nav>
+
+</div>
+
+<!-- MODAL -->
+<div id="modal" class="modal hidden">
+  <div class="modal__box">
+    <div class="modal__title" id="modalTitle">Заголовок</div>
+    <div class="modal__body" id="modalBody"></div>
+    <button class="btn btn--cyan" id="modalOk">ОК</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
 </body>
 </html>
