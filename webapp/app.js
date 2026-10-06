@@ -40,20 +40,9 @@ const tg = _tgSafe || {
 
 // Если Telegram недоступен — покажем предупреждение и всё равно продолжим
 if (!_tgSafe) {
-    console.warn('[APP] Telegram.WebApp недоступен — работаем в fallback-режиме. Перезагрузи приложение через бота.');
-    document.addEventListener('DOMContentLoaded', () => {
-        const sp = document.getElementById('splash');
-        if (sp) {
-            const warn = document.createElement('div');
-            warn.style.cssText = 'position:fixed;bottom:100px;left:16px;right:16px;padding:12px 16px;background:rgba(255,59,48,0.9);color:#fff;border-radius:14px;font-size:13px;font-weight:700;text-align:center;z-index:99999;font-family:Inter,sans-serif;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,0.3)';
-            warn.textContent = 'Telegram недоступен. Закрой и открой приложение заново из чата с ботом.';
-            document.body.appendChild(warn);
-            setTimeout(() => warn.remove(), 6000);
-        }
-    });
+    console.warn('[APP] Telegram.WebApp недоступен — работаем в fallback-режиме.');
 }
 
-// Вызовы инициализации в try/catch — чтобы ничего не сломало
 try { tg.ready(); } catch (e) {}
 try { tg.expand(); } catch (e) {}
 try { if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } catch (e) {}
@@ -140,39 +129,16 @@ const state = {
     myFeedback: [], myFeedbackLoaded: false, myFeedbackExpanded: false,
     exportPending: false,
     gamePhase: 'start',
-    tutorialShown: {},
-    navScrollAtStart: true,
     exchangeOpen: false,
     exchangeAmount: 100,
-    bsScreen: 'lobby',
-    bsBet: 50,
-    bsMyField: null,
-    bsEnemyField: null,
-    bsMyShips: [],
-    bsEnemyShips: [],
-    bsShipsToPlace: [],
-    bsPlacingIdx: 0,
-    bsPlacingRot: 'h',
-    bsTurn: 'me',
-    bsEnemyName: 'Бот',
-    bsIsBot: false,
-    bsLog: [],
-    bsResult: null,
-    bsGameId: null,
-    bsCode: null,
-    bsWaiting: false,
-    bsBotBusy: false,
-    bsPollTimer: null,
-    bsJoinModal: false,
-    bsJoinCode: '',
-    scholarshipAmountModal: false,
-    scholarshipAmountValue: '',
-    adminReplyModal: false,
-    adminReplyFeedbackId: null,
-    adminReplyText: '',
-    _bsTapLock: false,
-    _bsConfirmLock: false,
-    _bsBotStarting: false,
+    bsScreen: 'lobby', bsBet: 50, bsMyField: null, bsEnemyField: null,
+    bsMyShips: [], bsEnemyShips: [], bsShipsToPlace: [], bsPlacingIdx: 0, bsPlacingRot: 'h',
+    bsTurn: 'me', bsEnemyName: 'Бот', bsIsBot: false, bsLog: [], bsResult: null,
+    bsGameId: null, bsCode: null, bsBotBusy: false, bsPollTimer: null,
+    bsJoinModal: false, bsJoinCode: '',
+    scholarshipAmountModal: false, scholarshipAmountValue: '',
+    adminReplyModal: false, adminReplyFeedbackId: null, adminReplyText: '',
+    _bsTapLock: false, _bsConfirmLock: false, _bsBotStarting: false,
 };
 
 async function apiGet(path, params = {}) {
@@ -189,10 +155,7 @@ async function apiGet(path, params = {}) {
             throw new Error(err.message || err.error || `HTTP ${r.status}`);
         }
         return await r.json();
-    } catch (e) {
-        clearTimeout(timer);
-        throw e;
-    }
+    } catch (e) { clearTimeout(timer); throw e; }
 }
 async function apiPost(path, body = {}) {
     const r = await fetch(path, {
@@ -203,8 +166,7 @@ async function apiPost(path, body = {}) {
     if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         const e = new Error(err.message || err.error || `HTTP ${r.status}`);
-        e.code = err.error;
-        throw e;
+        e.code = err.error; throw e;
     }
     return await r.json();
 }
@@ -260,7 +222,6 @@ function popEmoji(char) {
 function formatNumber(n) {
     return Number(n || 0).toLocaleString('ru-RU').replace(/,/g, ' ');
 }
-
 function bsSaveSession() {
     try {
         if (state.bsGameId && !state.bsIsBot) {
@@ -278,7 +239,6 @@ function bsClearSession() {
         localStorage.removeItem(BS_STORAGE_IS_BOT);
     } catch (e) {}
 }
-
 function isMusicMuted() { return localStorage.getItem('flappy_muted') === '1'; }
 function startGameMusic() {
     if (isMusicMuted()) return;
@@ -397,35 +357,18 @@ function fallbackHeroAvatar() {
             <radialGradient id="fbHeroS" cx="50%" cy="35%" r="65%">
                 <stop offset="0%" stop-color="#E5B896"/><stop offset="100%" stop-color="#A87A5E"/>
             </radialGradient>
-            <radialGradient id="fbHeroE" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#FFFFFF"/><stop offset="30%" stop-color="#7CFFEE"/><stop offset="100%" stop-color="#00E5C9" stop-opacity="0.2"/>
-            </radialGradient>
         </defs>
         <circle cx="200" cy="200" r="180" fill="url(#fbHeroG)"/>
-        <path d="M40 400 Q40 300 110 275 Q150 288 200 288 Q250 288 290 275 Q360 300 360 400 Z" fill="#1B1B1B"/>
-        <rect x="170" y="245" width="60" height="50" fill="url(#fbHeroS)"/>
         <ellipse cx="200" cy="180" rx="85" ry="105" fill="url(#fbHeroS)"/>
-        <ellipse cx="165" cy="180" rx="14" ry="10" fill="#0A0A0A"/>
-        <ellipse cx="235" cy="180" rx="14" ry="10" fill="#0A0A0A"/>
-        <circle cx="165" cy="180" r="22" fill="url(#fbHeroE)" opacity="0.8"/>
-        <circle cx="235" cy="180" r="22" fill="url(#fbHeroE)" opacity="0.8"/>
-        <circle cx="165" cy="180" r="4" fill="#FFFFFF"/>
-        <circle cx="235" cy="180" r="4" fill="#FFFFFF"/>
     </svg>`;
 }
 function fallbackSplashLogo() {
     return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
         <defs>
             <linearGradient id="fbLogoGrad" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#00E5C9"/>
-                <stop offset="100%" stop-color="#00A891"/>
+                <stop offset="0%" stop-color="#00E5C9"/><stop offset="100%" stop-color="#00A891"/>
             </linearGradient>
-            <radialGradient id="fbLogoGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#00E5C9" stop-opacity="0.6"/>
-                <stop offset="100%" stop-color="#00E5C9" stop-opacity="0"/>
-            </radialGradient>
         </defs>
-        <circle cx="100" cy="100" r="95" fill="url(#fbLogoGlow)"/>
         <path d="M62 30 L42 90 L66 90 L50 150 L96 82 L70 82 L90 30 Z" fill="url(#fbLogoGrad)" stroke="#00E5C9" stroke-width="2" stroke-linejoin="round"/>
     </svg>`;
 }
@@ -451,24 +394,19 @@ function heroAvatarImg(size = 180) {
         style="width:${size}px;height:${size}px;object-fit:cover;object-position:center top;border-radius:50%;display:block"
         onerror="this.style.display='none';this.insertAdjacentHTML('afterend','${fallbackHeroAvatar().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}')">`;
 }
-
 function fireIconSvg(size = 20) {
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-            <linearGradient id="fireSec" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#FFB020"/><stop offset="100%" stop-color="#FF6B35"/>
-            </linearGradient>
-        </defs>
+        <defs><linearGradient id="fireSec" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#FFB020"/><stop offset="100%" stop-color="#FF6B35"/>
+        </linearGradient></defs>
         <path d="M12 2 Q15 7 16 10 Q18 13 16 17 Q15 20 12 22 Q9 20 8 17 Q6 13 8 10 Q9 7 12 2 Z" fill="url(#fireSec)"/>
         <path d="M12 9 Q13 12 13.5 14 Q14 16 13 18 Q12.5 19 12 19.5 Q11.5 19 11 18 Q10 16 10.5 14 Q11 12 12 9 Z" fill="#FFEE9C"/>
     </svg>`;
 }
-
 function robotIconSvg() {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="4" y="8" width="16" height="12" rx="2"></rect>
-        <circle cx="9" cy="13" r="1"></circle>
-        <circle cx="15" cy="13" r="1"></circle>
+        <circle cx="9" cy="13" r="1"></circle><circle cx="15" cy="13" r="1"></circle>
         <line x1="9" y1="17" x2="15" y2="17"></line>
         <line x1="12" y1="4" x2="12" y2="8"></line>
         <circle cx="12" cy="3" r="1"></circle>
@@ -512,15 +450,9 @@ function initSplash() {
 function renderHeaderCurrency() {
     const w = state.wallet || {};
     return `<div class="header-currency">
-        <div class="header-currency-item">
-            ${softIconImg(18)}
-            <span>${formatNumber(w.soft || 0)}</span>
-        </div>
+        <div class="header-currency-item">${softIconImg(18)}<span>${formatNumber(w.soft || 0)}</span></div>
         <div class="header-currency-divider">/</div>
-        <div class="header-currency-item">
-            ${hardIconImg(18)}
-            <span>${formatNumber(w.hard || 0)}</span>
-        </div>
+        <div class="header-currency-item">${hardIconImg(18)}<span>${formatNumber(w.hard || 0)}</span></div>
     </div>`;
 }
 function updateHeaderCurrency() {
@@ -528,11 +460,255 @@ function updateHeaderCurrency() {
     if (!el) return;
     el.outerHTML = renderHeaderCurrency();
 }
-
 function renderSubHeader(backAction, titleText) {
     return `<div class="picker-header">
         <button class="picker-back" data-action="${backAction}">←</button>
         <div class="picker-title">${escapeHtml(titleText)}</div>
+    </div>`;
+}
+
+// ============= МОДАЛКИ (11 штук) =============
+
+function renderNameEditorModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-title">Изменить имя</div>
+            <div class="modal-sub">Максимум 24 символа</div>
+            <input class="modal-input" id="name-editor-input" maxlength="24"
+                   value="${escapeHtml(state.nameEditorValue || '')}" placeholder="Твоё имя" autofocus>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="name-save">Сохранить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderChestModal() {
+    const r = state.chestModal; if (!r) return '';
+    const emojiMap = { soft: '💰', xp: '⚡', hard: '🏅', free_name: '✏️' };
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="reward-reveal">
+                <div class="reward-icon">${emojiMap[r.type] || '🎁'}</div>
+                <div class="reward-label">${escapeHtml(r.label || '')}</div>
+                <div class="reward-desc">${r.type === 'soft' ? 'Софт зачислен' : r.type === 'xp' ? 'Опыт добавлен' : r.type === 'hard' ? 'Хард твой!' : 'Смена ника бесплатно'}</div>
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Круто!</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderPremiumModal() {
+    const r = state.premiumModal; if (!r) return '';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="reward-reveal" style="padding-top:14px">
+                <div class="reward-icon">👑</div>
+                <div class="reward-label">ПРЕМИУМ СУНДУК</div>
+            </div>
+            <div class="info-section" style="margin-top:14px">
+                <div class="info-row"><span class="info-row-label">💰 Софт</span><span class="info-row-value">+${r.soft || 0}</span></div>
+                <div class="info-row"><span class="info-row-label">⚡ Опыт</span><span class="info-row-value">+${r.xp || 0} XP</span></div>
+                <div class="info-row"><span class="info-row-label">🏅 Бонус</span><span class="info-row-value gold">${escapeHtml(r.bonus_label || '—')}</span></div>
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Круто!</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderAchModal() {
+    const achId = state.achModal; if (!achId) return '';
+    const item = (state.achievements || []).find(a => a.id === achId);
+    if (!item) return '';
+    const status = item.unlocked
+        ? '<span class="info-ach-badge unlocked">Получено</span>'
+        : '<span class="info-ach-badge locked">Ещё не открыто</span>';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-ach-hero">
+                <div class="info-ach-icon ${item.unlocked ? '' : 'locked'}">${item.icon}</div>
+                <div class="info-ach-name">${escapeHtml(item.name)}</div>
+                ${status}
+            </div>
+            <div class="info-ach-desc">${escapeHtml(item.desc)}</div>
+            <div class="actions-row" style="justify-content:center;margin-top:18px">
+                <button class="btn" data-action="modal-close">Закрыть</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderLevelInfoModal() {
+    const w = state.wallet || {};
+    const lvl = w.level || 1;
+    const xpIn = w.xp_in_level || 0;
+    const xpNext = w.xp_to_next || 500;
+    const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Уровни и опыт</div>
+            <div class="info-modal-sub">Как растёт уровень и за что дают XP</div>
+            <div class="info-current">
+                <div class="info-current-lvl">${lvl}<small>LVL</small></div>
+                <div class="info-current-info">
+                    <div class="info-current-name">${escapeHtml(w.level_title || 'Первокурсник')}</div>
+                    <div class="info-current-xp">${xpIn} / ${xpNext} XP</div>
+                </div>
+            </div>
+            <div class="info-xp-bar"><div class="info-xp-fill" style="width:${xpPct}%"></div></div>
+            <div class="info-section">
+                <div class="info-section-title">За что дают опыт</div>
+                <div class="info-row"><span class="info-row-label">Задача добавлена</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Задача выполнена</span><span class="info-row-value">+20 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Заметка</span><span class="info-row-value">+3 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Оценка</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Посещение</span><span class="info-row-value">+3 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+2 XP</span></div>
+                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+5 XP</span></div>
+                <div class="info-row"><span class="info-row-label">Игра: 1 очко</span><span class="info-row-value">+2 XP</span></div>
+            </div>
+            <div class="actions-row" style="justify-content:center;margin-top:20px">
+                <button class="btn" data-action="modal-close">Понятно</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderCurrencyInfoModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Откуда взять валюту</div>
+            <div class="info-modal-sub">Все способы получать Софт и Хард</div>
+            <div class="info-section">
+                <div class="info-section-title">${softIconImg(18)} Софт</div>
+                <div class="info-row"><span class="info-row-label">Добавить задачу</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Выполнить задачу</span><span class="info-row-value">+5</span></div>
+                <div class="info-row"><span class="info-row-label">Новая заметка</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Добавить оценку</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Отметить посещение</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+1</span></div>
+                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+2</span></div>
+                <div class="info-row"><span class="info-row-label">Игра «До пары успеть»</span><span class="info-row-value">+1–30</span></div>
+                <div class="info-row"><span class="info-row-label">Халява дня</span><span class="info-row-value">+10–30</span></div>
+                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value">+500</span></div>
+                <div class="info-row"><span class="info-row-label">Победа в морском бою</span><span class="info-row-value">×2 ставки</span></div>
+            </div>
+            <div class="info-section">
+                <div class="info-section-title">${hardIconImg(18)} Хард</div>
+                <div class="info-row"><span class="info-row-label">Халява дня (редкий)</span><span class="info-row-value gold">+1–5</span></div>
+                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value gold">+3–25</span></div>
+                <div class="info-row"><span class="info-row-label">Рекорд в игре</span><span class="info-row-value gold">+1</span></div>
+                <div class="info-row"><span class="info-row-label">Достижения</span><span class="info-row-value gold">+1–10</span></div>
+                <div class="info-row"><span class="info-row-label">Обменник (100:1)</span><span class="info-row-value gold">∞</span></div>
+            </div>
+            <div class="exchange-rate-badge" style="margin:16px 0">
+                <span>100 Софта</span><span class="rate-arrow">→</span><span class="rate-value">1 Хард</span>
+            </div>
+            <div class="actions-row" style="justify-content:center;margin-top:10px">
+                <button class="btn" data-action="modal-close">Понятно</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderNewAchToast() {
+    const list = state.newAchToast || []; if (list.length === 0) return '';
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">🎉 Новое достижение!</div>
+            <div class="info-modal-sub">${list.length > 1 ? `Открыто сразу ${list.length}:` : 'Ты только что получил:'}</div>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+                ${list.map(a => `
+                    <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--neon-soft);border-radius:var(--r-md)">
+                        <div style="font-size:32px">${a.icon}</div>
+                        <div style="flex:1;min-width:0">
+                            <div style="font-size:14px;font-weight:800;margin-bottom:2px">${escapeHtml(a.name)}</div>
+                            <div style="font-size:11px;font-weight:700;color:var(--neon-dark)">${escapeHtml(a.rewardText)}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="modal-close">Отлично!</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderExchangeModal() {
+    const w = state.wallet || {}; const soft = w.soft || 0;
+    const amount = Math.max(0, Math.min(state.exchangeAmount || 0, soft));
+    const hard = Math.floor(amount / 100);
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Обмен валюты</div>
+            <div class="info-modal-sub">Обменяй Софт на Хард</div>
+            <div class="exchange-rate-badge">
+                <span>100 Софта</span><span class="rate-arrow">→</span><span class="rate-value">1 Хард</span>
+            </div>
+            <div class="exchange-input-wrap">
+                <input class="exchange-input" id="exchange-amount-input" type="number" min="0" step="100"
+                       value="${state.exchangeAmount}" inputmode="numeric" placeholder="0">
+                <div class="exchange-input-suffix">Софт</div>
+            </div>
+            <div class="exchange-quick-buttons">
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.25">25%</button>
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.5">50%</button>
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.75">75%</button>
+                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="1">MAX</button>
+            </div>
+            <div class="exchange-preview">
+                <div class="exchange-preview-label">Получишь</div>
+                <div class="exchange-preview-value">${hard}<span class="suffix">Харда</span></div>
+            </div>
+            <div class="exchange-balance-hint">Доступно: <strong>${formatNumber(soft)}</strong> Софта</div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="exchange-submit" ${hard > 0 ? '' : 'disabled'}>Обменять</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderBSJoinModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Введи код игры</div>
+            <div class="info-modal-sub">6 цифр от друга</div>
+            <input class="modal-input" id="bs-join-code-input" maxlength="6" inputmode="numeric"
+                   pattern="[0-9]*" value="${escapeHtml(state.bsJoinCode || '')}" placeholder="000000" autofocus>
+            <div class="card-subtitle" style="text-align:center;margin-bottom:16px">
+                Ставка: <strong style="color:var(--neon-dark)">${state.bsBet}</strong> Софта
+            </div>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="bs-join-submit">Войти</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderScholarshipAmountModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Сумма стипендии</div>
+            <div class="info-modal-sub">Введите 0, если не получаете</div>
+            <input class="modal-input" id="sch-amount-input" type="number" inputmode="numeric"
+                   min="0" max="100000" value="${escapeHtml(state.scholarshipAmountValue || '')}" placeholder="0" autofocus>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="sch-amount-submit">Сохранить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderAdminReplyModal() {
+    return `<div class="modal-backdrop" data-action="modal-close">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="info-modal-title">Ответ пользователю</div>
+            <div class="info-modal-sub">Обращение #${state.adminReplyFeedbackId || '?'}</div>
+            <textarea class="input" id="admin-reply-input" rows="4" placeholder="Текст ответа..." autofocus>${escapeHtml(state.adminReplyText || '')}</textarea>
+            <div class="actions-row" style="justify-content:center">
+                <button class="btn" data-action="admin-reply-submit">Отправить</button>
+                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
+            </div>
+        </div>
     </div>`;
 }
 
@@ -680,47 +856,26 @@ function render() {
     initNavScrollHint();
     syncNavActiveIntoView();
 }
-
 function initNavScrollHint() {
     const nav = document.getElementById('bottom-nav');
     if (!nav || nav.dataset.scrollBound === '1') return;
     nav.dataset.scrollBound = '1';
-
     function checkEnd() {
-        if (nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 4) {
-            nav.classList.add('scrolled-end');
-        } else {
-            nav.classList.remove('scrolled-end');
-        }
+        if (nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 4) nav.classList.add('scrolled-end');
+        else nav.classList.remove('scrolled-end');
     }
     nav.addEventListener('scroll', checkEnd, { passive: true });
     checkEnd();
-
-    try {
-        if (localStorage.getItem('nav_hint_shown') !== '1') {
-            setTimeout(() => {
-                nav.scrollTo({ left: 40, behavior: 'smooth' });
-                setTimeout(() => {
-                    nav.scrollTo({ left: 0, behavior: 'smooth' });
-                    localStorage.setItem('nav_hint_shown', '1');
-                }, 600);
-            }, 800);
-        }
-    } catch (e) {}
 }
-
 function syncNavActiveIntoView() {
-    const nav = document.getElementById('bottom-nav');
-    if (!nav) return;
-    const active = nav.querySelector('.nav-btn.active');
-    if (!active) return;
-    const navRect = nav.getBoundingClientRect();
-    const btnRect = active.getBoundingClientRect();
+    const nav = document.getElementById('bottom-nav'); if (!nav) return;
+    const active = nav.querySelector('.nav-btn.active'); if (!active) return;
+    const navRect = nav.getBoundingClientRect(); const btnRect = active.getBoundingClientRect();
     if (btnRect.left < navRect.left || btnRect.right > navRect.right) {
         active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
 }
-
+// ===== КОНЕЦ ЧАСТИ 1. ЧАСТЬ 2 ИДЁТ СРАЗУ ПОСЛЕ ЭТОЙ СТРОКИ =====
 function renderUserBar() {
     const u = state.user;
     const p = state.profile;
@@ -747,7 +902,7 @@ function renderUserBar() {
         </div>
     `;
 }
-// ===== КОНЕЦ ЧАСТИ 1. ЧАСТЬ 2 ИДЁТ СРАЗУ ПОСЛЕ ЭТОЙ СТРОКИ =====
+
 function renderLesson(les) {
     const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
     const details = [];
@@ -789,9 +944,7 @@ function _tomorrowStrIrkutsk() {
 }
 function _findDayByDate(days, dateStr) {
     if (!days) return null;
-    for (const d of days) {
-        if (d && d.date === dateStr) return d;
-    }
+    for (const d of days) { if (d && d.date === dateStr) return d; }
     return null;
 }
 function getTomorrowData() {
@@ -1408,12 +1561,10 @@ function renderGames() {
         { id: 'flappy', name: 'До пары успеть', asset: 'assets/cover-flappy.webp', desc: 'Прыгай между столбцами' },
         { id: 'battleship', name: 'Морской бой', asset: 'assets/cover-battleship.webp', desc: 'PvP на Софт' },
     ];
-
     let html = `<div class="games-catalog">`;
     for (const g of catalog) {
         html += `<button class="hero-banner" data-action="game-open" data-game="${escapeHtml(g.id)}" style="width:100%;text-align:left;border:none">
-            <img class="hero-banner-bg" src="${g.asset}" alt="${escapeHtml(g.name)}"
-                 onerror="this.style.display='none'">
+            <img class="hero-banner-bg" src="${g.asset}" alt="${escapeHtml(g.name)}" onerror="this.style.display='none'">
             <div class="hero-banner-overlay"></div>
             <div class="hero-banner-content">
                 <div class="hero-banner-title">${escapeHtml(g.name)}</div>
@@ -1423,7 +1574,6 @@ function renderGames() {
         </button>`;
     }
     html += `</div>`;
-
     if (state.walletLeaderboard && state.walletLeaderboard.length > 0) {
         html += `<div class="section" style="margin-top:20px">
             <div class="section-header">
@@ -1442,7 +1592,6 @@ function renderGames() {
     }
     return html;
 }
-
 function renderGameTutorialOverlay() {
     return `<div class="tutorial-overlay hide" id="game-tutorial-overlay">
         <div class="tutorial-arrow">👆</div>
@@ -1500,13 +1649,8 @@ function actionGameOpen(gameId) {
     if (gameId === 'battleship') {
         state.gameView = 'battleship';
         state.bsScreen = 'lobby';
-        state.bsResult = null;
-        state.bsLog = [];
-        state.bsCode = null;
-        state.bsGameId = null;
-        state.bsIsBot = false;
-        render();
-        return;
+        state.bsResult = null; state.bsLog = []; state.bsCode = null; state.bsGameId = null; state.bsIsBot = false;
+        render(); return;
     }
     state.currentGame = gameId;
     state.gameView = 'playing';
@@ -1572,20 +1716,13 @@ function showTutorialThenStart(startFn) {
     }
     function onTap(e) {
         if (e.target && e.target.dataset && (e.target.dataset.action === 'game-exit' || e.target.dataset.action === 'music-toggle')) return;
-        if (!tutShown) {
-            try { localStorage.setItem('flappy_tutorial_shown', '1'); } catch (er) {}
-        }
+        if (!tutShown) { try { localStorage.setItem('flappy_tutorial_shown', '1'); } catch (er) {} }
         doStart();
     }
     function onKey(e) {
-        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
-            onTap({ target: { dataset: {} } });
-        }
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') onTap({ target: { dataset: {} } });
     }
-    if (!tutShown && tutOv) {
-        tutOv.classList.remove('hide');
-        haptic('light');
-    }
+    if (!tutShown && tutOv) { tutOv.classList.remove('hide'); haptic('light'); }
     document.addEventListener('pointerdown', onTap);
     document.addEventListener('keydown', onKey);
 }
@@ -1610,67 +1747,37 @@ function initFlappy() {
     starCtx.scale(dpr, dpr);
     {
         const bg = starCtx.createLinearGradient(0, 0, 0, H);
-        bg.addColorStop(0, '#000000');
-        bg.addColorStop(0.5, '#050510');
-        bg.addColorStop(1, '#0b1524');
-        starCtx.fillStyle = bg;
-        starCtx.fillRect(0, 0, W, H);
+        bg.addColorStop(0, '#000000'); bg.addColorStop(0.5, '#050510'); bg.addColorStop(1, '#0b1524');
+        starCtx.fillStyle = bg; starCtx.fillRect(0, 0, W, H);
         const glow = starCtx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.75);
-        glow.addColorStop(0, 'rgba(0,229,201,0.12)');
-        glow.addColorStop(1, 'rgba(0,229,201,0)');
-        starCtx.fillStyle = glow;
-        starCtx.fillRect(0, 0, W, H);
+        glow.addColorStop(0, 'rgba(0,229,201,0.12)'); glow.addColorStop(1, 'rgba(0,229,201,0)');
+        starCtx.fillStyle = glow; starCtx.fillRect(0, 0, W, H);
         const starCount = Math.floor((W * H) / 3500);
         for (let i = 0; i < starCount; i++) {
-            const x = Math.random() * W;
-            const y = Math.random() * H;
-            const r = Math.random();
+            const x = Math.random() * W, y = Math.random() * H, r = Math.random();
             let size, alpha;
             if (r < 0.72) { size = 0.8; alpha = 0.25 + Math.random() * 0.30; }
             else if (r < 0.95) { size = 1.3; alpha = 0.55 + Math.random() * 0.35; }
             else { size = 2.0; alpha = 0.85 + Math.random() * 0.15; }
             starCtx.fillStyle = `rgba(220,235,255,${alpha})`;
-            starCtx.beginPath();
-            starCtx.arc(x, y, size, 0, Math.PI * 2);
-            starCtx.fill();
+            starCtx.beginPath(); starCtx.arc(x, y, size, 0, Math.PI * 2); starCtx.fill();
         }
     }
 
-    const PLAYER_R = 15;
-    const HERO_SIZE = 88;
-    const GAP = 160;
-    const MIN_GAP = 132;
-    const COL_W = 62;
-    const SPAWN_INTERVAL = 120;
-    const MIN_SPAWN_INTERVAL = 95;
-    const COL_FILL = 'rgba(0,229,201,0.88)';
-    const COL_STROKE = '#7CFFEE';
-    const COL_LINE = 'rgba(0,0,0,0.16)';
+    const PLAYER_R = 15, HERO_SIZE = 88, GAP = 160, MIN_GAP = 132;
+    const COL_W = 62, SPAWN_INTERVAL = 120, MIN_SPAWN_INTERVAL = 95;
+    const COL_FILL = 'rgba(0,229,201,0.88)', COL_STROKE = '#7CFFEE', COL_LINE = 'rgba(0,0,0,0.16)';
 
     const game = {
-        W, H,
-        running: true, over: false, started: false,
-        score: 0, frame: 0,
+        W, H, running: true, over: false, started: false, score: 0, frame: 0,
         player: { x: W * 0.28, y: H * 0.5, r: PLAYER_R, vy: 0 },
-        obstacles: [],
-        spawnTimer: 0,
-        spawnInterval: SPAWN_INTERVAL,
-        minSpawnInterval: MIN_SPAWN_INTERVAL,
-        gravity: 0.55,
-        jumpForce: -8.0,
-        maxFallSpeed: 10.5,
-        speed: 3.4,
-        maxSpeed: 7.0,
-        gap: GAP,
-        minGap: MIN_GAP,
-        lastTime: 0,
+        obstacles: [], spawnTimer: 0, spawnInterval: SPAWN_INTERVAL,
+        minSpawnInterval: MIN_SPAWN_INTERVAL, gravity: 0.55, jumpForce: -8.0,
+        maxFallSpeed: 10.5, speed: 3.4, maxSpeed: 7.0, gap: GAP, minGap: MIN_GAP, lastTime: 0,
     };
     state.gameInstance = game;
 
-    function doJump() {
-        if (game.over || !game.running) return;
-        game.player.vy = game.jumpForce;
-    }
+    function doJump() { if (game.over || !game.running) return; game.player.vy = game.jumpForce; }
     let startedFromTutorial = false;
     showTutorialThenStart(() => {
         startedFromTutorial = true;
@@ -1679,16 +1786,10 @@ function initFlappy() {
         game.player.vy = game.jumpForce;
         startGameMusic();
     });
-    function onPointer(e) {
-        e.preventDefault();
-        if (!startedFromTutorial) return;
-        doJump();
-    }
+    function onPointer(e) { e.preventDefault(); if (!startedFromTutorial) return; doJump(); }
     function onKey(e) {
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            e.preventDefault();
-            if (!startedFromTutorial) return;
-            doJump();
+            e.preventDefault(); if (!startedFromTutorial) return; doJump();
         }
     }
     canvas.addEventListener('pointerdown', onPointer);
@@ -1700,26 +1801,16 @@ function initFlappy() {
     function endGame() {
         if (game.over) return;
         game.over = true; game.running = false;
-        cleanup();
-        haptic('error');
-        stopGameMusic();
+        cleanup(); haptic('error'); stopGameMusic();
         submitGameScore('flappy', game.score);
     }
     function drawColumn(x, y, w, h) {
         if (h <= 0) return;
-        ctx.fillStyle = COL_FILL;
-        roundRect(ctx, x, y, w, h, 8);
-        ctx.fill();
-        ctx.strokeStyle = COL_STROKE;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.strokeStyle = COL_LINE;
-        ctx.lineWidth = 1;
+        ctx.fillStyle = COL_FILL; roundRect(ctx, x, y, w, h, 8); ctx.fill();
+        ctx.strokeStyle = COL_STROKE; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = COL_LINE; ctx.lineWidth = 1;
         ctx.beginPath();
-        for (let ly = y + 22; ly < y + h - 6; ly += 28) {
-            ctx.moveTo(x + 6, ly);
-            ctx.lineTo(x + w - 6, ly);
-        }
+        for (let ly = y + 22; ly < y + h - 6; ly += 28) { ctx.moveTo(x + 6, ly); ctx.lineTo(x + w - 6, ly); }
         ctx.stroke();
     }
     function drawPlayer() {
@@ -1729,20 +1820,14 @@ function initFlappy() {
             const naturalW = img.naturalWidth || img.width || 1;
             const naturalH = img.naturalHeight || img.height || 1;
             const ratio = naturalW / naturalH;
-            let w = HERO_SIZE;
-            let h = HERO_SIZE;
-            if (ratio > 1) h = HERO_SIZE / ratio;
-            else if (ratio < 1) w = HERO_SIZE * ratio;
+            let w = HERO_SIZE, h = HERO_SIZE;
+            if (ratio > 1) h = HERO_SIZE / ratio; else if (ratio < 1) w = HERO_SIZE * ratio;
             ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h);
         } else {
             ctx.fillStyle = 'rgba(0,229,201,0.25)';
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r + 6, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 6, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#00E5C9';
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#000';
             ctx.beginPath();
             ctx.arc(p.x + 4, p.y - 3, 2.5, 0, Math.PI * 2);
@@ -1771,27 +1856,18 @@ function initFlappy() {
         if (!game.lastTime) game.lastTime = timestamp;
         let dt = (timestamp - game.lastTime) / 16.6667;
         game.lastTime = timestamp;
-        if (dt > 3) dt = 3;
-        if (dt <= 0) return;
+        if (dt > 3) dt = 3; if (dt <= 0) return;
         if (game.started) {
             game.player.vy += game.gravity * dt;
             if (game.player.vy > game.maxFallSpeed) game.player.vy = game.maxFallSpeed;
             game.player.y += game.player.vy * dt;
         }
-        if (game.player.y - game.player.r < 0) {
-            game.player.y = game.player.r;
-            game.player.vy = 0;
-        }
-        if (game.player.y + game.player.r > H) {
-            game.player.y = H - game.player.r;
-            endGame();
-            return;
-        }
+        if (game.player.y - game.player.r < 0) { game.player.y = game.player.r; game.player.vy = 0; }
+        if (game.player.y + game.player.r > H) { game.player.y = H - game.player.r; endGame(); return; }
         game.spawnTimer += dt;
         if (game.started && game.spawnTimer >= game.spawnInterval) {
             game.spawnTimer = 0;
-            const minGapY = 40;
-            const maxGapY = H - game.gap - 40;
+            const minGapY = 40, maxGapY = H - game.gap - 40;
             const gapY = Math.random() * Math.max(1, maxGapY - minGapY) + minGapY;
             game.obstacles.push({ x: W + 20, w: COL_W, gapY, gapH: game.gap, passed: false });
         }
@@ -1800,69 +1876,40 @@ function initFlappy() {
             const o = game.obstacles[i];
             if (game.started) o.x -= game.speed * dt;
             if (px + pr > o.x && px - pr < o.x + o.w) {
-                if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) {
-                    endGame();
-                    return;
-                }
+                if (py - pr < o.gapY || py + pr > o.gapY + o.gapH) { endGame(); return; }
             }
             if (!o.passed && o.x + o.w < px) {
-                o.passed = true;
-                game.score++;
-                haptic('light');
-                updateScore(game.score);
-                updateDifficulty();
+                o.passed = true; game.score++;
+                haptic('light'); updateScore(game.score); updateDifficulty();
             }
             if (o.x + o.w < -80) game.obstacles.splice(i, 1);
         }
-        draw();
-        game.frame++;
+        draw(); game.frame++;
     }
-    draw();
-    requestAnimationFrame(loop);
+    draw(); requestAnimationFrame(loop);
 }
-
 function roundRect(ctx, x, y, w, h, r) {
-    if (h < 2 * r) r = h / 2;
-    if (w < 2 * r) r = w / 2;
-    if (r < 0) r = 0;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
+    if (h < 2 * r) r = h / 2; if (w < 2 * r) r = w / 2; if (r < 0) r = 0;
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
 }
-function updateScore(val) {
-    const el = document.getElementById('game-score');
-    if (el) el.textContent = String(val);
-}
+function updateScore(val) { const el = document.getElementById('game-score'); if (el) el.textContent = String(val); }
 
 // ============================================================
 //                       МОРСКОЙ БОЙ — МОДЕЛЬ
 // ============================================================
 
-function bsEmptyField() {
-    return Array.from({ length: 10 }, () => new Array(10).fill(0));
-}
-
+function bsEmptyField() { return Array.from({ length: 10 }, () => new Array(10).fill(0)); }
 function bsShipList() {
-    return [
-        { size: 4, count: 1 },
-        { size: 3, count: 2 },
-        { size: 2, count: 3 },
-        { size: 1, count: 4 },
-    ];
+    return [{ size: 4, count: 1 }, { size: 3, count: 2 }, { size: 2, count: 3 }, { size: 1, count: 4 }];
 }
-
 function bsFlattenShipsToPlace() {
     const list = [];
-    for (const s of bsShipList()) {
-        for (let i = 0; i < s.count; i++) list.push(s.size);
-    }
+    for (const s of bsShipList()) { for (let i = 0; i < s.count; i++) list.push(s.size); }
     return list;
 }
-
 function bsCanPlace(field, x, y, size, rot) {
     const cells = [];
     for (let i = 0; i < size; i++) {
@@ -1883,14 +1930,12 @@ function bsCanPlace(field, x, y, size, rot) {
     }
     return cells;
 }
-
 function bsPlaceShip(field, x, y, size, rot) {
     const cells = bsCanPlace(field, x, y, size, rot);
     if (!cells) return null;
     for (const [cx, cy] of cells) field[cy][cx] = 1;
     return cells;
 }
-
 function bsAutoPlace(field, ships = null) {
     const list = ships || bsFlattenShipsToPlace();
     const placed = [];
@@ -1911,7 +1956,6 @@ function bsAutoPlace(field, ships = null) {
     }
     return placed;
 }
-
 function reconstructEnemyFieldFromShots(shots) {
     const field = bsEmptyField();
     if (!shots || !shots.length) return field;
@@ -1920,30 +1964,21 @@ function reconstructEnemyFieldFromShots(shots) {
         if (sh.x == null) continue;
         if (sh.result === 'miss') field[sh.y][sh.x] = 3;
         else if (sh.result === 'hit') field[sh.y][sh.x] = 2;
-        else if (sh.result === 'sunk') {
-            field[sh.y][sh.x] = 4;
-            sunkCells.push([sh.x, sh.y]);
-        }
+        else if (sh.result === 'sunk') { field[sh.y][sh.x] = 4; sunkCells.push([sh.x, sh.y]); }
     }
     if (sunkCells.length) {
         const visited = new Set();
         for (const [x, y] of sunkCells) {
             const key = `${x},${y}`;
             if (visited.has(key)) continue;
-            const stack = [[x, y]];
-            const ship = [];
-            visited.add(key);
+            const stack = [[x, y]]; const ship = []; visited.add(key);
             while (stack.length) {
-                const [cx, cy] = stack.pop();
-                ship.push([cx, cy]);
+                const [cx, cy] = stack.pop(); ship.push([cx, cy]);
                 for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-                    const nx = cx + dx, ny = cy + dy;
-                    const k = `${nx},${ny}`;
+                    const nx = cx + dx, ny = cy + dy; const k = `${nx},${ny}`;
                     if (nx < 0 || nx > 9 || ny < 0 || ny > 9) continue;
-                    if (visited.has(k)) continue;
-                    if (field[ny][nx] !== 4) continue;
-                    visited.add(k);
-                    stack.push([nx, ny]);
+                    if (visited.has(k)) continue; if (field[ny][nx] !== 4) continue;
+                    visited.add(k); stack.push([nx, ny]);
                 }
             }
             for (const [sx, sy] of ship) {
@@ -1969,28 +2004,19 @@ function renderBattleship() {
     if (s === 'result') return renderBSResult();
     return renderBSLobby();
 }
-
 function renderBSLobby() {
-    const w = state.wallet || {};
-    const bet = state.bsBet;
+    const w = state.wallet || {}; const bet = state.bsBet;
     const canPlay = (w.soft || 0) >= bet;
     return `<div class="bs-wrap">
-        <div class="bs-hero">
-            <div class="bs-hero-title">Морской бой</div>
-            <div class="bs-hero-sub">Сразись за Софт</div>
-        </div>
-
+        <div class="bs-hero"><div class="bs-hero-title">Морской бой</div><div class="bs-hero-sub">Сразись за Софт</div></div>
         <div class="card">
             <div class="card-title">Ставка</div>
             <div class="card-subtitle">Победитель забирает весь банк (×2 от ставки)</div>
             <div class="bs-bet-row">
-                ${[10, 50, 100, 500].map(v => `
-                    <button class="bs-bet-btn ${bet === v ? 'active' : ''}" data-action="bs-bet" data-value="${v}">${v}</button>
-                `).join('')}
+                ${[10, 50, 100, 500].map(v => `<button class="bs-bet-btn ${bet === v ? 'active' : ''}" data-action="bs-bet" data-value="${v}">${v}</button>`).join('')}
             </div>
             <div class="card-subtitle" style="margin-top:10px">У тебя: <strong style="color:var(--neon-dark)">${formatNumber(w.soft || 0)}</strong> Софта</div>
         </div>
-
         <div class="bs-menu-grid">
             <button class="bs-menu-btn primary" data-action="bs-play-bot" ${canPlay ? '' : 'disabled'}>
                 <div class="bs-menu-icon">${robotIconSvg()}</div>
@@ -2013,20 +2039,16 @@ function renderBSLobby() {
                 <div class="bs-menu-sub">Случайный игрок</div>
             </button>
         </div>
-
         <div class="actions-row" style="margin-top:12px">
             <button class="btn btn-secondary" data-action="game-exit" style="width:100%">← К играм</button>
         </div>
     </div>`;
 }
-
 function renderBSPlacing() {
     const field = state.bsMyField || bsEmptyField();
-    const list = state.bsShipsToPlace;
-    const idx = state.bsPlacingIdx;
+    const list = state.bsShipsToPlace; const idx = state.bsPlacingIdx;
     const nextSize = idx < list.length ? list[idx] : null;
     const rot = state.bsPlacingRot;
-
     let previewHtml = '';
     if (nextSize) {
         previewHtml = `<div class="bs-placing-preview">
@@ -2036,29 +2058,18 @@ function renderBSPlacing() {
             </div>
         </div>`;
     } else {
-        previewHtml = `<div class="bs-placing-preview">
-            <div class="bs-placing-preview-label">Все корабли расставлены — жми «Готов»</div>
-        </div>`;
+        previewHtml = `<div class="bs-placing-preview"><div class="bs-placing-preview-label">Все корабли расставлены — жми «Готов»</div></div>`;
     }
-
     return `<div class="bs-wrap">
-        <div class="bs-hero">
-            <div class="bs-hero-title">Расстановка</div>
-            <div class="bs-hero-sub">Ставка: ${state.bsBet} Софта · ${nextSize ? `осталось ${list.length - idx}` : 'всё готово'}</div>
-        </div>
-
+        <div class="bs-hero"><div class="bs-hero-title">Расстановка</div><div class="bs-hero-sub">Ставка: ${state.bsBet} Софта · ${nextSize ? `осталось ${list.length - idx}` : 'всё готово'}</div></div>
         ${previewHtml}
-
         <div class="bs-board-section">
             <div class="bs-board-header">
                 <div class="bs-board-label active">Твой флот</div>
-                <div class="bs-board-counters">
-                    <span class="alive">Поставлено: ${idx}/${list.length}</span>
-                </div>
+                <div class="bs-board-counters"><span class="alive">Поставлено: ${idx}/${list.length}</span></div>
             </div>
             ${renderBSBoard(field, 'my', false, true)}
         </div>
-
         <div class="actions-row" style="margin-top:14px">
             <button class="btn btn-secondary" data-action="bs-rotate" style="flex:1">${rot === 'h' ? 'Горизонт. →' : 'Вертик. ↓'}</button>
             <button class="btn btn-secondary" data-action="bs-auto-place" style="flex:1">Авто</button>
@@ -2075,7 +2086,6 @@ function renderBSPlacing() {
         </div>
     </div>`;
 }
-
 function renderBSWaiting() {
     return `<div class="bs-wrap">
         <div class="bs-queue-card">
@@ -2086,17 +2096,12 @@ function renderBSWaiting() {
                 <div class="bs-code-value">${escapeHtml(state.bsCode || '------')}</div>
                 <button class="bs-code-copy" data-action="bs-copy-code">Копировать</button>
             </div>
-            <div class="card-subtitle" style="margin-top:14px">
-                Ставка: <strong style="color:var(--neon-dark)">${state.bsBet}</strong> Софта
-            </div>
+            <div class="card-subtitle" style="margin-top:14px">Ставка: <strong style="color:var(--neon-dark)">${state.bsBet}</strong> Софта</div>
             <div class="card-subtitle" style="margin-top:6px">Как только друг введёт код — игра начнётся автоматически.</div>
         </div>
-        <div class="actions-row">
-            <button class="btn btn-secondary" data-action="bs-cancel-room" style="width:100%">Отменить</button>
-        </div>
+        <div class="actions-row"><button class="btn btn-secondary" data-action="bs-cancel-room" style="width:100%">Отменить</button></div>
     </div>`;
 }
-
 function renderBSBattle() {
     const my = state.bsMyField;
     const enemy = state.bsEnemyField;
@@ -2104,41 +2109,30 @@ function renderBSBattle() {
     const log = state.bsLog || [];
     const myShipsAlive = countAliveShips(my, state.bsMyShips);
     const enemyShipsAlive = state.bsIsBot ? countAliveShips(enemy, state.bsEnemyShips) : null;
-
     return `<div class="bs-wrap">
         <div class="bs-turn-banner ${myTurn ? 'my-turn' : 'enemy-turn'}">
-            <span class="bs-turn-dot"></span>
-            ${myTurn ? 'Твой ход' : 'Ход соперника'}
+            <span class="bs-turn-dot"></span>${myTurn ? 'Твой ход' : 'Ход соперника'}
         </div>
-
         <div class="bs-board-section">
             <div class="bs-board-header">
                 <div class="bs-board-label">Флот врага · ${escapeHtml(state.bsEnemyName || 'Соперник')}</div>
-                <div class="bs-board-counters">
-                    ${enemyShipsAlive !== null ? `<span class="alive">Живых: ${enemyShipsAlive}</span>` : `<span>Стреляй по клеткам</span>`}
-                </div>
+                <div class="bs-board-counters">${enemyShipsAlive !== null ? `<span class="alive">Живых: ${enemyShipsAlive}</span>` : `<span>Стреляй по клеткам</span>`}</div>
             </div>
             ${renderBSBoard(enemy, 'enemy', myTurn, false)}
         </div>
-
         <div class="bs-board-section">
             <div class="bs-board-header">
                 <div class="bs-board-label">Твой флот</div>
-                <div class="bs-board-counters">
-                    <span class="alive">Живых: ${myShipsAlive}</span>
-                </div>
+                <div class="bs-board-counters"><span class="alive">Живых: ${myShipsAlive}</span></div>
             </div>
             ${renderBSBoard(my, 'my', false, false)}
         </div>
-
         ${log.length > 0 ? `<div class="bs-log">${log.slice(-6).map(l => `<div class="bs-log-entry ${l.type}">${escapeHtml(l.text)}</div>`).join('')}</div>` : ''}
-
         <div class="actions-row" style="margin-top:14px">
             <button class="btn btn-secondary" data-action="bs-surrender" style="width:100%">Сдаться</button>
         </div>
     </div>`;
 }
-
 function renderBSResult() {
     const r = state.bsResult;
     if (!r) return renderEmpty('Нет данных');
@@ -2164,10 +2158,8 @@ function renderBSResult() {
         </div>
     </div>`;
 }
-
 function renderBSBoard(field, mode, isMyTurn, isPlacing) {
     const letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К'];
-
     const shipCellsInfo = {};
     if (mode === 'my' && state.bsMyShips && state.bsMyShips.length > 0) {
         for (const s of state.bsMyShips) {
@@ -2190,493 +2182,266 @@ function renderBSBoard(field, mode, isMyTurn, isPlacing) {
             }
         }
     }
-
     let html = `<div class="bs-board">`;
     html += `<div class="bs-coord"></div>`;
     for (let x = 1; x <= 10; x++) html += `<div class="bs-coord">${x}</div>`;
-
     for (let y = 0; y < 10; y++) {
         html += `<div class="bs-coord">${letters[y]}</div>`;
         for (let x = 0; x < 10; x++) {
             const v = field[y][x];
             let cls = 'bs-cell';
             let data = `data-bs-x="${x}" data-bs-y="${y}"`;
-
             if (mode === 'my') {
                 if (v === 0) cls += '';
                 else if (v === 1) {
                     cls += ' ship';
                     const info = shipCellsInfo[`${x},${y}`];
-                    if (info) {
-                        cls += ` ship-${info.cls}`;
-                        cls += info.horizontal ? ' ship-h' : ' ship-v';
-                    }
+                    if (info) { cls += ` ship-${info.cls}`; cls += info.horizontal ? ' ship-h' : ' ship-v'; }
                 }
                 else if (v === 2) {
                     cls += ' ship hit';
                     const info = shipCellsInfo[`${x},${y}`];
-                    if (info) {
-                        cls += ` ship-${info.cls}`;
-                        cls += info.horizontal ? ' ship-h' : ' ship-v';
-                    }
+                    if (info) { cls += ` ship-${info.cls}`; cls += info.horizontal ? ' ship-h' : ' ship-v'; }
                 }
                 else if (v === 3) cls += ' miss';
                 else if (v === 4) {
                     cls += ' ship sunk';
                     const info = shipCellsInfo[`${x},${y}`];
-                    if (info) {
-                        cls += ` ship-${info.cls}`;
-                        cls += info.horizontal ? ' ship-h' : ' ship-v';
-                    }
+                    if (info) { cls += ` ship-${info.cls}`; cls += info.horizontal ? ' ship-h' : ' ship-v'; }
                 }
-                if (isPlacing) {
-                    data += ` data-action="bs-place-cell"`;
-                } else {
-                    cls += ' locked';
-                }
+                if (isPlacing) data += ` data-action="bs-place-cell"`;
+                else cls += ' locked';
             } else {
                 if (v === 0) cls += ' enemy-empty';
                 else if (v === 2) cls += ' enemy-hit';
                 else if (v === 3) cls += ' enemy-miss';
                 else if (v === 4) cls += ' enemy-sunk';
-                if (isMyTurn && v === 0) {
-                    cls += ' turn-active';
-                    data += ` data-action="bs-fire-cell"`;
-                } else {
-                    cls += ' locked';
-                }
+                if (isMyTurn && v === 0) { cls += ' turn-active'; data += ` data-action="bs-fire-cell"`; }
+                else cls += ' locked';
             }
-
             let inner = '';
-            if (mode === 'my' && (v === 2 || v === 4)) {
-                inner = '<span class="bs-x">✕</span>';
-            }
-
+            if (mode === 'my' && (v === 2 || v === 4)) inner = '<span class="bs-x">✕</span>';
             html += `<div class="${cls}" ${data}>${inner}</div>`;
         }
     }
     html += `</div>`;
     return html;
 }
-
 function countAliveShips(field, ships) {
     if (!ships || ships.length === 0) return 0;
     let alive = 0;
     for (const s of ships) {
         let sunk = true;
-        for (const [x, y] of s.cells) {
-            if (field[y][x] !== 4) { sunk = false; break; }
-        }
+        for (const [x, y] of s.cells) { if (field[y][x] !== 4) { sunk = false; break; } }
         if (!sunk) alive++;
     }
     return alive;
 }
-// ===== КОНЕЦ ЧАСТИ 2. ЧАСТЬ 3 ИДЁТ СРАЗУ ПОСЛЕ ЭТОЙ СТРОКИ =====
+
 // ============================================================
 //                       МОРСКОЙ БОЙ — ДЕЙСТВИЯ
 // ============================================================
 
-function actionBSBet(value) {
-    haptic('light');
-    state.bsBet = value;
-    render();
-}
-
+function actionBSBet(value) { haptic('light'); state.bsBet = value; render(); }
 function bsClearPoll() {
-    if (state.bsPollTimer) {
-        clearTimeout(state.bsPollTimer);
-        clearInterval(state.bsPollTimer);
-        state.bsPollTimer = null;
-    }
+    if (state.bsPollTimer) { clearTimeout(state.bsPollTimer); clearInterval(state.bsPollTimer); state.bsPollTimer = null; }
 }
-
 async function actionBSPlayBot() {
     if (state._bsBotStarting) return;
     haptic('light');
-    if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Софта для ставки');
-        return;
-    }
+    if ((state.wallet?.soft || 0) < state.bsBet) { alert('Недостаточно Софта для ставки'); return; }
     state._bsBotStarting = true;
     try {
         const r = await apiPost('/api/bs/bot-start', { bet: state.bsBet });
         if (r.wallet) state.wallet = r.wallet;
     } catch (e) {
         state._bsBotStarting = false;
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось начать игру'));
-        return;
+        haptic('error'); alert('Ошибка: ' + (e.message || 'не удалось начать игру')); return;
     }
     state._bsBotStarting = false;
-    state.bsIsBot = true;
-    state.bsEnemyName = 'Бот';
-    state.bsGameId = null;
-    state.bsCode = null;
-    state.bsMyField = bsEmptyField();
-    state.bsEnemyField = bsEmptyField();
-    state.bsMyShips = [];
-    state.bsEnemyShips = [];
-    state.bsShipsToPlace = bsFlattenShipsToPlace();
-    state.bsPlacingIdx = 0;
-    state.bsPlacingRot = 'h';
-    state.bsLog = [];
-    state.bsTurn = 'me';
-    state.bsResult = null;
-    state.bsBotBusy = false;
-    state._bsConfirmLock = false;
-    state.bsScreen = 'placing';
-    bsSaveSession();
-    render();
+    state.bsIsBot = true; state.bsEnemyName = 'Бот'; state.bsGameId = null; state.bsCode = null;
+    state.bsMyField = bsEmptyField(); state.bsEnemyField = bsEmptyField();
+    state.bsMyShips = []; state.bsEnemyShips = []; state.bsShipsToPlace = bsFlattenShipsToPlace();
+    state.bsPlacingIdx = 0; state.bsPlacingRot = 'h'; state.bsLog = []; state.bsTurn = 'me';
+    state.bsResult = null; state.bsBotBusy = false; state._bsConfirmLock = false;
+    state.bsScreen = 'placing'; bsSaveSession(); render();
 }
-
 async function actionBSCreateRoom() {
     haptic('light');
-    if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Софта для ставки');
-        return;
-    }
+    if ((state.wallet?.soft || 0) < state.bsBet) { alert('Недостаточно Софта для ставки'); return; }
     try {
         const r = await apiPost('/api/bs/create', { bet: state.bsBet });
-        state.bsIsBot = false;
-        state.bsGameId = r.game_id;
-        state.bsCode = r.code;
-        state.bsEnemyName = 'Ожидание...';
-        state.bsMyField = bsEmptyField();
-        state.bsEnemyField = bsEmptyField();
-        state.bsMyShips = [];
-        state.bsEnemyShips = [];
-        state.bsShipsToPlace = bsFlattenShipsToPlace();
-        state.bsPlacingIdx = 0;
-        state.bsPlacingRot = 'h';
-        state.bsLog = [];
-        state.bsTurn = 'me';
-        state.bsResult = null;
-        state.bsBotBusy = false;
-        state._bsConfirmLock = false;
-        state.bsScreen = 'placing';
+        state.bsIsBot = false; state.bsGameId = r.game_id; state.bsCode = r.code; state.bsEnemyName = 'Ожидание...';
+        state.bsMyField = bsEmptyField(); state.bsEnemyField = bsEmptyField();
+        state.bsMyShips = []; state.bsEnemyShips = []; state.bsShipsToPlace = bsFlattenShipsToPlace();
+        state.bsPlacingIdx = 0; state.bsPlacingRot = 'h'; state.bsLog = []; state.bsTurn = 'me';
+        state.bsResult = null; state.bsBotBusy = false; state._bsConfirmLock = false; state.bsScreen = 'placing';
         if (r.wallet) state.wallet = r.wallet;
-        bsSaveSession();
-        render();
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось создать игру'));
-    }
+        bsSaveSession(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + (e.message || 'не удалось создать игру')); }
 }
-
 function actionBSJoinRoom() {
     haptic('light');
-    if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Софта для ставки');
-        return;
-    }
-    state.bsJoinCode = '';
-    state.bsJoinModal = true;
-    render();
+    if ((state.wallet?.soft || 0) < state.bsBet) { alert('Недостаточно Софта для ставки'); return; }
+    state.bsJoinCode = ''; state.bsJoinModal = true; render();
 }
-
 async function actionBSJoinSubmit() {
     const el = document.getElementById('bs-join-code-input');
     const code = ((el?.value || state.bsJoinCode) || '').trim();
-    if (!/^\d{6}$/.test(code)) {
-        alert('Код должен содержать 6 цифр');
-        return;
-    }
+    if (!/^\d{6}$/.test(code)) { alert('Код должен содержать 6 цифр'); return; }
     haptic('light');
     try {
         const r = await apiPost('/api/bs/join', { code, bet: state.bsBet });
-        state.bsJoinModal = false;
-        state.bsIsBot = false;
-        state.bsGameId = r.game_id;
-        state.bsCode = code;
+        state.bsJoinModal = false; state.bsIsBot = false; state.bsGameId = r.game_id; state.bsCode = code;
         state.bsEnemyName = r.opponent_name || 'Соперник';
-        state.bsMyField = bsEmptyField();
-        state.bsEnemyField = bsEmptyField();
-        state.bsMyShips = [];
-        state.bsEnemyShips = [];
-        state.bsShipsToPlace = bsFlattenShipsToPlace();
-        state.bsPlacingIdx = 0;
-        state.bsPlacingRot = 'h';
-        state.bsLog = [];
-        state.bsTurn = 'me';
-        state.bsResult = null;
-        state.bsBotBusy = false;
-        state._bsConfirmLock = false;
-        state.bsScreen = 'placing';
+        state.bsMyField = bsEmptyField(); state.bsEnemyField = bsEmptyField();
+        state.bsMyShips = []; state.bsEnemyShips = []; state.bsShipsToPlace = bsFlattenShipsToPlace();
+        state.bsPlacingIdx = 0; state.bsPlacingRot = 'h'; state.bsLog = []; state.bsTurn = 'me';
+        state.bsResult = null; state.bsBotBusy = false; state._bsConfirmLock = false; state.bsScreen = 'placing';
         if (r.wallet) state.wallet = r.wallet;
-        bsSaveSession();
-        render();
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось присоединиться'));
-    }
+        bsSaveSession(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + (e.message || 'не удалось присоединиться')); }
 }
-
 async function actionBSFindMatch() {
     haptic('light');
-    if ((state.wallet?.soft || 0) < state.bsBet) {
-        alert('Недостаточно Софта для ставки');
-        return;
-    }
+    if ((state.wallet?.soft || 0) < state.bsBet) { alert('Недостаточно Софта для ставки'); return; }
     try {
         const r = await apiPost('/api/bs/find', { bet: state.bsBet });
-        state.bsIsBot = false;
-        state.bsGameId = r.game_id;
-        state.bsCode = r.code || null;
+        state.bsIsBot = false; state.bsGameId = r.game_id; state.bsCode = r.code || null;
         state.bsEnemyName = r.status === 'matched' ? (r.opponent_name || 'Соперник') : 'Поиск...';
-        state.bsMyField = bsEmptyField();
-        state.bsEnemyField = bsEmptyField();
-        state.bsMyShips = [];
-        state.bsEnemyShips = [];
-        state.bsShipsToPlace = bsFlattenShipsToPlace();
-        state.bsPlacingIdx = 0;
-        state.bsPlacingRot = 'h';
-        state.bsLog = [];
-        state.bsTurn = 'me';
-        state.bsResult = null;
-        state.bsBotBusy = false;
-        state._bsConfirmLock = false;
-        state.bsScreen = 'placing';
+        state.bsMyField = bsEmptyField(); state.bsEnemyField = bsEmptyField();
+        state.bsMyShips = []; state.bsEnemyShips = []; state.bsShipsToPlace = bsFlattenShipsToPlace();
+        state.bsPlacingIdx = 0; state.bsPlacingRot = 'h'; state.bsLog = []; state.bsTurn = 'me';
+        state.bsResult = null; state.bsBotBusy = false; state._bsConfirmLock = false; state.bsScreen = 'placing';
         if (r.wallet) state.wallet = r.wallet;
-        bsSaveSession();
-        render();
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось найти соперника'));
-    }
+        bsSaveSession(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + (e.message || 'не удалось найти соперника')); }
 }
-
 function actionBSPlaceCell(el) {
     if (!state.bsMyField) return;
     const x = parseInt(el.dataset.bsX);
     const y = parseInt(el.dataset.bsY);
-    const idx = state.bsPlacingIdx;
-    const list = state.bsShipsToPlace;
+    const idx = state.bsPlacingIdx; const list = state.bsShipsToPlace;
     if (idx >= list.length) return;
-    const size = list[idx];
-    const field = state.bsMyField;
+    const size = list[idx]; const field = state.bsMyField;
     const cells = bsPlaceShip(field, x, y, size, state.bsPlacingRot);
-    if (!cells) {
-        haptic('error');
-        return;
-    }
+    if (!cells) { haptic('error'); return; }
     haptic('light');
     state.bsMyShips.push({ size, cells, hits: 0, sunk: false });
-    state.bsPlacingIdx++;
-    render();
+    state.bsPlacingIdx++; render();
 }
-
-function actionBSRotate() {
-    haptic('light');
-    state.bsPlacingRot = state.bsPlacingRot === 'h' ? 'v' : 'h';
-    render();
-}
-
+function actionBSRotate() { haptic('light'); state.bsPlacingRot = state.bsPlacingRot === 'h' ? 'v' : 'h'; render(); }
 function actionBSAutoPlace() {
     haptic('light');
-    const field = bsEmptyField();
-    const ships = bsAutoPlace(field);
-    state.bsMyField = field;
-    state.bsMyShips = ships;
-    state.bsPlacingIdx = state.bsShipsToPlace.length;
-    render();
+    const field = bsEmptyField(); const ships = bsAutoPlace(field);
+    state.bsMyField = field; state.bsMyShips = ships; state.bsPlacingIdx = state.bsShipsToPlace.length; render();
 }
-
 function actionBSClearPlace() {
-    haptic('light');
-    state.bsMyField = bsEmptyField();
-    state.bsMyShips = [];
-    state.bsPlacingIdx = 0;
-    render();
+    haptic('light'); state.bsMyField = bsEmptyField(); state.bsMyShips = []; state.bsPlacingIdx = 0; render();
 }
-
 function actionBSUndoPlace() {
     if (!state.bsMyField) return;
-    if (state.bsPlacingIdx <= 0) {
-        haptic('error');
-        return;
-    }
-    const idx = state.bsPlacingIdx - 1;
-    const ships = state.bsMyShips;
+    if (state.bsPlacingIdx <= 0) { haptic('error'); return; }
+    const idx = state.bsPlacingIdx - 1; const ships = state.bsMyShips;
     if (idx >= ships.length) return;
-    const lastShip = ships[idx];
-    if (!lastShip) return;
-    for (const [x, y] of lastShip.cells) {
-        state.bsMyField[y][x] = 0;
-    }
-    ships.splice(idx, 1);
-    state.bsPlacingIdx--;
-    haptic('light');
-    render();
+    const lastShip = ships[idx]; if (!lastShip) return;
+    for (const [x, y] of lastShip.cells) state.bsMyField[y][x] = 0;
+    ships.splice(idx, 1); state.bsPlacingIdx--; haptic('light'); render();
 }
-
 async function actionBSConfirmPlace() {
     if (state._bsConfirmLock) return;
-    if (state.bsPlacingIdx < state.bsShipsToPlace.length) {
-        alert('Расставь все корабли');
-        return;
-    }
-    state._bsConfirmLock = true;
-    haptic('success');
-
+    if (state.bsPlacingIdx < state.bsShipsToPlace.length) { alert('Расставь все корабли'); return; }
+    state._bsConfirmLock = true; haptic('success');
     if (state.bsIsBot) {
         const enemyDisplayField = bsEmptyField();
         const enemyLogicShips = bsAutoPlace(bsEmptyField());
-        state.bsEnemyField = enemyDisplayField;
-        state.bsEnemyShips = enemyLogicShips;
-        state.bsEnemyName = 'Бот';
-        state.bsTurn = 'me';
+        state.bsEnemyField = enemyDisplayField; state.bsEnemyShips = enemyLogicShips;
+        state.bsEnemyName = 'Бот'; state.bsTurn = 'me';
         state.bsLog = [{ type: '', text: 'Бой начался. Твой ход.' }];
-        state.bsBotBusy = false;
-        state.bsScreen = 'battle';
-        state._bsConfirmLock = false;
-        render();
-        return;
+        state.bsBotBusy = false; state.bsScreen = 'battle'; state._bsConfirmLock = false; render(); return;
     }
-
     try {
         const shipsData = state.bsMyShips.map(s => ({ size: s.size, cells: s.cells }));
         const r = await apiPost('/api/bs/ready', { game_id: state.bsGameId, ships: shipsData });
-        if (r.status === 'waiting') {
-            state.bsScreen = 'waiting';
-            state._bsConfirmLock = false;
-            render();
-            startBSPolling();
-        } else if (r.status === 'playing') {
-            state.bsEnemyField = bsEmptyField();
-            state.bsEnemyShips = [];
+        if (r.status === 'waiting') { state.bsScreen = 'waiting'; state._bsConfirmLock = false; render(); startBSPolling(); }
+        else if (r.status === 'playing') {
+            state.bsEnemyField = bsEmptyField(); state.bsEnemyShips = [];
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
             state.bsLog = [{ type: '', text: 'Бой начался.' }];
-            state.bsScreen = 'battle';
-            state._bsConfirmLock = false;
-            render();
-            startBSPolling();
+            state.bsScreen = 'battle'; state._bsConfirmLock = false; render(); startBSPolling();
         }
-    } catch (e) {
-        state._bsConfirmLock = false;
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось отправить расстановку'));
-    }
+    } catch (e) { state._bsConfirmLock = false; haptic('error'); alert('Ошибка: ' + (e.message || 'не удалось отправить расстановку')); }
 }
-
-// ============================================================
-//                  АДАПТИВНЫЙ POLLING
-// ============================================================
-
-function startBSPolling() {
-    bsClearPoll();
-    pollBSGame().then(() => scheduleNextBSPoll());
-}
-
+function startBSPolling() { bsClearPoll(); pollBSGame().then(() => scheduleNextBSPoll()); }
 function scheduleNextBSPoll() {
     bsClearPoll();
     if (!state.bsGameId || state.bsIsBot) return;
     if (state.bsScreen !== 'battle' && state.bsScreen !== 'waiting') return;
     const delay = (state.bsTurn === 'enemy') ? 700 : 3000;
-    state.bsPollTimer = setTimeout(async () => {
-        await pollBSGame();
-        scheduleNextBSPoll();
-    }, delay);
+    state.bsPollTimer = setTimeout(async () => { await pollBSGame(); scheduleNextBSPoll(); }, delay);
 }
-
 async function pollBSGame() {
     if (!state.bsGameId || state.bsIsBot) return;
     if (state.bsScreen !== 'battle' && state.bsScreen !== 'waiting') return;
     try {
         const r = await apiGet('/api/bs/state', { game_id: state.bsGameId });
-        if (r.status === 'finished') {
-            if (!state.bsResult) handleBSFinish(r.result);
-            return;
-        }
+        if (r.status === 'finished') { if (!state.bsResult) handleBSFinish(r.result); return; }
         if (r.status === 'playing') {
             if (state.bsScreen === 'waiting' && r.my_ships && r.my_ships.length) {
                 state.bsMyShips = r.my_ships.map(s => ({...s, hits: 0, sunk: false}));
                 state.bsMyField = bsEmptyField();
-                for (const s of state.bsMyShips) {
-                    for (const [x, y] of s.cells) state.bsMyField[y][x] = 1;
-                }
+                for (const s of state.bsMyShips) { for (const [x, y] of s.cells) state.bsMyField[y][x] = 1; }
             }
             applyEnemyShots(r.enemy_shots || []);
-            if (r.my_shots) {
-                state.bsEnemyField = reconstructEnemyFieldFromShots(r.my_shots);
-            }
+            if (r.my_shots) state.bsEnemyField = reconstructEnemyFieldFromShots(r.my_shots);
             const prevTurn = state.bsTurn;
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
             if (r.log && r.log.length) state.bsLog = r.log;
-
-            if (state.bsScreen === 'waiting') {
-                state.bsScreen = 'battle';
-                render();
-            } else {
-                refreshBSBattleDOM();
-            }
-
-            if (prevTurn === 'enemy' && state.bsTurn === 'me') {
-                haptic('success');
-            }
+            if (state.bsScreen === 'waiting') { state.bsScreen = 'battle'; render(); }
+            else refreshBSBattleDOM();
+            if (prevTurn === 'enemy' && state.bsTurn === 'me') haptic('success');
         }
     } catch (e) {}
 }
-
 function applyEnemyShots(shots) {
     if (!shots || shots.length === 0) return;
-    const field = state.bsMyField;
-    if (!field) return;
+    const field = state.bsMyField; if (!field) return;
     for (const sh of shots) {
         const { x, y, result } = sh;
         if (x == null || y == null) continue;
         const v = field[y][x];
-        if (v === 0) {
-            field[y][x] = 3;
-        } else if (v === 1) {
-            field[y][x] = result === 'sunk' ? 4 : 2;
-        } else if (v === 2) {
-            if (result === 'sunk') field[y][x] = 4;
-        }
+        if (v === 0) field[y][x] = 3;
+        else if (v === 1) field[y][x] = result === 'sunk' ? 4 : 2;
+        else if (v === 2) { if (result === 'sunk') field[y][x] = 4; }
     }
     recomputeShipsFromField();
-    if (state.bsMyShips) {
-        for (const s of state.bsMyShips) {
-            if (s.sunk) markAroundSunk(field, s);
-        }
-    }
+    if (state.bsMyShips) { for (const s of state.bsMyShips) { if (s.sunk) markAroundSunk(field, s); } }
 }
-
 function recomputeShipsFromField() {
     const field = state.bsMyField;
     if (!state.bsMyShips || !field) return;
     for (const s of state.bsMyShips) {
-        let hits = 0;
-        let sunk = true;
+        let hits = 0; let sunk = true;
         for (const [x, y] of s.cells) {
             const v = field[y][x];
             if (v === 2 || v === 4) hits++;
             if (v !== 4) sunk = false;
         }
-        s.hits = hits;
-        s.sunk = sunk;
+        s.hits = hits; s.sunk = sunk;
     }
 }
-
 function actionBSFireCell(el) {
     if (state.bsTurn !== 'me') return;
     if (state.bsBotBusy) return;
     if (state.bsScreen !== 'battle') return;
-    const x = parseInt(el.dataset.bsX);
-    const y = parseInt(el.dataset.bsY);
-    const field = state.bsEnemyField;
-    if (!field) return;
+    const x = parseInt(el.dataset.bsX); const y = parseInt(el.dataset.bsY);
+    const field = state.bsEnemyField; if (!field) return;
     if (field[y][x] !== 0) return;
-
-    if (state.bsIsBot) {
-        playerFireBot(x, y);
-        return;
-    }
+    if (state.bsIsBot) { playerFireBot(x, y); return; }
     pvpFire(x, y);
 }
-
 function applyFireResult(r, x, y) {
-    const field = state.bsEnemyField;
-    if (!field) return;
+    const field = state.bsEnemyField; if (!field) return;
     if (r.result === 'miss') field[y][x] = 3;
     else if (r.result === 'hit') field[y][x] = 2;
     else if (r.result === 'sunk') {
@@ -2687,32 +2452,21 @@ function applyFireResult(r, x, y) {
         }
     }
 }
-
 async function pvpFire(x, y) {
     haptic('light');
     try {
         const r = await apiPost('/api/bs/fire', { game_id: state.bsGameId, x, y });
         applyFireResult(r, x, y);
-        if (r.status === 'finished') {
-            handleBSFinish(r.result_data);
-            return;
-        }
+        if (r.status === 'finished') { handleBSFinish(r.result_data); return; }
         state.bsTurn = r.your_turn ? 'me' : 'enemy';
         if (r.log) state.bsLog = r.log;
         refreshBSBattleDOM();
-        if (state.bsTurn === 'enemy') {
-            startBSPolling();
-        }
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось сделать выстрел'));
-    }
+        if (state.bsTurn === 'enemy') startBSPolling();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + (e.message || 'не удалось сделать выстрел')); }
 }
-
 function refreshBSBattleDOM() {
     if (state.gameView !== 'battleship') return;
     if (state.bsScreen !== 'battle') return;
-
     const banner = document.querySelector('.bs-turn-banner');
     if (banner) {
         const myTurn = state.bsTurn === 'me';
@@ -2723,29 +2477,22 @@ function refreshBSBattleDOM() {
         for (const n of banner.childNodes) {
             if (n.nodeType === Node.TEXT_NODE && n.nodeValue.trim()) { txtNode = n; break; }
         }
-        if (txtNode && txtNode.nodeValue.trim() !== txt) {
-            txtNode.nodeValue = ' ' + txt;
-        }
+        if (txtNode && txtNode.nodeValue.trim() !== txt) txtNode.nodeValue = ' ' + txt;
     }
-
     const sections = document.querySelectorAll('.bs-board-section');
     if (sections.length >= 2) {
         const enemyBoard = sections[0].querySelector('.bs-board');
         const myBoard = sections[1].querySelector('.bs-board');
-
         if (enemyBoard) {
             const wrapper = document.createElement('div');
             wrapper.innerHTML = renderBSBoard(state.bsEnemyField, 'enemy', state.bsTurn === 'me', false);
-            const newBoard = wrapper.firstChild;
-            enemyBoard.replaceWith(newBoard);
+            enemyBoard.replaceWith(wrapper.firstChild);
         }
         if (myBoard) {
             const wrapper = document.createElement('div');
             wrapper.innerHTML = renderBSBoard(state.bsMyField, 'my', false, false);
-            const newBoard = wrapper.firstChild;
-            myBoard.replaceWith(newBoard);
+            myBoard.replaceWith(wrapper.firstChild);
         }
-
         const myShipsAlive = countAliveShips(state.bsMyField, state.bsMyShips);
         const enemyShipsAlive = state.bsIsBot ? countAliveShips(state.bsEnemyField, state.bsEnemyShips) : null;
         const enemyCounter = sections[0].querySelector('.bs-board-counters .alive');
@@ -2759,20 +2506,17 @@ function refreshBSBattleDOM() {
             if (myCounter.textContent !== newVal) myCounter.textContent = newVal;
         }
     }
-
     const logEl = document.querySelector('.bs-log');
     if (logEl) {
         const log = state.bsLog || [];
         const newLog = log.slice(-6).map(l => `<div class="bs-log-entry ${l.type}">${escapeHtml(l.text)}</div>`).join('');
         if (logEl.innerHTML !== newLog) logEl.innerHTML = newLog;
     }
-
     document.querySelectorAll('[data-action="bs-fire-cell"]').forEach((el) => {
         if (el.dataset.handlerBound === '1') return;
         el.dataset.handlerBound = '1';
         el.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             if (state._bsTapLock) return;
             state._bsTapLock = true;
             setTimeout(() => { state._bsTapLock = false; }, 180);
@@ -2780,37 +2524,21 @@ function refreshBSBattleDOM() {
         });
     });
 }
-
 function handleBSFinish(result) {
-    bsClearPoll();
-    bsClearSession();
-    state.bsResult = result;
-    state.bsScreen = 'result';
-    if (result && result.wallet) state.wallet = result.wallet;
-    else loadWallet();
-    loadProfile();
-    render();
+    bsClearPoll(); bsClearSession();
+    state.bsResult = result; state.bsScreen = 'result';
+    if (result && result.wallet) state.wallet = result.wallet; else loadWallet();
+    loadProfile(); render();
 }
-
-// ============================================================
-//                  УМНЫЙ БОТ
-// ============================================================
-
 function findBotTargetSmart(field) {
     const hits = [];
-    for (let y = 0; y < 10; y++) {
-        for (let x = 0; x < 10; x++) {
-            if (field[y][x] === 2) hits.push([x, y]);
-        }
-    }
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (field[y][x] === 2) hits.push([x, y]);
     if (hits.length === 0) return null;
-
     for (const [x, y] of hits) {
         const hasLeft = x > 0 && field[y][x-1] === 2;
         const hasRight = x < 9 && field[y][x+1] === 2;
         const hasUp = y > 0 && field[y-1][x] === 2;
         const hasDown = y < 9 && field[y+1][x] === 2;
-
         if (hasLeft || hasRight) {
             let minX = x, maxX = x;
             while (minX > 0 && field[y][minX-1] === 2) minX--;
@@ -2818,7 +2546,6 @@ function findBotTargetSmart(field) {
             if (maxX < 9 && field[y][maxX+1] === 0) return [maxX+1, y];
             if (minX > 0 && field[y][minX-1] === 0) return [minX-1, y];
         }
-
         if (hasUp || hasDown) {
             let minY = y, maxY = y;
             while (minY > 0 && field[minY-1][x] === 2) minY--;
@@ -2827,7 +2554,6 @@ function findBotTargetSmart(field) {
             if (minY > 0 && field[minY-1][x] === 0) return [x, minY-1];
         }
     }
-
     const dirOrder = [[1,0],[0,1],[-1,0],[0,-1]];
     for (const [x, y] of hits) {
         for (const [dx, dy] of dirOrder) {
@@ -2838,153 +2564,77 @@ function findBotTargetSmart(field) {
     }
     return null;
 }
-
 function findBotRandomTarget(field) {
-    const chess = [];
-    const any = [];
-    for (let y = 0; y < 10; y++) {
-        for (let x = 0; x < 10; x++) {
-            if (field[y][x] === 0) {
-                any.push([x, y]);
-                if ((x + y) % 2 === 0) chess.push([x, y]);
-            }
+    const chess = []; const any = [];
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) {
+        if (field[y][x] === 0) {
+            any.push([x, y]);
+            if ((x + y) % 2 === 0) chess.push([x, y]);
         }
     }
     const pool = chess.length > 0 ? chess : any;
     if (pool.length === 0) return null;
     return pool[Math.floor(Math.random() * pool.length)];
 }
-
 function playerFireBot(x, y) {
     if (state.bsBotBusy) return;
     if (state.bsTurn !== 'me') return;
-    const field = state.bsEnemyField;
-    if (!field) return;
+    const field = state.bsEnemyField; if (!field) return;
     if (field[y][x] !== 0) return;
-
     let ship = null;
     for (const s of state.bsEnemyShips) {
-        for (const [sx, sy] of s.cells) {
-            if (sx === x && sy === y) { ship = s; break; }
-        }
+        for (const [sx, sy] of s.cells) if (sx === x && sy === y) { ship = s; break; }
         if (ship) break;
     }
-
-    let logText = '';
-    let logType = '';
-    let againTurn = false;
-
+    let logText = ''; let logType = ''; let againTurn = false;
     if (ship) {
-        field[y][x] = 2;
-        ship.hits++;
+        field[y][x] = 2; ship.hits++;
         if (ship.hits >= ship.size) {
             for (const [sx, sy] of ship.cells) field[sy][sx] = 4;
-            markAroundSunk(field, ship);
-            ship.sunk = true;
+            markAroundSunk(field, ship); ship.sunk = true;
             logText = `Попадание! Корабль потоплен (${x+1},${y+1})`;
-            logType = 'sunk';
-            haptic('success');
+            logType = 'sunk'; haptic('success');
         } else {
-            logText = `Попадание! (${x+1},${y+1})`;
-            logType = 'hit';
-            haptic('medium');
+            logText = `Попадание! (${x+1},${y+1})`; logType = 'hit'; haptic('medium');
         }
         againTurn = true;
     } else {
         field[y][x] = 3;
-        logText = `Промах (${x+1},${y+1})`;
-        logType = 'miss';
-        haptic('light');
+        logText = `Промах (${x+1},${y+1})`; logType = 'miss'; haptic('light');
     }
-
     state.bsLog.push({ type: logType, text: logText });
     if (state.bsLog.length > 20) state.bsLog = state.bsLog.slice(-20);
-
-    if (checkBSWin(field, state.bsEnemyShips)) {
-        finishBotGame('win');
-        return;
-    }
-
-    if (againTurn) {
-        refreshBSBattleDOM();
-    } else {
-        state.bsTurn = 'enemy';
-        state.bsBotBusy = true;
-        refreshBSBattleDOM();
-        setTimeout(botFire, 700);
-    }
+    if (checkBSWin(field, state.bsEnemyShips)) { finishBotGame('win'); return; }
+    if (againTurn) { refreshBSBattleDOM(); }
+    else { state.bsTurn = 'enemy'; state.bsBotBusy = true; refreshBSBattleDOM(); setTimeout(botFire, 700); }
 }
-
 function botFire() {
-    if (state.bsScreen !== 'battle' || state.bsTurn !== 'enemy') {
-        state.bsBotBusy = false;
-        return;
-    }
-
-    const myField = state.bsMyField;
-    const myShips = state.bsMyShips;
-
+    if (state.bsScreen !== 'battle' || state.bsTurn !== 'enemy') { state.bsBotBusy = false; return; }
+    const myField = state.bsMyField; const myShips = state.bsMyShips;
     const target = findBotTargetSmart(myField) || findBotRandomTarget(myField);
-    if (!target) {
-        state.bsBotBusy = false;
-        return;
-    }
-
+    if (!target) { state.bsBotBusy = false; return; }
     const [x, y] = target;
-
     let ship = null;
     for (const s of myShips) {
-        for (const [sx, sy] of s.cells) {
-            if (sx === x && sy === y) { ship = s; break; }
-        }
+        for (const [sx, sy] of s.cells) if (sx === x && sy === y) { ship = s; break; }
         if (ship) break;
     }
-
-    let logText = '';
-    let logType = '';
-    let againTurn = false;
-
+    let logText = ''; let logType = ''; let againTurn = false;
     if (ship) {
-        myField[y][x] = 2;
-        ship.hits++;
+        myField[y][x] = 2; ship.hits++;
         if (ship.hits >= ship.size) {
             for (const [sx, sy] of ship.cells) myField[sy][sx] = 4;
-            markAroundSunk(myField, ship);
-            ship.sunk = true;
-            logText = `Враг потопил твой корабль (${x+1},${y+1})`;
-            logType = 'sunk';
-            haptic('error');
-        } else {
-            logText = `Враг попал! (${x+1},${y+1})`;
-            logType = 'hit';
-            haptic('medium');
-        }
+            markAroundSunk(myField, ship); ship.sunk = true;
+            logText = `Враг потопил твой корабль (${x+1},${y+1})`; logType = 'sunk'; haptic('error');
+        } else { logText = `Враг попал! (${x+1},${y+1})`; logType = 'hit'; haptic('medium'); }
         againTurn = true;
-    } else {
-        myField[y][x] = 3;
-        logText = `Враг промахнулся (${x+1},${y+1})`;
-        logType = 'miss';
-        haptic('light');
-    }
-
+    } else { myField[y][x] = 3; logText = `Враг промахнулся (${x+1},${y+1})`; logType = 'miss'; haptic('light'); }
     state.bsLog.push({ type: logType, text: logText });
     if (state.bsLog.length > 20) state.bsLog = state.bsLog.slice(-20);
-
-    if (checkBSWin(myField, myShips)) {
-        finishBotGame('lose');
-        return;
-    }
-
-    if (againTurn) {
-        refreshBSBattleDOM();
-        setTimeout(botFire, 700);
-    } else {
-        state.bsTurn = 'me';
-        state.bsBotBusy = false;
-        refreshBSBattleDOM();
-    }
+    if (checkBSWin(myField, myShips)) { finishBotGame('lose'); return; }
+    if (againTurn) { refreshBSBattleDOM(); setTimeout(botFire, 700); }
+    else { state.bsTurn = 'me'; state.bsBotBusy = false; refreshBSBattleDOM(); }
 }
-
 function markAroundSunk(field, ship) {
     for (const [x, y] of ship.cells) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -2996,22 +2646,17 @@ function markAroundSunk(field, ship) {
         }
     }
 }
-
 function checkBSWin(field, ships) {
     if (!ships || ships.length === 0) return false;
     for (const s of ships) {
         let sunk = true;
-        for (const [x, y] of s.cells) {
-            if (field[y][x] !== 4) { sunk = false; break; }
-        }
+        for (const [x, y] of s.cells) if (field[y][x] !== 4) { sunk = false; break; }
         if (!sunk) return false;
     }
     return true;
 }
-
 async function finishBotGame(outcome) {
-    bsClearPoll();
-    bsClearSession();
+    bsClearPoll(); bsClearSession();
     const bet = state.bsBet;
     let reward = 0, loss = 0;
     try {
@@ -3024,87 +2669,50 @@ async function finishBotGame(outcome) {
         if (outcome === 'lose') loss = bet;
     }
     state.bsResult = { outcome, reward, loss };
-    state.bsScreen = 'result';
-    state.bsBotBusy = false;
+    state.bsScreen = 'result'; state.bsBotBusy = false;
     haptic(outcome === 'win' ? 'success' : 'error');
-    await loadProfile();
-    render();
+    await loadProfile(); render();
 }
-
 function actionBSCopyCode() {
     haptic('light');
     const code = state.bsCode;
     if (!code) return;
-    try {
-        navigator.clipboard.writeText(code);
-        tg.showAlert(`Код скопирован: ${code}`);
-    } catch (e) {
-        tg.showAlert(`Код: ${code}`);
-    }
+    try { navigator.clipboard.writeText(code); tg.showAlert(`Код скопирован: ${code}`); }
+    catch (e) { tg.showAlert(`Код: ${code}`); }
 }
-
 async function actionBSCancelRoom() {
     haptic('light');
-    bsClearPoll();
-    bsClearSession();
+    bsClearPoll(); bsClearSession();
     if (state.bsGameId && !state.bsIsBot) {
         try { await apiPost('/api/bs/cancel', { game_id: state.bsGameId }); } catch (e) {}
         await loadWallet();
     }
-    state.bsScreen = 'lobby';
-    state.bsGameId = null;
-    state.bsCode = null;
-    render();
+    state.bsScreen = 'lobby'; state.bsGameId = null; state.bsCode = null; render();
 }
-
 function actionBSBackLobby() {
     haptic('light');
-    bsClearPoll();
-    bsClearSession();
-    state.bsScreen = 'lobby';
-    state.bsResult = null;
-    state.bsGameId = null;
-    state.bsCode = null;
-    state.bsLog = [];
-    state.bsMyField = null;
-    state.bsEnemyField = null;
-    state.bsMyShips = [];
-    state.bsEnemyShips = [];
-    state.bsShipsToPlace = [];
-    state.bsPlacingIdx = 0;
-    state.bsIsBot = false;
-    state.bsBotBusy = false;
-    state._bsConfirmLock = false;
+    bsClearPoll(); bsClearSession();
+    state.bsScreen = 'lobby'; state.bsResult = null; state.bsGameId = null; state.bsCode = null;
+    state.bsLog = []; state.bsMyField = null; state.bsEnemyField = null;
+    state.bsMyShips = []; state.bsEnemyShips = []; state.bsShipsToPlace = []; state.bsPlacingIdx = 0;
+    state.bsIsBot = false; state.bsBotBusy = false; state._bsConfirmLock = false;
     render();
 }
-
-function actionBSPlayAgain() {
-    haptic('light');
-    if (state.bsIsBot) {
-        actionBSPlayBot();
-    } else {
-        actionBSBackLobby();
-    }
-}
-
+function actionBSPlayAgain() { haptic('light'); if (state.bsIsBot) actionBSPlayBot(); else actionBSBackLobby(); }
 async function actionBSSurrender() {
     haptic('light');
     const ok = await tgConfirm('Сдаться? Ты потеряешь ставку.');
     if (!ok) return;
-    bsClearPoll();
-    bsClearSession();
-    if (state.bsIsBot) {
-        await finishBotGame('lose');
-    } else {
+    bsClearPoll(); bsClearSession();
+    if (state.bsIsBot) await finishBotGame('lose');
+    else {
         try {
             const r = await apiPost('/api/bs/surrender', { game_id: state.bsGameId });
             handleBSFinish(r.result || { outcome: 'lose', loss: state.bsBet });
-        } catch (e) {
-            handleBSFinish({ outcome: 'lose', loss: state.bsBet });
-        }
+        } catch (e) { handleBSFinish({ outcome: 'lose', loss: state.bsBet }); }
     }
 }
-
+// ===== КОНЕЦ ЧАСТИ 2. ЧАСТЬ 3 ИДЁТ СРАЗУ ПОСЛЕ ЭТОЙ СТРОКИ =====
 // ============================================================
 //                       СТИПЕНДИЯ
 // ============================================================
@@ -3294,16 +2902,12 @@ async function actionScholarshipAmountSubmit() {
     const el = document.getElementById('sch-amount-input');
     const val = (el?.value || state.scholarshipAmountValue || '').trim();
     const amount = parseInt(val, 10);
-    if (isNaN(amount) || amount < 0 || amount > 100000) {
-        alert('Введи число от 0 до 100000');
-        return;
-    }
+    if (isNaN(amount) || amount < 0 || amount > 100000) { alert('Введи число от 0 до 100000'); return; }
     try {
         await apiPost('/api/scholarship-set-amount', { amount });
         haptic('success');
         state.scholarshipAmountModal = false;
-        await loadScholarship();
-        render();
+        await loadScholarship(); render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function actionScholarshipClear() {
@@ -3318,25 +2922,19 @@ async function actionScholarshipClear() {
 }
 
 // ============================================================
-//                       ОБРАТНАЯ СВЯЗЬ / ЭКСПОРТ
+//                       ОБРАТНАЯ СВЯЗЬ
 // ============================================================
 
 function renderMyFeedbackCard() {
     if (!state.myFeedbackLoaded) {
         return `<div class="section">
-            <div class="section-header">
-                <div class="section-icon">${fireIconSvg(22)}</div>
-                <h2 class="section-title">Мои обращения</h2>
-            </div>
+            <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Мои обращения</h2></div>
             <div class="card"><div class="card-subtitle">Загрузка...</div></div>
         </div>`;
     }
     if (!state.myFeedback || state.myFeedback.length === 0) {
         return `<div class="section">
-            <div class="section-header">
-                <div class="section-icon">${fireIconSvg(22)}</div>
-                <h2 class="section-title">Мои обращения</h2>
-            </div>
+            <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Мои обращения</h2></div>
             <div class="card"><div class="card-subtitle">Ты ещё не писал админу.</div></div>
         </div>`;
     }
@@ -3345,22 +2943,15 @@ function renderMyFeedbackCard() {
     const showAll = state.myFeedbackExpanded;
     const items = showAll ? state.myFeedback : state.myFeedback.slice(0, previewLimit);
     let html = `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Мои обращения</h2>
-        </div>
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Мои обращения</h2></div>
         <div class="card">`;
     for (const f of items) {
-        let statusLabel = 'В обработке';
-        let statusCls = 'new';
+        let statusLabel = 'В обработке'; let statusCls = 'new';
         if (f.status === 'answered') { statusLabel = 'Отвечено'; statusCls = 'answered'; }
         else if (f.status === 'postponed') { statusLabel = 'Отложено'; statusCls = 'postponed'; }
         const dateStr = (f.created_at || '').slice(0, 10);
         html += `<div class="fb-item">
-            <div class="fb-item-head">
-                <span class="fb-date">${escapeHtml(dateStr)}</span>
-                <span class="fb-status ${statusCls}">${statusLabel}</span>
-            </div>
+            <div class="fb-item-head"><span class="fb-date">${escapeHtml(dateStr)}</span><span class="fb-status ${statusCls}">${statusLabel}</span></div>
             <div class="fb-text">${escapeHtml(f.text)}</div>
             ${f.admin_reply ? `<div class="fb-reply"><div class="fb-reply-label">Ответ</div>${escapeHtml(f.admin_reply)}</div>` : ''}
         </div>`;
@@ -3392,8 +2983,7 @@ async function actionExportData() {
         haptic('success');
         alert('PDF отправлен в чат с ботом');
     } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + e.message);
+        haptic('error'); alert('Ошибка: ' + e.message);
     } finally {
         state.exportPending = false; render();
     }
@@ -3417,10 +3007,7 @@ function renderAdmin() {
         </div>`;
     } else html += renderLoading();
     html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Мониторинг</h2>
-        </div>
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Мониторинг</h2></div>
         <div class="card">
             ${state.adminMonitor
                 ? (state.adminMonitor.ok
@@ -3431,10 +3018,7 @@ function renderAdmin() {
         </div>
     </div>`;
     html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Рассылка</h2>
-        </div>
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Рассылка</h2></div>
         <div class="card">
             <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
             <button class="btn" data-action="admin-broadcast" style="width:100%">Отправить всем</button>
@@ -3442,10 +3026,7 @@ function renderAdmin() {
     </div>`;
     if (state.adminFeedback && state.adminFeedback.length > 0) {
         html += `<div class="section">
-            <div class="section-header">
-                <div class="section-icon">${fireIconSvg(22)}</div>
-                <h2 class="section-title">Обращения (${state.adminFeedback.length})</h2>
-            </div>
+            <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Обращения (${state.adminFeedback.length})</h2></div>
             <div class="card">`;
         for (const f of state.adminFeedback) {
             html += `<div style="border-bottom:1px solid var(--divider);padding:12px 0">
@@ -3463,7 +3044,6 @@ function renderAdmin() {
     }
     return html;
 }
-
 async function actionAdminMonitor() {
     state.adminBusy = true;
     try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
@@ -3512,13 +3092,396 @@ async function actionAdminFbPostpone(fid) {
 }
 
 // ============================================================
+//                       ПРОФИЛЬ
+// ============================================================
+
+function renderProfile() {
+    const p = state.profile;
+    const w = state.wallet;
+    const u = state.user;
+    const ach = state.achievements || [];
+    const achGot = ach.filter(a => a.unlocked).length;
+    if (!p) return renderLoading();
+
+    const displayName = (p.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Студент');
+    const playerTag = p.player_tag || `PLAYER-${String(u.id).slice(-6).toUpperCase()}`;
+    const lvl = w?.level || 1;
+    const xpIn = w?.xp_in_level || 0;
+    const xpNext = w?.xp_to_next || 500;
+    const xpTotal = (w?.xp || 0);
+    const xpTarget = xpTotal + (xpNext - xpIn);
+
+    let html = '';
+
+    html += `<div class="profile-hero">
+        <div class="profile-hero-bg"></div>
+        <div class="profile-hero-overlay"></div>
+        <div class="profile-hero-glow"></div>
+        <div style="padding-top:24px;position:relative;z-index:1"></div>
+        <div class="profile-avatar-wrap">${heroAvatarImg(180)}</div>
+        <div class="profile-level-badge"><span class="num">${lvl}</span> LVL</div>
+        <div class="profile-name-block">
+            <div class="profile-name-hero">
+                <div class="profile-name-main">${escapeHtml(displayName)}</div>
+                <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
+            </div>
+            <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
+        </div>
+        <div class="profile-xp-row">
+            <div class="profile-xp-current">${formatNumber(xpTotal)} XP</div>
+            <div class="profile-xp-target">${formatNumber(xpTarget)} XP</div>
+        </div>
+        <div class="profile-currency-row">
+            <div class="profile-currency-tile soft" data-action="exchange-open">
+                <div class="label">Софт</div>
+                <div class="value">${softIconImg(22)}<span>${formatNumber(w?.soft || 0)}</span></div>
+            </div>
+            <div class="profile-currency-tile hard" data-action="premium-open">
+                <div class="label">Хард</div>
+                <div class="value">${hardIconImg(22)}<span>${formatNumber(w?.hard || 0)}</span></div>
+            </div>
+        </div>
+        <div class="avatar-change-row">
+            <button class="avatar-change-btn" data-action="avatar-toggle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                <span>Сменить аватар</span>
+            </button>
+        </div>
+    </div>`;
+
+    html += `<div class="streak-row" style="margin-bottom:20px">
+        <span class="fire">🔥</span> Стрик: ${p.streak || 0} ${p.streak === 1 ? 'день' : 'дн.'}
+    </div>`;
+
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Твоя статистика</h2></div>
+        <div class="stats-row">
+            <div class="stat-col">
+                <div class="stat-value">${p.notes_count || 0}</div>
+                <div class="stat-label">Заметок<br>создано</div>
+            </div>
+            <div class="stat-col highlight">
+                <div class="stat-value">${p.streak || 0}</div>
+                <div class="stat-label">Дней<br>подряд</div>
+            </div>
+            <div class="stat-col">
+                <div class="stat-value">${p.tasks_done || 0}</div>
+                <div class="stat-label">Заданий<br>выполнено</div>
+            </div>
+        </div>
+    </div>`;
+
+    const chestReady = state.chest?.can_open !== false;
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Халява дня</h2></div>
+        <div class="chest-card">
+            <div class="chest-svg">${chestDailyImg(100)}</div>
+            <div class="chest-title">Халява <span class="accent">дня</span></div>
+            <div class="chest-sub">${chestReady ? '🎁 Готово к открытию' : '🎁 Уже открыто сегодня'}</div>
+            ${chestReady ? '' : `<div class="chest-timer" id="chest-timer">--:--:--</div>`}
+            <button class="chest-btn" data-action="chest-open" ${chestReady ? '' : 'disabled'}>
+                ${chestReady ? 'Открыть' : 'Уже открыто'}
+            </button>
+        </div>
+    </div>`;
+
+    const hardHave = w?.hard || 0;
+    const canPremium = hardHave >= 10;
+    html += `<div class="premium-chest-card">
+        <div class="premium-chest-crown">👑</div>
+        <div class="premium-chest-title">Премиум сундук</div>
+        <div class="premium-chest-sub">Стоимость: <strong>10 Харда</strong> · у тебя: ${hardHave}</div>
+        <div class="premium-chest-preview">
+            <div class="premium-chest-item">💰 500 Софта · ⚡ 1000 XP</div>
+            <div class="premium-chest-item">🎁 Бонус: 3 / 5 / 10 / 25 Харда</div>
+        </div>
+        <button class="premium-chest-btn" data-action="premium-open" ${canPremium ? '' : 'disabled'}>
+            ${canPremium ? 'Открыть за 10 Харда' : 'Нужно 10 Харда'}
+        </button>
+    </div>`;
+
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Достижения ${achGot}/${ach.length || 8}</h2></div>
+        <div class="card">
+            <div class="ach-grid">
+                ${ach.length === 0 ? '<div class="card-subtitle">Загрузка...</div>' : ach.map(a => `
+                    <div class="ach-item ${a.unlocked ? 'unlocked' : ''}" data-action="ach-open" data-id="${escapeHtml(a.id)}">
+                        <div class="ach-emoji">${a.icon}</div>
+                        <div class="ach-name">${escapeHtml(a.name)}</div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    </div>`;
+
+    const attTotal = p.attendance_total || 0;
+    if (attTotal > 0) {
+        html += `<div class="section">
+            <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Посещаемость</h2></div>
+            <div class="card">
+                <div class="att-stat-row"><span class="att-stat-label">Всего</span><span class="att-stat-value">${attTotal}</span></div>
+                <div class="att-stat-row"><span class="att-stat-label">Посещено</span><span class="att-stat-value green">${p.attendance_was || 0}</span></div>
+                <div class="att-stat-row"><span class="att-stat-label">Пропущено</span><span class="att-stat-value red">${p.attendance_missed || 0}</span></div>
+                <div class="att-stat-row"><span class="att-stat-label">По болезни</span><span class="att-stat-value yellow">${p.attendance_sick || 0}</span></div>
+            </div>
+        </div>`;
+    }
+
+    html += renderScholarshipCard();
+
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Меню</h2></div>
+        <div class="menu-list">
+            <button class="menu-item accent" data-action="choose-group">
+                <span>${p?.group ? 'Изменить группу' : 'Выбрать группу'}</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button class="menu-item" data-action="notify-open">
+                <span>Уведомления о расписании</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button class="menu-item" data-action="level-info-open">
+                <span>Уровни и опыт</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button class="menu-item" data-action="currency-info-open">
+                <span>Где взять валюту</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button class="menu-item" data-action="export-data">
+                <span>Скачать PDF с данными</span>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+        </div>
+    </div>`;
+
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Подгруппа</h2></div>
+        <div class="card">
+            <div class="card-subtitle" style="margin-bottom:10px">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'Не выбрана'}</div>
+            <div class="actions-row">
+                <button class="btn btn-secondary" data-action="set-subgroup" data-value="0" style="flex:1">—</button>
+                <button class="btn btn-secondary" data-action="set-subgroup" data-value="1" style="flex:1">1</button>
+                <button class="btn btn-secondary" data-action="set-subgroup" data-value="2" style="flex:1">2</button>
+            </div>
+        </div>
+    </div>`;
+
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Цитата дня</h2></div>
+        <div class="card">
+            <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
+            <div class="actions-row">
+                ${p?.daily_subscribed
+                    ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0" style="width:100%">Отписаться</button>`
+                    : `<button class="btn" data-action="quote-subscribe" data-value="1" style="width:100%">Подписаться</button>`}
+            </div>
+        </div>
+    </div>`;
+
+    html += renderMyFeedbackCard();
+
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Обратная связь</h2></div>
+        <div class="card">
+            <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
+            <button class="btn" data-action="feedback-send" style="width:100%">Отправить</button>
+        </div>
+    </div>`;
+
+    const notifyOn = !!p?.notify_type;
+    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
+    html += `<div class="section">
+        <div class="section-header"><div class="section-icon">${fireIconSvg(22)}</div><h2 class="section-title">Настройки</h2></div>
+        <div class="card">
+            <div class="card-subtitle">Текущее: ${escapeHtml(notifyLabel)}</div>
+            <label class="checkbox-row">
+                <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
+                <span>Следить за изменениями в расписании</span>
+            </label>
+            <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
+            <div class="nbf-buttons">
+                ${[0, 10, 15, 30].map(m => `
+                    <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
+                            data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
+                `).join('')}
+            </div>
+        </div>
+    </div>`;
+
+    return html;
+}
+
+// ============================================================
+//                       NAME / AVATAR / CHEST / PREMIUM
+// ============================================================
+
+function actionNameOpen() {
+    haptic('light');
+    const cur = state.profile?.display_name || '';
+    state.nameEditorValue = cur && cur !== 'PLAYER' ? cur : '';
+    state.nameEditor = true; render();
+}
+async function actionNameSave() {
+    const el = document.getElementById('name-editor-input');
+    if (!el) return;
+    const name = (el.value || '').trim();
+    if (!name) { alert('Введи имя'); return; }
+    try {
+        const r = await apiPost('/api/set-name', { name });
+        state.wallet = r.wallet;
+        if (state.profile) state.profile.display_name = name;
+        haptic('success');
+        state.nameEditor = false;
+        popEmoji('✏️');
+        render();
+    } catch (e) { haptic('error'); alert(e.message || 'Ошибка'); }
+}
+async function actionAvatarToggle() {
+    haptic('light');
+    const curIdx = state.wallet?.avatar_idx || 0;
+    const nextIdx = curIdx === 0 ? 1 : 0;
+    try {
+        const r = await apiPost('/api/set-avatar', { idx: nextIdx });
+        if (r.wallet) state.wallet = r.wallet;
+        else if (state.wallet) state.wallet.avatar_idx = nextIdx;
+        haptic('success'); render();
+    } catch (e) { haptic('error'); alert(e.message || 'Не удалось сменить аватар'); }
+}
+async function actionChestOpen() {
+    try {
+        const r = await apiPost('/api/chest/open');
+        state.wallet = r.wallet;
+        state.chestModal = r.reward;
+        haptic('success'); popEmoji('🎁');
+        await loadChestStatus(); render();
+    } catch (e) { haptic('error'); alert(e.message || 'Сундук уже открыт'); }
+}
+async function actionPremiumOpen() {
+    haptic('light');
+    try {
+        const r = await apiPost('/api/premium-chest/open');
+        state.wallet = r.wallet;
+        state.premiumModal = r.reward;
+        haptic('success'); popEmoji('👑');
+        await loadAchievements(); render();
+    } catch (e) { haptic('error'); alert(e.message || 'Не хватает Харда'); }
+}
+function actionLevelInfoOpen() { haptic('light'); state.levelInfoModal = true; render(); }
+function actionCurrencyInfoOpen() { haptic('light'); state.currencyInfoModal = true; render(); }
+function actionAchOpen(achId) { haptic('light'); state.achModal = achId; render(); }
+function actionModalClose() {
+    haptic('light');
+    state.nameEditor = false;
+    state.chestModal = null;
+    state.achModal = null;
+    state.levelInfoModal = false;
+    state.currencyInfoModal = false;
+    state.premiumModal = null;
+    state.newAchToast = null;
+    state.exchangeOpen = false;
+    state.bsJoinModal = false;
+    state.bsJoinCode = '';
+    state.scholarshipAmountModal = false;
+    state.scholarshipAmountValue = '';
+    state.adminReplyModal = false;
+    state.adminReplyFeedbackId = null;
+    state.adminReplyText = '';
+    render();
+}
+function showNewAchievements(newIds) {
+    if (!newIds || newIds.length === 0) return;
+    const achList = state.achievements || [];
+    const items = [];
+    for (const id of newIds) {
+        const meta = achList.find(a => a.id === id);
+        if (!meta) continue;
+        const rw = meta.reward || {};
+        const parts = [];
+        if (rw.xp) parts.push(`+${rw.xp} XP`);
+        if (rw.soft) parts.push(`+${rw.soft} 💰`);
+        if (rw.hard) parts.push(`+${rw.hard} 🏅`);
+        items.push({ name: meta.name, icon: meta.icon, rewardText: parts.length ? `Награда: ${parts.join(' · ')}` : 'Без награды' });
+    }
+    if (items.length === 0) return;
+    state.newAchToast = items;
+    haptic('success');
+    popEmoji('🏆');
+}
+async function actionExchangeOpen() { haptic('light'); state.exchangeAmount = 100; state.exchangeOpen = true; render(); }
+function actionExchangeQuick(ratio) {
+    haptic('light');
+    const soft = state.wallet?.soft || 0;
+    let amt = Math.floor(soft * ratio);
+    amt = Math.floor(amt / 100) * 100;
+    state.exchangeAmount = Math.max(0, amt);
+    render();
+}
+async function actionExchangeSubmit() {
+    const w = state.wallet || {};
+    const soft = w.soft || 0;
+    const amount = Math.max(0, Math.min(Math.floor(state.exchangeAmount || 0), soft));
+    const hard = Math.floor(amount / 100);
+    if (hard <= 0) { haptic('error'); alert('Слишком маленькая сумма для обмена'); return; }
+    try {
+        const r = await apiPost('/api/exchange-soft-to-hard', { amount });
+        haptic('success'); popEmoji('💱');
+        if (r.wallet) state.wallet = r.wallet;
+        state.exchangeOpen = false;
+        await loadProfile(); render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + (e.message || 'не удалось обменять')); }
+}
+async function actionSetSubgroup(value) {
+    try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionQuoteSubscribe(value) {
+    try { await apiPost('/api/quote-subscribe', { subscribe: value === 1 }); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionForgetGroup() {
+    const ok = await tgConfirm('Забыть группу?');
+    if (!ok) return;
+    try {
+        await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
+        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
+        haptic('success'); await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+// ============================================================
+//                       ЧЕСТ-ТАЙМЕР
+// ============================================================
+
+function stopChestTimer() { if (state.chestTimer) { clearInterval(state.chestTimer); state.chestTimer = null; } }
+function syncChestTimer() {
+    if (state.tab !== 'profile') { stopChestTimer(); return; }
+    if (!state.chest || state.chest.can_open) { stopChestTimer(); return; }
+    if (!state.chest.next_at) { stopChestTimer(); return; }
+    if (!state.chestTimer) state.chestTimer = setInterval(updateChestTimer, 1000);
+    updateChestTimer();
+}
+async function updateChestTimer() {
+    if (!state.chest || state.chest.can_open || !state.chest.next_at) { stopChestTimer(); return; }
+    const next = new Date(state.chest.next_at);
+    const diff = next.getTime() - Date.now();
+    if (diff <= 0) { try { state.chest = await apiGet('/api/chest/status'); } catch (e) {} stopChestTimer(); render(); return; }
+    const hh = String(Math.floor(diff / 3600000)).padStart(2, '0');
+    const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+    const el = document.getElementById('chest-timer');
+    if (el) el.textContent = `${hh}:${mm}:${ss}`;
+}
+
+// ============================================================
 //                       LOADERS
 // ============================================================
 
-async function loadSchedule() {
-    try { state.schedule = await apiGet('/api/schedule'); }
-    catch (e) { state.schedule = { error: 'load_error', message: e.message }; }
-}
+async function loadSchedule() { try { state.schedule = await apiGet('/api/schedule'); } catch (e) { state.schedule = { error: 'load_error', message: e.message }; } }
 async function loadTasks() {
     try {
         const doneParam = state.tasksView === 'done' ? '1' : '0';
@@ -3527,10 +3490,7 @@ async function loadTasks() {
         state.tasksStats = { active: r.active || 0, done: r.done || 0 };
     } catch (e) { state.tasks = []; }
 }
-async function loadNotes() {
-    try { const r = await apiGet('/api/notes'); state.notes = r.notes || []; }
-    catch (e) { state.notes = []; }
-}
+async function loadNotes() { try { const r = await apiGet('/api/notes'); state.notes = r.notes || []; } catch (e) { state.notes = []; } }
 async function loadProfile() {
     try {
         state.profile = await apiGet('/api/me');
@@ -3538,14 +3498,8 @@ async function loadProfile() {
         if (state.profile.wallet) state.wallet = state.profile.wallet;
     } catch (e) { state.profile = { error: e.message }; }
 }
-async function loadWallet() {
-    try { const r = await apiGet('/api/wallet'); state.wallet = r.wallet; }
-    catch (e) {}
-}
-async function loadChestStatus() {
-    try { state.chest = await apiGet('/api/chest/status'); }
-    catch (e) { state.chest = { can_open: true }; }
-}
+async function loadWallet() { try { const r = await apiGet('/api/wallet'); state.wallet = r.wallet; } catch (e) {} }
+async function loadChestStatus() { try { state.chest = await apiGet('/api/chest/status'); } catch (e) { state.chest = { can_open: true }; } }
 async function loadAchievements() {
     try {
         const r = await apiGet('/api/achievements');
@@ -3568,22 +3522,10 @@ async function loadGroups(force = false) {
     try { const r = await apiGet('/api/groups'); state.groups = r.groups; }
     catch (e) { state.groups = {}; }
 }
-async function loadAdminStats() {
-    try { state.adminStats = await apiGet('/api/admin/stats'); }
-    catch (e) { state.adminStats = null; }
-}
-async function loadAdminFeedback() {
-    try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
-    catch (e) { state.adminFeedback = []; }
-}
-async function loadGames() {
-    try { const r = await apiGet('/api/game/info'); state.gamesList = r.games || []; }
-    catch (e) { state.gamesList = []; }
-}
-async function loadWalletLeaderboard() {
-    try { const r = await apiGet('/api/wallet/leaderboard'); state.walletLeaderboard = r.items || []; }
-    catch (e) { state.walletLeaderboard = []; }
-}
+async function loadAdminStats() { try { state.adminStats = await apiGet('/api/admin/stats'); } catch (e) { state.adminStats = null; } }
+async function loadAdminFeedback() { try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; } catch (e) { state.adminFeedback = []; } }
+async function loadGames() { try { const r = await apiGet('/api/game/info'); state.gamesList = r.games || []; } catch (e) { state.gamesList = []; } }
+async function loadWalletLeaderboard() { try { const r = await apiGet('/api/wallet/leaderboard'); state.walletLeaderboard = r.items || []; } catch (e) { state.walletLeaderboard = []; } }
 async function loadAiHistory() {
     try {
         const r = await apiGet('/api/ai/history');
@@ -3600,34 +3542,19 @@ async function loadMyFeedback() {
 async function loadTabData(tab) {
     stopChestTimer();
     bsClearPoll();
-    state.loading = true;
-    state.error = null;
-    state.notifyEditor = false;
-    state.taskEditor = false;
-    state.noteEditor = false;
-    state.gameView = null;
-    state.gameInstance = null;
-    state.nameEditor = false;
-    state.chestModal = null;
-    state.achModal = null;
-    state.levelInfoModal = false;
-    state.currencyInfoModal = false;
-    state.premiumModal = null;
-    state.newAchToast = null;
-    state.exchangeOpen = false;
-    state.bsJoinModal = false;
-    state.scholarshipAmountModal = false;
-    state.adminReplyModal = false;
-    state.bsScreen = 'lobby';
-    state.bsResult = null;
+    state.loading = true; state.error = null;
+    state.notifyEditor = false; state.taskEditor = false; state.noteEditor = false;
+    state.gameView = null; state.gameInstance = null;
+    state.nameEditor = false; state.chestModal = null; state.achModal = null;
+    state.levelInfoModal = false; state.currencyInfoModal = false; state.premiumModal = null;
+    state.newAchToast = null; state.exchangeOpen = false; state.bsJoinModal = false;
+    state.scholarshipAmountModal = false; state.adminReplyModal = false;
+    state.bsScreen = 'lobby'; state.bsResult = null;
     render();
     try {
         if (tab === 'schedule') {
-            state.scheduleViewMode = 'today';
-            state.weekOffset = 0;
-            state.scheduleDay = 'today';
-            state.weekDays = null;
-            state.nextWeekDays = null;
+            state.scheduleViewMode = 'today'; state.weekOffset = 0;
+            state.scheduleDay = 'today'; state.weekDays = null; state.nextWeekDays = null;
             await loadProfile();
             await loadSchedule();
             ensureWeekLoaded().catch(() => {});
@@ -3646,12 +3573,9 @@ async function loadTabData(tab) {
         } else if (tab === 'profile') {
             state.scholarshipFilter = 'all';
             state.scholarshipSemesterFilter = 'all';
-            state.scholarshipEditor = false;
-            state.scholarshipEditorId = null;
-            state.myFeedbackLoaded = false;
-            state.myFeedbackExpanded = false;
-            state.achievements = [];
-            state.achievementsLoaded = false;
+            state.scholarshipEditor = false; state.scholarshipEditorId = null;
+            state.myFeedbackLoaded = false; state.myFeedbackExpanded = false;
+            state.achievements = []; state.achievementsLoaded = false;
             await Promise.all([loadProfile(), loadWallet(), loadChestStatus(), loadAchievements(), loadScholarship(), loadMyFeedback()]);
         }
     } catch (e) { console.error(e); state.error = e.message; }
@@ -3664,72 +3588,45 @@ async function bsTryRestoreSession() {
         const savedId = localStorage.getItem(BS_STORAGE_KEY);
         if (!savedId) return;
         const r = await apiGet('/api/bs/state', { game_id: savedId });
-        if (r.status === 'finished') {
-            bsClearSession();
-            return;
-        }
+        if (r.status === 'finished') { bsClearSession(); return; }
         if (r.status === 'playing' || r.status === 'waiting' || r.status === 'placing') {
             state.bsGameId = savedId;
             state.bsIsBot = false;
             state.bsEnemyName = r.opponent_name || 'Соперник';
             state.bsMyField = bsEmptyField();
             state.bsMyShips = (r.my_ships || []).map(s => ({ size: s.size, cells: s.cells, hits: 0, sunk: false }));
-            for (const s of state.bsMyShips) {
-                for (const [x, y] of s.cells) state.bsMyField[y][x] = 1;
-            }
+            for (const s of state.bsMyShips) { for (const [x, y] of s.cells) state.bsMyField[y][x] = 1; }
             state.bsEnemyField = reconstructEnemyFieldFromShots(r.my_shots || []);
             applyEnemyShots(r.enemy_shots || []);
             state.bsTurn = r.your_turn ? 'me' : 'enemy';
             state.bsLog = r.log || [];
             if (r.status === 'playing') {
-                state.bsScreen = 'battle';
-                state.gameView = 'battleship';
-                startBSPolling();
-                render();
+                state.bsScreen = 'battle'; state.gameView = 'battleship';
+                startBSPolling(); render();
             } else if (r.status === 'placing') {
-                state.bsScreen = 'waiting';
-                state.gameView = 'battleship';
-                startBSPolling();
-                render();
+                state.bsScreen = 'waiting'; state.gameView = 'battleship';
+                startBSPolling(); render();
             } else if (r.status === 'waiting') {
-                state.bsScreen = 'lobby';
-                bsClearSession();
+                state.bsScreen = 'lobby'; bsClearSession();
             }
         }
-    } catch (e) {
-        bsClearSession();
-    }
+    } catch (e) { bsClearSession(); }
 }
 
 async function loadWeekAndRender() {
-    try {
-        const r = await apiGet('/api/week', { offset: state.weekOffset });
-        state.weekDays = r;
-        state.scheduleViewMode = 'week';
-        render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
+    try { const r = await apiGet('/api/week', { offset: state.weekOffset }); state.weekDays = r; state.scheduleViewMode = 'week'; render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
 }
 async function loadTodayAndRender() {
-    state.scheduleViewMode = 'today';
-    state.weekOffset = 0; state.weekDays = null; state.nextWeekDays = null; state.scheduleDay = 'today';
+    state.scheduleViewMode = 'today'; state.weekOffset = 0; state.weekDays = null; state.nextWeekDays = null; state.scheduleDay = 'today';
     await loadSchedule(); render();
 }
 function actionDayToday() { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
 async function actionDayTomorrow() {
-    state.scheduleDay = 'tomorrow';
-    state.scheduleViewMode = 'today';
-    haptic('light');
-    if (!state.weekDays) {
-        render();
-        await ensureWeekLoaded();
-    }
+    state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today'; haptic('light');
+    if (!state.weekDays) { render(); await ensureWeekLoaded(); }
     if (!getTomorrowData()) {
-        try {
-            const r = await apiGet('/api/week', { offset: 1 });
-            if (r && r.days && r.days.length) {
-                state.nextWeekDays = r;
-            }
-        } catch (e) {}
+        try { const r = await apiGet('/api/week', { offset: 1 }); if (r && r.days && r.days.length) state.nextWeekDays = r; } catch (e) {}
     }
     render();
 }
@@ -3767,43 +3664,29 @@ function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         const a = el.dataset.action;
         if (a === 'bs-fire-cell' || a === 'bs-place-cell') return;
-
         if (el.classList.contains('modal-backdrop')) {
-            el.addEventListener('click', (e) => {
-                if (e.target === el) handleAction(el);
-            });
+            el.addEventListener('click', (e) => { if (e.target === el) handleAction(el); });
         } else {
-            el.addEventListener('click', (e) => {
-                e.stopPropagation();
-                handleAction(el);
-            });
+            el.addEventListener('click', (e) => { e.stopPropagation(); handleAction(el); });
         }
     });
-
     document.querySelectorAll('[data-action="bs-fire-cell"], [data-action="bs-place-cell"]').forEach((el) => {
         if (el.dataset.handlerBound === '1') return;
         el.dataset.handlerBound = '1';
         el.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             if (state._bsTapLock) return;
             state._bsTapLock = true;
             setTimeout(() => { state._bsTapLock = false; }, 180);
             handleAction(el);
         });
     });
-
     const notifyCb = document.getElementById('notify-changes');
     if (notifyCb) {
         notifyCb.addEventListener('change', async (e) => {
             const val = e.target.checked;
-            try {
-                await apiPost('/api/notify-set', { changes: val });
-                if (state.profile) state.profile.notify_changes = val;
-                haptic('success');
-            } catch (err) {
-                haptic('error'); alert('Ошибка: ' + err.message); e.target.checked = !val;
-            }
+            try { await apiPost('/api/notify-set', { changes: val }); if (state.profile) state.profile.notify_changes = val; haptic('success'); }
+            catch (err) { haptic('error'); alert('Ошибка: ' + err.message); e.target.checked = !val; }
         });
     }
     const aiPhotoInput = document.getElementById('ai-photo-input');
@@ -3815,68 +3698,37 @@ function attachHandlers() {
         });
     }
     const schAutoCb = document.getElementById('sch-auto-input');
-    if (schAutoCb) {
-        schAutoCb.addEventListener('change', (e) => {
-            state.scholarshipEditorIsAuto = e.target.checked;
-            haptic('light');
-        });
-    }
+    if (schAutoCb) { schAutoCb.addEventListener('change', (e) => { state.scholarshipEditorIsAuto = e.target.checked; haptic('light'); }); }
     const schSubjInput = document.getElementById('sch-subject-input');
-    if (schSubjInput) {
-        schSubjInput.addEventListener('input', (e) => {
-            state.scholarshipEditorSubject = e.target.value;
-        });
-    }
+    if (schSubjInput) { schSubjInput.addEventListener('input', (e) => { state.scholarshipEditorSubject = e.target.value; }); }
     const exchInput = document.getElementById('exchange-amount-input');
     if (exchInput) {
         exchInput.addEventListener('input', (e) => {
-            let v = parseInt(e.target.value, 10);
-            if (isNaN(v) || v < 0) v = 0;
-            const soft = state.wallet?.soft || 0;
-            if (v > soft) v = soft;
+            let v = parseInt(e.target.value, 10); if (isNaN(v) || v < 0) v = 0;
+            const soft = state.wallet?.soft || 0; if (v > soft) v = soft;
             state.exchangeAmount = v;
             const hardEl = document.querySelector('.exchange-preview-value');
-            if (hardEl) {
-                const hard = Math.floor(v / 100);
-                hardEl.innerHTML = `${hard}<span class="suffix">Харда</span>`;
-            }
+            if (hardEl) { const hard = Math.floor(v / 100); hardEl.innerHTML = `${hard}<span class="suffix">Харда</span>`; }
             const submitBtn = document.querySelector('[data-action="exchange-submit"]');
-            if (submitBtn) {
-                const hard = Math.floor(v / 100);
-                if (hard <= 0) submitBtn.setAttribute('disabled', '');
-                else submitBtn.removeAttribute('disabled');
-            }
+            if (submitBtn) { const hard = Math.floor(v / 100); if (hard <= 0) submitBtn.setAttribute('disabled', ''); else submitBtn.removeAttribute('disabled'); }
         });
     }
     const bsJoinInput = document.getElementById('bs-join-code-input');
     if (bsJoinInput) {
-        bsJoinInput.addEventListener('input', (e) => {
-            state.bsJoinCode = e.target.value.replace(/\D/g, '').slice(0, 6);
-            e.target.value = state.bsJoinCode;
-        });
-        bsJoinInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); actionBSJoinSubmit(); }
-        });
+        bsJoinInput.addEventListener('input', (e) => { state.bsJoinCode = e.target.value.replace(/\D/g, '').slice(0, 6); e.target.value = state.bsJoinCode; });
+        bsJoinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); actionBSJoinSubmit(); } });
     }
     const schAmountInput = document.getElementById('sch-amount-input');
     if (schAmountInput) {
-        schAmountInput.addEventListener('input', (e) => {
-            state.scholarshipAmountValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
-            e.target.value = state.scholarshipAmountValue;
-        });
+        schAmountInput.addEventListener('input', (e) => { state.scholarshipAmountValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 6); e.target.value = state.scholarshipAmountValue; });
     }
     const adminReplyInput = document.getElementById('admin-reply-input');
-    if (adminReplyInput) {
-        adminReplyInput.addEventListener('input', (e) => {
-            state.adminReplyText = e.target.value;
-        });
-    }
+    if (adminReplyInput) { adminReplyInput.addEventListener('input', (e) => { state.adminReplyText = e.target.value; }); }
 }
 
 function handleAction(el) {
     const a = el.dataset.action;
     const v = el.dataset.value;
-
     if (a === 'name-open') actionNameOpen();
     else if (a === 'avatar-toggle') actionAvatarToggle();
     else if (a === 'level-info-open') actionLevelInfoOpen();
@@ -3986,194 +3838,11 @@ document.querySelectorAll('.nav-btn').forEach((btn) => {
         await loadTabData(tab);
     });
 });
-
 document.getElementById('refresh-btn').addEventListener('click', async () => {
     haptic('light');
     if (state.tab === 'schedule' && state.scheduleViewMode === 'week') await loadWeekAndRender();
     else await loadTabData(state.tab);
 });
-
-// ============================================================
-//                       NAME / AVATAR / CHEST / PREMIUM
-// ============================================================
-
-function actionNameOpen() {
-    haptic('light');
-    const cur = state.profile?.display_name || '';
-    state.nameEditorValue = cur && cur !== 'PLAYER' ? cur : '';
-    state.nameEditor = true; render();
-}
-async function actionNameSave() {
-    const el = document.getElementById('name-editor-input');
-    if (!el) return;
-    const name = (el.value || '').trim();
-    if (!name) { alert('Введи имя'); return; }
-    try {
-        const r = await apiPost('/api/set-name', { name });
-        state.wallet = r.wallet;
-        if (state.profile) state.profile.display_name = name;
-        haptic('success');
-        state.nameEditor = false;
-        popEmoji('✏️');
-        render();
-    } catch (e) { haptic('error'); alert(e.message || 'Ошибка'); }
-}
-async function actionAvatarToggle() {
-    haptic('light');
-    const curIdx = state.wallet?.avatar_idx || 0;
-    const nextIdx = curIdx === 0 ? 1 : 0;
-    try {
-        const r = await apiPost('/api/set-avatar', { idx: nextIdx });
-        if (r.wallet) state.wallet = r.wallet;
-        else if (state.wallet) state.wallet.avatar_idx = nextIdx;
-        haptic('success');
-        render();
-    } catch (e) {
-        haptic('error');
-        alert(e.message || 'Не удалось сменить аватар');
-    }
-}
-async function actionChestOpen() {
-    try {
-        const r = await apiPost('/api/chest/open');
-        state.wallet = r.wallet;
-        state.chestModal = r.reward;
-        haptic('success'); popEmoji('🎁');
-        await loadChestStatus(); render();
-    } catch (e) { haptic('error'); alert(e.message || 'Сундук уже открыт'); }
-}
-async function actionPremiumOpen() {
-    haptic('light');
-    try {
-        const r = await apiPost('/api/premium-chest/open');
-        state.wallet = r.wallet;
-        state.premiumModal = r.reward;
-        haptic('success'); popEmoji('👑');
-        await loadAchievements(); render();
-    } catch (e) { haptic('error'); alert(e.message || 'Не хватает Харда'); }
-}
-function actionLevelInfoOpen() { haptic('light'); state.levelInfoModal = true; render(); }
-function actionCurrencyInfoOpen() { haptic('light'); state.currencyInfoModal = true; render(); }
-function actionAchOpen(achId) { haptic('light'); state.achModal = achId; render(); }
-function actionModalClose() {
-    haptic('light');
-    state.nameEditor = false;
-    state.chestModal = null;
-    state.achModal = null;
-    state.levelInfoModal = false;
-    state.currencyInfoModal = false;
-    state.premiumModal = null;
-    state.newAchToast = null;
-    state.exchangeOpen = false;
-    state.bsJoinModal = false;
-    state.bsJoinCode = '';
-    state.scholarshipAmountModal = false;
-    state.scholarshipAmountValue = '';
-    state.adminReplyModal = false;
-    state.adminReplyFeedbackId = null;
-    state.adminReplyText = '';
-    render();
-}
-function showNewAchievements(newIds) {
-    if (!newIds || newIds.length === 0) return;
-    const achList = state.achievements || [];
-    const items = [];
-    for (const id of newIds) {
-        const meta = achList.find(a => a.id === id);
-        if (!meta) continue;
-        const rw = meta.reward || {};
-        const parts = [];
-        if (rw.xp) parts.push(`+${rw.xp} XP`);
-        if (rw.soft) parts.push(`+${rw.soft} 💰`);
-        if (rw.hard) parts.push(`+${rw.hard} 🏅`);
-        items.push({ name: meta.name, icon: meta.icon, rewardText: parts.length ? `Награда: ${parts.join(' · ')}` : 'Без награды' });
-    }
-    if (items.length === 0) return;
-    state.newAchToast = items;
-    haptic('success');
-    popEmoji('🏆');
-}
-
-async function actionExchangeOpen() {
-    haptic('light');
-    state.exchangeAmount = 100;
-    state.exchangeOpen = true;
-    render();
-}
-function actionExchangeQuick(ratio) {
-    haptic('light');
-    const soft = state.wallet?.soft || 0;
-    let amt = Math.floor(soft * ratio);
-    amt = Math.floor(amt / 100) * 100;
-    state.exchangeAmount = Math.max(0, amt);
-    render();
-}
-async function actionExchangeSubmit() {
-    const w = state.wallet || {};
-    const soft = w.soft || 0;
-    const amount = Math.max(0, Math.min(Math.floor(state.exchangeAmount || 0), soft));
-    const hard = Math.floor(amount / 100);
-    if (hard <= 0) { haptic('error'); alert('Слишком маленькая сумма для обмена'); return; }
-    try {
-        const r = await apiPost('/api/exchange-soft-to-hard', { amount });
-        haptic('success');
-        popEmoji('💱');
-        if (r.wallet) state.wallet = r.wallet;
-        state.exchangeOpen = false;
-        await loadProfile();
-        render();
-    } catch (e) {
-        haptic('error');
-        alert('Ошибка: ' + (e.message || 'не удалось обменять'));
-    }
-}
-
-async function actionSetSubgroup(value) {
-    try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionQuoteSubscribe(value) {
-    try { await apiPost('/api/quote-subscribe', { subscribe: value === 1 }); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); }
-    catch (e) { alert('Ошибка: ' + e.message); }
-}
-async function actionForgetGroup() {
-    const ok = await tgConfirm('Забыть группу?');
-    if (!ok) return;
-    try {
-        await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
-        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
-        haptic('success'); await loadProfile(); render();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-}
-
-// ============================================================
-//                       ЧЕСТ-ТАЙМЕР
-// ============================================================
-
-function stopChestTimer() {
-    if (state.chestTimer) { clearInterval(state.chestTimer); state.chestTimer = null; }
-}
-function syncChestTimer() {
-    if (state.tab !== 'profile') { stopChestTimer(); return; }
-    if (!state.chest || state.chest.can_open) { stopChestTimer(); return; }
-    if (!state.chest.next_at) { stopChestTimer(); return; }
-    if (!state.chestTimer) state.chestTimer = setInterval(updateChestTimer, 1000);
-    updateChestTimer();
-}
-async function updateChestTimer() {
-    if (!state.chest || state.chest.can_open || !state.chest.next_at) { stopChestTimer(); return; }
-    const next = new Date(state.chest.next_at);
-    const diff = next.getTime() - Date.now();
-    if (diff <= 0) {
-        try { state.chest = await apiGet('/api/chest/status'); } catch (e) {}
-        stopChestTimer(); render(); return;
-    }
-    const hh = String(Math.floor(diff / 3600000)).padStart(2, '0');
-    const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
-    const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
-    const el = document.getElementById('chest-timer');
-    if (el) el.textContent = `${hh}:${mm}:${ss}`;
-}
 
 // ============================================================
 //                       INIT
