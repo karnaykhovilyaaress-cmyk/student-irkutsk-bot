@@ -471,6 +471,15 @@ def init_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS bs_meta (
         key TEXT PRIMARY KEY, value TEXT)""")
 
+    # === НОВОЕ: таблицы для наград за достижения ===
+    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_claims (
+        user_id INTEGER, ach_id TEXT, claimed_at TEXT,
+        PRIMARY KEY (user_id, ach_id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_rewards (
+        user_id INTEGER, ach_id TEXT, xp INTEGER DEFAULT 0,
+        soft INTEGER DEFAULT 0, hard INTEGER DEFAULT 0, granted_at TEXT,
+        PRIMARY KEY (user_id, ach_id))""")
+
     conn.commit()
     conn.close()
 
@@ -737,37 +746,35 @@ def bs_count_wins(user_id):
 
 
 def check_and_award_achievements(user_id):
+    """Разблокирует достижения и создаёт «ожидающие» награды (без автоначисления)."""
     newly = []
     wallet = wallet_get(user_id)
     stats = stats_get(user_id)
 
-    def _unlock_and_reward(ach_id):
+    def _unlock(ach_id):
         if not achievement_unlock(user_id, ach_id):
             return False
         newly.append(ach_id)
-        rw = ACHIEVEMENT_REWARDS.get(ach_id)
-        if rw:
-            wallet_add(user_id, xp=rw["xp"], soft=rw["soft"], hard=rw["hard"])
         return True
 
-    _unlock_and_reward("first_day")
+    _unlock("first_day")
     if stats["streak"] >= 7:
-        _unlock_and_reward("week_visit")
+        _unlock("week_visit")
     if stats["notes_added"] >= 1:
-        _unlock_and_reward("first_note")
+        _unlock("first_note")
     if stats["tasks_done"] >= 1:
-        _unlock_and_reward("first_task")
+        _unlock("first_task")
     if stats["tasks_done"] >= 50:
-        _unlock_and_reward("prod_50")
+        _unlock("prod_50")
     if wallet["level"] >= 30:
-        _unlock_and_reward("legend_30")
+        _unlock("legend_30")
 
     try:
         grades = get_grades(user_id)
         if grades and len(grades) >= 3:
             avg = sum(g[2] for g in grades) / len(grades)
             if avg >= 5.0:
-                _unlock_and_reward("excellent")
+                _unlock("excellent")
     except Exception:
         pass
 
@@ -777,18 +784,42 @@ def check_and_award_achievements(user_id):
     conn.close()
     best = {r[0]: r[1] for r in rows}
     if best.get("flappy", 0) >= 30:
-        _unlock_and_reward("flappy_30")
+        _unlock("flappy_30")
 
     try:
         wins = bs_count_wins(user_id)
         if wins >= 1:
-            _unlock_and_reward("bs_first_win")
+            _unlock("bs_first_win")
         if wins >= 5:
-            _unlock_and_reward("bs_5_wins")
+            _unlock("bs_5_wins")
         if wins >= 10:
-            _unlock_and_reward("bs_10_wins")
+            _unlock("bs_10_wins")
     except Exception:
         pass
+
+    # Создаём «ожидающие» награды для всех разблокированных достижений
+    conn = sqlite3.connect(DB_PATH)
+    unlocked_rows = conn.execute(
+        "SELECT ach_id FROM achievements WHERE user_id=?", (user_id,)
+    ).fetchall()
+    for (aid,) in unlocked_rows:
+        rw = ACHIEVEMENT_REWARDS.get(aid)
+        if not rw:
+            continue
+        has = conn.execute(
+            "SELECT 1 FROM achievement_rewards WHERE user_id=? AND ach_id=?",
+            (user_id, aid)
+        ).fetchone()
+        if has:
+            continue
+        conn.execute(
+            "INSERT INTO achievement_rewards (user_id, ach_id, xp, soft, hard, granted_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, aid, rw["xp"], rw["soft"], rw["hard"],
+             datetime.now(timezone.utc).isoformat())
+        )
+    conn.commit()
+    conn.close()
 
     return newly
 
@@ -1363,6 +1394,8 @@ def delete_note_by_id(note_id, user_id):
 
 
 def attendance_set(user_id, date, time, subject, status):
+    if status not in ("", "was", "missed", "sick", "excused"):
+        return False
     conn = sqlite3.connect(DB_PATH)
     if status:
         conn.execute(
@@ -1375,6 +1408,7 @@ def attendance_set(user_id, date, time, subject, status):
         conn.execute("DELETE FROM attendance WHERE user_id=? AND date=? AND time=? AND subject=?",
                      (user_id, date, time, subject))
     conn.commit(); conn.close()
+    return True
 
 
 def attendance_get_map(user_id, dates):
@@ -1394,7 +1428,7 @@ def attendance_stats(user_id):
     rows = conn.execute("SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status",
                         (user_id,)).fetchall()
     conn.close()
-    result = {"was": 0, "missed": 0, "sick": 0}
+    result = {"was": 0, "missed": 0, "sick": 0, "excused": 0}
     for status, count in rows:
         if status in result:
             result[status] = count
@@ -2296,7 +2330,8 @@ async def api_me(request: web.Request):
         "attendance_was": att_stats["was"],
         "attendance_missed": att_stats["missed"],
         "attendance_sick": att_stats["sick"],
-        "attendance_total": att_stats["was"] + att_stats["missed"] + att_stats["sick"],
+        "attendance_excused": att_stats["excused"],
+        "attendance_total": att_stats["was"] + att_stats["missed"] + att_stats["sick"] + att_stats["excused"],
         "username": user_obj.username,
         "first_name": user_obj.first_name,
         "last_name": user_obj.last_name,
@@ -2477,14 +2512,95 @@ async def api_achievements(request: web.Request):
     _ensure_user(user_id)
     check_and_award_achievements(user_id)
     unlocked = achievements_get(user_id)
+
+    conn = sqlite3.connect(DB_PATH)
+    rewards = conn.execute(
+        "SELECT ach_id, xp, soft, hard FROM achievement_rewards WHERE user_id=?",
+        (user_id,)
+    ).fetchall()
+    claimed = conn.execute(
+        "SELECT ach_id FROM achievement_claims WHERE user_id=?",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+    reward_map = {r[0]: {"xp": r[1], "soft": r[2], "hard": r[3]} for r in rewards}
+    claimed_set = {c[0] for c in claimed}
+
     items = []
     for aid, meta in ACHIEVEMENTS.items():
+        is_unlocked = aid in unlocked
+        rw = reward_map.get(aid, ACHIEVEMENT_REWARDS.get(aid, {"xp": 0, "soft": 0, "hard": 0}))
         items.append({
-            "id": aid, "name": meta["name"], "icon": meta["icon"], "desc": meta["desc"],
-            "unlocked": aid in unlocked, "unlocked_at": unlocked.get(aid),
-            "reward": ACHIEVEMENT_REWARDS.get(aid, {"xp": 0, "soft": 0, "hard": 0}),
+            "id": aid,
+            "name": meta["name"],
+            "icon": meta["icon"],
+            "desc": meta["desc"],
+            "unlocked": is_unlocked,
+            "unlocked_at": unlocked.get(aid),
+            "reward": rw,
+            "claimed": aid in claimed_set,
+            "can_claim": is_unlocked and aid in reward_map and aid not in claimed_set,
         })
-    return web.json_response({"items": items, "total": len(ACHIEVEMENTS), "got": len(unlocked)})
+
+    total_reward = {"xp": 0, "soft": 0, "hard": 0}
+    for it in items:
+        if it["can_claim"]:
+            total_reward["xp"]   += it["reward"]["xp"]
+            total_reward["soft"] += it["reward"]["soft"]
+            total_reward["hard"] += it["reward"]["hard"]
+
+    return web.json_response({
+        "items": items,
+        "total": len(ACHIEVEMENTS),
+        "got": len(unlocked),
+        "can_claim_count": sum(1 for x in items if x["can_claim"]),
+        "total_reward": total_reward,
+    })
+
+
+async def api_achievement_claim(request: web.Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    ach_id = (body.get("ach_id") or "").strip()
+    if not ach_id or ach_id not in ACHIEVEMENTS:
+        return web.json_response({"error": "bad_id"}, status=400)
+
+    conn = sqlite3.connect(DB_PATH)
+    has = conn.execute(
+        "SELECT xp, soft, hard FROM achievement_rewards WHERE user_id=? AND ach_id=?",
+        (user_id, ach_id)
+    ).fetchone()
+    claimed = conn.execute(
+        "SELECT 1 FROM achievement_claims WHERE user_id=? AND ach_id=?",
+        (user_id, ach_id)
+    ).fetchone()
+    conn.close()
+    if not has or claimed:
+        return web.json_response({"error": "already_claimed"}, status=400)
+
+    xp, soft, hard = has
+    wallet_add(user_id, xp=xp, soft=soft, hard=hard)
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR IGNORE INTO achievement_claims (user_id, ach_id, claimed_at) "
+        "VALUES (?, ?, ?)",
+        (user_id, ach_id, datetime.now(timezone.utc).isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+    check_and_award_achievements(user_id)
+    return web.json_response({
+        "ok": True,
+        "reward": {"xp": xp, "soft": soft, "hard": hard},
+        "wallet": wallet_get(user_id),
+    })
 
 
 async def api_wallet_leaderboard(request: web.Request):
@@ -2620,7 +2736,7 @@ async def api_game_submit(request: web.Request):
 
 
 # ============================================================
-#                  API: МОРСКОЙ БОЙ (С ФИКСАМИ)
+#                  API: МОРСКОЙ БОЙ
 # ============================================================
 
 def _bs_make_result_for(game, user_id):
@@ -3124,7 +3240,6 @@ async def api_bs_cancel(request: web.Request):
 
 
 async def api_bs_bot_start(request: web.Request):
-    """Списывает ставку при старте игры с ботом."""
     try:
         body = await request.json()
     except Exception:
@@ -3158,7 +3273,6 @@ async def api_bs_bot_start(request: web.Request):
 
 
 async def api_bs_finish_bot(request: web.Request):
-    """Игра с ботом завершена. Ставка списана в /api/bs/bot-start."""
     try:
         body = await request.json()
     except Exception:
@@ -3668,7 +3782,7 @@ async def api_attendance_set(request: web.Request):
     status = (body.get("status") or "").strip()
     if not date or not time_ or not subject:
         return web.json_response({"error": "empty"}, status=400)
-    if status not in ("", "was", "missed", "sick"):
+    if status not in ("", "was", "missed", "sick", "excused"):
         return web.json_response({"error": "bad_status"}, status=400)
     if len(subject) > 200: subject = subject[:200]
     attendance_set(user_id, date, time_, subject, status)
@@ -4011,13 +4125,14 @@ def generate_user_pdf(user_id):
     else: pdf.cell(0, 6, "Оценок нет", ln=True)
 
     att = data.get("attendance", {})
-    total = att.get("was", 0) + att.get("missed", 0) + att.get("sick", 0)
+    total = att.get("was", 0) + att.get("missed", 0) + att.get("sick", 0) + att.get("excused", 0)
     section(f"Посещаемость (отмечено {total})")
     if total == 0: pdf.cell(0, 6, "Отметок нет", ln=True)
     else:
         pdf.cell(0, 6, f"Посещено: {att.get('was', 0)}", ln=True)
         pdf.cell(0, 6, f"Пропущено: {att.get('missed', 0)}", ln=True)
         pdf.cell(0, 6, f"По болезни: {att.get('sick', 0)}", ln=True)
+        pdf.cell(0, 6, f"Уважительная: {att.get('excused', 0)}", ln=True)
 
     feedback = data.get("feedback", [])
     if feedback:
@@ -4279,6 +4394,7 @@ async def start_webapp():
     app.router.add_post("/api/chest/open", api_chest_open)
     app.router.add_post("/api/premium-chest/open", api_premium_chest_open)
     app.router.add_get("/api/achievements", api_achievements)
+    app.router.add_post("/api/achievement-claim", api_achievement_claim)
     app.router.add_get("/api/wallet/leaderboard", api_wallet_leaderboard)
 
     # ==== Админ ====
@@ -4581,7 +4697,6 @@ async def change_worker():
 
 
 async def bs_cleanup_worker():
-    """Периодическая очистка просроченных игр в морской бой."""
     logging.info("[BS CLEANUP] воркер запущен")
     while True:
         try:
