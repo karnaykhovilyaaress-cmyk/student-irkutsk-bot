@@ -1,5 +1,4 @@
-
- const tg = window.Telegram.WebApp;
+const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
@@ -28,6 +27,7 @@ const state = {
     notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
     aiMessages: [], aiPending: false,
     adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
+    games: null, gamesLoaded: false,
 };
 
 async function apiGet(path, params = {}) {
@@ -79,13 +79,21 @@ function haptic(type = 'light') {
 }
 function formatNotifyTime(hh, mm) { return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; }
 
+function popEmoji(char) {
+    const el = document.createElement('div');
+    el.textContent = char;
+    el.style.cssText = 'position:fixed;top:50%;left:50%;font-size:56px;transform:translate(-50%,-50%);animation:pop 0.6s ease-out;z-index:99999;pointer-events:none';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 600);
+}
+
 function render() {
     const content = document.getElementById('content');
     const title = document.getElementById('page-title');
     const appEl = document.getElementById('app');
     const navEl = document.getElementById('bottom-nav');
 
-    const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
+    const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', games: 'Игры', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
 
     if (state.notifyEditor) {
         appEl?.classList.add('picker-open');
@@ -127,6 +135,7 @@ function render() {
             case 'schedule': html = renderSchedule(); break;
             case 'tasks': html = renderTasks(); break;
             case 'notes': html = renderNotes(); break;
+            case 'games': html = renderGames(); break;
             case 'ai': html = renderAI(); break;
             case 'admin': html = renderAdmin(); break;
             case 'profile': html = renderProfile(); break;
@@ -140,8 +149,16 @@ function render() {
         btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
     attachHandlers();
+
+    // Подгрузить кошелёк на профиле
+    if (state.tab === 'profile' && !state.loading && !state.pickerMode && !state.notifyEditor) {
+        loadWalletIntoProfile();
+    }
 }
 
+/* ============================================================
+   USER BAR
+   ============================================================ */
 function renderUserBar() {
     const u = state.user;
     const p = state.profile;
@@ -173,11 +190,20 @@ function renderUserBar() {
     `;
 }
 
+/* ============================================================
+   SCHEDULE
+   ============================================================ */
 function renderLesson(les) {
     const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
     const details = [];
     if (les.teacher) details.push(escapeHtml(les.teacher));
     if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
+
+    const att = les.attendance || '';
+    const date = les.date || '';
+    const subj = les.subject || '';
+    const time = les.time || '';
+
     return `
         <div class="lesson">
             <div class="lesson-time">${escapeHtml(timeRange)}</div>
@@ -185,6 +211,18 @@ function renderLesson(les) {
                 <div class="lesson-subject">${escapeHtml(les.subject)}${les.type ? ` <span style="color:var(--text-2);font-weight:400">(${escapeHtml(les.type)})</span>` : ''}</div>
                 ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
                 ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
+                ${date ? `
+                <div class="lesson-att">
+                    <button class="lesson-att-btn ${att === 'was' ? 'active-was' : ''}"
+                        data-action="att-set" data-date="${escapeHtml(date)}" data-time="${escapeHtml(time)}"
+                        data-subject="${escapeHtml(subj)}" data-status="was">Был</button>
+                    <button class="lesson-att-btn ${att === 'missed' ? 'active-missed' : ''}"
+                        data-action="att-set" data-date="${escapeHtml(date)}" data-time="${escapeHtml(time)}"
+                        data-subject="${escapeHtml(subj)}" data-status="missed">Пропустил</button>
+                    <button class="lesson-att-btn ${att === 'sick' ? 'active-sick' : ''}"
+                        data-action="att-set" data-date="${escapeHtml(date)}" data-time="${escapeHtml(time)}"
+                        data-subject="${escapeHtml(subj)}" data-status="sick">Болел</button>
+                </div>` : ''}
             </div>
         </div>
     `;
@@ -302,6 +340,9 @@ function renderSchedule() {
     return html;
 }
 
+/* ============================================================
+   PICKER
+   ============================================================ */
 function getCourseFromGroup(groupName) {
     const m = String(groupName).match(/-(\d{2})-/);
     if (!m) return null;
@@ -309,14 +350,12 @@ function getCourseFromGroup(groupName) {
     const map = { 26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6 };
     return map[year] || null;
 }
-
 function getCoursesForInstitute(inst) {
     const groups = (state.groups && state.groups[inst]) || [];
     const set = new Set();
     for (const g of groups) { const c = getCourseFromGroup(g.name); if (c) set.add(c); }
     return Array.from(set).sort((a, b) => a - b);
 }
-
 function renderInstitutePicker() {
     const groups = state.groups || {};
     const institutes = Object.keys(groups);
@@ -337,7 +376,6 @@ function renderInstitutePicker() {
     html += `</div>`;
     return html;
 }
-
 function renderCoursePicker() {
     const inst = state.pickerInstitute;
     const courses = getCoursesForInstitute(inst);
@@ -358,7 +396,6 @@ function renderCoursePicker() {
     html += `</div>`;
     return html;
 }
-
 function renderGroupPicker() {
     const inst = state.pickerInstitute;
     const course = state.pickerCourse;
@@ -385,7 +422,6 @@ function renderGroupPicker() {
     html += `</div>`;
     return html;
 }
-
 function pickerAttachSearch() {
     const input = document.getElementById('picker-search');
     if (!input) return;
@@ -419,6 +455,9 @@ function pickerAttachSearch() {
     });
 }
 
+/* ============================================================
+   NOTIFY EDITOR
+   ============================================================ */
 function renderNotifyEditor() {
     const cur = state.notifyEditorType;
     const hh = state.notifyEditorHour;
@@ -451,50 +490,9 @@ function renderNotifyEditor() {
     `;
 }
 
-function actionOpenNotifyEditor() {
-    haptic('light');
-    const p = state.profile;
-    state.notifyEditorType = p?.notify_type || 'today';
-    state.notifyEditorHour = p?.notify_hour >= 0 ? p.notify_hour : 8;
-    state.notifyEditorMinute = p?.notify_minute || 0;
-    state.notifyEditor = true;
-    render();
-}
-function actionNotifyBack() { haptic('light'); state.notifyEditor = false; render(); }
-function actionNotifySetType(ntype) {
-    haptic('light');
-    state.notifyEditorType = ntype;
-    if (ntype === 'today' && state.notifyEditorHour > 10) { state.notifyEditorHour = 8; state.notifyEditorMinute = 0; }
-    render();
-}
-async function actionNotifySave() {
-    const input = document.getElementById('notify-time-input');
-    if (!input) return;
-    const val = (input.value || '').trim();
-    if (!/^\d{1,2}:\d{2}$/.test(val)) { alert('Введи время в формате ЧЧ:ММ'); return; }
-    const [hhStr, mmStr] = val.split(':');
-    const hh = parseInt(hhStr, 10);
-    const mm = parseInt(mmStr, 10);
-    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { alert('Неверное время'); return; }
-    if (state.notifyEditorType === 'today' && hh > 10) { alert('Для «Сегодня» — не позже 10:00'); return; }
-    haptic('success');
-    try {
-        await apiPost('/api/notify-set', { type: state.notifyEditorType, hour: hh, minute: mm });
-        state.notifyEditor = false;
-        await loadProfile();
-        render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-async function actionNotifyOff() {
-    haptic('success');
-    try {
-        await apiPost('/api/notify-set', { type: null });
-        state.notifyEditor = false;
-        await loadProfile();
-        render();
-    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
-}
-
+/* ============================================================
+   TASKS
+   ============================================================ */
 function renderTasks() {
     const tasks = state.tasks;
     const stats = state.tasksStats;
@@ -527,6 +525,9 @@ function renderTasks() {
     return html;
 }
 
+/* ============================================================
+   NOTES
+   ============================================================ */
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
     if (!state.notes || state.notes.length === 0) {
@@ -546,6 +547,43 @@ function renderNotes() {
     return html;
 }
 
+/* ============================================================
+   GAMES (меню игр)
+   ============================================================ */
+function renderGames() {
+    let html = `<div class="banner">
+        <div class="banner-title">Игры STUDENT IRK</div>
+        <div class="banner-sub">Flappy, морской бой и другие — зарабатывай Софт и Автоматы</div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">До пары успеть</div>
+        <div class="card-subtitle">Flappy-игра. Пролетай между парами, ставь рекорды.</div>
+        <div class="actions-row">
+            <button class="btn" data-action="open-flappy">ИГРАТЬ</button>
+            <button class="btn btn-secondary" data-action="open-flappy-records">РЕКОРДЫ</button>
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Морской бой</div>
+        <div class="card-subtitle">PvP с друзьями по коду или игра с ботом. Ставки: 10 / 50 / 100 / 500 Софт.</div>
+        <div class="actions-row">
+            <button class="btn" data-action="open-bs">ОТКРЫТЬ</button>
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Другие игры</div>
+        <div class="card-subtitle">В разработке: сессия-микс, дедлайн-раш, ниндзя-стипуха, охота за автоматом, космо-сессия.</div>
+    </div>`;
+
+    return html;
+}
+
+/* ============================================================
+   AI
+   ============================================================ */
 function renderAI() {
     let html = '';
     if (state.aiMessages.length === 0) {
@@ -554,12 +592,12 @@ function renderAI() {
         for (const m of state.aiMessages) {
             if (m.role === 'user') {
                 if (m.photo) {
-                    html += `<div class="card" style="background:var(--neon);color:#070B14;padding:10px">
+                    html += `<div class="card" style="background:var(--cyan);color:#0A0E0F;padding:10px">
                         <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="фото">
                         <div style="font-weight:600">${escapeHtml(m.text || '')}</div>
                     </div>`;
                 } else {
-                    html += `<div class="card" style="background:var(--neon);color:#070B14"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
+                    html += `<div class="card" style="background:var(--cyan);color:#0A0E0F"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
                 }
             } else {
                 html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(m.text)}</div></div>`;
@@ -577,6 +615,9 @@ function renderAI() {
     return html;
 }
 
+/* ============================================================
+   ADMIN
+   ============================================================ */
 function renderAdmin() {
     if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
     let html = '';
@@ -616,6 +657,9 @@ function renderAdmin() {
     return html;
 }
 
+/* ============================================================
+   PROFILE
+   ============================================================ */
 function renderProfile() {
     const p = state.profile;
     const u = state.user;
@@ -629,7 +673,50 @@ function renderProfile() {
         <div class="profile-avatar">${escapeHtml(initials)}</div>
         <div class="profile-name">${escapeHtml(fullName)}</div>
         ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
-        ${p?.is_admin ? '<div class="badge" style="background:linear-gradient(135deg,#e53935,#b71c1c);color:#fff">ADMIN</div>' : ''}
+    </div>`;
+
+    // Кошелёк / XP / Уровень — заполняется после рендера
+    html += `<div class="card" id="wallet-card">
+        <div class="card-title">Уровень и кошелёк</div>
+        <div class="card-subtitle" id="wallet-loading">Загрузка...</div>
+        <div id="wallet-body" style="display:none"></div>
+        <div class="actions-row" style="margin-top:10px">
+            <button class="btn btn-secondary" data-action="open-levels">УРОВНИ</button>
+            <button class="btn btn-secondary" data-action="open-leaderboard">ТОП</button>
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Сундуки</div>
+        <div class="card-subtitle">Обычный — раз в 24 часа. Премиум — 10 Автоматов.</div>
+        <div class="actions-row">
+            <button class="btn" data-action="chest-open">🎁 ОТКРЫТЬ</button>
+            <button class="btn btn-secondary" data-action="premium-chest-open">💎 ПРЕМИУМ</button>
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Обменник</div>
+        <div class="card-subtitle">100 Стипух (Софт) = 1 Автомат (Хард)</div>
+        <div class="actions-row">
+            <button class="btn" data-action="exchange">ОБМЕНЯТЬ</button>
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Достижения</div>
+        <div class="card-subtitle">12 достижений за активность</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="show-achievements">ПОСМОТРЕТЬ</button>
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Профиль</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="set-name">Сменить ник</button>
+            <button class="btn btn-secondary" data-action="set-avatar">Аватар</button>
+        </div>
     </div>`;
 
     if (p) {
@@ -671,10 +758,12 @@ function renderProfile() {
     const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
 
     html += `<div class="card">
-        <div class="card-title">Уведомления о расписании</div>
-        <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
+        <div class="card-title">Уведомления</div>
+        <div class="card-subtitle">Расписание: ${escapeHtml(notifyLabel)}</div>
+        <div class="card-subtitle">За N минут до пары: ${p?.notify_before_min ? p.notify_before_min + ' мин' : 'выкл'}</div>
         <div class="actions-row">
             <button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button>
+            <button class="btn btn-secondary" data-action="notify-before">За N минут</button>
         </div>
         <label class="checkbox-row">
             <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
@@ -712,13 +801,57 @@ function renderProfile() {
     </div></div>`;
 
     html += `<div class="card">
+        <div class="card-title">Экспорт и обращения</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="export-pdf">Скачать PDF</button>
+            <button class="btn btn-secondary" data-action="show-my-feedback">Мои обращения</button>
+        </div>
+    </div>`;
+
+    html += `<div class="card">
         <div class="card-title">Обратная связь</div>
         <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
         <button class="btn" data-action="feedback-send">Отправить</button>
     </div>`;
+
     return html;
 }
 
+async function loadWalletIntoProfile() {
+    const box = document.getElementById('wallet-body');
+    const loading = document.getElementById('wallet-loading');
+    if (!box) return;
+    try {
+        const w = await apiGet('/api/wallet');
+        const wallet = w.wallet || {};
+        const xp = wallet.xp || 0;
+        const lv = calcLevelInfo(xp);
+        const total = lv.inLevel + lv.toNext;
+        const pct = total ? (lv.inLevel / total) * 100 : 0;
+        box.innerHTML = `
+            <div style="font-family:'Anton',sans-serif;font-style:italic;font-size:24px;color:var(--text);margin-bottom:6px;">
+                ${lv.level} LVL · ${levelTitleByLevel(lv.level)}
+            </div>
+            <div class="levels-xpbar" style="margin:10px 0;">
+                <div class="levels-xpbar-fill" style="width:${pct}%"></div>
+                <span class="levels-xpbar-cur">${lv.inLevel}XP</span>
+                <span class="levels-xpbar-next">${total}XP</span>
+            </div>
+            <div style="display:flex;gap:18px;margin-top:12px;font-weight:800;font-size:15px;">
+                <div>❄ <span style="color:var(--cyan-dark)">${wallet.soft || 0}</span></div>
+                <div>🔥 <span style="color:var(--accent-yellow)">${wallet.hard || 0}</span></div>
+            </div>
+        `;
+        if (loading) loading.style.display = 'none';
+        box.style.display = '';
+    } catch (e) {
+        if (loading) loading.textContent = 'Не удалось загрузить';
+    }
+}
+
+/* ============================================================
+   LOADERS
+   ============================================================ */
 async function loadSchedule() {
     try { state.schedule = await apiGet('/api/schedule'); }
     catch (e) { state.schedule = { error: 'load_error', message: e.message }; }
@@ -775,6 +908,7 @@ async function loadTabData(tab) {
             ensureWeekLoaded().catch(() => {});
         } else if (tab === 'tasks') await loadTasks();
         else if (tab === 'notes') await loadNotes();
+        else if (tab === 'games') await loadProfile();
         else if (tab === 'ai') await loadProfile();
         else if (tab === 'admin') {
             await loadProfile();
@@ -804,13 +938,802 @@ async function loadTodayAndRender() {
     await loadSchedule();
     render();
 }
-async function actionDayToday() { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
-async function actionDayTomorrow() {
-    state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today'; haptic('light');
-    if (!state.weekDays) { render(); await ensureWeekLoaded(); }
-    render();
+
+/* ============================================================
+   LEVELS HELPER
+   ============================================================ */
+function calcLevelInfo(xp) {
+    let lvl = 1, left = xp || 0;
+    while (lvl <= 30) {
+        const need = lvl * 500;
+        if (left < need) return { level: lvl, inLevel: left, toNext: need - left };
+        left -= need; lvl++;
+    }
+    return { level: 30, inLevel: left, toNext: 500 };
+}
+function levelTitleByLevel(lvl) {
+    if (lvl <= 5)  return 'Первокурсник';
+    if (lvl <= 10) return 'Второкурсник';
+    if (lvl <= 15) return 'Третьекурсник';
+    if (lvl <= 20) return 'Старшекурсник';
+    if (lvl <= 25) return 'Магистрант';
+    if (lvl <= 29) return 'Аспирант';
+    return 'Легенда ИРНИТУ';
+}
+function levelRewardByLevel(lvl) {
+    if (lvl <= 5)  return '+10 🔥';
+    if (lvl <= 10) return '+25 🔥';
+    if (lvl <= 20) return '+50 🔥';
+    return '+100 🔥';
 }
 
+async function openLevels() {
+    const screen = document.getElementById('screen-levels');
+    if (!screen) return;
+    screen.style.display = 'block';
+    document.getElementById('bottom-nav').style.display = 'none';
+    document.getElementById('levelsBack').onclick = closeLevels;
+
+    const w = await apiGet('/api/wallet').catch(() => null);
+    if (!w) return;
+    const wallet = w.wallet || {};
+    const xp = wallet.xp || 0;
+    const lv = calcLevelInfo(xp);
+
+    document.getElementById('levelsCurrent').textContent = lv.level;
+    document.getElementById('levelsLeft').textContent = lv.toNext + 'XP';
+    document.getElementById('levelsSoft').textContent = wallet.soft || 0;
+    document.getElementById('levelsHard').textContent = wallet.hard || 0;
+
+    const total = lv.inLevel + lv.toNext;
+    const pct = total ? (lv.inLevel / total) * 100 : 0;
+    document.getElementById('levelsXpFill').style.width = pct + '%';
+    document.getElementById('levelsXpCur').textContent = lv.inLevel + 'XP';
+    document.getElementById('levelsXpNext').textContent = total + 'XP';
+
+    const list = document.getElementById('levelsList');
+    let html = '';
+    for (let i = 1; i <= 30; i++) {
+        const need = i * 500;
+        const cls = i < lv.level ? 'done' : (i === lv.level ? 'current' : 'locked');
+        const btn = i < lv.level ? 'ПОЛУЧЕНО' : (i === lv.level ? 'СОБРАТЬ' : 'ЗАКРЫТО');
+        html += `
+            <div class="levels-row ${cls}">
+                <div class="levels-row-left">
+                    <div class="levels-row-name">УРОВЕНЬ ${i}</div>
+                    <div class="levels-row-sub">от ${need.toLocaleString('ru-RU')}XP · ${levelTitleByLevel(i)}</div>
+                    <div class="levels-row-reward">${levelRewardByLevel(i)}</div>
+                </div>
+                <button class="levels-row-btn" disabled>${btn}</button>
+            </div>`;
+    }
+    list.innerHTML = html;
+}
+function closeLevels() {
+    document.getElementById('screen-levels').style.display = 'none';
+    document.getElementById('bottom-nav').style.display = '';
+    if (state && state.tab === 'profile') loadTabData('profile');
+}
+
+async function openLeaderboard() {
+    try {
+        const d = await apiGet('/api/wallet/leaderboard');
+        const lines = d.items.map(it => `${it.rank}. ${it.display} — ${it.xp} XP`).join('\n');
+        alert('ТОП игроков:\n\n' + lines);
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+/* ============================================================
+   FLAPPY
+   ============================================================ */
+const Flappy = {
+    canvas: null, ctx: null,
+    raf: null, running: false,
+    score: 0, best: 0, top: [],
+    bird: { x: 0, y: 0, vy: 0, r: 14, rot: 0 },
+    pipes: [],
+    frame: 0,
+    gravity: 0.45, jump: -7.5,
+    speed: 2.6, gap: 150, pipeW: 62,
+    spawnEvery: 88,
+    width: 0, height: 0, groundH: 100,
+    resizeBound: false,
+    lastT: 0,
+};
+
+async function openFlappy(recordsOnly) {
+    const screen = document.getElementById('screen-flappy');
+    if (!screen) return;
+    screen.style.display = 'block';
+    document.getElementById('bottom-nav').style.display = 'none';
+    if (!Flappy.resizeBound) {
+        Flappy.resizeBound = true;
+        window.addEventListener('resize', flappyResize);
+    }
+    await flappyInit();
+    flappyShowOverlay(recordsOnly ? 'records' : 'start');
+}
+function closeFlappy() {
+    const screen = document.getElementById('screen-flappy');
+    if (!screen) return;
+    flappyStop();
+    screen.style.display = 'none';
+    document.getElementById('bottom-nav').style.display = '';
+    if (state && state.tab === 'games') loadTabData('games');
+}
+
+async function flappyInit() {
+    Flappy.canvas = document.getElementById('flappyCanvas');
+    Flappy.ctx = Flappy.canvas.getContext('2d');
+    flappyResize();
+
+    Flappy.canvas.removeEventListener('pointerdown', flappyPointer);
+    Flappy.canvas.addEventListener('pointerdown', flappyPointer);
+
+    document.getElementById('flappyClose').onclick = closeFlappy;
+    document.getElementById('flappyStartBtn').onclick = flappyStart;
+    document.getElementById('flappyRecordsBtn').onclick = flappyShowRecords;
+
+    try {
+        const d = await apiGet('/api/game/info');
+        const f = (d.games || []).find(g => g.id === 'flappy');
+        Flappy.best = f ? (f.best || 0) : 0;
+        document.getElementById('flappyBestTop').textContent = Flappy.best;
+        Flappy.top = (d.tops && d.tops.flappy) || [];
+    } catch (e) {}
+}
+
+function flappyResize() {
+    const c = Flappy.canvas;
+    if (!c) return;
+    const dpr = window.devicePixelRatio || 1;
+    Flappy.width = window.innerWidth;
+    Flappy.height = window.innerHeight;
+    c.width = Flappy.width * dpr;
+    c.height = Flappy.height * dpr;
+    c.style.width = Flappy.width + 'px';
+    c.style.height = Flappy.height + 'px';
+    Flappy.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    Flappy.groundH = Math.max(80, Flappy.height * 0.14);
+    flappyReset();
+}
+
+function flappyReset() {
+    Flappy.bird.x = Flappy.width * 0.3;
+    Flappy.bird.y = Flappy.height * 0.45;
+    Flappy.bird.vy = 0;
+    Flappy.bird.rot = 0;
+    Flappy.pipes = [];
+    Flappy.frame = 0;
+    Flappy.score = 0;
+    const el = document.getElementById('flappyScore');
+    if (el) el.textContent = '0';
+}
+
+function flappyStart() {
+    flappyReset();
+    flappyHideOverlay();
+    Flappy.running = true;
+    Flappy.lastT = performance.now();
+    Flappy.raf = requestAnimationFrame(flappyLoop);
+}
+
+function flappyStop() {
+    Flappy.running = false;
+    if (Flappy.raf) cancelAnimationFrame(Flappy.raf);
+    Flappy.raf = null;
+}
+
+function flappyPointer(e) {
+    if (e) e.preventDefault();
+    if (!Flappy.running) return;
+    Flappy.bird.vy = Flappy.jump;
+}
+
+function flappyLoop(t) {
+    if (!Flappy.running) return;
+    const dt = Math.min(32, t - Flappy.lastT) / 16.67;
+    Flappy.lastT = t;
+    flappyUpdate(dt);
+    flappyDraw();
+    Flappy.raf = requestAnimationFrame(flappyLoop);
+}
+
+function flappyUpdate(dt) {
+    const b = Flappy.bird;
+    b.vy += Flappy.gravity * dt;
+    b.y += b.vy * dt;
+    b.rot = Math.max(-0.5, Math.min(0.7, b.vy / 12));
+
+    if (b.y - b.r < 0) { b.y = b.r; b.vy = 0; }
+    if (b.y + b.r > Flappy.height - Flappy.groundH) { flappyGameOver(); return; }
+
+    Flappy.frame += dt;
+    if (Flappy.frame >= Flappy.spawnEvery) {
+        Flappy.frame = 0;
+        const topMin = 60;
+        const topMax = Flappy.height - Flappy.groundH - Flappy.gap - 60;
+        const topH = topMin + Math.random() * Math.max(20, topMax - topMin);
+        Flappy.pipes.push({ x: Flappy.width + 10, top: topH, gap: Flappy.gap, passed: false });
+    }
+
+    for (const p of Flappy.pipes) p.x -= Flappy.speed * dt;
+    Flappy.pipes = Flappy.pipes.filter(p => p.x + Flappy.pipeW > -20);
+
+    for (const p of Flappy.pipes) {
+        if (b.x + b.r > p.x && b.x - b.r < p.x + Flappy.pipeW) {
+            if (b.y - b.r < p.top) { flappyGameOver(); return; }
+            if (b.y + b.r > p.top + p.gap) { flappyGameOver(); return; }
+        }
+        if (!p.passed && p.x + Flappy.pipeW < b.x - b.r) {
+            p.passed = true;
+            Flappy.score++;
+            const sc = document.getElementById('flappyScore');
+            if (sc) sc.textContent = Flappy.score;
+            haptic('light');
+        }
+    }
+}
+
+function flappyDraw() {
+    const ctx = Flappy.ctx;
+    const W = Flappy.width;
+    const H = Flappy.height;
+    const GH = Flappy.groundH;
+
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#B8F4FF');
+    sky.addColorStop(0.6, '#7FE9FF');
+    sky.addColorStop(1, '#3EE6D2');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    const bw = 70;
+    for (let i = 0; i < 6; i++) {
+        ctx.fillRect(i * (bw + 40) + 10, H * 0.15, bw, 6);
+        ctx.fillRect(i * (bw + 40) + 10, H * 0.25, bw, 6);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = 'bold ' + Math.round(W * 0.12) + 'px Anton, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = 0.35;
+    ctx.fillText('STUDENT', W / 2, H * 0.28);
+    ctx.fillText('IRK', W / 2, H * 0.38);
+    ctx.globalAlpha = 1;
+
+    for (const p of Flappy.pipes) {
+        flappyDrawPipe(p.x, 0, Flappy.pipeW, p.top, true);
+        flappyDrawPipe(p.x, p.top + p.gap, Flappy.pipeW, H - GH - p.top - p.gap, false);
+    }
+
+    ctx.fillStyle = '#0A0E0F';
+    ctx.fillRect(0, H - GH, W, GH);
+    ctx.fillStyle = '#1FB8A6';
+    ctx.fillRect(0, H - GH, W, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (let i = 0; i < W; i += 40) ctx.fillRect(i, H - GH + 20, 20, 4);
+
+    const b = Flappy.bird;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.rot);
+
+    const g = ctx.createRadialGradient(0, -4, 2, 0, 0, b.r + 6);
+    g.addColorStop(0, '#7FE9FF');
+    g.addColorStop(1, '#1FB8A6');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, b.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#3EE6D2';
+    ctx.beginPath();
+    ctx.moveTo(-b.r, 0);
+    ctx.lineTo(-b.r - 14, -6);
+    ctx.lineTo(-b.r - 10, 0);
+    ctx.lineTo(-b.r - 14, 6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#0A0E0F';
+    ctx.beginPath();
+    ctx.arc(4, -3, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#FFA42B';
+    ctx.beginPath();
+    ctx.moveTo(b.r - 2, -2);
+    ctx.lineTo(b.r + 8, 2);
+    ctx.lineTo(b.r - 2, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function flappyDrawPipe(x, y, w, h, isTop) {
+    const ctx = Flappy.ctx;
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, '#1FB8A6');
+    grad.addColorStop(0.5, '#3EE6D2');
+    grad.addColorStop(1, '#1FB8A6');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, w, h);
+
+    ctx.strokeStyle = '#0E6A63';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    const capH = 18;
+    const capY = isTop ? y + h - capH : y;
+    ctx.fillStyle = '#0E6A63';
+    ctx.fillRect(x - 4, capY, w + 8, capH);
+    ctx.strokeStyle = '#0A0E0F';
+    ctx.strokeRect(x - 4, capY, w + 8, capH);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(x + 6, y, 6, h);
+}
+
+function flappyGameOver() {
+    flappyStop();
+    haptic('error');
+    const score = Flappy.score;
+
+    if (score > 0) {
+        apiPost('/api/game/submit', { game_id: 'flappy', score })
+            .then(r => {
+                Flappy.best = r.best || Math.max(Flappy.best, score);
+                document.getElementById('flappyBestTop').textContent = Flappy.best;
+                Flappy.top = r.top || Flappy.top;
+                if (r.is_record) popEmoji('🏆');
+            })
+            .catch(() => {});
+    }
+    flappyShowOverlay('gameover', score);
+}
+
+function flappyShowOverlay(mode, score) {
+    const overlay = document.getElementById('flappyOverlay');
+    const title = document.getElementById('flappyTitle');
+    const sub = document.getElementById('flappySub');
+    const scoreEl = document.getElementById('flappyOverlayScore');
+    const startBtn = document.getElementById('flappyStartBtn');
+    const recordsBtn = document.getElementById('flappyRecordsBtn');
+    const old = overlay.querySelector('.flappy-records');
+    if (old) old.remove();
+
+    overlay.classList.remove('hidden');
+
+    if (mode === 'start') {
+        title.textContent = 'ДО ПАРЫ УСПЕТЬ';
+        sub.textContent = 'Пролетай между парами, не задень границы';
+        scoreEl.innerHTML = '';
+        startBtn.textContent = 'ИГРАТЬ';
+        startBtn.onclick = flappyStart;
+        recordsBtn.style.display = '';
+    } else if (mode === 'gameover') {
+        title.textContent = 'ИГРА ОКОНЧЕНА';
+        const isRecord = score >= Flappy.best && score > 0;
+        sub.textContent = isRecord ? '🏆 Новый рекорд!' : 'Попробуй ещё раз';
+        scoreEl.innerHTML = `Очки: <b>${score}</b> · Рекорд: <b>${Flappy.best}</b>`;
+        startBtn.textContent = 'ЕЩЁ РАЗ';
+        startBtn.onclick = flappyStart;
+        recordsBtn.style.display = '';
+    } else if (mode === 'records') {
+        title.textContent = 'РЕКОРДЫ';
+        sub.textContent = 'Топ игроков';
+        scoreEl.innerHTML = '';
+        startBtn.textContent = 'ИГРАТЬ';
+        startBtn.onclick = flappyStart;
+        recordsBtn.style.display = 'none';
+
+        const list = document.createElement('div');
+        list.className = 'flappy-records';
+        const top = Flappy.top || [];
+        if (!top.length) {
+            list.innerHTML = '<div class="flappy-records-row">Пока нет рекордов</div>';
+        } else {
+            list.innerHTML = top.map(t => `
+                <div class="flappy-records-row ${t.is_me ? 'is-me' : ''}">
+                    <span class="flappy-records-rank">${t.rank}</span>
+                    <span class="flappy-records-name">${escapeHtml(t.display)}</span>
+                    <span class="flappy-records-score">${t.score}</span>
+                </div>`).join('');
+        }
+        overlay.querySelector('.flappy-card').appendChild(list);
+    }
+}
+
+function flappyHideOverlay() {
+    document.getElementById('flappyOverlay').classList.add('hidden');
+}
+function flappyShowRecords() { flappyShowOverlay('records'); }
+
+/* ============================================================
+   МОРСКОЙ БОЙ
+   ============================================================ */
+const BS = {
+    bet: 10,
+    gameId: null,
+    side: 0,
+    myShips: [],
+    myShots: [],
+    enemyShots: [],
+    status: 'lobby',
+    isBot: false,
+    pollTimer: null,
+    botShips: [],
+    botShots: [],
+};
+
+const BS_SHIPS = [
+    { size: 4, count: 1 }, { size: 3, count: 2 }, { size: 2, count: 3 }, { size: 1, count: 4 }
+];
+
+function openBs() {
+    const screen = document.getElementById('screen-bs');
+    if (!screen) return;
+    screen.style.display = 'block';
+    document.getElementById('bottom-nav').style.display = 'none';
+    document.getElementById('bsBack').onclick = closeBs;
+    bsRenderBets();
+    document.getElementById('bsCreate').onclick = bsCreate;
+    document.getElementById('bsFind').onclick = bsFind;
+    document.getElementById('bsBot').onclick = bsBotStart;
+    document.getElementById('bsJoin').onclick = bsJoin;
+    document.getElementById('bsRandom').onclick = bsRandomShips;
+    document.getElementById('bsReady').onclick = bsReady;
+    document.getElementById('bsSurrender').onclick = bsSurrender;
+    bsShowLobby();
+}
+function closeBs() {
+    if (BS.pollTimer) clearInterval(BS.pollTimer);
+    BS.pollTimer = null;
+    BS.gameId = null;
+    document.getElementById('screen-bs').style.display = 'none';
+    document.getElementById('bottom-nav').style.display = '';
+    if (state && state.tab === 'games') loadTabData('games');
+}
+function bsRenderBets() {
+    const box = document.getElementById('bsBets');
+    box.innerHTML = '';
+    [10, 50, 100, 500].forEach(v => {
+        const b = document.createElement('button');
+        b.className = 'bs-bet' + (v === BS.bet ? ' active' : '');
+        b.textContent = v;
+        b.onclick = () => { BS.bet = v; bsRenderBets(); };
+        box.appendChild(b);
+    });
+}
+function bsShowLobby() {
+    document.getElementById('bsLobby').style.display = '';
+    document.getElementById('bsBoardWrap').style.display = 'none';
+    BS.status = 'lobby';
+    BS.isBot = false;
+    BS.myShips = [];
+    BS.myShots = [];
+    BS.enemyShots = [];
+}
+function bsShowBoard() {
+    document.getElementById('bsLobby').style.display = 'none';
+    document.getElementById('bsBoardWrap').style.display = '';
+}
+async function bsCreate() {
+    try {
+        const r = await apiPost('/api/bs/create', { bet: BS.bet });
+        BS.gameId = r.game_id;
+        BS.side = 1;
+        haptic('success');
+        alert(`Игра создана. Код: ${r.code}\nСкинь другу`);
+        bsShowBoard();
+        bsRandomShips();
+        bsPollStart();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function bsJoin() {
+    const code = document.getElementById('bsCode').value.trim();
+    if (code.length !== 6) { alert('Код — 6 цифр'); return; }
+    try {
+        const r = await apiPost('/api/bs/join', { code });
+        BS.gameId = r.game_id;
+        BS.side = 2;
+        haptic('success');
+        bsShowBoard();
+        bsRandomShips();
+        bsPollStart();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function bsFind() {
+    try {
+        const r = await apiPost('/api/bs/find', { bet: BS.bet });
+        BS.gameId = r.game_id;
+        BS.side = r.side || 1;
+        haptic('success');
+        if (r.status === 'matched') {
+            bsShowBoard();
+            bsRandomShips();
+        } else {
+            bsShowBoard();
+            bsRandomShips();
+            alert(`В очереди. Код: ${r.code}`);
+        }
+        bsPollStart();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function bsBotStart() {
+    try {
+        await apiPost('/api/bs/bot-start', { bet: BS.bet });
+        BS.isBot = true;
+        BS.gameId = 'bot';
+        BS.side = 1;
+        haptic('success');
+        bsShowBoard();
+        BS.botShips = bsEmptyShips();
+        BS.botShots = [];
+        bsRandomShips();
+        BS.status = 'placing';
+        document.getElementById('bsStatus').textContent = 'Расставляй корабли и жми ГОТОВ';
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+
+function bsEmptyShips() {
+    const res = [];
+    const sizes = [];
+    BS_SHIPS.forEach(s => { for (let i = 0; i < s.count; i++) sizes.push(s.size); });
+    const grid = Array.from({ length: 10 }, () => Array(10).fill(0));
+
+    for (const size of sizes) {
+        let placed = false;
+        for (let t = 0; t < 500 && !placed; t++) {
+            const horiz = Math.random() < 0.5;
+            const x = Math.floor(Math.random() * (horiz ? 10 - size + 1 : 10));
+            const y = Math.floor(Math.random() * (horiz ? 10 : 10 - size + 1));
+            const cells = [];
+            for (let k = 0; k < size; k++) {
+                cells.push([horiz ? x + k : x, horiz ? y : y + k]);
+            }
+            let ok = true;
+            for (const [cx, cy] of cells) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const nx = cx + dx, ny = cy + dy;
+                        if (nx < 0 || nx > 9 || ny < 0 || ny > 9) continue;
+                        if (grid[ny][nx]) ok = false;
+                    }
+                }
+            }
+            if (ok) {
+                for (const [cx, cy] of cells) grid[cy][cx] = 1;
+                res.push({ size, cells: cells.map(c => ({ x: c[0], y: c[1] })) });
+                placed = true;
+            }
+        }
+    }
+    return res;
+}
+function bsRandomShips() {
+    BS.myShips = bsEmptyShips();
+    bsRenderMyField();
+    bsRenderEnemyField();
+}
+function bsRenderMyField() {
+    const box = document.getElementById('bsMyField');
+    if (!box) return;
+    box.innerHTML = '';
+    for (let y = 0; y < 10; y++) {
+        for (let x = 0; x < 10; x++) {
+            const c = document.createElement('div');
+            c.className = 'bs-cell';
+            const isShip = BS.myShips.some(s => s.cells.some(cc => cc.x === x && cc.y === y));
+            const shot = BS.enemyShots.find(s => s.x === x && s.y === y);
+            if (shot) {
+                c.classList.add(isShip ? 'hit' : 'miss');
+            } else if (isShip) {
+                c.classList.add('ship');
+            }
+            box.appendChild(c);
+        }
+    }
+}
+function bsRenderEnemyField() {
+    const box = document.getElementById('bsEnemyField');
+    if (!box) return;
+    box.innerHTML = '';
+    for (let y = 0; y < 10; y++) {
+        for (let x = 0; x < 10; x++) {
+            const c = document.createElement('div');
+            c.className = 'bs-cell';
+            const shot = BS.myShots.find(s => s.x === x && s.y === y);
+            if (shot) {
+                if (shot.result === 'hit') c.classList.add('hit');
+                else if (shot.result === 'sunk') c.classList.add('sunk');
+                else c.classList.add('miss');
+            } else if (BS.status === 'playing') {
+                c.onclick = () => bsFire(x, y);
+            }
+            box.appendChild(c);
+        }
+    }
+}
+async function bsReady() {
+    if (!BS.myShips.length) { alert('Сначала расставь корабли'); return; }
+    if (BS.isBot) {
+        BS.status = 'playing';
+        bsRenderEnemyField();
+        bsRenderMyField();
+        document.getElementById('bsStatus').textContent = 'Твой ход';
+        return;
+    }
+    try {
+        const r = await apiPost('/api/bs/ready', { game_id: BS.gameId, ships: BS.myShips });
+        haptic('success');
+        if (r.status === 'playing') {
+            BS.status = 'playing';
+            bsRenderEnemyField();
+            document.getElementById('bsStatus').textContent = r.your_turn ? 'Твой ход' : 'Ход соперника';
+        } else {
+            document.getElementById('bsStatus').textContent = 'Ждём соперника...';
+        }
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function bsFire(x, y) {
+    if (BS.status !== 'playing') return;
+
+    if (BS.isBot) {
+        let hitShip = null;
+        for (const s of BS.botShips) {
+            if (s.cells.some(c => c.x === x && c.y === y)) { hitShip = s; break; }
+        }
+        if (!hitShip) {
+            BS.myShots.push({ x, y, result: 'miss' });
+            bsRenderEnemyField();
+            haptic('error');
+            setTimeout(bsBotFire, 500);
+            return;
+        }
+        const sunk = hitShip.cells.every(c =>
+            BS.myShots.some(s => s.x === c.x && s.y === c.y) || (c.x === x && c.y === y));
+        BS.myShots.push({ x, y, result: sunk ? 'sunk' : 'hit' });
+        bsRenderEnemyField();
+        haptic('success');
+        const allEnemyCells = BS.botShips.flatMap(s => s.cells);
+        const allHit = allEnemyCells.every(c => BS.myShots.some(s => s.x === c.x && s.y === c.y));
+        if (allHit) {
+            BS.status = 'finished';
+            document.getElementById('bsStatus').textContent = 'Ты победил!';
+            apiPost('/api/bs/finish-bot', { bet: BS.bet, outcome: 'win' }).catch(() => {});
+            popEmoji('🏆');
+            return;
+        }
+        if (!sunk) return;
+        setTimeout(bsBotFire, 500);
+        return;
+    }
+
+    try {
+        const r = await apiPost('/api/bs/fire', { game_id: BS.gameId, x, y });
+        if (r.result === 'miss') haptic('error'); else haptic('success');
+        BS.myShots.push({ x, y, result: r.result });
+        bsRenderEnemyField();
+        document.getElementById('bsStatus').textContent = r.your_turn ? 'Твой ход' : 'Ход соперника';
+        if (r.status === 'finished') {
+            BS.status = 'finished';
+            const res = r.result_data || {};
+            if (res.outcome === 'win') { document.getElementById('bsStatus').textContent = 'Победа!'; popEmoji('🏆'); }
+            else if (res.outcome === 'lose') { document.getElementById('bsStatus').textContent = 'Поражение'; }
+            else { document.getElementById('bsStatus').textContent = 'Ничья'; }
+        }
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+function bsBotFire() {
+    if (BS.status !== 'playing') return;
+    let x, y, t = 0;
+    do {
+        x = Math.floor(Math.random() * 10);
+        y = Math.floor(Math.random() * 10);
+        t++;
+    } while (BS.botShots.some(s => s.x === x && s.y === y) && t < 300);
+    BS.botShots.push({ x, y });
+
+    const isHit = BS.myShips.some(s => s.cells.some(c => c.x === x && c.y === y));
+    BS.enemyShots.push({ x, y });
+    bsRenderMyField();
+    haptic(isHit ? 'error' : 'light');
+
+    const allMyCells = BS.myShips.flatMap(s => s.cells);
+    const allHit = allMyCells.every(c => BS.enemyShots.some(s => s.x === c.x && s.y === c.y));
+    if (allHit) {
+        BS.status = 'finished';
+        document.getElementById('bsStatus').textContent = 'Бот победил';
+        apiPost('/api/bs/finish-bot', { bet: BS.bet, outcome: 'lose' }).catch(() => {});
+        return;
+    }
+    document.getElementById('bsStatus').textContent = 'Твой ход';
+}
+async function bsSurrender() {
+    if (!confirm('Сдаться?')) return;
+    if (BS.isBot) {
+        BS.status = 'finished';
+        apiPost('/api/bs/finish-bot', { bet: BS.bet, outcome: 'lose' }).catch(() => {});
+        document.getElementById('bsStatus').textContent = 'Ты сдался';
+        return;
+    }
+    try {
+        await apiPost('/api/bs/surrender', { game_id: BS.gameId });
+        BS.status = 'finished';
+        document.getElementById('bsStatus').textContent = 'Ты сдался';
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+function bsPollStart() {
+    if (BS.pollTimer) clearInterval(BS.pollTimer);
+    BS.pollTimer = setInterval(async () => {
+        if (!BS.gameId || BS.isBot) return;
+        try {
+            const s = await apiGet('/api/bs/state', { game_id: BS.gameId });
+            if (s.status === 'playing') {
+                BS.status = 'playing';
+                BS.myShots = s.my_shots || [];
+                BS.enemyShots = s.enemy_shots || [];
+                if (s.opponent_name) document.getElementById('bsStatus').textContent = s.your_turn ? 'Твой ход' : 'Ход соперника';
+                bsRenderEnemyField();
+                bsRenderMyField();
+            } else if (s.status === 'finished') {
+                clearInterval(BS.pollTimer);
+                BS.status = 'finished';
+                const r = s.result || {};
+                document.getElementById('bsStatus').textContent =
+                    r.outcome === 'win' ? 'Победа!' : r.outcome === 'lose' ? 'Поражение' : 'Ничья';
+            }
+        } catch (e) {}
+    }, 2000);
+}
+
+/* ============================================================
+   ACTIONS
+   ============================================================ */
+function actionOpenNotifyEditor() {
+    haptic('light');
+    const p = state.profile;
+    state.notifyEditorType = p?.notify_type || 'today';
+    state.notifyEditorHour = (p?.notify_hour >= 0) ? p.notify_hour : 8;
+    state.notifyEditorMinute = p?.notify_minute || 0;
+    state.notifyEditor = true;
+    render();
+}
+function actionNotifyBack() { haptic('light'); state.notifyEditor = false; render(); }
+function actionNotifySetType(ntype) {
+    haptic('light');
+    state.notifyEditorType = ntype;
+    if (ntype === 'today' && state.notifyEditorHour > 10) { state.notifyEditorHour = 8; state.notifyEditorMinute = 0; }
+    render();
+}
+async function actionNotifySave() {
+    const input = document.getElementById('notify-time-input');
+    if (!input) return;
+    const val = (input.value || '').trim();
+    if (!/^\d{1,2}:\d{2}$/.test(val)) { alert('Введи время в формате ЧЧ:ММ'); return; }
+    const [hhStr, mmStr] = val.split(':');
+    const hh = parseInt(hhStr, 10), mm = parseInt(mmStr, 10);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { alert('Неверное время'); return; }
+    if (state.notifyEditorType === 'today' && hh > 10) { alert('Для «Сегодня» — не позже 10:00'); return; }
+    haptic('success');
+    try {
+        await apiPost('/api/notify-set', { type: state.notifyEditorType, hour: hh, minute: mm });
+        state.notifyEditor = false;
+        await loadProfile();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function actionNotifyOff() {
+    haptic('success');
+    try {
+        await apiPost('/api/notify-set', { type: null });
+        state.notifyEditor = false;
+        await loadProfile();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
 async function actionChooseGroup() {
     haptic('light');
     await loadGroups(true);
@@ -846,7 +1769,6 @@ async function actionPickerChooseGroup(groupId, groupName) {
         render();
     } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
-
 async function actionSetSubgroup(value) {
     try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
@@ -866,13 +1788,6 @@ async function actionFeedbackSend() {
 async function actionTaskDone(id) {
     try { await apiPost('/api/task-update', { id, done: true }); haptic('success'); popEmoji('✅'); await loadTasks(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
-}
-function popEmoji(char) {
-    const el = document.createElement('div');
-    el.textContent = char;
-    el.style.cssText = 'position:fixed;top:50%;left:50%;font-size:56px;transform:translate(-50%,-50%);animation:pop 0.6s ease-out;z-index:99999;pointer-events:none';
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 600);
 }
 async function actionTaskDelete(id) {
     if (!confirm('Удалить задачу?')) return;
@@ -961,85 +1876,52 @@ async function actionAISend() {
     } finally { state.aiPending = false; render(); }
 }
 function actionAIClear() { state.aiMessages = []; render(); }
-
 function actionAIPhotoOpen() {
     haptic('light');
     const input = document.getElementById('ai-photo-input');
     if (input) input.click();
 }
-
 function actionAIPhotoSelected(file) {
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) {
-        alert('Фото слишком большое (макс 8 МБ)');
-        return;
-    }
-    if (!file.type.startsWith('image/')) {
-        alert('Нужно изображение');
-        return;
-    }
-
+    if (file.size > 8 * 1024 * 1024) { alert('Фото слишком большое (макс 8 МБ)'); return; }
+    if (!file.type.startsWith('image/')) { alert('Нужно изображение'); return; }
     const reader = new FileReader();
     reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
             const maxSide = 1600;
-            let w = img.width;
-            let h = img.height;
+            let w = img.width, h = img.height;
             if (w > maxSide || h > maxSide) {
-                if (w > h) {
-                    h = Math.round(h * maxSide / w);
-                    w = maxSide;
-                } else {
-                    w = Math.round(w * maxSide / h);
-                    h = maxSide;
-                }
+                if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
+                else { w = Math.round(w * maxSide / h); h = maxSide; }
             }
             const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
+            canvas.width = w; canvas.height = h;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, w, h);
-            const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            sendAIPhoto(jpegDataUrl);
+            sendAIPhoto(canvas.toDataURL('image/jpeg', 0.85));
         };
-        img.onerror = () => {
-            alert('Не удалось прочитать изображение');
-        };
+        img.onerror = () => alert('Не удалось прочитать изображение');
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
-
 async function sendAIPhoto(dataUrl) {
     const questionEl = document.getElementById('ai-input');
     const question = questionEl ? questionEl.value.trim() : '';
-
-    state.aiMessages.push({
-        role: 'user',
-        text: question || 'Что на фото?',
-        photo: dataUrl,
-    });
+    state.aiMessages.push({ role: 'user', text: question || 'Что на фото?', photo: dataUrl });
     if (questionEl) questionEl.value = '';
     state.aiPending = true;
     render();
-
     try {
-        const r = await apiPost('/api/ai-photo', {
-            photo: dataUrl,
-            question: question,
-        });
+        const r = await apiPost('/api/ai-photo', { photo: dataUrl, question });
         state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
         haptic('success');
     } catch (err) {
         state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
         haptic('error');
-    } finally {
-        state.aiPending = false;
-        render();
-    }
+    } finally { state.aiPending = false; render(); }
 }
-
 async function actionForgetGroup() {
     if (!confirm('Забыть группу?')) return;
     try {
@@ -1089,7 +1971,100 @@ async function actionAdminFbPostpone(fid) {
         render();
     } catch (e) { alert('Ошибка: ' + e.message); }
 }
+async function actionSetName() {
+    const w = await apiGet('/api/wallet').catch(() => null);
+    const cur = w?.wallet?.custom_name || '';
+    const name = prompt('Новый ник (до 24 символов):', cur);
+    if (name === null) return;
+    try {
+        await apiPost('/api/set-name', { name: name.trim() });
+        haptic('success'); popEmoji('✅');
+        await loadProfile(); render();
+    } catch (e) {
+        if (e.code === 'need_hard') alert('Нужно 5 Автоматов для смены ника');
+        else alert('Ошибка: ' + e.message);
+    }
+}
+async function actionSetAvatar() {
+    const idx = prompt('Индекс аватара (0–11):', '0');
+    if (idx === null) return;
+    try {
+        await apiPost('/api/set-avatar', { idx: parseInt(idx) || 0 });
+        haptic('success');
+        await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionChestOpen() {
+    try {
+        const r = await apiPost('/api/chest/open');
+        haptic('success'); popEmoji('🎁');
+        alert('Награда: ' + r.reward.label);
+        await loadProfile(); render();
+    } catch (e) {
+        if (e.code === 'already_opened') alert('Уже открыт, приходи завтра');
+        else alert('Ошибка: ' + e.message);
+    }
+}
+async function actionPremiumChestOpen() {
+    if (!confirm('Открыть премиум-сундук за 10 Автоматов?')) return;
+    try {
+        const r = await apiPost('/api/premium-chest/open');
+        haptic('success'); popEmoji('💎');
+        alert('Награда: ' + r.reward.label);
+        await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionExchange() {
+    const amount = prompt('Сколько Стипух обменять? (кратно 100)', '100');
+    if (amount === null) return;
+    try {
+        const r = await apiPost('/api/exchange-soft-to-hard', { amount: parseInt(amount) || 0 });
+        haptic('success'); popEmoji('💱');
+        alert(`Обменяно ${r.soft_spent} Стипух → ${r.hard_received} Автоматов`);
+        await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionShowAchievements() {
+    try {
+        const d = await apiGet('/api/achievements');
+        const lines = d.items.map(a => `${a.unlocked ? a.icon : '🔒'} ${a.name} — ${a.desc}`).join('\n');
+        alert(`Достижения: ${d.got}/${d.total}\n\n${lines}`);
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionExportPdf() {
+    try {
+        await apiPost('/api/export');
+        haptic('success');
+        alert('PDF отправлен в Telegram');
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionShowMyFeedback() {
+    try {
+        const d = await apiGet('/api/feedback/my');
+        if (!d.items.length) { alert('Обращений нет'); return; }
+        const lines = d.items.map(f => `#${f.id} [${f.status}]\n${f.text}${f.admin_reply ? '\n→ ' + f.admin_reply : ''}`).join('\n\n---\n\n');
+        alert(lines);
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionSetNotifyBefore() {
+    const min = prompt('За сколько минут до пары напоминать? (0/5/10/15/20/30/60)', '15');
+    if (min === null) return;
+    try {
+        await apiPost('/api/notify-set-before', { minutes: parseInt(min) || 0 });
+        haptic('success'); alert('Сохранено');
+        await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionAttendanceSet(date, time, subject, status) {
+    try {
+        await apiPost('/api/attendance-set', { date, time, subject, status });
+        haptic('success');
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
 
+/* ============================================================
+   HANDLERS
+   ============================================================ */
 function attachHandlers() {
     document.querySelectorAll('[data-action]').forEach((el) => {
         el.addEventListener('click', () => handleAction(el));
@@ -1154,17 +2129,35 @@ function handleAction(el) {
     else if (a === 'notify-set-type') actionNotifySetType(el.dataset.value);
     else if (a === 'notify-save') actionNotifySave();
     else if (a === 'notify-off') actionNotifyOff();
+    else if (a === 'notify-before') actionSetNotifyBefore();
     else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
     else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
     else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
     else if (a === 'week-current') { state.weekOffset = 0; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
     else if (a === 'week-today') { loadTodayAndRender(); }
-    else if (a === 'day-today') actionDayToday();
-    else if (a === 'day-tomorrow') actionDayTomorrow();
+    else if (a === 'day-today') { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
+    else if (a === 'day-tomorrow') {
+        state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today'; haptic('light');
+        if (!state.weekDays) { render(); ensureWeekLoaded().then(render); } else render();
+    }
     else if (a === 'admin-monitor') actionAdminMonitor();
     else if (a === 'admin-broadcast') actionAdminBroadcast();
     else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
     else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
+    else if (a === 'open-flappy') openFlappy(false);
+    else if (a === 'open-flappy-records') openFlappy(true);
+    else if (a === 'open-bs') openBs();
+    else if (a === 'open-levels') openLevels();
+    else if (a === 'open-leaderboard') openLeaderboard();
+    else if (a === 'set-name') actionSetName();
+    else if (a === 'set-avatar') actionSetAvatar();
+    else if (a === 'chest-open') actionChestOpen();
+    else if (a === 'premium-chest-open') actionPremiumChestOpen();
+    else if (a === 'exchange') actionExchange();
+    else if (a === 'show-achievements') actionShowAchievements();
+    else if (a === 'export-pdf') actionExportPdf();
+    else if (a === 'show-my-feedback') actionShowMyFeedback();
+    else if (a === 'att-set') actionAttendanceSet(el.dataset.date, el.dataset.time, el.dataset.subject, el.dataset.status);
 }
 
 document.querySelectorAll('.nav-btn').forEach((btn) => {
@@ -1183,6 +2176,9 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
     else await loadTabData(state.tab);
 });
 
+/* ============================================================
+   INIT
+   ============================================================ */
 (async function init() {
     await loadTabData(state.tab);
 })();
