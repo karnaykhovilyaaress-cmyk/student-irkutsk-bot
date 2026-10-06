@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>LIT ENERGY</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>STUDENT IRK</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -14,25 +14,13 @@
 
 <!-- SPLASH -->
 <div id="splash" class="splash">
-  <div class="splash__logo">LIT ENERGY</div>
-  <div class="splash__icon">
-    <svg viewBox="0 0 120 160" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#3EE6D2"/>
-          <stop offset="100%" stop-color="#7FE9FF"/>
-        </linearGradient>
-      </defs>
-      <path d="M60 5 C70 40 95 60 95 95 C95 130 80 155 60 155 C40 155 25 130 25 95 C25 70 40 55 45 40 C48 55 55 65 65 65 C65 45 60 25 60 5 Z" fill="url(#flame)"/>
-      <path d="M65 60 L45 100 L60 100 L50 140 L85 90 L68 90 L78 60 Z" fill="#fff"/>
-    </svg>
-  </div>
+  <div class="splash__logo">STUDENT IRK</div>
+  <img src="assets/logo.svg" class="splash__icon" alt="">
 </div>
 
 <!-- APP -->
 <div id="app" class="app hidden">
 
-  <!-- HEADER -->
   <header class="topbar">
     <button class="topbar__close" onclick="tg.close()">✕ Закрыть</button>
     <div class="topbar__right">
@@ -41,74 +29,65 @@
     </div>
   </header>
 
-  <!-- SCREEN: PROFILE -->
+  <!-- ПРОФИЛЬ -->
   <section class="screen active" data-screen="profile">
     <div class="profile">
       <div class="profile__name-row">
-        <h1 id="pName" class="profile__name">PLAYER-XXXXXX</h1>
+        <h1 id="pName" class="profile__name">PLAYER</h1>
         <button id="btnEditName" class="profile__edit">✎</button>
       </div>
-
-      <div class="profile__avatar-wrap">
+      <div class="profile__avatar-wrap" id="avatarWrap">
         <img id="pHead" class="profile__head" src="assets/head-1.png" alt="">
         <div id="pLevelTag" class="profile__level-tag">1 LVL</div>
       </div>
-
-      <div class="xpbar">
+      <div class="xpbar" id="xpBarWrap">
         <div class="xpbar__fill" id="xpFill"></div>
         <span class="xpbar__cur" id="xpCur">0XP</span>
         <span class="xpbar__next" id="xpNext">500XP</span>
       </div>
-
       <div class="stats-row">
         <div class="stat">
-          <img src="assets/soft.png" class="stat__icon" alt="">
-          <div class="stat__label">СОФТ</div>
+          <div class="stat__icon">❄</div>
+          <div class="stat__label">СТИПУХИ</div>
           <div class="stat__val stat__val--soft" id="wSoft">0</div>
         </div>
         <div class="stat">
-          <img src="assets/hard.png" class="stat__icon" alt="">
-          <div class="stat__label">ХАРД</div>
+          <div class="stat__icon">🔥</div>
+          <div class="stat__label">АВТОМАТЫ</div>
           <div class="stat__val stat__val--hard" id="wHard">0</div>
         </div>
       </div>
     </div>
 
-    <!-- TICKER -->
-    <div class="ticker">
-      <div class="ticker__track">
-        <span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
-        <span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
-        <span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
-      </div>
-    </div>
+    <div class="ticker"><div class="ticker__track">
+      <span>СТУДЕНЧЕСКИЙ БОКС</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
+      <span>СТУДЕНЧЕСКИЙ БОКС</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
+      <span>СТУДЕНЧЕСКИЙ БОКС</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span>
+    </div></div>
 
-    <!-- MYSTERY BOXES -->
     <div class="chest-row">
       <div class="chest-card" id="chestDaily">
-        <div class="chest-card__badge">MYSTERY BOX</div>
+        <div class="chest-card__badge">СТУДЕНЧЕСКИЙ БОКС</div>
         <div class="chest-card__title">СТАРТ</div>
-        <img class="chest-card__img" src="assets/chest.png" alt="">
+        <div class="chest-card__img">📦</div>
         <button class="btn btn--cyan chest-card__btn">ОТКРЫТЬ</button>
       </div>
       <div class="chest-card chest-card--premium" id="chestPremium">
-        <div class="chest-card__badge">MYSTERY BOX</div>
+        <div class="chest-card__badge">СТУДЕНЧЕСКИЙ БОКС</div>
         <div class="chest-card__title">ПРЕМИУМ</div>
-        <img class="chest-card__img" src="assets/chest.png" alt="">
+        <div class="chest-card__img">💎</div>
         <button class="btn btn--gold chest-card__btn">10 🔥</button>
       </div>
     </div>
 
-    <!-- АКЦИЯ -->
-    <div class="promo-card">
+    <div class="promo-card" id="quoteCard">
       <div class="promo-card__left">
-        <div class="promo-card__sub">Выполняй задания<br>от Пятёрочки</div>
-        <div class="promo-card__title">ПОЛУЧАЙ<br>ПОВЫШЕННЫЙ<br>КЭШБЕК</div>
+        <div class="promo-card__sub">Цитата дня</div>
+        <div class="promo-card__title" id="quoteText">…</div>
       </div>
-      <div class="promo-card__badge">5</div>
+      <button class="promo-card__badge" id="quoteSubBtn">🔔</button>
     </div>
 
-    <!-- GRID ICONS -->
     <div class="icon-grid">
       <button class="icon-tile" data-goto="games"><span>🎮</span><label>Игры</label></button>
       <button class="icon-tile" data-goto="tasks"><span>✅</span><label>Задания</label></button>
@@ -116,40 +95,40 @@
       <button class="icon-tile" data-goto="checks"><span>🎫</span><label>Чеки</label></button>
     </div>
 
-    <!-- СТАТИСТИКА -->
     <h2 class="section-title"><span>🔥</span> ТВОЯ СТАТИСТИКА</h2>
     <div class="stat-blobs">
-      <div class="blob"><div class="blob__num" id="stNotes">0</div><div class="blob__label">QR-кодов<br>отсканировано</div></div>
+      <div class="blob"><div class="blob__num" id="stNotes">0</div><div class="blob__label">Заметок<br>создано</div></div>
       <div class="blob blob--big"><div class="blob__num" id="stStreak">0</div><div class="blob__label">Дней<br>подряд</div></div>
       <div class="blob"><div class="blob__num" id="stTasks">0</div><div class="blob__label">Заданий<br>выполнено</div></div>
     </div>
 
-    <!-- МЕНЮ -->
     <h2 class="section-title"><span>🔥</span> МЕНЮ</h2>
     <div class="menu-list">
       <button class="menu-item" id="btnShare">Рассказать другу <span>›</span></button>
       <button class="menu-item menu-item--accordion" id="btnMenuAcc">Меню <span>⌄</span></button>
       <div class="menu-sub hidden" id="menuSub">
-        <button class="menu-sub__item" data-goto="schedule">Расписание</button>
-        <button class="menu-sub__item" data-goto="scholarship">Стипендия</button>
-        <button class="menu-sub__item" data-goto="notes">Заметки</button>
-        <button class="menu-sub__item" data-goto="ai">AI-помощник</button>
-        <button class="menu-sub__item" data-goto="achievements">Достижения</button>
-        <button class="menu-sub__item" data-goto="leaderboard">Топ игроков</button>
-        <button class="menu-sub__item" data-goto="exchange">Обменник</button>
-        <button class="menu-sub__item" data-goto="settings">Настройки</button>
-        <button class="menu-sub__item" data-goto="feedback">Обратная связь</button>
-        <button class="menu-sub__item" id="btnExport">Экспорт PDF</button>
+        <button class="menu-sub__item" data-goto="schedule">📅 Расписание</button>
+        <button class="menu-sub__item" data-goto="scholarship">🎓 Стипендия</button>
+        <button class="menu-sub__item" data-goto="notes">📝 Заметки</button>
+        <button class="menu-sub__item" data-goto="ai">🤖 AI-помощник</button>
+        <button class="menu-sub__item" data-goto="achievements">🏆 Достижения</button>
+        <button class="menu-sub__item" data-goto="leaderboard">👑 Топ игроков</button>
+        <button class="menu-sub__item" data-goto="exchange">💱 Обменник</button>
+        <button class="menu-sub__item" data-goto="attendance">📖 Посещаемость</button>
+        <button class="menu-sub__item" data-goto="settings">⚙ Настройки</button>
+        <button class="menu-sub__item" data-goto="feedback">💬 Обратная связь</button>
+        <button class="menu-sub__item" id="btnExport">📄 Экспорт PDF</button>
+        <button class="menu-sub__item" data-goto="admin" id="menuAdmin" style="display:none">🛠 Админ-панель</button>
       </div>
       <button class="menu-item menu-item--danger" id="btnDelete">Удалить аккаунт</button>
     </div>
   </section>
 
-  <!-- SCREEN: LEVELS -->
+  <!-- УРОВНИ -->
   <section class="screen" data-screen="levels">
     <div class="levels-head">
       <button class="back-btn" onclick="go('profile')">‹</button>
-      <div class="levels-pill"><span>🔥</span> <b id="lvSoft">0</b> / <span>🔥</span> <b id="lvHard">0</b></div>
+      <div class="levels-pill"><span>❄</span> <b id="lvSoft">0</b> / <span>🔥</span> <b id="lvHard">0</b></div>
     </div>
     <h1 class="lv-big">УРОВЕНЬ <span id="lvNum">1</span></h1>
     <div class="lv-sub">до следующего <b id="lvLeft">500XP</b></div>
@@ -159,43 +138,66 @@
       <span class="xpbar__next" id="lvNext">500XP</span>
     </div>
     <div class="lv-hint">Заработать больше опыта</div>
-    <div class="ticker ticker--sm"><div class="ticker__track"><span>КОПИ XP В ЗАДАНИЯХ</span><span>🔥</span><span>MYSTERY BOX</span><span>🔥</span><span>КУПИТЬ</span><span>🔥</span><span>КОПИ XP В ЗАДАНИЯХ</span><span>🔥</span></div></div>
     <div id="levelsList" class="levels-list"></div>
   </section>
 
-  <!-- SCREEN: GAMES -->
+  <!-- ИГРЫ -->
   <section class="screen" data-screen="games">
     <div class="games-head">
-      <div class="levels-pill"><span>🔥</span> <b id="gmSoft">0</b> / <span>🔥</span> <b id="gmHard">0</b></div>
+      <div class="levels-pill"><span>❄</span> <b id="gmSoft">0</b> / <span>🔥</span> <b id="gmHard">0</b></div>
     </div>
-    <div class="games-title">ИГРАЙ С<br><span>LIT ENERGY</span></div>
-    <p class="games-sub">Чем больше побед в мини-играх ты одержишь, тем больше мистери-боксов заработаешь!</p>
-    <div class="progress-line"><div class="progress-line__fill" id="gmProgress"></div><span class="progress-line__num" id="gmProgressNum">0/11</span><span class="progress-line__chest">📦</span></div>
-    <div id="gamesList" class="games-list"></div>
+    <div class="games-title">ИГРАЙ С<br><span>STUDENT IRK</span></div>
+    <p class="games-sub">Чем больше побед в мини-играх, тем больше студенческих боксов!</p>
+    <div class="games-list" id="gamesList"></div>
   </section>
 
-  <!-- SCREEN: TASKS -->
+  <!-- МОРСКОЙ БОЙ -->
+  <section class="screen" data-screen="bs">
+    <div class="levels-head">
+      <button class="back-btn" onclick="go('games')">‹</button>
+      <div class="levels-pill">⚓ МОРСКОЙ БОЙ</div>
+    </div>
+    <div id="bsLobby" class="bs-lobby">
+      <h2 class="section-title"><span>🔥</span> СТАВКА</h2>
+      <div class="bs-bets" id="bsBets"></div>
+      <button class="btn btn--cyan" style="width:100%;margin-top:14px" id="bsCreate">СОЗДАТЬ ИГРУ</button>
+      <button class="btn btn--ghost" style="width:100%;margin-top:8px" id="bsFind">НАЙТИ СОПЕРНИКА</button>
+      <button class="btn btn--gold" style="width:100%;margin-top:8px" id="bsBot">ИГРАТЬ С БОТОМ</button>
+      <div class="bs-join">
+        <input id="bsCode" placeholder="Код игры (6 цифр)" maxlength="6" inputmode="numeric">
+        <button class="btn btn--cyan" id="bsJoin">ВОЙТИ</button>
+      </div>
+    </div>
+    <div id="bsBoard" class="bs-board hidden"></div>
+    <div id="bsStatus" class="bs-status"></div>
+  </section>
+
+  <!-- ЗАДАЧИ -->
   <section class="screen" data-screen="tasks">
-    <h2 class="section-title"><span>🔥</span> ЗАДАНИЯ</h2>
+    <h2 class="section-title"><span>🔥</span> ЗАДАЧИ</h2>
     <div class="tasks-add">
       <input id="taskInput" placeholder="Новое задание..." maxlength="200">
       <button class="btn btn--cyan" id="taskAddBtn">+</button>
     </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="active">Активные</button>
+      <button class="tab" data-tab="done">Выполненные</button>
+    </div>
     <div id="tasksList" class="tasks-list"></div>
   </section>
 
-  <!-- SCREEN: SCHEDULE -->
+  <!-- РАСПИСАНИЕ -->
   <section class="screen" data-screen="schedule">
     <h2 class="section-title"><span>🔥</span> РАСПИСАНИЕ</h2>
     <div class="sched-nav">
-      <button class="btn btn--ghost" onclick="loadWeek(-1)">‹ Прошлая</button>
+      <button class="btn btn--ghost" onclick="loadWeek(-1)">‹</button>
       <button class="btn btn--ghost" onclick="loadWeek(0)">Текущая</button>
-      <button class="btn btn--ghost" onclick="loadWeek(1)">Следующая ›</button>
+      <button class="btn btn--ghost" onclick="loadWeek(1)">›</button>
     </div>
     <div id="schedDays" class="sched-days"></div>
   </section>
 
-  <!-- SCREEN: NOTES -->
+  <!-- ЗАМЕТКИ -->
   <section class="screen" data-screen="notes">
     <h2 class="section-title"><span>🔥</span> ЗАМЕТКИ</h2>
     <div class="tasks-add">
@@ -206,52 +208,62 @@
     <div id="notesList" class="notes-list"></div>
   </section>
 
-  <!-- SCREEN: AI -->
+  <!-- AI -->
   <section class="screen" data-screen="ai">
     <h2 class="section-title"><span>🔥</span> AI-ПОМОЩНИК</h2>
-    <div id="aiChat" class="ai-chat"></div>
+    <div class="ai-chat" id="aiChat"></div>
+    <div class="ai-tools">
+      <label class="ai-upload">📷<input type="file" accept="image/*" id="aiPhoto" hidden></label>
+      <button class="btn btn--ghost ai-clear" id="aiClear">Очистить</button>
+    </div>
     <div class="tasks-add">
       <input id="aiInput" placeholder="Спроси что-нибудь..." maxlength="2000">
       <button class="btn btn--cyan" id="aiSend">➤</button>
     </div>
   </section>
 
-  <!-- SCREEN: ACHIEVEMENTS -->
+  <!-- ДОСТИЖЕНИЯ -->
   <section class="screen" data-screen="achievements">
     <h2 class="section-title"><span>🔥</span> ДОСТИЖЕНИЯ</h2>
     <div id="achList" class="ach-list"></div>
   </section>
 
-  <!-- SCREEN: LEADERBOARD -->
+  <!-- ТОП -->
   <section class="screen" data-screen="leaderboard">
     <h2 class="section-title"><span>🔥</span> ТОП ИГРОКОВ</h2>
     <div id="lbList" class="lb-list"></div>
   </section>
 
-  <!-- SCREEN: EXCHANGE -->
+  <!-- ОБМЕННИК -->
   <section class="screen" data-screen="exchange">
     <h2 class="section-title"><span>🔥</span> ОБМЕННИК</h2>
-    <p class="muted">100 Софт = 1 Хард</p>
+    <p class="muted">100 Стипух = 1 Автомат</p>
     <div class="tasks-add">
-      <input id="exAmount" type="number" placeholder="Софт" min="100" step="100">
+      <input id="exAmount" type="number" placeholder="Стипухи" min="100" step="100">
       <button class="btn btn--gold" id="exBtn">Обменять</button>
     </div>
     <div id="exResult" class="muted"></div>
   </section>
 
-  <!-- SCREEN: SCHOLARSHIP -->
+  <!-- ПОСЕЩАЕМОСТЬ -->
+  <section class="screen" data-screen="attendance">
+    <h2 class="section-title"><span>🔥</span> ПОСЕЩАЕМОСТЬ</h2>
+    <div id="attStats" class="att-stats"></div>
+  </section>
+
+  <!-- СТИПЕНДИЯ -->
   <section class="screen" data-screen="scholarship">
     <h2 class="section-title"><span>🔥</span> СТИПЕНДИЯ</h2>
     <div id="schContent" class="sch-content"></div>
   </section>
 
-  <!-- SCREEN: SETTINGS -->
+  <!-- НАСТРОЙКИ -->
   <section class="screen" data-screen="settings">
     <h2 class="section-title"><span>🔥</span> НАСТРОЙКИ</h2>
     <div id="settingsContent" class="settings-content"></div>
   </section>
 
-  <!-- SCREEN: FEEDBACK -->
+  <!-- ОБРАТНАЯ СВЯЗЬ -->
   <section class="screen" data-screen="feedback">
     <h2 class="section-title"><span>🔥</span> ОБРАТНАЯ СВЯЗЬ</h2>
     <div class="tasks-add">
@@ -261,25 +273,39 @@
     <div id="fbList" class="fb-list"></div>
   </section>
 
-  <!-- SCREEN: SHOP -->
+  <!-- МАГАЗИН -->
   <section class="screen" data-screen="shop">
     <div class="shop-head">
-      <div class="levels-pill"><span>🔥</span> <b id="shSoft">0</b> / <span>🔥</span> <b id="shHard">0</b></div>
+      <div class="levels-pill"><span>❄</span> <b id="shSoft">0</b> / <span>🔥</span> <b id="shHard">0</b></div>
       <button class="shop-cart">🛒</button>
     </div>
-    <h2 class="section-title"><span>🔥</span> МАГАЗИН <span>🔥</span></h2>
+    <h2 class="section-title"><span>🔥</span> МАГАЗИН</h2>
     <div class="shop-tier">БРОНЗОВАЯ ЛИГА</div>
     <div class="shop-grid" id="shopGrid"></div>
   </section>
 
-  <!-- SCREEN: CHECKS -->
+  <!-- ЧЕКИ -->
   <section class="screen" data-screen="checks">
     <h2 class="section-title"><span>🔥</span> ЧЕКИ</h2>
     <p class="muted">Сканируй чеки и участвуй в розыгрыше</p>
     <div class="checks-grid" id="checksGrid"></div>
   </section>
 
-  <!-- BOTTOM DOCK -->
+  <!-- АДМИН -->
+  <section class="screen" data-screen="admin">
+    <h2 class="section-title"><span>🔥</span> АДМИН-ПАНЕЛЬ</h2>
+    <div id="adminStats" class="admin-stats"></div>
+    <h3 class="section-sub">ОБРАЩЕНИЯ</h3>
+    <div id="adminFb" class="fb-list"></div>
+    <h3 class="section-sub">РАССЫЛКА</h3>
+    <div class="tasks-add">
+      <input id="adminBroadcast" placeholder="Текст рассылки">
+      <button class="btn btn--cyan" id="adminBroadcastBtn">Отправить</button>
+    </div>
+    <div id="adminMonitor" class="muted"></div>
+  </section>
+
+  <!-- ДОК -->
   <nav class="dock">
     <button class="dock__btn active" data-goto="profile">👤</button>
     <button class="dock__btn" data-goto="tasks">✅</button>
@@ -287,13 +313,12 @@
     <button class="dock__btn" data-goto="games">🎮</button>
     <button class="dock__btn" data-goto="shop">🎁</button>
   </nav>
-
 </div>
 
-<!-- MODAL -->
+<!-- МОДАЛКА -->
 <div id="modal" class="modal hidden">
   <div class="modal__box">
-    <div class="modal__title" id="modalTitle">Заголовок</div>
+    <div class="modal__title" id="modalTitle">…</div>
     <div class="modal__body" id="modalBody"></div>
     <button class="btn btn--cyan" id="modalOk">ОК</button>
   </div>
