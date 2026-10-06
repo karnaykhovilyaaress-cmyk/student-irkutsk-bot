@@ -88,10 +88,8 @@ const state = {
     gamePhase: 'start',
     tutorialShown: {},
     navScrollAtStart: true,
-
     exchangeOpen: false,
     exchangeAmount: 100,
-
     bsScreen: 'lobby',
     bsBet: 50,
     bsMyField: null,
@@ -290,10 +288,6 @@ let heroSpriteReady = false;
     img.src = 'assets/hero-flappy.webp';
 })();
 
-// ============================================================
-//   SVG-ФОЛБЭКИ (если картинок нет в assets)
-// ============================================================
-
 function fallbackCoinSoft() {
     return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
         <defs><radialGradient id="fbCoinS" cx="35%" cy="30%" r="70%">
@@ -365,31 +359,6 @@ function fallbackHeroAvatar() {
         <circle cx="235" cy="180" r="4" fill="#FFFFFF"/>
     </svg>`;
 }
-
-function imgWithFallback(src, alt, className, fallbackSvg) {
-    return `<img src="${src}" alt="${escapeHtml(alt)}" class="${className}"
-        onerror="this.style.display='none';this.insertAdjacentHTML('afterend','${fallbackSvg.replace(/'/g, "\\'").replace(/\n/g, '')}')">`;
-}
-
-
-// ============================================================
-//                       SPLASH
-// ============================================================
-
-function initSplash() {
-    const splash = document.getElementById('splash');
-    if (!splash) return;
-    const logoEl = splash.querySelector('.splash-logo');
-    if (logoEl && !logoEl.querySelector('img')) {
-        const img = document.createElement('img');
-        img.src = 'assets/logo-splash.webp';
-        img.alt = 'STUDENT IRK';
-        img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block';
-        img.onerror = () => { img.remove(); logoEl.innerHTML = fallbackSplashLogo(); };
-        logoEl.appendChild(img);
-    }
-}
-
 function fallbackSplashLogo() {
     return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -407,57 +376,26 @@ function fallbackSplashLogo() {
     </svg>`;
 }
 
-// ============================================================
-//                       HEADER
-// ============================================================
-
-function renderHeaderCurrency() {
-    const w = state.wallet || {};
-    return `<div class="header-currency">
-        <div class="header-currency-item">
-            ${imgWithFallback('assets/coin-soft.webp', 'Софт', 'hdr-coin', fallbackCoinSoft())}
-            <span>${formatNumber(w.soft || 0)}</span>
-        </div>
-        <div class="header-currency-divider">/</div>
-        <div class="header-currency-item">
-            ${imgWithFallback('assets/coin-hard.webp', 'Хард', 'hdr-coin', fallbackCoinHard())}
-            <span>${formatHtmlNum(w.hard || 0)}</span>
-        </div>
-    </div>`;
-}
-function formatHtmlNum(n) { return formatNumber(n); }
-
-function updateHeaderCurrency() {
-    const el = document.querySelector('.header-currency');
-    if (!el) return;
-    const w = state.wallet || {};
-    el.outerHTML = renderHeaderCurrency();
-}
-
-// ============================================================
-//                       ИКОНКИ
-// ============================================================
-
 function softIconImg(size = 40) {
     return `<img src="assets/coin-soft.webp" alt="Софт" style="width:${size}px;height:${size}px;object-fit:contain;display:block"
-        onerror="this.outerHTML='<span style=&quot;display:inline-block;width:${size}px;height:${size}px&quot;>${fallbackCoinSoft().replace(/'/g, '&#39;').replace(/"/g, '&quot;')}</span>'">`;
+        onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<span style=&quot;display:inline-block;width:${size}px;height:${size}px&quot;>${fallbackCoinSoft().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}</span>')">`;
 }
 function hardIconImg(size = 40) {
     return `<img src="assets/coin-hard.webp" alt="Хард" style="width:${size}px;height:${size}px;object-fit:contain;display:block"
-        onerror="this.outerHTML='<span style=&quot;display:inline-block;width:${size}px;height:${size}px&quot;>${fallbackCoinHard().replace(/'/g, '&#39;').replace(/"/g, '&quot;')}</span>'">`;
+        onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<span style=&quot;display:inline-block;width:${size}px;height:${size}px&quot;>${fallbackCoinHard().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}</span>')">`;
 }
 function chestDailyImg(size = 100) {
     return `<img src="assets/chest-daily.webp" alt="Сундук" style="width:${size}px;height:${size}px;object-fit:contain;display:block;filter:drop-shadow(0 0 24px rgba(255,215,0,0.55))"
-        onerror="this.outerHTML='${fallbackChestDaily().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}'">`;
+        onerror="this.style.display='none';this.insertAdjacentHTML('afterend','${fallbackChestDaily().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}')">`;
 }
 function chestPremiumImg(size = 80) {
     return `<img src="assets/chest-premium.webp" alt="Премиум" style="width:${size}px;height:${size}px;object-fit:contain;display:block;filter:drop-shadow(0 0 20px rgba(168,85,247,0.6))"
-        onerror="this.outerHTML='${fallbackChestPremium().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}'">`;
+        onerror="this.style.display='none';this.insertAdjacentHTML('afterend','${fallbackChestPremium().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}')">`;
 }
 function heroAvatarImg(size = 180) {
     return `<img src="${avatarPathByIdx(state.wallet?.avatar_idx || 0)}" alt="Аватар"
         style="width:${size}px;height:${size}px;object-fit:cover;object-position:center top;border-radius:50%;display:block"
-        onerror="this.outerHTML='${fallbackHeroAvatar().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}'">`;
+        onerror="this.style.display='none';this.insertAdjacentHTML('afterend','${fallbackHeroAvatar().replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\n/g, '')}')">`;
 }
 
 function fireIconSvg(size = 20) {
@@ -472,9 +410,92 @@ function fireIconSvg(size = 20) {
     </svg>`;
 }
 
-// ============================================================
-//                       RENDER — ГЛАВНЫЙ
-// ============================================================
+function robotIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="8" width="16" height="12" rx="2"></rect>
+        <circle cx="9" cy="13" r="1"></circle>
+        <circle cx="15" cy="13" r="1"></circle>
+        <line x1="9" y1="17" x2="15" y2="17"></line>
+        <line x1="12" y1="4" x2="12" y2="8"></line>
+        <circle cx="12" cy="3" r="1"></circle>
+    </svg>`;
+}
+function keyIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+    </svg>`;
+}
+function targetIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <circle cx="12" cy="12" r="6"></circle>
+        <circle cx="12" cy="12" r="2"></circle>
+    </svg>`;
+}
+function usersIconSvg() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+    </svg>`;
+}
+
+function initSplash() {
+    const splash = document.getElementById('splash');
+    if (!splash) return;
+    const logoEl = splash.querySelector('.splash-logo');
+    if (logoEl && !logoEl.querySelector('img')) {
+        const img = document.createElement('img');
+        img.src = 'assets/logo-splash.webp';
+        img.alt = 'STUDENT IRK';
+        img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block';
+        img.onerror = () => { img.remove(); logoEl.innerHTML = fallbackSplashLogo(); };
+        logoEl.appendChild(img);
+    }
+}
+
+function renderHeaderCurrency() {
+    const w = state.wallet || {};
+    return `<div class="header-currency">
+        <div class="header-currency-item">
+            ${softIconImg(18)}
+            <span>${formatNumber(w.soft || 0)}</span>
+        </div>
+        <div class="header-currency-divider">/</div>
+        <div class="header-currency-item">
+            ${hardIconImg(18)}
+            <span>${formatNumber(w.hard || 0)}</span>
+        </div>
+    </div>`;
+}
+function updateHeaderCurrency() {
+    const el = document.querySelector('.header-currency');
+    if (!el) return;
+    el.outerHTML = renderHeaderCurrency();
+}
+
+function renderSubHeader(backAction, titleText) {
+    return `<div class="picker-header">
+        <button class="picker-back" data-action="${backAction}">←</button>
+        <div class="picker-title">${escapeHtml(titleText)}</div>
+    </div>`;
+}
+
+function _computeModals() {
+    if (state.nameEditor) return renderNameEditorModal();
+    if (state.chestModal) return renderChestModal();
+    if (state.premiumModal) return renderPremiumModal();
+    if (state.achModal) return renderAchModal();
+    if (state.levelInfoModal) return renderLevelInfoModal();
+    if (state.currencyInfoModal) return renderCurrencyInfoModal();
+    if (state.newAchToast) return renderNewAchToast();
+    if (state.exchangeOpen) return renderExchangeModal();
+    if (state.bsJoinModal) return renderBSJoinModal();
+    if (state.scholarshipAmountModal) return renderScholarshipAmountModal();
+    if (state.adminReplyModal) return renderAdminReplyModal();
+    return '';
+}
 
 function render() {
     const content = document.getElementById('content');
@@ -582,7 +603,6 @@ function render() {
 
     content.innerHTML = html + modalHtml;
 
-    // Хедер-лого
     const hdrLogo = document.querySelector('.header-logo');
     if (hdrLogo && !hdrLogo.querySelector('img')) {
         const img = document.createElement('img');
@@ -593,26 +613,19 @@ function render() {
         hdrLogo.appendChild(img);
     }
 
-    // Кнопки навигации
     document.querySelectorAll('.nav-btn').forEach((btn) => {
         const isAdmin = btn.dataset.tab === 'admin';
         btn.style.display = (isAdmin && !state.isAdmin) ? 'none' : '';
         btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
 
-    // Currency в хедере
     updateHeaderCurrency();
-
     attachHandlers();
     if (state.tab === 'schedule') attachScheduleSwipe();
     syncChestTimer();
     initNavScrollHint();
     syncNavActiveIntoView();
 }
-
-// ============================================================
-//                       НАВИГАЦИЯ — СКРОЛЛ
-// ============================================================
 
 function initNavScrollHint() {
     const nav = document.getElementById('bottom-nav');
@@ -629,7 +642,6 @@ function initNavScrollHint() {
     nav.addEventListener('scroll', checkEnd, { passive: true });
     checkEnd();
 
-    // Подсказка-«дыхание» при первом заходе
     try {
         if (localStorage.getItem('nav_hint_shown') !== '1') {
             setTimeout(() => {
@@ -653,44 +665,6 @@ function syncNavActiveIntoView() {
     if (btnRect.left < navRect.left || btnRect.right > navRect.right) {
         active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
-}
-
-// ============================================================
-//                 ХЕДЕР + КНОПКИ ВОЗВРАТА
-// ============================================================
-
-function renderSubHeader(backAction, titleText) {
-    return `<div class="picker-header">
-        <button class="picker-back" data-action="${backAction}">←</button>
-        <div class="picker-title">${escapeHtml(titleText)}</div>
-    </div>`;
-}
-
-// ============================================================
-//                       РАСПИСАНИЕ
-// ============================================================
-
-function attachScheduleSwipe() {
-    const content = document.getElementById('content');
-    if (!content || content.dataset.swipeBound === '1') return;
-    content.dataset.swipeBound = '1';
-    let startX = 0, startY = 0, tracking = false;
-    content.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        startX = e.touches[0].clientX;
-        startY = e.touches[0].clientY;
-        tracking = true;
-    }, { passive: true });
-    content.addEventListener('touchend', (e) => {
-        if (!tracking) return;
-        tracking = false;
-        const dx = e.changedTouches[0].clientX - startX;
-        const dy = e.changedTouches[0].clientY - startY;
-        if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
-        if (state.tab !== 'schedule' || state.scheduleViewMode !== 'today') return;
-        if (dx > 0) { if (state.scheduleDay === 'tomorrow') actionDayToday(); }
-        else { if (state.scheduleDay === 'today') actionDayTomorrow(); }
-    }, { passive: true });
 }
 
 function renderUserBar() {
@@ -719,7 +693,7 @@ function renderUserBar() {
         </div>
     `;
 }
-
+// ===== КОНЕЦ ЧАСТИ 1. ЧАСТЬ 2 ИДЁТ СРАЗУ ПОСЛЕ ЭТОЙ СТРОКИ =====
 function renderLesson(les) {
     const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
     const details = [];
@@ -855,10 +829,6 @@ function renderSchedule() {
     return html;
 }
 
-// ============================================================
-//                       ПИКЕРЫ ГРУПП
-// ============================================================
-
 function getCourseFromGroup(groupName) {
     const m = String(groupName).match(/-(\d{2})-/);
     if (!m) return null;
@@ -954,10 +924,6 @@ function pickerAttachSearch() {
         });
     });
 }
-
-// ============================================================
-//                       УВЕДОМЛЕНИЯ
-// ============================================================
 
 function renderNotifyEditor() {
     const cur = state.notifyEditorType;
@@ -1063,10 +1029,6 @@ function _applyAttendanceLocally(date, time, subject, status) {
     if (state.weekDays?.days) for (const d of state.weekDays.days) if (d.date === date) upd(d.lessons);
     if (state.nextWeekDays?.days) for (const d of state.nextWeekDays.days) if (d.date === date) upd(d.lessons);
 }
-
-// ============================================================
-//                       ЗАДАЧИ
-// ============================================================
 
 function renderTasks() {
     const tasks = state.tasks;
@@ -1203,10 +1165,6 @@ async function actionTasksClear() {
     catch (e) { alert('Ошибка: ' + e.message); }
 }
 
-// ============================================================
-//                       ЗАМЕТКИ
-// ============================================================
-
 function renderNotes() {
     let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
     if (!state.notes || state.notes.length === 0) {
@@ -1290,10 +1248,6 @@ async function actionNoteDelete(id) {
     try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
     catch (e) { alert('Ошибка: ' + e.message); }
 }
-
-// ============================================================
-//                       AI
-// ============================================================
 
 function renderAI() {
     let html = '';
@@ -1395,14 +1349,10 @@ async function actionAISend() {
     } finally { state.aiPending = false; render(); }
 }
 
-// ============================================================
-//                       ИГРЫ
-// ============================================================
-
 function renderGames() {
     const catalog = [
         { id: 'flappy', name: 'До пары успеть', asset: 'assets/cover-flappy.webp', desc: 'Прыгай между столбцами' },
-        { id: 'battleship', name: 'Морской бой', asset: 'assets/cover-battleship.webp', desc: 'PvP на стипухи' },
+        { id: 'battleship', name: 'Морской бой', asset: 'assets/cover-battleship.webp', desc: 'PvP на Софт' },
     ];
 
     let html = `<div class="games-catalog">`;
@@ -1834,7 +1784,6 @@ function updateScore(val) {
     if (el) el.textContent = String(val);
 }
 
-
 // ============================================================
 //                       МОРСКОЙ БОЙ — МОДЕЛЬ
 // ============================================================
@@ -1956,10 +1905,6 @@ function reconstructEnemyFieldFromShots(shots) {
     }
     return field;
 }
-
-// ============================================================
-//                       МОРСКОЙ БОЙ — РЕНДЕР
-// ============================================================
 
 function renderBattleship() {
     const s = state.bsScreen;
@@ -2272,7 +2217,7 @@ function countAliveShips(field, ships) {
     }
     return alive;
 }
-
+// ===== КОНЕЦ ЧАСТИ 2. ЧАСТЬ 3 ИДЁТ СРАЗУ ПОСЛЕ ЭТОЙ СТРОКИ =====
 // ============================================================
 //                       МОРСКОЙ БОЙ — ДЕЙСТВИЯ
 // ============================================================
@@ -3105,645 +3050,6 @@ async function actionBSSurrender() {
         }
     }
 }
-
-function robotIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="4" y="8" width="16" height="12" rx="2"></rect>
-        <circle cx="9" cy="13" r="1"></circle>
-        <circle cx="15" cy="13" r="1"></circle>
-        <line x1="9" y1="17" x2="15" y2="17"></line>
-        <line x1="12" y1="4" x2="12" y2="8"></line>
-        <circle cx="12" cy="3" r="1"></circle>
-    </svg>`;
-}
-function keyIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-    </svg>`;
-}
-function targetIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <circle cx="12" cy="12" r="6"></circle>
-        <circle cx="12" cy="12" r="2"></circle>
-    </svg>`;
-}
-function usersIconSvg() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-        <circle cx="9" cy="7" r="4"></circle>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-    </svg>`;
-}
-
-
-// ============================================================
-//                       ПРОФИЛЬ
-// ============================================================
-
-function renderProfile() {
-    const p = state.profile;
-    const w = state.wallet;
-    const u = state.user;
-    const ach = state.achievements || [];
-    const achGot = ach.filter(a => a.unlocked).length;
-    if (!p) return renderLoading();
-
-    const displayName = (p.display_name && p.display_name !== 'PLAYER') ? p.display_name : (u.first_name || 'Студент');
-    const playerTag = p.player_tag || `PLAYER-${String(u.id).slice(-6).toUpperCase()}`;
-
-    const lvl = w?.level || 1;
-    const xpIn = w?.xp_in_level || 0;
-    const xpNext = w?.xp_to_next || 500;
-    const xpTotal = (w?.xp || 0);
-    const xpTarget = xpTotal + (xpNext - xpIn);
-
-    let html = '';
-
-    // Hero-профиль
-    html += `<div class="profile-hero">
-        <div class="profile-hero-bg"></div>
-        <div class="profile-hero-overlay"></div>
-        <div class="profile-hero-glow"></div>
-
-        <div style="padding-top:24px;position:relative;z-index:1"></div>
-
-        <div class="profile-avatar-wrap">${heroAvatarImg(180)}</div>
-
-        <div class="profile-level-badge">
-            <span class="num">${lvl}</span> LVL
-        </div>
-
-        <div class="profile-name-block">
-            <div class="profile-name-hero">
-                <div class="profile-name-main">${escapeHtml(displayName)}</div>
-                <button class="profile-edit-btn" data-action="name-open" title="Изменить имя">✏️</button>
-            </div>
-            <div class="profile-tag-id">${escapeHtml(playerTag)}</div>
-        </div>
-
-        <div class="profile-xp-row">
-            <div class="profile-xp-current">${formatNumber(xpTotal)} XP</div>
-            <div class="profile-xp-target">${formatNumber(xpTarget)} XP</div>
-        </div>
-
-        <div class="profile-currency-row">
-            <div class="profile-currency-tile soft" data-action="exchange-open">
-                <div class="label">Софт</div>
-                <div class="value">${softIconImg(22)}<span>${formatNumber(w?.soft || 0)}</span></div>
-            </div>
-            <div class="profile-currency-tile hard" data-action="premium-open">
-                <div class="label">Хард</div>
-                <div class="value">${hardIconImg(22)}<span>${formatNumber(w?.hard || 0)}</span></div>
-            </div>
-        </div>
-
-        <div class="avatar-change-row">
-            <button class="avatar-change-btn" data-action="avatar-toggle">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" stroke-width="2.2"
-                     stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <polyline points="1 20 1 14 7 14"></polyline>
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                </svg>
-                <span>Сменить аватар</span>
-            </button>
-        </div>
-    </div>`;
-
-    // Стрик
-    html += `<div class="streak-row" style="margin-bottom:20px">
-        <span class="fire">🔥</span> Стрик: ${p.streak || 0} ${p.streak === 1 ? 'день' : 'дн.'}
-    </div>`;
-
-    // Статистика — 3 столбика как у LIT
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Твоя статистика</h2>
-        </div>
-        <div class="stats-row">
-            <div class="stat-col">
-                <div class="stat-value">${p.notes_count || 0}</div>
-                <div class="stat-label">Заметок<br>создано</div>
-            </div>
-            <div class="stat-col highlight">
-                <div class="stat-value">${p.streak || 0}</div>
-                <div class="stat-label">Дней<br>подряд</div>
-            </div>
-            <div class="stat-col">
-                <div class="stat-value">${p.tasks_done || 0}</div>
-                <div class="stat-label">Заданий<br>выполнено</div>
-            </div>
-        </div>
-    </div>`;
-
-    // Сундуки
-    const chestReady = state.chest?.can_open !== false;
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Халява дня</h2>
-        </div>
-        <div class="chest-card">
-            <div class="chest-svg">${chestDailyImg(100)}</div>
-            <div class="chest-title">Халява <span class="accent">дня</span></div>
-            <div class="chest-sub">${chestReady ? '🎁 Готово к открытию' : '🎁 Уже открыто сегодня'}</div>
-            ${chestReady ? '' : `<div class="chest-timer" id="chest-timer">--:--:--</div>`}
-            <button class="chest-btn" data-action="chest-open" ${chestReady ? '' : 'disabled'}>
-                ${chestReady ? 'Открыть' : 'Уже открыто'}
-            </button>
-        </div>
-    </div>`;
-
-    // Премиум-сундук
-    const hardHave = w?.hard || 0;
-    const canPremium = hardHave >= 10;
-    html += `<div class="premium-chest-card">
-        <div class="premium-chest-crown">👑</div>
-        <div class="premium-chest-title">Премиум сундук</div>
-        <div class="premium-chest-sub">Стоимость: <strong>10 Харда</strong> · у тебя: ${hardHave}</div>
-        <div class="premium-chest-preview">
-            <div class="premium-chest-item">💰 500 Софта · ⚡ 1000 XP</div>
-            <div class="premium-chest-item">🎁 Бонус: 3 / 5 / 10 / 25 Харда</div>
-        </div>
-        <button class="premium-chest-btn" data-action="premium-open" ${canPremium ? '' : 'disabled'}>
-            ${canPremium ? 'Открыть за 10 Харда' : 'Нужно 10 Харда'}
-        </button>
-    </div>`;
-
-    // Достижения
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Достижения ${achGot}/${ach.length || 8}</h2>
-        </div>
-        <div class="card">
-            <div class="ach-grid">
-                ${ach.length === 0 ? '<div class="card-subtitle">Загрузка...</div>' : ach.map(a => `
-                    <div class="ach-item ${a.unlocked ? 'unlocked' : ''}" data-action="ach-open" data-id="${escapeHtml(a.id)}">
-                        <div class="ach-emoji">${a.icon}</div>
-                        <div class="ach-name">${escapeHtml(a.name)}</div>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-    </div>`;
-
-    // Посещаемость
-    const attTotal = p.attendance_total || 0;
-    if (attTotal > 0) {
-        html += `<div class="section">
-            <div class="section-header">
-                <div class="section-icon">${fireIconSvg(22)}</div>
-                <h2 class="section-title">Посещаемость</h2>
-            </div>
-            <div class="card">
-                <div class="att-stat-row"><span class="att-stat-label">Всего</span><span class="att-stat-value">${attTotal}</span></div>
-                <div class="att-stat-row"><span class="att-stat-label">Посещено</span><span class="att-stat-value green">${p.attendance_was || 0}</span></div>
-                <div class="att-stat-row"><span class="att-stat-label">Пропущено</span><span class="att-stat-value red">${p.attendance_missed || 0}</span></div>
-                <div class="att-stat-row"><span class="att-stat-label">По болезни</span><span class="att-stat-value yellow">${p.attendance_sick || 0}</span></div>
-            </div>
-        </div>`;
-    }
-
-    // Стипендия
-    html += renderScholarshipCard();
-
-    // Меню (как у LIT — список кнопок)
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Меню</h2>
-        </div>
-        <div class="menu-list">
-            <button class="menu-item accent" data-action="choose-group">
-                <span>${p?.group ? 'Изменить группу' : 'Выбрать группу'}</span>
-                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-            </button>
-            <button class="menu-item" data-action="notify-open">
-                <span>Уведомления о расписании</span>
-                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-            </button>
-            <button class="menu-item" data-action="level-info-open">
-                <span>Уровни и опыт</span>
-                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-            </button>
-            <button class="menu-item" data-action="currency-info-open">
-                <span>Где взять валюту</span>
-                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-            </button>
-            <button class="menu-item" data-action="export-data">
-                <span>Скачать PDF с данными</span>
-                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-            </button>
-        </div>
-    </div>`;
-
-    // Подгруппа
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Подгруппа</h2>
-        </div>
-        <div class="card">
-            <div class="card-subtitle" style="margin-bottom:10px">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'Не выбрана'}</div>
-            <div class="actions-row">
-                <button class="btn btn-secondary" data-action="set-subgroup" data-value="0" style="flex:1">—</button>
-                <button class="btn btn-secondary" data-action="set-subgroup" data-value="1" style="flex:1">1</button>
-                <button class="btn btn-secondary" data-action="set-subgroup" data-value="2" style="flex:1">2</button>
-            </div>
-        </div>
-    </div>`;
-
-    // Цитата дня
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Цитата дня</h2>
-        </div>
-        <div class="card">
-            <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
-            <div class="actions-row">
-                ${p?.daily_subscribed
-                    ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0" style="width:100%">Отписаться</button>`
-                    : `<button class="btn" data-action="quote-subscribe" data-value="1" style="width:100%">Подписаться</button>`}
-            </div>
-        </div>
-    </div>`;
-
-    // Мои обращения
-    html += renderMyFeedbackCard();
-
-    // Обратная связь
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Обратная связь</h2>
-        </div>
-        <div class="card">
-            <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
-            <button class="btn" data-action="feedback-send" style="width:100%">Отправить</button>
-        </div>
-    </div>`;
-
-    // Уведомления checkbox + напоминания
-    const notifyOn = !!p?.notify_type;
-    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
-    html += `<div class="section">
-        <div class="section-header">
-            <div class="section-icon">${fireIconSvg(22)}</div>
-            <h2 class="section-title">Настройки</h2>
-        </div>
-        <div class="card">
-            <div class="card-subtitle">Текущее: ${escapeHtml(notifyLabel)}</div>
-            <label class="checkbox-row">
-                <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
-                <span>Следить за изменениями в расписании</span>
-            </label>
-            <div class="card-subtitle" style="margin-top:14px">Напомнить за N минут до пары</div>
-            <div class="nbf-buttons">
-                ${[0, 10, 15, 30].map(m => `
-                    <button class="nbf-btn ${(p?.notify_before_min || 0) === m ? 'active' : ''}"
-                            data-action="notify-set-before" data-value="${m}">${m === 0 ? 'Выкл' : m + ' мин'}</button>
-                `).join('')}
-            </div>
-        </div>
-    </div>`;
-
-    return html;
-}
-
-// ============================================================
-//                       МОДАЛКИ
-// ============================================================
-
-function _computeModals() {
-    if (state.nameEditor) return renderNameEditorModal();
-    if (state.chestModal) return renderChestModal();
-    if (state.premiumModal) return renderPremiumModal();
-    if (state.achModal) return renderAchModal();
-    if (state.levelInfoModal) return renderLevelInfoModal();
-    if (state.currencyInfoModal) return renderCurrencyInfoModal();
-    if (state.newAchToast) return renderNewAchToast();
-    if (state.exchangeOpen) return renderExchangeModal();
-    if (state.bsJoinModal) return renderBSJoinModal();
-    if (state.scholarshipAmountModal) return renderScholarshipAmountModal();
-    if (state.adminReplyModal) return renderAdminReplyModal();
-    return '';
-}
-
-function renderNameEditorModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="modal-title">Изменить имя</div>
-            <div class="modal-sub">Максимум 24 символа</div>
-            <input class="modal-input" id="name-editor-input" maxlength="24" value="${escapeHtml(state.nameEditorValue || '')}" placeholder="Твоё имя" autofocus>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="name-save">Сохранить</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderChestModal() {
-    const r = state.chestModal;
-    if (!r) return '';
-    const emojiMap = { soft: '💰', xp: '⚡', hard: '🏅', free_name: '✏️' };
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="reward-reveal">
-                <div class="reward-icon">${emojiMap[r.type] || '🎁'}</div>
-                <div class="reward-label">${escapeHtml(r.label || '')}</div>
-                <div class="reward-desc">${r.type === 'soft' ? 'Софт зачислен' : r.type === 'xp' ? 'Опыт добавлен' : r.type === 'hard' ? 'Хард твой!' : 'Смена ника бесплатно'}</div>
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="modal-close">Круто!</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderPremiumModal() {
-    const r = state.premiumModal;
-    if (!r) return '';
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="reward-reveal" style="padding-top:14px">
-                <div class="reward-icon">👑</div>
-                <div class="reward-label">ПРЕМИУМ СУНДУК</div>
-            </div>
-            <div class="info-section" style="margin-top:14px">
-                <div class="info-row"><span class="info-row-label">💰 Софт</span><span class="info-row-value">+${r.soft || 0}</span></div>
-                <div class="info-row"><span class="info-row-label">⚡ Опыт</span><span class="info-row-value">+${r.xp || 0} XP</span></div>
-                <div class="info-row"><span class="info-row-label">🏅 Бонус</span><span class="info-row-value gold">${escapeHtml(r.bonus_label || '—')}</span></div>
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="modal-close">Круто!</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderNewAchToast() {
-    const list = state.newAchToast || [];
-    if (list.length === 0) return '';
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">🎉 Новое достижение!</div>
-            <div class="info-modal-sub">${list.length > 1 ? `Открыто сразу ${list.length}:` : 'Ты только что получил:'}</div>
-            <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-                ${list.map(a => `
-                    <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--neon-soft);border-radius:var(--r-md)">
-                        <div style="font-size:32px">${a.icon}</div>
-                        <div style="flex:1;min-width:0">
-                            <div style="font-size:14px;font-weight:800;margin-bottom:2px">${escapeHtml(a.name)}</div>
-                            <div style="font-size:11px;font-weight:700;color:var(--neon-dark)">${escapeHtml(a.rewardText)}</div>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="modal-close">Отлично!</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderLevelInfoModal() {
-    const w = state.wallet || {};
-    const lvl = w.level || 1;
-    const xpIn = w.xp_in_level || 0;
-    const xpNext = w.xp_to_next || 500;
-    const xpPct = Math.min(100, Math.round((xpIn / xpNext) * 100));
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Уровни и опыт</div>
-            <div class="info-modal-sub">Как растёт уровень и за что дают XP</div>
-            <div class="info-current">
-                <div class="info-current-lvl">${lvl}<small>LVL</small></div>
-                <div class="info-current-info">
-                    <div class="info-current-name">${escapeHtml(w.level_title || 'Первокурсник')}</div>
-                    <div class="info-current-xp">${xpIn} / ${xpNext} XP</div>
-                </div>
-            </div>
-            <div class="info-xp-bar"><div class="info-xp-fill" style="width:${xpPct}%"></div></div>
-            <div class="info-section">
-                <div class="info-section-title">За что дают опыт</div>
-                <div class="info-row"><span class="info-row-label">Задача добавлена</span><span class="info-row-value">+5 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Задача выполнена</span><span class="info-row-value">+20 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Заметка</span><span class="info-row-value">+3 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Оценка</span><span class="info-row-value">+5 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Посещение</span><span class="info-row-value">+3 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+2 XP</span></div>
-                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+5 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Игра: 1 очко</span><span class="info-row-value">+2 XP</span></div>
-            </div>
-            <div class="info-section">
-                <div class="info-section-title">Формула уровня</div>
-                <div class="info-row"><span class="info-row-label">1 → 2</span><span class="info-row-value muted">500 XP</span></div>
-                <div class="info-row"><span class="info-row-label">N → N+1</span><span class="info-row-value">N × 500 XP</span></div>
-                <div class="info-row"><span class="info-row-label">Максимум</span><span class="info-row-value gold">30 LVL</span></div>
-            </div>
-            <div class="info-section">
-                <div class="info-section-title">Титулы</div>
-                <div class="info-row"><span class="info-row-label">1–5</span><span class="info-row-value muted">Первокурсник</span></div>
-                <div class="info-row"><span class="info-row-label">6–10</span><span class="info-row-value muted">Второкурсник</span></div>
-                <div class="info-row"><span class="info-row-label">11–15</span><span class="info-row-value muted">Третьекурсник</span></div>
-                <div class="info-row"><span class="info-row-label">16–20</span><span class="info-row-value muted">Старшекурсник</span></div>
-                <div class="info-row"><span class="info-row-label">21–25</span><span class="info-row-value muted">Магистрант</span></div>
-                <div class="info-row"><span class="info-row-label">26–29</span><span class="info-row-value muted">Аспирант</span></div>
-                <div class="info-row"><span class="info-row-label">30</span><span class="info-row-value gold">Легенда ИРНИТУ</span></div>
-            </div>
-            <div class="actions-row" style="justify-content:center;margin-top:20px">
-                <button class="btn" data-action="modal-close">Понятно</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderCurrencyInfoModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Откуда взять валюту</div>
-            <div class="info-modal-sub">Все способы получать Софт и Хард</div>
-
-            <div class="info-section">
-                <div class="info-section-title">${softIconImg(18)} Софт</div>
-                <div class="info-row"><span class="info-row-label">Добавить задачу</span><span class="info-row-value">+1</span></div>
-                <div class="info-row"><span class="info-row-label">Выполнить задачу</span><span class="info-row-value">+5</span></div>
-                <div class="info-row"><span class="info-row-label">Новая заметка</span><span class="info-row-value">+1</span></div>
-                <div class="info-row"><span class="info-row-label">Добавить оценку</span><span class="info-row-value">+1</span></div>
-                <div class="info-row"><span class="info-row-label">Отметить посещение</span><span class="info-row-value">+1</span></div>
-                <div class="info-row"><span class="info-row-label">Вопрос AI</span><span class="info-row-value">+1</span></div>
-                <div class="info-row"><span class="info-row-label">AI с фото</span><span class="info-row-value">+2</span></div>
-                <div class="info-row"><span class="info-row-label">Игра «До пары успеть»</span><span class="info-row-value">+1–30</span></div>
-                <div class="info-row"><span class="info-row-label">Халява дня</span><span class="info-row-value">+10–30</span></div>
-                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value">+500</span></div>
-                <div class="info-row"><span class="info-row-label">Победа в морском бою</span><span class="info-row-value">×2 ставки</span></div>
-            </div>
-
-            <div class="info-section">
-                <div class="info-section-title">${hardIconImg(18)} Хард</div>
-                <div class="info-row"><span class="info-row-label">Халява дня (редкий)</span><span class="info-row-value gold">+1–5</span></div>
-                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value gold">+3–25</span></div>
-                <div class="info-row"><span class="info-row-label">Рекорд в игре</span><span class="info-row-value gold">+1</span></div>
-                <div class="info-row"><span class="info-row-label">Новый рекорд</span><span class="info-row-value gold">+5</span></div>
-                <div class="info-row"><span class="info-row-label">Достижения</span><span class="info-row-value gold">+1–10</span></div>
-                <div class="info-row"><span class="info-row-label">Обменник (100:1)</span><span class="info-row-value gold">∞</span></div>
-            </div>
-
-            <div class="exchange-rate-badge" style="margin:16px 0">
-                <span>100 Софта</span>
-                <span class="rate-arrow">→</span>
-                <span class="rate-value">1 Хард</span>
-            </div>
-
-            <div class="info-section">
-                <div class="info-section-title">Куда потратить</div>
-                <div class="info-row"><span class="info-row-label">Премиум-сундук</span><span class="info-row-value gold">10 Харда</span></div>
-                <div class="info-row"><span class="info-row-label">Смена ника</span><span class="info-row-value gold">5 Харда</span></div>
-                <div class="info-row"><span class="info-row-label">Ставка в морском бою</span><span class="info-row-value">10–500 Софта</span></div>
-            </div>
-
-            <div class="actions-row" style="justify-content:center;margin-top:10px">
-                <button class="btn" data-action="modal-close">Понятно</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderAchModal() {
-    const achId = state.achModal;
-    if (!achId) return '';
-    const item = (state.achievements || []).find(a => a.id === achId);
-    if (!item) return '';
-    const status = item.unlocked
-        ? '<span class="info-ach-badge unlocked">Получено</span>'
-        : '<span class="info-ach-badge locked">Ещё не открыто</span>';
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-ach-hero">
-                <div class="info-ach-icon ${item.unlocked ? '' : 'locked'}">${item.icon}</div>
-                <div class="info-ach-name">${escapeHtml(item.name)}</div>
-                ${status}
-            </div>
-            <div class="info-ach-desc">${escapeHtml(item.desc)}</div>
-            ${item.reward && (item.reward.xp || item.reward.soft || item.reward.hard) ? `
-                <div class="info-section" style="margin-top:14px">
-                    <div class="info-section-title">Награда</div>
-                    ${item.reward.xp ? `<div class="info-row"><span class="info-row-label">⚡ Опыт</span><span class="info-row-value">+${item.reward.xp} XP</span></div>` : ''}
-                    ${item.reward.soft ? `<div class="info-row"><span class="info-row-label">💰 Софт</span><span class="info-row-value">+${item.reward.soft}</span></div>` : ''}
-                    ${item.reward.hard ? `<div class="info-row"><span class="info-row-label">🏅 Хард</span><span class="info-row-value gold">+${item.reward.hard}</span></div>` : ''}
-                </div>
-            ` : ''}
-            ${item.unlocked ? '' : `<div class="info-ach-hint">Продолжай пользоваться приложением — достижение откроется автоматически.</div>`}
-            <div class="actions-row" style="justify-content:center;margin-top:18px">
-                <button class="btn" data-action="modal-close">Закрыть</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderExchangeModal() {
-    const w = state.wallet || {};
-    const soft = w.soft || 0;
-    const amount = Math.max(0, Math.min(state.exchangeAmount || 0, soft));
-    const hard = Math.floor(amount / 100);
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Обмен валюты</div>
-            <div class="info-modal-sub">Обменяй Софт на Хард</div>
-
-            <div class="exchange-rate-badge">
-                <span>100 Софта</span>
-                <span class="rate-arrow">→</span>
-                <span class="rate-value">1 Хард</span>
-            </div>
-
-            <div class="exchange-input-wrap">
-                <input class="exchange-input" id="exchange-amount-input" type="number" min="0" step="100"
-                       value="${state.exchangeAmount}" inputmode="numeric" placeholder="0">
-                <div class="exchange-input-suffix">Софт</div>
-            </div>
-
-            <div class="exchange-quick-buttons">
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.25">25%</button>
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.5">50%</button>
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="0.75">75%</button>
-                <button class="exchange-quick-btn" data-action="exchange-quick" data-value="1">MAX</button>
-            </div>
-
-            <div class="exchange-preview">
-                <div class="exchange-preview-label">Получишь</div>
-                <div class="exchange-preview-value">${hard}<span class="suffix">Харда</span></div>
-            </div>
-
-            <div class="exchange-balance-hint">
-                Доступно: <strong>${formatNumber(soft)}</strong> Софта
-            </div>
-
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="exchange-submit" ${hard > 0 ? '' : 'disabled'}>Обменять</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderBSJoinModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Введи код игры</div>
-            <div class="info-modal-sub">6 цифр от друга</div>
-            <input class="modal-input" id="bs-join-code-input" maxlength="6" inputmode="numeric"
-                   pattern="[0-9]*" value="${escapeHtml(state.bsJoinCode || '')}"
-                   placeholder="000000" autofocus>
-            <div class="card-subtitle" style="text-align:center;margin-bottom:16px">
-                Ставка: <strong style="color:var(--neon-dark)">${state.bsBet}</strong> Софта
-            </div>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="bs-join-submit">Войти</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderScholarshipAmountModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Сумма стипендии</div>
-            <div class="info-modal-sub">Введите 0, если не получаете</div>
-            <input class="modal-input" id="sch-amount-input" type="number" inputmode="numeric"
-                   min="0" max="100000" value="${escapeHtml(state.scholarshipAmountValue || '')}"
-                   placeholder="0" autofocus>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="sch-amount-submit">Сохранить</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderAdminReplyModal() {
-    return `<div class="modal-backdrop" data-action="modal-close">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <div class="info-modal-title">Ответ пользователю</div>
-            <div class="info-modal-sub">Обращение #${state.adminReplyFeedbackId || '?'}</div>
-            <textarea class="input" id="admin-reply-input" rows="4"
-                      placeholder="Текст ответа..." autofocus>${escapeHtml(state.adminReplyText || '')}</textarea>
-            <div class="actions-row" style="justify-content:center">
-                <button class="btn" data-action="admin-reply-submit">Отправить</button>
-                <button class="btn btn-secondary" data-action="modal-close">Отмена</button>
-            </div>
-        </div>
-    </div>`;
-}
-
 
 // ============================================================
 //                       СТИПЕНДИЯ
