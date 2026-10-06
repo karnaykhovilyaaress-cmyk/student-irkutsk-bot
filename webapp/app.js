@@ -1,726 +1,1188 @@
-/* ============================================================
-   STUDENT IRK WebApp
-   Все API совпадают с bot.py
-   ============================================================ */
 
-const tg = window.Telegram?.WebApp;
-tg?.ready(); tg?.expand(); tg?.setHeaderColor?.('#000'); tg?.disableVerticalSwipes?.();
+ const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
 
-const INIT_DATA = tg?.initData || '';
-const qs = s => document.querySelector(s);
-const qsa = s => document.querySelectorAll(s);
-const fmt = n => (n ?? 0).toLocaleString('ru-RU');
+try { if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } catch (e) {}
+try { if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait'); } catch (e) {}
+try { if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes(); } catch (e) {}
 
-const API = {
-  me:'/api/me', wallet:'/api/wallet', setName:'/api/set-name', setAvatar:'/api/set-avatar',
-  exchange:'/api/exchange-soft-to-hard',
-  schedule:'/api/schedule', week:'/api/week', groups:'/api/groups',
-  setGroup:'/api/set-group', setSubgroup:'/api/set-subgroup',
-  tasks:'/api/tasks', taskAdd:'/api/task-add', taskUpdate:'/api/task-update',
-  taskDelete:'/api/task-delete', taskClear:'/api/task-clear',
-  notes:'/api/notes', noteSave:'/api/note-save', noteDelete:'/api/note-delete',
-  notifySet:'/api/notify-set', notifyBefore:'/api/notify-set-before',
-  quote:'/api/quote', quoteSub:'/api/quote-subscribe',
-  scholarship:'/api/scholarship', schAmount:'/api/scholarship-set-amount',
-  schAddGrade:'/api/scholarship-add-grade', schUpdGrade:'/api/scholarship-update-grade',
-  schDelGrade:'/api/scholarship-delete-grade', schClear:'/api/scholarship-clear',
-  attendance:'/api/attendance-set',
-  gameInfo:'/api/game/info', gameSubmit:'/api/game/submit',
-  chestStatus:'/api/chest/status', chestOpen:'/api/chest/open',
-  premiumOpen:'/api/premium-chest/open',
-  achievements:'/api/achievements', walletTop:'/api/wallet/leaderboard',
-  ai:'/api/ai', aiPhoto:'/api/ai-photo', aiHistory:'/api/ai/history',
-  aiClear:'/api/ai/clear-history',
-  feedback:'/api/feedback', feedbackMy:'/api/feedback/my',
-  exportPdf:'/api/export', vip:'/api/vip',
-  bsCreate:'/api/bs/create', bsJoin:'/api/bs/join', bsFind:'/api/bs/find',
-  bsReady:'/api/bs/ready', bsState:'/api/bs/state', bsFire:'/api/bs/fire',
-  bsSurrender:'/api/bs/surrender', bsCancel:'/api/bs/cancel',
-  bsBotStart:'/api/bs/bot-start', bsFinishBot:'/api/bs/finish-bot',
-  adminStats:'/api/admin/stats', adminFbList:'/api/admin/feedback-list',
-  adminFbReply:'/api/admin/feedback-reply', adminFbPostpone:'/api/admin/feedback-postpone',
-  adminBroadcast:'/api/admin/broadcast', adminMonitor:'/api/admin/monitor',
+const tgUser = tg.initDataUnsafe?.user || { first_name: 'Гость', last_name: '', username: '', id: 0 };
+const INIT_DATA = tg.initData || '';
+
+setTimeout(() => {
+    const sp = document.getElementById('splash');
+    const app = document.getElementById('app');
+    if (sp) sp.classList.add('hide');
+    if (app) app.style.display = '';
+    setTimeout(() => { if (sp) sp.remove(); }, 600);
+}, 1200);
+
+const state = {
+    tab: 'schedule', loading: false, error: null, user: tgUser, isAdmin: false,
+    schedule: null, weekDays: null, weekOffset: 0, scheduleViewMode: 'today', scheduleDay: 'today',
+    tasks: [], tasksStats: { active: 0, done: 0 }, tasksView: 'active',
+    notes: [],
+    profile: null, scholarship: null, groups: null,
+    pickerMode: null, pickerInstitute: null, pickerCourse: null, pickerSearch: '',
+    notifyEditor: false, notifyEditorType: 'today', notifyEditorHour: 8, notifyEditorMinute: 0,
+    aiMessages: [], aiPending: false,
+    adminStats: null, adminFeedback: [], adminMonitor: null, adminBusy: false,
 };
 
-async function apiGet(url, params={}){
-  const q = new URLSearchParams({ initData: INIT_DATA, ...params });
-  const r = await fetch(`${url}?${q}`);
-  if(!r.ok && r.status===401){ showModal('Ошибка','Открой через Telegram'); throw new Error('401'); }
-  return r.json();
-}
-async function apiPost(url, body={}){
-  const r = await fetch(url,{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({initData:INIT_DATA, ...body})});
-  const d = await r.json().catch(()=>({}));
-  if(!r.ok) throw Object.assign(new Error(d.error||'error'),{data:d});
-  return d;
+async function apiGet(path, params = {}) {
+    const url = new URL(path, window.location.origin);
+    url.searchParams.set('initData', INIT_DATA);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const r = await fetch(url.toString());
+    if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.message || err.error || `HTTP ${r.status}`);
+    }
+    return await r.json();
 }
 
-/* ============ NAV ============ */
-function go(screen){
-  qsa('.screen').forEach(s=>s.classList.toggle('active', s.dataset.screen===screen));
-  qsa('.dock__btn').forEach(b=>b.classList.toggle('active', b.dataset.goto===screen));
-  window.scrollTo({top:0,behavior:'smooth'});
-  const loaders = {
-    levels:renderLevels, tasks:loadTasks, schedule:()=>loadWeek(0),
-    notes:loadNotes, ai:loadAiHistory, achievements:loadAchievements,
-    leaderboard:loadLeaderboard, scholarship:loadScholarship,
-    settings:loadSettings, feedback:loadFeedback, shop:loadShop,
-    games:loadGames, checks:loadChecks, attendance:loadAttendance,
-    admin:loadAdmin, exchange:()=>{},
-  };
-  loaders[screen]?.();
-}
-qsa('[data-goto]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.goto)));
-
-/* ============ MODAL ============ */
-function showModal(t,b){
-  qs('#modalTitle').textContent=t; qs('#modalBody').innerHTML=b;
-  qs('#modal').classList.remove('hidden');
-}
-qs('#modalOk').onclick=()=>qs('#modal').classList.add('hidden');
-
-/* ============ UTILS ============ */
-function escapeHtml(s){
-  return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function headForLevel(lvl){
-  if(lvl<=5) return 'assets/head-1.png';
-  if(lvl<=10) return 'assets/head-2.png';
-  if(lvl<=15) return 'assets/head-3.png';
-  if(lvl<=20) return 'assets/head-4.png';
-  if(lvl<=25) return 'assets/head-5.png';
-  return 'assets/head-6.png';
-}
-
-/* ============ PROFILE ============ */
-let ME=null, TASKS_TAB='active';
-
-async function loadMe(){
-  try { ME=await apiGet(API.me); renderProfile(ME); }
-  catch(e){ console.error(e); }
-}
-function renderProfile(d){
-  qs('#pName').textContent=d.display_name||d.player_tag||'PLAYER';
-  qs('#pHead').src=headForLevel(d.wallet.level);
-  qs('#pLevelTag').textContent=`${d.wallet.level} LVL`;
-  const total=d.wallet.xp_in_level+d.wallet.xp_to_next;
-  qs('#xpFill').style.width=(total? d.wallet.xp_in_level/total*100:0)+'%';
-  qs('#xpCur').textContent=fmt(d.wallet.xp_in_level)+'XP';
-  qs('#xpNext').textContent=fmt(total)+'XP';
-  qs('#wSoft').textContent=fmt(d.wallet.soft);
-  qs('#wHard').textContent=fmt(d.wallet.hard);
-  ['#lvSoft','#gmSoft','#shSoft'].forEach(s=>qs(s).textContent=fmt(d.wallet.soft));
-  ['#lvHard','#gmHard','#shHard'].forEach(s=>qs(s).textContent=fmt(d.wallet.hard));
-  qs('#stNotes').textContent=d.notes_count||0;
-  qs('#stStreak').textContent=d.streak||0;
-  qs('#stTasks').textContent=d.tasks_done||0;
-  if(d.is_admin) qs('#menuAdmin').style.display='block';
-}
-
-qs('#btnEditName').onclick=async()=>{
-  const cur=ME?.wallet?.custom_name||'';
-  const name=prompt('Новый ник (до 24 символов):',cur);
-  if(name===null) return;
-  try {
-    const r=await apiPost(API.setName,{name:name.trim()});
-    ME.wallet=r.wallet; renderProfile(ME);
-  } catch(e){
-    if(e.data?.error==='need_hard') showModal('Не хватает','Нужно 5 Автоматов для смены ника');
-    else showModal('Ошибка',e.message);
-  }
-};
-qs('#xpBarWrap').onclick=()=>go('levels');
-qs('#btnShare').onclick=()=>{
-  const url=`https://t.me/share/url?url=${encodeURIComponent('https://t.me/student_irk38_bot')}&text=${encodeURIComponent('Зацени STUDENT IRK!')}`;
-  tg?.openTelegramLink?.(url)||window.open(url);
-};
-qs('#btnMenuAcc').onclick=()=>qs('#menuSub').classList.toggle('hidden');
-qs('#btnDelete').onclick=()=>showModal('Удалить аккаунт','Напиши в поддержку, чтобы удалить аккаунт.');
-qs('#btnExport').onclick=async()=>{
-  try { await apiPost(API.exportPdf); showModal('Готово','PDF отправлен тебе в Telegram.'); }
-  catch(e){ showModal('Ошибка',e.message); }
-};
-
-/* ============ CHESTS ============ */
-qs('#chestDaily').onclick=async()=>{
-  try { const r=await apiPost(API.chestOpen); showModal('🎁 Бокс открыт!',r.reward.label); loadMe(); }
-  catch(e){
-    if(e.data?.error==='already_opened') showModal('Уже открыт','Приходи завтра!');
-    else showModal('Ошибка',e.message);
-  }
-};
-qs('#chestPremium').onclick=async()=>{
-  if(!confirm('Открыть премиум-бокс за 10 Автоматов?')) return;
-  try { const r=await apiPost(API.premiumOpen); showModal('💎 Премиум!',r.reward.label); loadMe(); }
-  catch(e){ showModal('Не хватает',e.data?.message||e.message); }
-};
-
-/* ============ QUOTE ============ */
-async function loadQuote(){
-  try {
-    const d=await apiGet(API.quote);
-    qs('#quoteText').textContent=d.quote;
-    qs('#quoteSubBtn').classList.toggle('active', d.subscribed);
-  } catch(e){}
-}
-qs('#quoteSubBtn').onclick=async()=>{
-  try {
-    const cur=qs('#quoteSubBtn').classList.contains('active');
-    await apiPost(API.quoteSub,{subscribe:!cur});
-    loadQuote();
-  } catch(e){}
-};
-
-/* ============ LEVELS ============ */
-function renderLevels(){
-  if(!ME) return;
-  const lvl=ME.wallet.level;
-  qs('#lvNum').textContent=lvl;
-  qs('#lvCur').textContent=fmt(ME.wallet.xp_in_level)+'XP';
-  const total=ME.wallet.xp_in_level+ME.wallet.xp_to_next;
-  qs('#lvNext').textContent=fmt(total)+'XP';
-  qs('#lvLeft').textContent=fmt(ME.wallet.xp_to_next)+'XP';
-  qs('#lvFill').style.width=(total? ME.wallet.xp_in_level/total*100:0)+'%';
-  const list=qs('#levelsList'); list.innerHTML='';
-  for(let i=1;i<=30;i++){
-    const need=i*500;
-    const locked=i>lvl;
-    const reward=i<=5?'+10 🔥':i<=10?'+25 🔥':i<=20?'+50 🔥':'+100 🔥';
-    const div=document.createElement('div');
-    div.className='lv-item'+(locked?' lv-item--locked':'');
-    div.innerHTML=`<div>
-      <div class="lv-item__name">УРОВЕНЬ ${i}</div>
-      <div class="lv-item__xp">от ${fmt(need)}XP</div>
-      <div class="lv-item__reward">${reward}</div>
-    </div>
-    <button class="lv-item__btn">${locked?'закрыто':'получено'}</button>`;
-    list.appendChild(div);
-  }
-}
-
-/* ============ GAMES ============ */
-async function loadGames(){
-  const list=qs('#gamesList'); list.innerHTML='';
-  const games=[
-    {id:'flappy', name:'ДО ПАРЫ УСПЕТЬ',  img:'card-flappy.png', badge:'НОВОЕ'},
-    {id:'bs',     name:'МОРСКОЙ БОЙ',     img:'card-bs.png'},
-    {id:'mix',    name:'СЕССИЯ МИКС',     img:'card-mix.png'},
-    {id:'rush',   name:'ДЕДЛАЙН РАШ',     img:'card-rush.png'},
-    {id:'ninja',  name:'НИНДЗЯ-СТИПУХА',  img:'card-ninja.png'},
-    {id:'hunt',   name:'ОХОТА ЗА АВТОМАТОМ', img:'card-hunt.png'},
-    {id:'space',  name:'КОСМО-СЕССИЯ',    img:'card-space.png'},
-  ];
-  let flappyBest=0, flappyPlays=0;
-  try {
-    const d=await apiGet(API.gameInfo);
-    const f=d.games.find(x=>x.id==='flappy');
-    if(f){ flappyBest=f.best; flappyPlays=f.plays; }
-  } catch(e){}
-  games.forEach(g=>{
-    const card=document.createElement('div');
-    card.className='game-card';
-    card.innerHTML=`
-      ${g.badge?`<div class="game-card__badge">${g.badge}</div>`:''}
-      <div class="game-card__bg" style="background-image:url('assets/${g.img}')"></div>
-      <div class="game-card__overlay"></div>
-      <div class="game-card__content">
-        <div class="game-card__name">${g.name}</div>
-        ${g.id==='flappy'?`<div class="muted" style="font-size:11px;margin-bottom:8px;">Рекорд: ${flappyBest} · Игр: ${flappyPlays}</div>`:''}
-        <button class="game-card__btn">играть</button>
-      </div>`;
-    card.querySelector('.game-card__btn').onclick=()=>{
-      if(g.id==='bs') go('bs');
-      else if(g.id==='flappy') showModal('До пары успеть','Игра откроется в отдельном окне Flappy.');
-      else showModal('Скоро','Эта игра ещё в разработке');
-    };
-    list.appendChild(card);
-  });
-}
-
-/* ============ BS ============ */
-let BS_BET=10, BS_GAME=null, BS_POLL=null;
-function renderBsBets(){
-  const box=qs('#bsBets'); box.innerHTML='';
-  [10,50,100,500].forEach(v=>{
-    const b=document.createElement('button');
-    b.className='bs-bet'+(v===BS_BET?' active':'');
-    b.textContent=v;
-    b.onclick=()=>{ BS_BET=v; renderBsBets(); };
-    box.appendChild(b);
-  });
-}
-renderBsBets();
-
-qs('#bsCreate').onclick=async()=>{
-  try {
-    const r=await apiPost(API.bsCreate,{bet:BS_BET});
-    BS_GAME=r; showModal('Игра создана',`Код: <b>${r.code}</b><br>Скинь другу`);
-    pollBs();
-  } catch(e){ showModal('Ошибка',e.data?.message||e.message); }
-};
-qs('#bsFind').onclick=async()=>{
-  try {
-    const r=await apiPost(API.bsFind,{bet:BS_BET});
-    if(r.status==='matched'){ BS_GAME=r; startBsBoard(); }
-    else { showModal('В очереди',`Код: <b>${r.code}</b><br>Ждём соперника...`); pollBs(); }
-  } catch(e){ showModal('Ошибка',e.data?.message||e.message); }
-};
-qs('#bsJoin').onclick=async()=>{
-  const code=qs('#bsCode').value.trim();
-  if(code.length!==6) return showModal('Ошибка','Код — 6 цифр');
-  try {
-    const r=await apiPost(API.bsJoin,{code});
-    BS_GAME=r; startBsBoard();
-  } catch(e){ showModal('Ошибка',e.data?.message||e.message); }
-};
-qs('#bsBot').onclick=async()=>{
-  try {
-    await apiPost(API.bsBotStart,{bet:BS_BET});
-    BS_GAME={ game_id:'bot', bet:BS_BET, bot:true };
-    startBsBoard();
-  } catch(e){ showModal('Ошибка',e.data?.message||e.message); }
-};
-function pollBs(){
-  if(BS_POLL) clearInterval(BS_POLL);
-  BS_POLL=setInterval(async()=>{
-    if(!BS_GAME?.game_id) return;
-    try {
-      const s=await apiGet(API.bsState,{game_id:BS_GAME.game_id});
-      if(s.status==='playing'){ clearInterval(BS_POLL); startBsBoard(); }
-      if(s.status==='finished'){ clearInterval(BS_POLL); showBsResult(s.result); }
-    } catch(e){}
-  },2500);
-}
-function startBsBoard(){ showModal('Расстановка','Скоро: полный экран морского боя'); }
-
-/* ============ TASKS ============ */
-async function loadTasks(){
-  const list=qs('#tasksList'); list.innerHTML='<p class="muted">Загрузка...</p>';
-  try {
-    const d=await apiGet(API.tasks,{done:TASKS_TAB==='done'?'1':'0'});
-    list.innerHTML='';
-    if(!d.tasks.length){ list.innerHTML='<p class="muted">Пусто</p>'; return; }
-    d.tasks.forEach(t=>{
-      const div=document.createElement('div');
-      div.className='task-item'+(t.done?' task-item--done':'');
-      div.innerHTML=`
-        <span class="task-item__prio prio-${t.priority}"></span>
-        <span class="task-item__text">${escapeHtml(t.text)}${t.due_date?` <small class="muted">до ${t.due_date}${t.due_time?' '+t.due_time:''}</small>`:''}</span>
-        <button class="task-item__del">✕</button>`;
-      if(!t.done){
-        div.querySelector('.task-item__text').onclick=async()=>{
-          await apiPost(API.taskUpdate,{id:t.id,done:true});
-          loadTasks(); loadMe();
-        };
-      }
-      div.querySelector('.task-item__del').onclick=async(e)=>{
-        e.stopPropagation();
-        await apiPost(API.taskDelete,{id:t.id});
-        loadTasks();
-      };
-      list.appendChild(div);
+async function apiPost(path, body = {}) {
+    const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: INIT_DATA, ...body }),
     });
-  } catch(e){ list.innerHTML='<p class="muted">Ошибка</p>'; }
+    if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        const e = new Error(err.message || err.error || `HTTP ${r.status}`);
+        e.code = err.error;
+        throw e;
+    }
+    return await r.json();
 }
-qs('#taskAddBtn').onclick=async()=>{
-  const inp=qs('#taskInput'); const text=inp.value.trim();
-  if(!text) return;
-  await apiPost(API.taskAdd,{text});
-  inp.value=''; loadTasks(); loadMe();
-};
-qsa('.tab').forEach(t=>t.onclick=()=>{
-  qsa('.tab').forEach(x=>x.classList.remove('active'));
-  t.classList.add('active'); TASKS_TAB=t.dataset.tab; loadTasks();
-});
 
-/* ============ SCHEDULE ============ */
-async function loadWeek(offset=0){
-  const box=qs('#schedDays'); box.innerHTML='<p class="muted">Загрузка...</p>';
-  try {
-    const d=await apiGet(API.week,{offset});
-    if(d.error){ box.innerHTML='<p class="muted">Выбери группу в настройках</p>'; return; }
-    box.innerHTML='';
-    d.days.forEach(day=>{
-      const card=document.createElement('div');
-      card.className='day-card';
-      let lessonsHtml='';
-      if(!day.lessons.length){ lessonsHtml='<p class="muted">Занятий нет</p>'; }
-      else {
-        day.lessons.forEach(l=>{
-          const time=l.timeEnd?`${l.time}–${l.timeEnd}`:l.time;
-          const meta=[l.type, l.auditorium&&`ауд. ${l.auditorium}`, l.teacher].filter(Boolean).join(' · ');
-          lessonsHtml+=`
-            <div class="lesson">
-              <div class="lesson__time">${time}</div>
-              <div class="lesson__body">
-                <div>${escapeHtml(l.subject)}</div>
-                <div class="lesson__meta">${escapeHtml(meta)}</div>
-                <div class="lesson__att">
-                  <button class="att-btn ${l.attendance==='was'?'active-was':''}" data-st="was">Был</button>
-                  <button class="att-btn ${l.attendance==='missed'?'active-missed':''}" data-st="missed">Пропустил</button>
-                  <button class="att-btn ${l.attendance==='sick'?'active-sick':''}" data-st="sick">Болел</button>
+function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function renderEmpty(text) { return `<div class="empty">${escapeHtml(text)}</div>`; }
+function renderLoading() { return `<div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>`; }
+
+function priorityLabel(p) {
+    if (p === 2) return '<span class="priority priority-high">Высокий</span>';
+    if (p === 1) return '<span class="priority priority-medium">Средний</span>';
+    return '<span class="priority priority-low">Низкий</span>';
+}
+function haptic(type = 'light') {
+    try {
+        if (type === 'light') tg.HapticFeedback?.impactOccurred('light');
+        else if (type === 'medium') tg.HapticFeedback?.impactOccurred('medium');
+        else if (type === 'success') tg.HapticFeedback?.notificationOccurred('success');
+        else if (type === 'error') tg.HapticFeedback?.notificationOccurred('error');
+    } catch (e) {}
+}
+function formatNotifyTime(hh, mm) { return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; }
+
+function render() {
+    const content = document.getElementById('content');
+    const title = document.getElementById('page-title');
+    const appEl = document.getElementById('app');
+    const navEl = document.getElementById('bottom-nav');
+
+    const titles = { schedule: 'Расписание', tasks: 'Задачи', notes: 'Заметки', ai: 'AI', admin: 'Админ', profile: 'Профиль' };
+
+    if (state.notifyEditor) {
+        appEl?.classList.add('picker-open');
+        if (title) title.textContent = 'Уведомления';
+        if (navEl) navEl.style.display = 'none';
+        content.innerHTML = renderNotifyEditor();
+        attachHandlers();
+        return;
+    }
+
+    if (state.pickerMode) {
+        appEl?.classList.add('picker-open');
+        if (title) {
+            if (state.pickerMode === 'institute') title.textContent = 'Институт';
+            else if (state.pickerMode === 'course') title.textContent = 'Курс';
+            else title.textContent = 'Группа';
+        }
+        if (navEl) navEl.style.display = 'none';
+        let html = '';
+        if (state.pickerMode === 'institute') html = renderInstitutePicker();
+        else if (state.pickerMode === 'course') html = renderCoursePicker();
+        else html = renderGroupPicker();
+        content.innerHTML = html;
+        attachHandlers();
+        if (state.pickerMode === 'group') pickerAttachSearch();
+        return;
+    }
+
+    appEl?.classList.remove('picker-open');
+    if (navEl) navEl.style.display = '';
+
+    title.textContent = titles[state.tab] || 'Студент';
+
+    let html = '';
+    if (state.loading) html = renderLoading();
+    else if (state.error) html = `<div class="empty">Ошибка: ${escapeHtml(state.error)}</div>`;
+    else {
+        switch (state.tab) {
+            case 'schedule': html = renderSchedule(); break;
+            case 'tasks': html = renderTasks(); break;
+            case 'notes': html = renderNotes(); break;
+            case 'ai': html = renderAI(); break;
+            case 'admin': html = renderAdmin(); break;
+            case 'profile': html = renderProfile(); break;
+        }
+    }
+
+    content.innerHTML = html;
+    document.querySelectorAll('.nav-btn').forEach((btn) => {
+        const isAdmin = btn.dataset.tab === 'admin';
+        btn.style.display = (isAdmin && !state.isAdmin) ? 'none' : '';
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+    });
+    attachHandlers();
+}
+
+function renderUserBar() {
+    const u = state.user;
+    const p = state.profile;
+    const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
+    const name = u.first_name || 'Гость';
+    const metaParts = [];
+    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
+    if (u.username) metaParts.push('@' + u.username);
+    const meta = metaParts.join(' · ') || 'профиль не заполнен';
+    const tasks = p?.tasks_active ?? 0;
+
+    return `
+        <div class="user-bar" data-action="go-profile">
+            <div class="user-bar-avatar">${escapeHtml(initials)}</div>
+            <div class="user-bar-info">
+                <div class="user-bar-name">${escapeHtml(name)}</div>
+                <div class="user-bar-meta">${escapeHtml(meta)}</div>
+            </div>
+            <div class="user-bar-badges">
+                <div class="user-badge">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 11 12 14 22 4"></polyline>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    <span>${tasks}</span>
                 </div>
-              </div>
-            </div>`;
-        });
-      }
-      card.innerHTML=`<div class="day-card__header"><span>${escapeHtml(day.name)}</span><span>${day.date}</span></div>${lessonsHtml}`;
-      card.querySelectorAll('.att-btn').forEach(btn=>{
-        btn.onclick=async()=>{
-          const lesson = btn.closest('.lesson');
-          const time = lesson.querySelector('.lesson__time').textContent.split('–')[0];
-          const subject = lesson.querySelector('.lesson__body > div').textContent;
-          const st = btn.dataset.st;
-          await apiPost(API.attendance,{date:day.date,time,subject,status:st});
-          btn.parentElement.querySelectorAll('.att-btn').forEach(b=>b.className='att-btn');
-          btn.className='att-btn active-'+st;
-        };
-      });
-      box.appendChild(card);
-    });
-  } catch(e){ box.innerHTML='<p class="muted">Ошибка</p>'; }
+            </div>
+        </div>
+    `;
 }
 
-/* ============ NOTES ============ */
-async function loadNotes(){
-  try {
-    const d=await apiGet(API.notes);
-    const list=qs('#notesList'); list.innerHTML='';
-    if(!d.notes.length){ list.innerHTML='<p class="muted">Пока нет заметок</p>'; return; }
-    d.notes.forEach(n=>{
-      const div=document.createElement('div');
-      div.className='note-item';
-      div.innerHTML=`<div><b>${escapeHtml(n.subject)}</b></div>
-        <div class="muted" style="margin-top:6px;">${escapeHtml(n.text)}</div>`;
-      div.onclick=async()=>{
-        if(confirm('Удалить заметку?')){ await apiPost(API.noteDelete,{id:n.id}); loadNotes(); }
-      };
-      list.appendChild(div);
-    });
-  } catch(e){}
+function renderLesson(les) {
+    const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
+    const details = [];
+    if (les.teacher) details.push(escapeHtml(les.teacher));
+    if (les.auditorium) details.push(`ауд. ${escapeHtml(les.auditorium)}`);
+    return `
+        <div class="lesson">
+            <div class="lesson-time">${escapeHtml(timeRange)}</div>
+            <div class="lesson-body">
+                <div class="lesson-subject">${escapeHtml(les.subject)}${les.type ? ` <span style="color:var(--text-2);font-weight:400">(${escapeHtml(les.type)})</span>` : ''}</div>
+                ${details.length ? `<div class="lesson-details">${details.join(' · ')}</div>` : ''}
+                ${les.subgroup ? `<div class="lesson-group">подгруппа ${escapeHtml(les.subgroup)}</div>` : ''}
+            </div>
+        </div>
+    `;
 }
-qs('#noteAddBtn').onclick=async()=>{
-  const s=qs('#noteSubject').value.trim();
-  const t=qs('#noteText').value.trim();
-  if(!s||!t) return;
-  await apiPost(API.noteSave,{subject:s,text:t});
-  qs('#noteSubject').value=''; qs('#noteText').value='';
-  loadNotes(); loadMe();
-};
 
-/* ============ AI ============ */
-async function loadAiHistory(){
-  try {
-    const d=await apiGet(API.aiHistory);
-    const box=qs('#aiChat'); box.innerHTML='';
-    if(!d.items.length){ box.innerHTML='<p class="muted">Спроси что-нибудь у AI-помощника</p>'; return; }
-    d.items.forEach(m=>addAiMsg(m.role==='user'?'user':'ai',m.text));
-  } catch(e){}
+function renderDaySwitch() {
+    return `
+        <div class="day-switch">
+            <button data-action="day-today" class="${state.scheduleDay === 'today' ? 'active' : ''}">Сегодня</button>
+            <button data-action="day-tomorrow" class="${state.scheduleDay === 'tomorrow' ? 'active' : ''}">Завтра</button>
+        </div>
+    `;
 }
-function addAiMsg(role,text){
-  const box=qs('#aiChat');
-  const div=document.createElement('div');
-  div.className=`ai-msg ai-msg--${role}`;
-  div.textContent=text;
-  box.appendChild(div); box.scrollTop=box.scrollHeight;
-  return div;
+
+function getTomorrowData() {
+    const wd = state.weekDays;
+    if (!wd || !wd.days || wd.days.length === 0) return null;
+    const today = new Date();
+    const jsDay = today.getDay();
+    const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
+    const tomorrowIdx = (todayIdx + 1) % 7;
+    if (wd.days.length >= 7) return wd.days[tomorrowIdx] || null;
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const dd = String(tomorrow.getDate()).padStart(2, '0');
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const yyyy = tomorrow.getFullYear();
+    const tomorrowStr = `${dd}.${mm}.${yyyy}`;
+    for (const d of wd.days) if (d.date === tomorrowStr) return d;
+    return null;
 }
-qs('#aiSend').onclick=async()=>{
-  const inp=qs('#aiInput'); const q=inp.value.trim();
-  if(!q) return;
-  inp.value='';
-  addAiMsg('user',q);
-  const pending=addAiMsg('ai','...');
-  try {
-    const r=await apiPost(API.ai,{question:q});
-    pending.textContent=r.answer||'Нет ответа';
-    loadMe();
-  } catch(e){ pending.textContent='Ошибка: '+e.message; }
-};
-qs('#aiClear').onclick=async()=>{
-  if(!confirm('Очистить историю?')) return;
-  await apiPost(API.aiClear); loadAiHistory();
-};
-qs('#aiPhoto').onchange=async(e)=>{
-  const f=e.target.files[0]; if(!f) return;
-  const reader=new FileReader();
-  reader.onload=async()=>{
-    const b64=reader.result;
-    addAiMsg('user','📷 Фото');
-    const pending=addAiMsg('ai','...');
+
+async function ensureWeekLoaded() {
+    if (state.weekDays && state.weekDays.days && state.weekDays.days.length > 0) return true;
     try {
-      const r=await apiPost(API.aiPhoto,{photo:b64,question:''});
-      pending.textContent=r.answer||'Нет ответа';
-    } catch(e){ pending.textContent='Ошибка: '+e.message; }
-  };
-  reader.readAsDataURL(f);
-  e.target.value='';
-};
+        const r = await apiGet('/api/week', { offset: 0 });
+        state.weekDays = r;
+        return true;
+    } catch (e) { return false; }
+}
 
-/* ============ ACHIEVEMENTS ============ */
-async function loadAchievements(){
-  try {
-    const d=await apiGet(API.achievements);
-    const list=qs('#achList'); list.innerHTML='';
-    d.items.forEach(a=>{
-      const div=document.createElement('div');
-      div.className='ach-item'+(a.unlocked?'':' ach-item--locked');
-      div.innerHTML=`<div class="ach-item__icon">${a.icon}</div>
-        <div style="flex:1">
-          <div class="ach-item__name">${escapeHtml(a.name)}</div>
-          <div class="ach-item__desc">${escapeHtml(a.desc)}</div>
-        </div>
-        <div class="muted">${a.unlocked?'✓':''}</div>`;
-      list.appendChild(div);
+function renderWeekView() {
+    const wd = state.weekDays;
+    if (!wd || !wd.days || wd.days.length === 0) return renderEmpty('Не удалось загрузить расписание на неделю');
+    let title;
+    if (state.weekOffset === 0) title = 'Текущая неделя';
+    else if (state.weekOffset > 0) title = `Неделя +${state.weekOffset}`;
+    else title = `Неделя ${state.weekOffset}`;
+    let html = renderUserBar();
+    html += `<div class="day-header">${escapeHtml(title)}</div>`;
+    if (wd.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(wd.group)}${wd.subgroup ? ` · подгруппа ${escapeHtml(wd.subgroup)}` : ''}</div>`;
+    for (const day of wd.days) {
+        html += `<div class="day-header" style="margin-top:16px">${escapeHtml(day.name || day.date)}</div>`;
+        if (!day.lessons || day.lessons.length === 0) html += `<div class="card-subtitle" style="padding:8px 0">Занятий нет</div>`;
+        else for (const les of day.lessons) html += renderLesson(les);
+    }
+    html += `<div class="actions-row" style="margin-top:16px">
+        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+        <button class="btn btn-secondary" data-action="week-today">Сегодня</button>
+        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
+    </div>`;
+    return html;
+}
+
+function renderDayCard(day, label) {
+    let html = `<div class="day-header">${escapeHtml(label)}${day.name ? ' · ' + escapeHtml(day.name) : ''}${day.date ? ', ' + escapeHtml(day.date) : ''}</div>`;
+    const p = state.profile;
+    if (p?.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(p.group)}${p.subgroup ? ` · подгруппа ${escapeHtml(p.subgroup)}` : ''}</div>`;
+    if (!day.lessons || day.lessons.length === 0) html += renderEmpty('Занятий нет');
+    else for (const les of day.lessons) html += renderLesson(les);
+    html += `<div class="actions-row">
+        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+        <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
+        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
+    </div>`;
+    return html;
+}
+
+function renderSchedule() {
+    if (state.scheduleViewMode === 'week' && state.weekDays) return renderWeekView();
+    const s = state.schedule;
+
+    if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
+        return renderUserBar() + `
+            <div class="banner">
+                <div class="banner-title">Как начать</div>
+                <div class="banner-sub">1. Профиль → «Выбрать группу»<br>2. Укажи институт, курс и группу<br>3. Вернись — расписание появится</div>
+                <button class="banner-btn" data-action="go-profile">Выбрать группу</button>
+            </div>
+        `;
+    }
+
+    let html = renderUserBar() + renderDaySwitch();
+
+    if (state.scheduleDay === 'tomorrow') {
+        if (!state.weekDays) return html + renderLoading();
+        const tomorrow = getTomorrowData();
+        if (!tomorrow) return html + renderEmpty('Не удалось загрузить расписание на завтра');
+        return html + renderDayCard(tomorrow, 'Завтра');
+    }
+
+    if (!s) return html + renderEmpty('Нет данных о расписании');
+    if (s.error) return html + renderEmpty(s.message || 'Ошибка загрузки');
+
+    const header = s.dayName ? `${s.dayName}, ${s.date}` : s.date || '';
+    html += `<div class="day-header">${escapeHtml(header)}</div>`;
+    if (s.group) html += `<div class="lesson-group" style="margin-bottom:8px">Группа: ${escapeHtml(s.group)}${s.subgroup ? ` · подгруппа ${escapeHtml(s.subgroup)}` : ''}</div>`;
+    if (!s.lessons || s.lessons.length === 0) html += renderEmpty('Занятий нет');
+    else for (const les of s.lessons) html += renderLesson(les);
+    html += `<div class="actions-row">
+        <button class="btn btn-secondary" data-action="week-prev">← Прошлая</button>
+        <button class="btn btn-secondary" data-action="week-current">Текущая неделя</button>
+        <button class="btn btn-secondary" data-action="week-next">Следующая →</button>
+    </div>`;
+    return html;
+}
+
+function getCourseFromGroup(groupName) {
+    const m = String(groupName).match(/-(\d{2})-/);
+    if (!m) return null;
+    const year = parseInt(m[1], 10);
+    const map = { 26: 1, 25: 2, 24: 3, 23: 4, 22: 5, 21: 6 };
+    return map[year] || null;
+}
+
+function getCoursesForInstitute(inst) {
+    const groups = (state.groups && state.groups[inst]) || [];
+    const set = new Set();
+    for (const g of groups) { const c = getCourseFromGroup(g.name); if (c) set.add(c); }
+    return Array.from(set).sort((a, b) => a - b);
+}
+
+function renderInstitutePicker() {
+    const groups = state.groups || {};
+    const institutes = Object.keys(groups);
+    let html = `<div class="picker-header">
+        <button class="picker-back" data-action="picker-back">←</button>
+        <div class="picker-title">Выбери институт</div>
+    </div>`;
+    if (institutes.length === 0) { html += `<div class="picker-empty">Список институтов не загружен</div>`; return html; }
+    html += `<div class="picker-list">`;
+    for (const inst of institutes) {
+        const count = groups[inst]?.length || 0;
+        const selected = state.profile?.group && groups[inst]?.some(g => g.name === state.profile.group);
+        html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-institute" data-value="${escapeHtml(inst)}">
+            <div class="picker-group-item"><span>${escapeHtml(inst)}</span><span class="picker-item-sub">${count} групп</span></div>
+            <span class="picker-item-arrow">›</span>
+        </button>`;
+    }
+    html += `</div>`;
+    return html;
+}
+
+function renderCoursePicker() {
+    const inst = state.pickerInstitute;
+    const courses = getCoursesForInstitute(inst);
+    let html = `<div class="picker-header">
+        <button class="picker-back" data-action="picker-back">←</button>
+        <div class="picker-title">${escapeHtml(inst)} · Курс</div>
+    </div>`;
+    if (courses.length === 0) { html += `<div class="picker-empty">Нет доступных курсов</div>`; return html; }
+    const groups = (state.groups && state.groups[inst]) || [];
+    html += `<div class="picker-list">`;
+    for (const c of courses) {
+        const count = groups.filter(g => getCourseFromGroup(g.name) === c).length;
+        html += `<button class="picker-item" data-action="picker-choose-course" data-value="${c}">
+            <div class="picker-group-item"><span>${c} курс</span><span class="picker-item-sub">${count} групп</span></div>
+            <span class="picker-item-arrow">›</span>
+        </button>`;
+    }
+    html += `</div>`;
+    return html;
+}
+
+function renderGroupPicker() {
+    const inst = state.pickerInstitute;
+    const course = state.pickerCourse;
+    const allGroups = (state.groups && state.groups[inst]) || [];
+    const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
+    let html = `<div class="picker-header">
+        <button class="picker-back" data-action="picker-back">←</button>
+        <div class="picker-title">${escapeHtml(inst)} · ${course} курс</div>
+    </div>
+    <input class="picker-search" id="picker-search" placeholder="Поиск группы..." value="${escapeHtml(state.pickerSearch)}" autocomplete="off">
+    <div class="picker-list" id="picker-list">`;
+    const q = (state.pickerSearch || '').trim().toLowerCase();
+    const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+    if (filtered.length === 0) html += `<div class="picker-empty">Ничего не найдено</div>`;
+    else {
+        for (const g of filtered) {
+            const selected = state.profile?.group === g.name;
+            html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+                <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
+                ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+            </button>`;
+        }
+    }
+    html += `</div>`;
+    return html;
+}
+
+function pickerAttachSearch() {
+    const input = document.getElementById('picker-search');
+    if (!input) return;
+    input.focus();
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+    input.addEventListener('input', (e) => {
+        state.pickerSearch = e.target.value;
+        const inst = state.pickerInstitute;
+        const course = state.pickerCourse;
+        const allGroups = (state.groups && state.groups[inst]) || [];
+        const groups = allGroups.filter(g => getCourseFromGroup(g.name) === course);
+        const q = (state.pickerSearch || '').trim().toLowerCase();
+        const filtered = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+        const list = document.getElementById('picker-list');
+        if (!list) return;
+        let html = '';
+        if (filtered.length === 0) html = `<div class="picker-empty">Ничего не найдено</div>`;
+        else {
+            for (const g of filtered) {
+                const selected = state.profile?.group === g.name;
+                html += `<button class="picker-item ${selected ? 'selected' : ''}" data-action="picker-choose-group" data-id="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}">
+                    <div class="picker-group-item"><span>${escapeHtml(g.name)}</span></div>
+                    ${selected ? '<span class="picker-item-arrow">✓</span>' : '<span class="picker-item-arrow">›</span>'}
+                </button>`;
+            }
+        }
+        list.innerHTML = html;
+        document.querySelectorAll('#picker-list [data-action]').forEach((el) => {
+            el.addEventListener('click', () => handleAction(el));
+        });
     });
-  } catch(e){}
 }
 
-/* ============ LEADERBOARD ============ */
-async function loadLeaderboard(){
-  try {
-    const d=await apiGet(API.walletTop);
-    const list=qs('#lbList'); list.innerHTML='';
-    d.items.forEach(it=>{
-      const div=document.createElement('div');
-      div.className='lb-item';
-      div.innerHTML=`<div class="lb-item__rank">${it.rank}</div>
-        <div class="lb-item__name">${escapeHtml(it.display)}${it.is_me?' (ты)':''}</div>
-        <div class="lb-item__xp">${fmt(it.xp)} XP</div>`;
-      list.appendChild(div);
-    });
-  } catch(e){}
-}
-
-/* ============ EXCHANGE ============ */
-qs('#exBtn').onclick=async()=>{
-  const amount=parseInt(qs('#exAmount').value||'0');
-  if(amount<100) return showModal('Мало','Минимум 100 Стипух');
-  try {
-    const r=await apiPost(API.exchange,{amount});
-    qs('#exResult').textContent=`Обменяно ${r.soft_spent} → ${r.hard_received}`;
-    loadMe();
-  } catch(e){ showModal('Ошибка',e.data?.message||e.message); }
-};
-
-/* ============ SCHOLARSHIP ============ */
-async function loadScholarship(){
-  try {
-    const d=await apiGet(API.scholarship);
-    const box=qs('#schContent');
-    let html=`
-      <div class="note-item">
-        <div class="muted">Сумма стипендии</div>
-        <div style="font-family:'Anton';font-size:28px;font-style:italic;color:var(--cyan);">
-          ${d.amount?fmt(d.amount)+' ₽':'не указана'}
+function renderNotifyEditor() {
+    const cur = state.notifyEditorType;
+    const hh = state.notifyEditorHour;
+    const mm = state.notifyEditorMinute;
+    const timeVal = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    return `
+        <div class="picker-header">
+            <button class="picker-back" data-action="notify-back">←</button>
+            <div class="picker-title">Уведомления</div>
         </div>
-      </div>
-      <div class="note-item">
-        <div class="muted">Средний балл</div>
-        <div style="font-family:'Anton';font-size:28px;font-style:italic;">
-          ${d.avg?d.avg.toFixed(2):'—'}
+        <div class="card">
+            <div class="card-title">Когда напоминать</div>
+            <div class="tab-buttons" style="margin-bottom:12px">
+                <button data-action="notify-set-type" data-value="today" class="${cur === 'today' ? 'active' : ''}">Сегодня</button>
+                <button data-action="notify-set-type" data-value="tomorrow" class="${cur === 'tomorrow' ? 'active' : ''}">Завтра</button>
+            </div>
+            <div class="card-subtitle">
+                ${cur === 'today' ? 'Расписание на сегодня. Время — до 10:00.' : 'Расписание на завтра. Время — любое.'}
+            </div>
         </div>
-        <div class="muted" style="margin-top:8px;">${escapeHtml(d.forecast)}</div>
-      </div>
-      <div class="note-item">
-        <div class="muted">Оценки (${d.grades.length})</div>
-        ${d.grades.map(g=>`<div style="margin-top:6px;">${escapeHtml(g.subject)}: <b>${g.grade}</b>${g.is_auto?' (авто)':''}</div>`).join('')}
-      </div>`;
-    box.innerHTML=html;
-  } catch(e){}
-}
-
-/* ============ ATTENDANCE ============ */
-async function loadAttendance(){
-  try {
-    const d=await apiGet(API.me);
-    const box=qs('#attStats');
-    box.innerHTML=`
-      <div class="stat"><div class="stat__icon">✅</div><div class="stat__label">ПОСЕЩЕНО</div><div class="stat__val">${d.attendance_was}</div></div>
-      <div class="stat"><div class="stat__icon">❌</div><div class="stat__label">ПРОПУЩЕНО</div><div class="stat__val">${d.attendance_missed}</div></div>
-      <div class="stat"><div class="stat__icon">🤒</div><div class="stat__label">БОЛЕЛ</div><div class="stat__val">${d.attendance_sick}</div></div>`;
-  } catch(e){}
-}
-
-/* ============ SETTINGS ============ */
-async function loadSettings(){
-  const box=qs('#settingsContent');
-  try {
-    const groups=await apiGet(API.groups);
-    let html=`
-      <div class="note-item">
-        <div class="muted">Группа</div>
-        <div style="margin-top:8px;">${ME?.group||'не выбрана'}</div>
-        <button class="btn btn--cyan" style="margin-top:10px;width:100%;" id="btnPickGroup">Сменить группу</button>
-      </div>
-      <div class="note-item">
-        <div class="muted">Подгруппа</div>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          ${[0,1,2].map(n=>`<button class="tab ${ME?.subgroup===n?'active':''}" data-sg="${n}">${n===0?'Все':n}</button>`).join('')}
+        <div class="card">
+            <div class="card-title">Во сколько</div>
+            <div class="card-subtitle">Время по Иркутску</div>
+            <input type="time" id="notify-time-input" class="input" value="${timeVal}">
         </div>
-      </div>
-      <div class="note-item">
-        <div class="muted">Уведомления о расписании</div>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          <button class="tab ${!ME?.notify_type?'active':''}" data-nf="">Выкл</button>
-          <button class="tab ${ME?.notify_type==='today'?'active':''}" data-nf="today">Сегодня</button>
-          <button class="tab ${ME?.notify_type==='tomorrow'?'active':''}" data-nf="tomorrow">Завтра</button>
+        <div class="actions-row" style="margin-top:16px">
+            <button class="btn" data-action="notify-save" style="flex:1">Сохранить</button>
+            <button class="btn btn-secondary" data-action="notify-off" style="flex:1">Выключить</button>
         </div>
-      </div>
-      <div class="note-item">
-        <div class="muted">Отслеживать изменения в расписании</div>
-        <div style="margin-top:8px;">
-          <button class="tab ${ME?.notify_changes?'active':''}" id="btnChangeToggle">${ME?.notify_changes?'Вкл':'Выкл'}</button>
-        </div>
-      </div>`;
-    box.innerHTML=html;
-    qs('#btnPickGroup').onclick=()=>pickGroup(groups.groups);
-    box.querySelectorAll('[data-sg]').forEach(b=>b.onclick=async()=>{
-      await apiPost(API.setSubgroup,{subgroup:parseInt(b.dataset.sg)});
-      loadMe(); loadSettings();
-    });
-    box.querySelectorAll('[data-nf]').forEach(b=>b.onclick=async()=>{
-      const t=b.dataset.nf;
-      if(!t) await apiPost(API.notifySet,{type:''});
-      else {
-        const h=prompt('Час (0-23):', t==='today'?'8':'20');
-        const m=prompt('Минуты:', '0');
-        await apiPost(API.notifySet,{type:t,hour:parseInt(h||'8'),minute:parseInt(m||'0')});
-      }
-      loadMe(); loadSettings();
-    });
-    qs('#btnChangeToggle').onclick=async()=>{
-      await apiPost(API.notifySet,{changes:!ME?.notify_changes});
-      loadMe(); loadSettings();
-    };
-  } catch(e){}
-}
-function pickGroup(groups){
-  const cat=prompt('Факультет:\n'+Object.keys(groups).join('\n'));
-  if(!cat||!groups[cat]) return;
-  const grp=prompt('Группа:\n'+groups[cat].map(g=>g.name).join('\n'));
-  if(!grp) return;
-  const found=groups[cat].find(g=>g.name===grp);
-  if(!found) return showModal('Не найдено','Проверь название');
-  apiPost(API.setGroup,{group_id:found.id,group_name:found.name,subgroup:0})
-    .then(()=>{loadMe();loadSettings();showModal('Готово','Группа обновлена');});
+    `;
 }
 
-/* ============ FEEDBACK ============ */
-async function loadFeedback(){
-  try {
-    const d=await apiGet(API.feedbackMy);
-    const list=qs('#fbList'); list.innerHTML='';
-    if(!d.items.length){ list.innerHTML='<p class="muted">Обращений нет</p>'; return; }
-    d.items.forEach(f=>{
-      const div=document.createElement('div');
-      div.className='fb-item';
-      div.innerHTML=`<div class="muted" style="font-size:11px;">#${f.id} · ${f.status}</div>
-        <div style="margin-top:6px;">${escapeHtml(f.text)}</div>
-        ${f.admin_reply?`<div style="margin-top:8px;color:var(--cyan);">Ответ: ${escapeHtml(f.admin_reply)}</div>`:''}`;
-      list.appendChild(div);
-    });
-  } catch(e){}
+function actionOpenNotifyEditor() {
+    haptic('light');
+    const p = state.profile;
+    state.notifyEditorType = p?.notify_type || 'today';
+    state.notifyEditorHour = p?.notify_hour >= 0 ? p.notify_hour : 8;
+    state.notifyEditorMinute = p?.notify_minute || 0;
+    state.notifyEditor = true;
+    render();
 }
-qs('#fbSend').onclick=async()=>{
-  const t=qs('#fbInput').value.trim();
-  if(!t) return;
-  await apiPost(API.feedback,{text:t});
-  qs('#fbInput').value=''; loadFeedback();
-};
-
-/* ============ SHOP ============ */
-function loadShop(){
-  const items=[
-    {name:'3 МЕСЯЦА ЯНДЕКС ПЛЮС',price:1299,emoji:'🎬'},
-    {name:'SBERBOOM MINI 2',price:4999,emoji:'🔊'},
-    {name:'ЯНДЕКС СТАНЦИЯ ЛАЙТ 2',price:3999,emoji:'📻'},
-    {name:'3 МЕСЯЦА WINK',price:799,emoji:'📺'},
-    {name:'МАРУСЯ, VK КАПСУЛА МИНИ',price:5999,emoji:'🤖'},
-    {name:'АВТОМАТ В КАРМАНЕ',price:500,emoji:'🔥'},
-  ];
-  const grid=qs('#shopGrid'); grid.innerHTML='';
-  items.forEach(it=>{
-    const div=document.createElement('div');
-    div.className='shop-item';
-    div.innerHTML=`<div class="shop-item__img">${it.emoji}</div>
-      <div class="shop-item__name">${it.name}</div>
-      <div class="shop-item__price">${fmt(it.price)} 🔥</div>`;
-    div.onclick=()=>showModal('Покупка',`«${it.name}» за ${it.price} Автоматов.<br><br>Скоро!`);
-    grid.appendChild(div);
-  });
+function actionNotifyBack() { haptic('light'); state.notifyEditor = false; render(); }
+function actionNotifySetType(ntype) {
+    haptic('light');
+    state.notifyEditorType = ntype;
+    if (ntype === 'today' && state.notifyEditorHour > 10) { state.notifyEditorHour = 8; state.notifyEditorMinute = 0; }
+    render();
 }
-
-/* ============ CHECKS ============ */
-function loadChecks(){
-  const grid=qs('#checksGrid'); grid.innerHTML='';
-  const promos=[
-    {name:'ПОВЫШЕННЫЙ КЭШБЕК',emoji:'💳'},
-    {name:'РОЗЫГРЫШ 100 ПРИЗОВ',emoji:'🎁'},
-    {name:'ИСПОЛНИМ МЕЧТУ',emoji:'✨'},
-    {name:'НОВЫЕ ВКУСЫ',emoji:'🥒'},
-  ];
-  promos.forEach(p=>{
-    const div=document.createElement('div');
-    div.className='shop-item';
-    div.innerHTML=`<div class="shop-item__img">${p.emoji}</div>
-      <div class="shop-item__name">${p.name}</div>`;
-    div.onclick=()=>showModal(p.name,'Сканируй чек и участвуй!');
-    grid.appendChild(div);
-  });
+async function actionNotifySave() {
+    const input = document.getElementById('notify-time-input');
+    if (!input) return;
+    const val = (input.value || '').trim();
+    if (!/^\d{1,2}:\d{2}$/.test(val)) { alert('Введи время в формате ЧЧ:ММ'); return; }
+    const [hhStr, mmStr] = val.split(':');
+    const hh = parseInt(hhStr, 10);
+    const mm = parseInt(mmStr, 10);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { alert('Неверное время'); return; }
+    if (state.notifyEditorType === 'today' && hh > 10) { alert('Для «Сегодня» — не позже 10:00'); return; }
+    haptic('success');
+    try {
+        await apiPost('/api/notify-set', { type: state.notifyEditorType, hour: hh, minute: mm });
+        state.notifyEditor = false;
+        await loadProfile();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+async function actionNotifyOff() {
+    haptic('success');
+    try {
+        await apiPost('/api/notify-set', { type: null });
+        state.notifyEditor = false;
+        await loadProfile();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
 }
 
-/* ============ ADMIN ============ */
-async function loadAdmin(){
-  try {
-    const s=await apiGet(API.adminStats);
-    qs('#adminStats').innerHTML=`
-      <div class="stat"><div class="stat__label">ВСЕГО ЮЗЕРОВ</div><div class="stat__val">${s.total_users}</div></div>
-      <div class="stat"><div class="stat__label">ОБРАЩЕНИЙ</div><div class="stat__val">${s.pending_feedback}</div></div>`;
-    const f=await apiGet(API.adminFbList);
-    const box=qs('#adminFb'); box.innerHTML='';
-    f.items.forEach(it=>{
-      const div=document.createElement('div');
-      div.className='fb-item';
-      div.innerHTML=`<div class="muted" style="font-size:11px;">#${it.id} от ${it.username}</div>
-        <div style="margin-top:6px;">${escapeHtml(it.text)}</div>
-        <div style="display:flex;gap:6px;margin-top:8px;">
-          <button class="btn btn--cyan" data-act="reply" data-id="${it.id}">Ответить</button>
-          <button class="btn btn--ghost" data-act="postpone" data-id="${it.id}">Отложить</button>
+function renderTasks() {
+    const tasks = state.tasks;
+    const stats = state.tasksStats;
+    let html = `<div class="tab-buttons">
+        <button data-action="tasks-show-active" class="${state.tasksView === 'active' ? 'active' : ''}">Активные (${stats.active})</button>
+        <button data-action="tasks-show-done" class="${state.tasksView === 'done' ? 'active' : ''}">Выполненные (${stats.done})</button>
+    </div>`;
+    if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">+ Добавить задачу</button>`;
+    if (!tasks || tasks.length === 0) {
+        if (state.tasksView === 'active') {
+            html += `<div class="banner"><div class="banner-title">Задач нет</div><div class="banner-sub">Нажми «+ Добавить задачу». Срок: 25.12.2025 или 25.12.2025 14:30. Приоритет: 0 / 1 / 2.</div></div>`;
+        } else html += renderEmpty('Нет выполненных задач');
+        return html;
+    }
+    for (const t of tasks) {
+        const dueStr = t.due_date ? `<span class="${t.overdue ? 'overdue' : ''}">до ${escapeHtml(t.due_date)}${t.due_time ? ' ' + escapeHtml(t.due_time) : ''}${t.overdue ? ' — просрочено' : ''}</span>` : '';
+        html += `<div class="card">
+            <div class="card-title">${escapeHtml(t.text)}</div>
+            <div class="card-meta">${priorityLabel(t.priority)} ${dueStr}</div>
+            <div class="actions-row">
+                ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">Готово</button>` : ''}
+                <button class="btn btn-secondary" data-action="task-edit-open" data-id="${t.id}">Изменить</button>
+                <button class="btn btn-secondary" data-action="task-delete" data-id="${t.id}">Удалить</button>
+            </div>
         </div>`;
-      box.appendChild(div);
-    });
-    box.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{
-      const id=parseInt(b.dataset.id);
-      if(b.dataset.act==='postpone'){ await apiPost(API.adminFbPostpone,{id}); }
-      else {
-        const t=prompt('Ответ:');
-        if(!t) return;
-        await apiPost(API.adminFbReply,{id,text:t});
-      }
-      loadAdmin();
-    });
-    const m=await apiGet(API.adminMonitor);
-    qs('#adminMonitor').textContent=`istu.edu: ${m.ok?'✅ OK':'❌ '+m.status}`;
-  } catch(e){}
+    }
+    if (state.tasksView === 'done' && tasks.length > 0) {
+        html += `<button class="btn btn-secondary" data-action="tasks-clear" style="width:100%;margin-top:8px">Очистить выполненные</button>`;
+    }
+    return html;
 }
-qs('#adminBroadcastBtn').onclick=async()=>{
-  const t=qs('#adminBroadcast').value.trim();
-  if(!t) return;
-  await apiPost(API.adminBroadcast,{text:t});
-  qs('#adminBroadcast').value='';
-  showModal('Готово','Рассылка запущена');
-};
 
-/* ============ INIT ============ */
-window.addEventListener('load', async ()=>{
-  setTimeout(()=>{
-    qs('#splash').classList.add('fade');
-    setTimeout(()=>qs('#splash').remove(), 500);
-  }, 900);
-  await loadMe();
-  await loadQuote();
-  await loadTasks();
+function renderNotes() {
+    let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">+ Добавить заметку</button>`;
+    if (!state.notes || state.notes.length === 0) {
+        html += `<div class="banner"><div class="banner-title">Заметки</div><div class="banner-sub">Короткие записи по предметам. Название предмета — ключ.</div></div>`;
+        return html;
+    }
+    for (const n of state.notes) {
+        html += `<div class="card">
+            <div class="card-title">${escapeHtml(n.subject)}</div>
+            <div class="card-subtitle">${escapeHtml(n.text)}</div>
+            <div class="actions-row">
+                <button class="btn btn-secondary" data-action="note-edit-open" data-id="${n.id}">Изменить</button>
+                <button class="btn btn-secondary" data-action="note-delete" data-id="${n.id}">Удалить</button>
+            </div>
+        </div>`;
+    }
+    return html;
+}
+
+function renderAI() {
+    let html = '';
+    if (state.aiMessages.length === 0) {
+        html += `<div class="banner"><div class="banner-title">AI Помощник</div><div class="banner-sub">Задай вопрос по учёбе или прикрепи фото с задачей — AI разберётся.</div></div>`;
+    } else {
+        for (const m of state.aiMessages) {
+            if (m.role === 'user') {
+                if (m.photo) {
+                    html += `<div class="card" style="background:var(--neon);color:#070B14;padding:10px">
+                        <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="фото">
+                        <div style="font-weight:600">${escapeHtml(m.text || '')}</div>
+                    </div>`;
+                } else {
+                    html += `<div class="card" style="background:var(--neon);color:#070B14"><div style="font-weight:600">${escapeHtml(m.text)}</div></div>`;
+                }
+            } else {
+                html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(m.text)}</div></div>`;
+            }
+        }
+    }
+    if (state.aiPending) html += renderLoading();
+    html += `<div style="margin-top:12px">
+        <textarea class="input" id="ai-input" placeholder="Напиши вопрос или прикрепи фото..." rows="3" ${state.aiPending ? 'disabled' : ''}></textarea>
+        <button class="btn" data-action="ai-send" style="width:100%" ${state.aiPending ? 'disabled' : ''}>Отправить</button>
+        <button class="btn btn-secondary" data-action="ai-photo-open" style="width:100%;margin-top:6px" ${state.aiPending ? 'disabled' : ''}>Прикрепить фото</button>
+        <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
+        <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
+    </div>`;
+    return html;
+}
+
+function renderAdmin() {
+    if (!state.isAdmin) return renderEmpty('Доступ только для администратора');
+    let html = '';
+    if (state.adminStats) {
+        const s = state.adminStats;
+        html += `<div class="banner"><div class="banner-title">Статистика</div><div class="banner-sub">Пользователей: ${s.total_users}<br>Обращений в ожидании: ${s.pending_feedback}</div></div>`;
+    } else html += renderLoading();
+    html += `<div class="card">
+        <div class="card-title">Мониторинг ИРНИТУ</div>
+        ${state.adminMonitor
+            ? (state.adminMonitor.ok
+                ? `<div class="card-subtitle" style="color:var(--accent-green)">Сайт отвечает (HTTP ${state.adminMonitor.status})</div>`
+                : `<div class="card-subtitle overdue">Сайт не отвечает${state.adminMonitor.error ? ': ' + escapeHtml(state.adminMonitor.error) : ''}</div>`)
+            : `<div class="card-subtitle">Не проверено</div>`}
+        <div class="actions-row"><button class="btn btn-secondary" data-action="admin-monitor">Проверить</button></div>
+    </div>`;
+    html += `<div class="card">
+        <div class="card-title">Рассылка</div>
+        <div class="card-subtitle">Уйдёт всем пользователям бота.</div>
+        <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
+        <button class="btn" data-action="admin-broadcast">Отправить всем</button>
+    </div>`;
+    if (state.adminFeedback && state.adminFeedback.length > 0) {
+        html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
+        for (const f of state.adminFeedback) {
+            html += `<div style="border-bottom:1px solid var(--divider);padding:10px 0">
+                <div class="card-subtitle">#${f.id} | ${escapeHtml(f.username || f.user_id)}${f.status === 'postponed' ? ' [отложено]' : ''}</div>
+                <div style="white-space:pre-wrap;margin-top:4px">${escapeHtml(f.text)}</div>
+                <div class="actions-row">
+                    <button class="btn btn-secondary" data-action="admin-fb-reply" data-id="${f.id}">Ответить</button>
+                    <button class="btn btn-secondary" data-action="admin-fb-postpone" data-id="${f.id}">Отложить</button>
+                </div>
+            </div>`;
+        }
+        html += `</div>`;
+    } else html += `<div class="card"><div class="card-subtitle">Обращений в ожидании нет.</div></div>`;
+    return html;
+}
+
+function renderProfile() {
+    const p = state.profile;
+    const u = state.user;
+    const initials = ((u.first_name?.[0] || '') + (u.last_name?.[0] || '')).toUpperCase() || '?';
+    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Гость';
+    const metaParts = [];
+    if (p?.group) metaParts.push(p.group + (p.subgroup ? ` (подгр. ${p.subgroup})` : ''));
+    if (u.username) metaParts.push('@' + u.username);
+
+    let html = `<div class="profile-header">
+        <div class="profile-avatar">${escapeHtml(initials)}</div>
+        <div class="profile-name">${escapeHtml(fullName)}</div>
+        ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+        ${p?.is_admin ? '<div class="badge" style="background:linear-gradient(135deg,#e53935,#b71c1c);color:#fff">ADMIN</div>' : ''}
+    </div>`;
+
+    if (p) {
+        html += `<div class="card">
+            <div class="card-title">Статистика</div>
+            <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
+            <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
+            <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
+            <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
+        </div>`;
+    }
+
+    html += `<div class="card">
+        <div class="card-title">Мой ID</div>
+        <div class="card-subtitle">${escapeHtml(String(u.id || '—'))}</div>
+        <div class="actions-row"><button class="btn btn-secondary" data-action="copy-my-id">Скопировать ID</button></div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Моя группа</div>
+        <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="choose-group">${p?.group ? 'Изменить' : 'Выбрать группу'}</button>
+            ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
+        </div>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Подгруппа</div>
+        <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
+        <div class="actions-row">
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">—</button>
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
+            <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
+        </div>
+    </div>`;
+
+    const notifyOn = !!p?.notify_type;
+    const notifyLabel = notifyOn ? `${p.notify_type === 'today' ? 'Сегодня' : 'Завтра'} в ${formatNotifyTime(p.notify_hour, p.notify_minute)}` : 'выключены';
+
+    html += `<div class="card">
+        <div class="card-title">Уведомления о расписании</div>
+        <div class="card-subtitle">Сейчас: ${escapeHtml(notifyLabel)}</div>
+        <div class="actions-row">
+            <button class="btn" data-action="notify-open">${notifyOn ? 'Изменить' : 'Включить'}</button>
+        </div>
+        <label class="checkbox-row">
+            <input type="checkbox" id="notify-changes" ${p?.notify_changes ? 'checked' : ''}>
+            <span>Следить за изменениями в расписании</span>
+        </label>
+    </div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Цитата дня</div>
+        <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
+        <div class="actions-row">
+            ${p?.daily_subscribed
+                ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
+                : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
+        </div>
+    </div>`;
+
+    html += `<div class="card"><div class="card-title">Стипендия</div>`;
+    if (state.scholarship) {
+        const s = state.scholarship;
+        html += `<div class="card-subtitle">Текущая: ${s.amount !== null ? escapeHtml(s.amount) + ' ₽/мес' : 'не указана'}</div>`;
+        html += `<div class="card-subtitle">Оценок: ${s.grades.length}</div>`;
+        if (s.grades.length) html += `<div class="card-subtitle">Средний балл: ${s.avg}</div>`;
+        if (s.forecast) html += `<div class="card-subtitle">${escapeHtml(s.forecast)}</div>`;
+    }
+    if (state.scholarship && state.scholarship.grades.length > 0) {
+        for (const g of state.scholarship.grades) {
+            html += `<div class="grade-row"><span>${escapeHtml(g.subject)}</span><span class="grade-value">${g.grade}</span></div>`;
+        }
+    }
+    html += `<div class="actions-row">
+        <button class="btn btn-secondary" data-action="sch-set-amount-open">Сумма</button>
+        <button class="btn btn-secondary" data-action="sch-add-grade-open">Добавить оценку</button>
+        <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
+    </div></div>`;
+
+    html += `<div class="card">
+        <div class="card-title">Обратная связь</div>
+        <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
+        <button class="btn" data-action="feedback-send">Отправить</button>
+    </div>`;
+    return html;
+}
+
+async function loadSchedule() {
+    try { state.schedule = await apiGet('/api/schedule'); }
+    catch (e) { state.schedule = { error: 'load_error', message: e.message }; }
+}
+async function loadTasks() {
+    try {
+        const doneParam = state.tasksView === 'done' ? '1' : '0';
+        const r = await apiGet('/api/tasks', { done: doneParam });
+        state.tasks = r.tasks || [];
+        state.tasksStats = { active: r.active || 0, done: r.done || 0 };
+    } catch (e) { state.tasks = []; }
+}
+async function loadNotes() {
+    try { const r = await apiGet('/api/notes'); state.notes = r.notes || []; }
+    catch (e) { state.notes = []; }
+}
+async function loadProfile() {
+    try {
+        state.profile = await apiGet('/api/me');
+        state.isAdmin = !!state.profile.is_admin;
+    } catch (e) { state.profile = { error: e.message }; }
+}
+async function loadScholarship() {
+    try { state.scholarship = await apiGet('/api/scholarship'); }
+    catch (e) { state.scholarship = null; }
+}
+async function loadGroups(force = false) {
+    if (state.groups && !force) return;
+    try { const r = await apiGet('/api/groups'); state.groups = r.groups; }
+    catch (e) { state.groups = {}; }
+}
+async function loadAdminStats() {
+    try { state.adminStats = await apiGet('/api/admin/stats'); }
+    catch (e) { state.adminStats = null; }
+}
+async function loadAdminFeedback() {
+    try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
+    catch (e) { state.adminFeedback = []; }
+}
+
+async function loadTabData(tab) {
+    state.loading = true;
+    state.error = null;
+    state.notifyEditor = false;
+    render();
+    try {
+        if (tab === 'schedule') {
+            state.scheduleViewMode = 'today';
+            state.weekOffset = 0;
+            state.scheduleDay = 'today';
+            state.weekDays = null;
+            await loadProfile();
+            await loadSchedule();
+            ensureWeekLoaded().catch(() => {});
+        } else if (tab === 'tasks') await loadTasks();
+        else if (tab === 'notes') await loadNotes();
+        else if (tab === 'ai') await loadProfile();
+        else if (tab === 'admin') {
+            await loadProfile();
+            if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
+        } else if (tab === 'profile') {
+            await loadProfile();
+            await loadScholarship();
+        }
+    } catch (e) { console.error(e); state.error = e.message; }
+    state.loading = false;
+    render();
+}
+
+async function loadWeekAndRender() {
+    try {
+        const r = await apiGet('/api/week', { offset: state.weekOffset });
+        state.weekDays = r;
+        state.scheduleViewMode = 'week';
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function loadTodayAndRender() {
+    state.scheduleViewMode = 'today';
+    state.weekOffset = 0;
+    state.weekDays = null;
+    state.scheduleDay = 'today';
+    await loadSchedule();
+    render();
+}
+async function actionDayToday() { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
+async function actionDayTomorrow() {
+    state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today'; haptic('light');
+    if (!state.weekDays) { render(); await ensureWeekLoaded(); }
+    render();
+}
+
+async function actionChooseGroup() {
+    haptic('light');
+    await loadGroups(true);
+    if (!state.groups || Object.keys(state.groups).length === 0) { alert('Не удалось загрузить список групп'); return; }
+    state.pickerMode = 'institute';
+    state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
+    render();
+}
+function actionPickerBack() {
+    haptic('light');
+    if (state.pickerMode === 'group') { state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = ''; render(); }
+    else if (state.pickerMode === 'course') { state.pickerMode = 'institute'; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = ''; render(); }
+    else { state.pickerMode = null; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = ''; render(); }
+}
+function actionPickerChooseInstitute(inst) {
+    haptic('light');
+    state.pickerInstitute = inst; state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = '';
+    render();
+}
+function actionPickerChooseCourse(course) {
+    haptic('light');
+    state.pickerCourse = parseInt(course, 10); state.pickerMode = 'group'; state.pickerSearch = '';
+    render();
+}
+async function actionPickerChooseGroup(groupId, groupName) {
+    haptic('success');
+    try {
+        await apiPost('/api/set-group', { group_id: groupId, group_name: groupName, subgroup: state.profile?.subgroup || 0 });
+        if (state.profile) state.profile.group = groupName;
+        state.pickerMode = null; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
+        await loadProfile();
+        await loadSchedule();
+        render();
+    } catch (e) { haptic('error'); alert('Ошибка: ' + e.message); }
+}
+
+async function actionSetSubgroup(value) {
+    try { await apiPost('/api/set-subgroup', { subgroup: value }); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionQuoteSubscribe(value) {
+    try { await apiPost('/api/quote-subscribe', { subscribe: value === 1 }); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionFeedbackSend() {
+    const el = document.getElementById('feedback-text');
+    if (!el) return;
+    const text = (el.value || '').trim();
+    if (!text) return;
+    try { await apiPost('/api/feedback', { text }); el.value = ''; haptic('success'); alert('Отправлено'); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTaskDone(id) {
+    try { await apiPost('/api/task-update', { id, done: true }); haptic('success'); popEmoji('✅'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+function popEmoji(char) {
+    const el = document.createElement('div');
+    el.textContent = char;
+    el.style.cssText = 'position:fixed;top:50%;left:50%;font-size:56px;transform:translate(-50%,-50%);animation:pop 0.6s ease-out;z-index:99999;pointer-events:none';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 600);
+}
+async function actionTaskDelete(id) {
+    if (!confirm('Удалить задачу?')) return;
+    try { await apiPost('/api/task-delete', { id }); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTasksClear() {
+    if (!confirm('Очистить все выполненные?')) return;
+    try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTaskAdd() {
+    const text = prompt('Текст задачи:');
+    if (!text) return;
+    const due = prompt('Срок (ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ, можно пусто):') || '';
+    let due_date = null, due_time = null;
+    if (due.trim()) { const parts = due.trim().split(' '); due_date = parts[0]; if (parts[1]) due_time = parts[1]; }
+    const priorityStr = prompt('Приоритет (0=низкий, 1=средний, 2=высокий):', '1');
+    const priority = parseInt(priorityStr) || 1;
+    try { await apiPost('/api/task-add', { text, due_date, due_time, priority }); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionTaskEdit(id) {
+    const newText = prompt('Новый текст задачи:');
+    if (!newText) return;
+    try { await apiPost('/api/task-update', { id, text: newText }); haptic('success'); await loadTasks(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionNoteDelete(id) {
+    if (!confirm('Удалить заметку?')) return;
+    try { await apiPost('/api/note-delete', { id }); haptic('success'); await loadNotes(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionNoteAdd() {
+    const subject = prompt('Название предмета:');
+    if (!subject) return;
+    const text = prompt('Текст заметки:');
+    if (!text) return;
+    try { await apiPost('/api/note-save', { subject, text }); haptic('success'); await loadNotes(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionNoteEdit(id) {
+    const text = prompt('Новый текст заметки:');
+    if (!text) return;
+    const note = state.notes.find(n => n.id === id);
+    if (!note) return;
+    try { await apiPost('/api/note-save', { subject: note.subject, text }); haptic('success'); await loadNotes(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionScholarshipSetAmount() {
+    const amount = prompt('Сумма стипендии (₽/мес, 0 если не получаешь):');
+    if (amount === null) return;
+    try { await apiPost('/api/scholarship-set-amount', { amount: parseInt(amount) || 0 }); haptic('success'); await loadScholarship(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionScholarshipAddGrade() {
+    const subject = prompt('Название предмета:');
+    if (!subject) return;
+    const gradeStr = prompt('Оценка (2, 3, 4 или 5):');
+    const grade = parseInt(gradeStr);
+    if (![2, 3, 4, 5].includes(grade)) { alert('Нужно 2, 3, 4 или 5'); return; }
+    try { await apiPost('/api/scholarship-add-grade', { subject, grade }); haptic('success'); await loadScholarship(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionScholarshipClear() {
+    if (!confirm('Очистить все оценки?')) return;
+    try { await apiPost('/api/scholarship-clear'); haptic('success'); await loadScholarship(); render(); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionAISend() {
+    const el = document.getElementById('ai-input');
+    if (!el) return;
+    const question = (el.value || '').trim();
+    if (!question) return;
+    state.aiMessages.push({ role: 'user', text: question });
+    state.aiPending = true;
+    el.value = '';
+    render();
+    try {
+        const r = await apiPost('/api/ai', { question });
+        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+        haptic('success');
+    } catch (e) {
+        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + e.message });
+        haptic('error');
+    } finally { state.aiPending = false; render(); }
+}
+function actionAIClear() { state.aiMessages = []; render(); }
+
+function actionAIPhotoOpen() {
+    haptic('light');
+    const input = document.getElementById('ai-photo-input');
+    if (input) input.click();
+}
+
+function actionAIPhotoSelected(file) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+        alert('Фото слишком большое (макс 8 МБ)');
+        return;
+    }
+    if (!file.type.startsWith('image/')) {
+        alert('Нужно изображение');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxSide = 1600;
+            let w = img.width;
+            let h = img.height;
+            if (w > maxSide || h > maxSide) {
+                if (w > h) {
+                    h = Math.round(h * maxSide / w);
+                    w = maxSide;
+                } else {
+                    w = Math.round(w * maxSide / h);
+                    h = maxSide;
+                }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            sendAIPhoto(jpegDataUrl);
+        };
+        img.onerror = () => {
+            alert('Не удалось прочитать изображение');
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+async function sendAIPhoto(dataUrl) {
+    const questionEl = document.getElementById('ai-input');
+    const question = questionEl ? questionEl.value.trim() : '';
+
+    state.aiMessages.push({
+        role: 'user',
+        text: question || 'Что на фото?',
+        photo: dataUrl,
+    });
+    if (questionEl) questionEl.value = '';
+    state.aiPending = true;
+    render();
+
+    try {
+        const r = await apiPost('/api/ai-photo', {
+            photo: dataUrl,
+            question: question,
+        });
+        state.aiMessages.push({ role: 'assistant', text: r.answer || 'Нет ответа' });
+        haptic('success');
+    } catch (err) {
+        state.aiMessages.push({ role: 'assistant', text: 'Ошибка: ' + err.message });
+        haptic('error');
+    } finally {
+        state.aiPending = false;
+        render();
+    }
+}
+
+async function actionForgetGroup() {
+    if (!confirm('Забыть группу?')) return;
+    try {
+        await apiPost('/api/set-group', { group_id: '', group_name: '', subgroup: 0 });
+        if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
+        haptic('success'); await loadProfile(); render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+function actionCopyMyId() {
+    const id = String(state.user?.id || '');
+    if (!id) return;
+    try { navigator.clipboard.writeText(id); haptic('success'); alert('ID скопирован: ' + id); }
+    catch (e) { alert('Твой ID: ' + id); }
+}
+async function actionAdminMonitor() {
+    state.adminBusy = true;
+    try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
+    catch (e) { state.adminMonitor = { ok: false, status: 0, error: e.message }; }
+    state.adminBusy = false; render();
+}
+async function actionAdminBroadcast() {
+    const el = document.getElementById('admin-broadcast-text');
+    if (!el) return;
+    const text = (el.value || '').trim();
+    if (!text) { alert('Пустое сообщение'); return; }
+    if (!confirm('Отправить всем пользователям?')) return;
+    try { await apiPost('/api/admin/broadcast', { text }); el.value = ''; haptic('success'); alert('Рассылка запущена'); }
+    catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionAdminFbReply(fid) {
+    const reply = prompt('Текст ответа:');
+    if (!reply) return;
+    try {
+        await apiPost('/api/admin/feedback-reply', { id: fid, text: reply });
+        haptic('success');
+        await loadAdminFeedback();
+        await loadAdminStats();
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function actionAdminFbPostpone(fid) {
+    try {
+        await apiPost('/api/admin/feedback-postpone', { id: fid });
+        haptic('success');
+        await loadAdminFeedback();
+        await loadAdminStats();
+        render();
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+function attachHandlers() {
+    document.querySelectorAll('[data-action]').forEach((el) => {
+        el.addEventListener('click', () => handleAction(el));
+    });
+
+    const notifyCb = document.getElementById('notify-changes');
+    if (notifyCb) {
+        notifyCb.addEventListener('change', async (e) => {
+            const val = e.target.checked;
+            try {
+                await apiPost('/api/notify-set', { changes: val });
+                if (state.profile) state.profile.notify_changes = val;
+                haptic('success');
+            } catch (err) {
+                haptic('error');
+                alert('Ошибка: ' + err.message);
+                e.target.checked = !val;
+            }
+        });
+    }
+
+    const aiPhotoInput = document.getElementById('ai-photo-input');
+    if (aiPhotoInput) {
+        aiPhotoInput.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) actionAIPhotoSelected(file);
+            e.target.value = '';
+        });
+    }
+}
+
+function handleAction(el) {
+    const a = el.dataset.action;
+    if (a === 'set-subgroup') actionSetSubgroup(parseInt(el.dataset.value));
+    else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(el.dataset.value));
+    else if (a === 'feedback-send') actionFeedbackSend();
+    else if (a === 'task-done') actionTaskDone(parseInt(el.dataset.id));
+    else if (a === 'task-delete') actionTaskDelete(parseInt(el.dataset.id));
+    else if (a === 'task-add-open') actionTaskAdd();
+    else if (a === 'task-edit-open') actionTaskEdit(parseInt(el.dataset.id));
+    else if (a === 'tasks-clear') actionTasksClear();
+    else if (a === 'tasks-show-active') { state.tasksView = 'active'; loadTasks().then(render); }
+    else if (a === 'tasks-show-done') { state.tasksView = 'done'; loadTasks().then(render); }
+    else if (a === 'note-add-open') actionNoteAdd();
+    else if (a === 'note-edit-open') actionNoteEdit(parseInt(el.dataset.id));
+    else if (a === 'note-delete') actionNoteDelete(parseInt(el.dataset.id));
+    else if (a === 'sch-set-amount-open') actionScholarshipSetAmount();
+    else if (a === 'sch-add-grade-open') actionScholarshipAddGrade();
+    else if (a === 'sch-clear') actionScholarshipClear();
+    else if (a === 'ai-send') actionAISend();
+    else if (a === 'ai-clear') actionAIClear();
+    else if (a === 'ai-photo-open') actionAIPhotoOpen();
+    else if (a === 'choose-group') actionChooseGroup();
+    else if (a === 'forget-group') actionForgetGroup();
+    else if (a === 'copy-my-id') actionCopyMyId();
+    else if (a === 'picker-back') actionPickerBack();
+    else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
+    else if (a === 'picker-choose-course') actionPickerChooseCourse(el.dataset.value);
+    else if (a === 'picker-choose-group') actionPickerChooseGroup(el.dataset.id, el.dataset.name);
+    else if (a === 'notify-open') actionOpenNotifyEditor();
+    else if (a === 'notify-back') actionNotifyBack();
+    else if (a === 'notify-set-type') actionNotifySetType(el.dataset.value);
+    else if (a === 'notify-save') actionNotifySave();
+    else if (a === 'notify-off') actionNotifyOff();
+    else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
+    else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-current') { state.weekOffset = 0; state.scheduleViewMode = 'week'; loadWeekAndRender(); }
+    else if (a === 'week-today') { loadTodayAndRender(); }
+    else if (a === 'day-today') actionDayToday();
+    else if (a === 'day-tomorrow') actionDayTomorrow();
+    else if (a === 'admin-monitor') actionAdminMonitor();
+    else if (a === 'admin-broadcast') actionAdminBroadcast();
+    else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
+    else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
+}
+
+document.querySelectorAll('.nav-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+        const tab = btn.dataset.tab;
+        if (state.tab === tab) return;
+        state.tab = tab;
+        haptic('light');
+        await loadTabData(tab);
+    });
 });
+
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+    haptic('light');
+    if (state.tab === 'schedule' && state.scheduleViewMode === 'week') await loadWeekAndRender();
+    else await loadTabData(state.tab);
+});
+
+(async function init() {
+    await loadTabData(state.tab);
+})();
