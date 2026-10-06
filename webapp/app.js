@@ -1,7 +1,61 @@
-const tg = window.Telegram.WebApp;
-tg.ready();
-tg.expand();
+// ============================================================
+//  БЕЗОПАСНОЕ ПОЛУЧЕНИЕ Telegram.WebApp
+//  Если telegram-web-app.js не загрузился — используем заглушку,
+//  чтобы app.js не падал с "Cannot read properties of undefined".
+// ============================================================
 
+const _tgSafe = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+
+const tg = _tgSafe || {
+    ready: () => {},
+    expand: () => {},
+    close: () => {},
+    initData: '',
+    initDataUnsafe: {},
+    version: '0.0',
+    platform: 'unknown',
+    colorScheme: 'light',
+    themeParams: {},
+    isExpanded: false,
+    viewportHeight: 0,
+    viewportStableHeight: 0,
+    HapticFeedback: {
+        impactOccurred: () => {},
+        notificationOccurred: () => {},
+        selectionChanged: () => {},
+    },
+    showAlert: (msg, cb) => {
+        try { window.alert(msg); } catch (e) {}
+        if (typeof cb === 'function') cb();
+    },
+    showConfirm: (msg, cb) => {
+        let ok = true;
+        try { ok = window.confirm(msg); } catch (e) {}
+        if (typeof cb === 'function') cb(ok);
+    },
+    showPopup: (params, cb) => { if (typeof cb === 'function') cb(); },
+    MainButton: { show: () => {}, hide: () => {}, onClick: () => {}, offClick: () => {} },
+    BackButton: { show: () => {}, hide: () => {}, onClick: () => {}, offClick: () => {} },
+};
+
+// Если Telegram недоступен — покажем предупреждение и всё равно продолжим
+if (!_tgSafe) {
+    console.warn('[APP] Telegram.WebApp недоступен — работаем в fallback-режиме. Перезагрузи приложение через бота.');
+    document.addEventListener('DOMContentLoaded', () => {
+        const sp = document.getElementById('splash');
+        if (sp) {
+            const warn = document.createElement('div');
+            warn.style.cssText = 'position:fixed;bottom:100px;left:16px;right:16px;padding:12px 16px;background:rgba(255,59,48,0.9);color:#fff;border-radius:14px;font-size:13px;font-weight:700;text-align:center;z-index:99999;font-family:Inter,sans-serif;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,0.3)';
+            warn.textContent = 'Telegram недоступен. Закрой и открой приложение заново из чата с ботом.';
+            document.body.appendChild(warn);
+            setTimeout(() => warn.remove(), 6000);
+        }
+    });
+}
+
+// Вызовы инициализации в try/catch — чтобы ничего не сломало
+try { tg.ready(); } catch (e) {}
+try { tg.expand(); } catch (e) {}
 try { if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } catch (e) {}
 try { if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait'); } catch (e) {}
 try { if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes(); } catch (e) {}
