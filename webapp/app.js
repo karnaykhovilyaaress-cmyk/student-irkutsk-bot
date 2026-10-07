@@ -37,8 +37,8 @@ const state = {
 function icon(id, size=16, cls='') {
   return `<svg width="${size}" height="${size}" class="${cls}"><use href="#${id}"/></svg>`;
 }
-function icShift(size=16) { return icon('ic-shift', size, 'ic-shift-c'); }
-function icNova(size=16)  { return icon('ic-nova',  size, 'ic-nova-c'); }
+function icShift(size=16) { return icon('ic-shift-3d', size); }
+function icNova(size=16)  { return icon('ic-nova-3d',  size); }
 function icXp(size=16)    { return icon('ic-xp',    size); }
 
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{2764}\u{2705}\u{274C}\u{2757}\u{2728}\u{1F4A5}\u{1F525}\u{1F4E6}\u{1F48E}\u{1F3C6}\u{1F389}\u{1F381}\u{1F4B0}\u{1F4B8}\u{1F4B5}]/gu;
@@ -672,16 +672,25 @@ function renderAdmin() {
 function renderProfile() {
   const p = state.profile;
   const u = state.user;
-  const initials = ((u.first_name?.[0]||'')+(u.last_name?.[0]||'')).toUpperCase() || '?';
   const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Гость';
   const metaParts = [];
   if (p?.group) metaParts.push(p.group + (p.subgroup ? ` (подгр. ${p.subgroup})` : ''));
   if (u.username) metaParts.push('@' + u.username);
-  let html = `<div class="profile-header">
-    <div class="profile-avatar">${escapeHtml(initials)}</div>
-    <div class="profile-name">${escapeHtml(fullName)}</div>
-    ${metaParts.length ? `<div class="profile-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+
+  const level = p?.wallet?.level || 1;
+  const headId = headForLevel(level);
+  const title = levelTitleByLevel(level);
+
+  let html = `<div class="profile-head-3d">
+    <div class="head-svg">${icon(headId, 200)}</div>
+    <div class="profile-level-badge">${level} LVL</div>
+    <div class="profile-title-3d">${escapeHtml(title)}</div>
   </div>`;
+  html += `<div class="card" style="text-align:center">
+    <div class="card-title" style="justify-content:center">${escapeHtml(fullName)}</div>
+    ${metaParts.length ? `<div class="card-subtitle">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+  </div>`;
+
   html += `<div class="card" id="wallet-card">
     <div class="card-title">Уровень и кошелёк</div>
     <div id="wallet-body" class="card-subtitle">Загрузка...</div>
@@ -690,21 +699,22 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="open-leaderboard">ТОП</button>
     </div>
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Кейсы</div>
-    <div class="card-subtitle">Капсула — бесплатно раз в 24 часа.</div>
-    <div class="chests-grid">
-      ${renderChestTile('capsule', 'Капсула', 'Раз в 24 часа')}
-      ${renderChestTile('relic', 'Реликт', '50 Шифт')}
-      ${renderChestTile('artifact', 'Артефакт', '15 Нова')}
-      ${renderChestTile('core', 'Ядро', '80 Нова')}
-    </div>
+    <div class="card-subtitle">Нажми на баннер, чтобы открыть.</div>
+    ${renderChestTile('capsule', 'Капсула', '')}
+    ${renderChestTile('relic', 'Реликт', '')}
+    ${renderChestTile('artifact', 'Артефакт', '')}
+    ${renderChestTile('core', 'Ядро', '')}
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Обменник</div>
     <div class="card-subtitle">100 ${icShift(14)} Шифт = 1 ${icNova(14)} Нова</div>
     <div class="actions-row"><button class="btn" data-action="exchange">${icon('ic-exchange',16)} ОБМЕНЯТЬ</button></div>
   </div>`;
+
   const achCanClaim = state.achData?.can_claim_count || 0;
   const achGot = state.achData?.got || 0;
   const achTotal = state.achData?.total || 0;
@@ -717,6 +727,7 @@ function renderProfile() {
       </button>
     </div>
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Профиль</div>
     <div class="actions-row">
@@ -724,6 +735,7 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="set-avatar">Аватар</button>
     </div>
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Как заработать XP</div>
     <div class="xp-table">
@@ -739,6 +751,7 @@ function renderProfile() {
       <div class="xp-row"><span>Решение отмечено</span><b>+30</b></div>
     </div>
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Как заработать валюту</div>
     <div class="xp-table">
@@ -752,6 +765,7 @@ function renderProfile() {
       <div class="xp-row"><span>Ответ (решение)</span><b>+10 ${icShift(12)} · +1 ${icNova(12)}</b></div>
     </div>
   </div>`;
+
   if (p) {
     html += `<div class="card">
       <div class="card-title">Статистика</div>
@@ -761,6 +775,7 @@ function renderProfile() {
       <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
     </div>`;
   }
+
   html += `<div class="card">
     <div class="card-title">Моя группа</div>
     <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
@@ -769,6 +784,7 @@ function renderProfile() {
       ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
     </div>
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Подгруппа</div>
     <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
@@ -778,8 +794,10 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
     </div>
   </div>`;
+
   const notifyOn = !!p?.notify_type;
   const notifyLabel = notifyOn ? `${p.notify_type==='today'?'Сегодня':'Завтра'} в ${String(p.notify_hour).padStart(2,'0')}:${String(p.notify_minute||0).padStart(2,'0')}` : 'выключены';
+
   html += `<div class="card">
     <div class="card-title">Уведомления</div>
     <div class="card-subtitle">Расписание: ${escapeHtml(notifyLabel)}</div>
@@ -793,6 +811,7 @@ function renderProfile() {
       <span>Следить за изменениями расписания</span>
     </label>
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Цитата дня</div>
     <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
@@ -802,6 +821,7 @@ function renderProfile() {
         : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
     </div>
   </div>`;
+
   html += `<div class="card"><div class="card-title">Стипендия</div>`;
   if (state.scholarship) {
     const s = state.scholarship;
@@ -823,6 +843,7 @@ function renderProfile() {
     <button class="btn btn-secondary" data-action="sch-add-grade">Добавить оценку</button>
     <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
   </div></div>`;
+
   html += `<div class="card">
     <div class="card-title">Экспорт и обращения</div>
     <div class="actions-row">
@@ -830,27 +851,36 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="show-my-feedback">${icon('ic-chat',14)} Мои обращения</button>
     </div>
   </div>`;
+
   html += `<div class="card">
     <div class="card-title">Обратная связь</div>
     <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
     <button class="btn" data-action="feedback-send">Отправить</button>
   </div>`;
+
   return html;
+}
+
+function headForLevel(level) {
+  if (level <= 5)  return 'ic-head-1';
+  if (level <= 10) return 'ic-head-2';
+  if (level <= 15) return 'ic-head-3';
+  if (level <= 25) return 'ic-head-4';
+  return 'ic-head-5';
 }
 
 function renderChestTile(id, name, sub) {
   const status = state.chestStatus || {};
   const canOpen = id !== 'capsule' || status.can_open !== false;
   const timer = id === 'capsule' && status.next_at
-    ? `<div class="chest-timer" data-chest-timer="${escapeHtml(status.next_at)}">--:--:--</div>`
+    ? `<div class="chest-banner-timer" data-chest-timer="${escapeHtml(status.next_at)}">--:--:--</div>`
     : '';
-  return `<div class="chest-card ${canOpen?'':'locked'}" data-action="chest-modal" data-id="${id}">
+  return `<div class="chest-banner ${canOpen?'':'locked'}" data-action="chest-modal" data-id="${id}">
     ${timer}
-    <div class="chest-icon">${icon('ic-case-'+id, 56)}</div>
-    <div class="chest-name">${escapeHtml(name)}</div>
-    <div class="chest-sub">${escapeHtml(sub)}</div>
+    ${icon('ic-banner-'+id, 200)}
   </div>`;
 }
+
 function startChestTimer() {
   if (state.chestTimer) clearInterval(state.chestTimer);
   const update = () => {
@@ -864,6 +894,7 @@ function startChestTimer() {
   update();
   state.chestTimer = setInterval(update, 1000);
 }
+
 async function loadWalletIntoProfile() {
   const box = document.getElementById('wallet-body');
   if (!box) return;
@@ -888,14 +919,13 @@ async function loadWalletIntoProfile() {
         <span class="levels-xpbar-cur" style="font-size:13px">${lv.inLevel}XP</span>
         <span class="levels-xpbar-next" style="font-size:13px">${total}XP</span>
       </div>
-      <div style="display:flex;gap:18px;margin-top:12px;font-weight:800;font-size:15px;align-items:center">
-        <div style="display:flex;align-items:center;gap:6px">${icShift(18)} <span style="color:var(--cyan-dark)">${wallet.shift ?? wallet.soft ?? 0}</span></div>
-        <div style="display:flex;align-items:center;gap:6px">${icNova(18)} <span style="color:var(--yellow)">${wallet.nova ?? wallet.hard ?? 0}</span></div>
+      <div class="wallet-currency-row">
+        <div class="currency-item shift">${icShift(26)} <span>${wallet.shift ?? wallet.soft ?? 0}</span></div>
+        <div class="currency-item nova">${icNova(26)} <span>${wallet.nova ?? wallet.hard ?? 0}</span></div>
       </div>
     `;
     if (ach) {
       state.achData = ach;
-      const cc = ach.can_claim_count || 0;
     }
     startChestTimer();
   } catch (e) {
@@ -1693,9 +1723,6 @@ function bsPollStart() {
   }, 2000);
 }
 
-/* ============================================================
-                       СТУДХАБ
-   ============================================================ */
 const WALL_CATS = {
   question: {label:'Вопрос', cls:'quest', icon:'ic-comment'},
   homework: {label:'ДЗ', cls:'hw', icon:'ic-task'},
@@ -2062,9 +2089,6 @@ function wallReport(targetType, targetId) {
   });
 }
 
-/* ============================================================
-   ДЕЙСТВИЯ
-   ============================================================ */
 function actionOpenNotifyEditor() {
   haptic('light');
   const p = state.profile;
@@ -2636,13 +2660,14 @@ function actionChestModal(id) {
   const dropsHtml = meta.drops.map(d =>
     `<div class="chest-drop"><span>${escapeHtml(d[0])}</span><span class="chance">${escapeHtml(d[1])}</span></div>`
   ).join('');
+  const bannerHtml = `<div style="margin:-8px -8px 14px -8px;border-radius:var(--r-md);overflow:hidden">${icon('ic-banner-'+id, 200)}</div>`;
   const timerHtml = isCapsule && !canOpenCapsule && st.next_at
     ? `<div class="card-subtitle" style="text-align:center;margin-top:10px">Доступно через <b data-chest-timer="${escapeHtml(st.next_at)}">--:--:--</b></div>`
     : '';
   modalOpen({
     title: meta.name.toUpperCase(),
     body: `
-      <div style="text-align:center;margin-bottom:8px">${icon(meta.icon, 96)}</div>
+      ${bannerHtml}
       <div class="card-subtitle" style="text-align:center;margin-bottom:12px">${escapeHtml(meta.costLabel)}</div>
       <div class="label">Что может выпасть</div>
       <div class="chest-drops">${dropsHtml}</div>
