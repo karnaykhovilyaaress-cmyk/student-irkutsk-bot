@@ -51,6 +51,8 @@ html,body{margin:0 !important;padding:0 !important;width:100%;height:100%;min-he
   text-transform:uppercase;display:flex;align-items:center;gap:8px}
 .card-subtitle{font-size:13px;color:var(--text-2);margin-bottom:4px;font-weight:500;line-height:1.5}
 .card-meta{font-size:13px;color:var(--text-2);display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center}
+
+/* ===== ЗАДАЧИ С ПРИОРИТЕТОМ ===== */
 .task-card{border-left:5px solid var(--divider);transition:all .2s}
 .task-card.prio-low{border-left-color:#7FE9FF;background:linear-gradient(90deg,rgba(127,233,255,.08),transparent 40%)}
 .task-card.prio-medium{border-left-color:var(--yellow);background:linear-gradient(90deg,rgba(255,164,43,.10),transparent 40%)}
@@ -66,28 +68,85 @@ html,body{margin:0 !important;padding:0 !important;width:100%;height:100%;min-he
   font-family:inherit;font-size:14px;background:#FFF}
 .date-input-row input[type="time"]{width:110px;padding:12px 14px;border-radius:var(--r-md);border:1.5px solid var(--divider);
   font-family:inherit;font-size:14px;background:#FFF}
+
+/* ===== ТАБЛИЦА XP ===== */
 .xp-table{display:flex;flex-direction:column;gap:2px;margin-top:8px}
-.xp-row{display:flex;justify-content:space-between;padding:8px 10px;background:var(--bg-2);border-radius:8px;font-size:13px}
-.xp-row b{font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan-dark)}
-.chests-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
-.chest-card{background:var(--bg-2);border:1px solid var(--divider);border-radius:var(--r-lg);padding:16px 10px;
-  text-align:center;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
-.chest-card:active{transform:scale(.96);background:var(--bg-3)}
-.chest-card.locked{opacity:.55}
-.chest-icon{margin-bottom:8px}
-.chest-icon svg{width:56px;height:56px}
-.chest-name{font-family:'Anton',sans-serif;font-style:italic;font-size:15px;letter-spacing:.5px}
-.chest-sub{font-size:11px;color:var(--text-2);margin-top:2px}
-.chest-timer{position:absolute;top:8px;right:8px;background:#0A0E0F;color:#FFF;font-size:10px;font-weight:700;
-  padding:3px 8px;border-radius:999px;font-family:'Anton',sans-serif;font-style:italic}
-.chest-drops{display:flex;flex-direction:column;gap:6px;margin-top:10px}
-.chest-drop{display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-2);border-radius:10px;
-  font-size:13px;font-weight:600}
-.chest-drop .chance{color:var(--cyan-dark);font-family:'Anton',sans-serif;font-style:italic}
+.xp-row{display:flex;justify-content:space-between;padding:8px 10px;background:var(--bg-2);border-radius:8px;font-size:13px;align-items:center}
+.xp-row b{font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan-dark);display:flex;align-items:center;gap:4px}
+
+/* ===== КЕЙСЫ (БАННЕРЫ) ===== */
+.chest-banner{
+  background:#0A0E0F;border-radius:var(--r-lg);overflow:hidden;
+  cursor:pointer;transition:all .25s;
+  border:1px solid rgba(62,230,210,.15);
+  box-shadow:0 4px 20px rgba(10,14,15,.3);
+  margin-bottom:12px;position:relative;
+  aspect-ratio:2 / 1
+}
+.chest-banner:active{transform:scale(.98)}
+.chest-banner svg{width:100%;height:100%;display:block}
+.chest-banner.locked{opacity:.55;filter:grayscale(.4)}
+.chest-banner .chest-banner-timer{
+  position:absolute;top:10px;right:10px;background:rgba(10,14,15,.9);
+  color:#FFF;font-family:'Anton',sans-serif;font-style:italic;
+  font-size:11px;padding:4px 10px;border-radius:999px;
+  border:1px solid rgba(62,230,210,.4);
+  letter-spacing:1px;z-index:5
+}
+
+/* ===== ГОЛОВА 3D ===== */
+.profile-head-3d{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:20px 0 10px;position:relative
+}
+.profile-head-3d .head-svg{
+  width:200px;height:200px;filter:drop-shadow(0 12px 32px rgba(62,230,210,.5));
+  animation:headFloat 4s ease-in-out infinite
+}
+@keyframes headFloat{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-6px)}
+}
+.profile-head-3d .head-svg svg{width:100%;height:100%}
+.profile-level-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:#0A0E0F;color:#FFF;font-family:'Anton',sans-serif;
+  font-style:italic;font-size:13px;letter-spacing:1px;
+  padding:6px 14px;border-radius:999px;margin-top:8px;
+  border:1px solid rgba(62,230,210,.5);
+  box-shadow:0 0 20px rgba(62,230,210,.4)
+}
+.profile-title-3d{
+  font-family:'Anton',sans-serif;font-size:15px;font-style:italic;
+  color:var(--cyan-dark);letter-spacing:1.5px;text-transform:uppercase;
+  margin-top:4px;text-shadow:0 0 12px rgba(62,230,210,.4)
+}
+
+/* ===== ВАЛЮТА ===== */
 .ic-inline{display:inline-flex;vertical-align:-2px;width:16px;height:16px}
 .ic-inline svg{width:100%;height:100%}
 .ic-shift-c{color:var(--cyan-dark)}
 .ic-nova-c{color:var(--yellow)}
+
+.wallet-currency-row{
+  display:flex;gap:16px;justify-content:center;margin-top:10px
+}
+.wallet-currency-row .currency-item{
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg-2);border:1px solid var(--divider);
+  border-radius:999px;padding:8px 14px
+}
+.wallet-currency-row .currency-item svg{
+  width:26px;height:26px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.15))
+}
+.wallet-currency-row .currency-item span{
+  font-family:'Anton',sans-serif;font-style:italic;
+  font-size:16px;letter-spacing:.5px
+}
+.currency-item.shift span{color:#0E6A63}
+.currency-item.nova span{color:#8A5A00}
+
+/* ===== ОБЩЕЕ ===== */
 .user-bar{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#FFF;border:1px solid var(--divider);
   border-radius:var(--r-lg);margin-bottom:14px;box-shadow:var(--shadow-sm);cursor:pointer}
 .user-bar-avatar{width:48px;height:48px;border-radius:50%;background:var(--grad-neon);color:#0A0E0F;display:flex;
@@ -372,7 +431,7 @@ textarea.input{resize:vertical;min-height:88px}
 ::-webkit-scrollbar-thumb{background:rgba(62,230,210,.5);border-radius:3px}
 ::-webkit-scrollbar-track{background:transparent}
 
-/* ============ СТУДХАБ ============ */
+/* ===== СТУДХАБ ===== */
 .wall-tabs{display:flex;gap:4px;margin-bottom:12px;background:var(--bg-2);border:1px solid var(--divider);
   border-radius:var(--r-md);padding:4px}
 .wall-tabs button{flex:1;background:none;border:none;padding:10px 8px;border-radius:var(--r-sm);font-size:14px;
