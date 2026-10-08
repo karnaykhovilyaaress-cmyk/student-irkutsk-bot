@@ -28,17 +28,13 @@ const state = {
   aiMessages:[], aiPending:false, aiPendingPhoto:null,
   adminStats:null, adminFeedback:[], adminMonitor:null, adminBusy:false,
   achData:null, chestStatus:null, chestTimer:null,
-  wallTab:'general', wallScope:'general', wallCategory:null, wallSubject:null,
-  wallPosts:[], wallPost:null, wallComments:[], wallSearch:'',
-  wallForm:{text:'', category:'question', subject:'', scope:'general'},
-  wallModReports:[],
 };
 
 function icon(id, size=16, cls='') {
   return `<svg width="${size}" height="${size}" class="${cls}"><use href="#${id}"/></svg>`;
 }
-function icShift(size=16) { return icon('ic-shift-3d', size); }
-function icNova(size=16)  { return icon('ic-nova-3d',  size); }
+function icShift(size=16) { return icon('ic-shift', size, 'ic-shift-c'); }
+function icNova(size=16)  { return icon('ic-nova',  size, 'ic-nova-c'); }
 function icXp(size=16)    { return icon('ic-xp',    size); }
 
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{2764}\u{2705}\u{274C}\u{2757}\u{2728}\u{1F4A5}\u{1F525}\u{1F4E6}\u{1F48E}\u{1F3C6}\u{1F389}\u{1F381}\u{1F4B0}\u{1F4B8}\u{1F4B5}]/gu;
@@ -167,7 +163,7 @@ function render() {
   const appEl = document.getElementById('app');
   const navEl = document.getElementById('bottom-nav');
   const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры',
-    ai:'AI', admin:'Админ', profile:'Профиль', hub:'СтудХаб'};
+    ai:'AI', admin:'Админ', profile:'Профиль'};
 
   if (state.notifyEditor) {
     appEl?.classList.add('picker-open');
@@ -208,7 +204,6 @@ function render() {
       case 'ai': html = renderAI(); break;
       case 'admin': html = renderAdmin(); break;
       case 'profile': html = renderProfile(); break;
-      case 'hub': html = renderHub(); break;
     }
   }
   content.innerHTML = html;
@@ -669,6 +664,20 @@ function renderAdmin() {
   return html;
 }
 
+function headForLevel(level) {
+  if (level <= 15) return 1;
+  return 2;
+}
+function levelTitleByLevel(lvl) {
+  if (lvl <= 5) return 'Первокурсник';
+  if (lvl <= 10) return 'Второкурсник';
+  if (lvl <= 15) return 'Третьекурсник';
+  if (lvl <= 20) return 'Старшекурсник';
+  if (lvl <= 25) return 'Магистрант';
+  if (lvl <= 29) return 'Аспирант';
+  return 'Легенда ИРНИТУ';
+}
+
 function renderProfile() {
   const p = state.profile;
   const u = state.user;
@@ -678,11 +687,11 @@ function renderProfile() {
   if (u.username) metaParts.push('@' + u.username);
 
   const level = p?.wallet?.level || 1;
-  const headId = headForLevel(level);
+  const headNum = headForLevel(level);
   const title = levelTitleByLevel(level);
 
   let html = `<div class="profile-head-3d">
-    <div class="head-svg">${icon(headId, 200)}</div>
+    <img class="head-img" src="/assets/head_${headNum}.webp" alt="">
     <div class="profile-level-badge">${level} LVL</div>
     <div class="profile-title-3d">${escapeHtml(title)}</div>
   </div>`;
@@ -702,11 +711,13 @@ function renderProfile() {
 
   html += `<div class="card">
     <div class="card-title">Кейсы</div>
-    <div class="card-subtitle">Нажми на баннер, чтобы открыть.</div>
-    ${renderChestTile('capsule', 'Капсула', '')}
-    ${renderChestTile('relic', 'Реликт', '')}
-    ${renderChestTile('artifact', 'Артефакт', '')}
-    ${renderChestTile('core', 'Ядро', '')}
+    <div class="card-subtitle">Капсула — бесплатно раз в 24 часа.</div>
+    <div class="chests-grid">
+      ${renderChestTile('capsule', 'Капсула', 'Раз в 24 часа')}
+      ${renderChestTile('relic', 'Реликт', '50 Шифт')}
+      ${renderChestTile('artifact', 'Артефакт', '15 Нова')}
+      ${renderChestTile('core', 'Ядро', '80 Нова')}
+    </div>
   </div>`;
 
   html += `<div class="card">
@@ -747,8 +758,6 @@ function renderProfile() {
       <div class="xp-row"><span>Игра (за очко)</span><b>+2</b></div>
       <div class="xp-row"><span>Новый рекорд</span><b>+30</b></div>
       <div class="xp-row"><span>Победа в бою</span><b>+50</b></div>
-      <div class="xp-row"><span>Пост в Хабе</span><b>+5</b></div>
-      <div class="xp-row"><span>Решение отмечено</span><b>+30</b></div>
     </div>
   </div>`;
 
@@ -761,8 +770,6 @@ function renderProfile() {
       <div class="xp-row"><span>Новый рекорд Flappy</span><b>+1 ${icNova(12)}</b></div>
       <div class="xp-row"><span>Победа в бою</span><b>×2 ставки</b></div>
       <div class="xp-row"><span>Капсула</span><b>10–40 ${icShift(12)}</b></div>
-      <div class="xp-row"><span>Пост в Хабе</span><b>+1 ${icShift(12)}</b></div>
-      <div class="xp-row"><span>Ответ (решение)</span><b>+10 ${icShift(12)} · +1 ${icNova(12)}</b></div>
     </div>
   </div>`;
 
@@ -861,23 +868,17 @@ function renderProfile() {
   return html;
 }
 
-function headForLevel(level) {
-  if (level <= 5)  return 'ic-head-1';
-  if (level <= 10) return 'ic-head-2';
-  if (level <= 15) return 'ic-head-3';
-  if (level <= 25) return 'ic-head-4';
-  return 'ic-head-5';
-}
-
 function renderChestTile(id, name, sub) {
   const status = state.chestStatus || {};
   const canOpen = id !== 'capsule' || status.can_open !== false;
   const timer = id === 'capsule' && status.next_at
-    ? `<div class="chest-banner-timer" data-chest-timer="${escapeHtml(status.next_at)}">--:--:--</div>`
+    ? `<div class="chest-timer" data-chest-timer="${escapeHtml(status.next_at)}">--:--:--</div>`
     : '';
-  return `<div class="chest-banner ${canOpen?'':'locked'}" data-action="chest-modal" data-id="${id}">
+  return `<div class="chest-card ${canOpen?'':'locked'}" data-action="chest-modal" data-id="${id}">
     ${timer}
-    ${icon('ic-banner-'+id, 200)}
+    <div class="chest-icon">${icon('ic-case-'+id, 56)}</div>
+    <div class="chest-name">${escapeHtml(name)}</div>
+    <div class="chest-sub">${escapeHtml(sub)}</div>
   </div>`;
 }
 
@@ -919,14 +920,12 @@ async function loadWalletIntoProfile() {
         <span class="levels-xpbar-cur" style="font-size:13px">${lv.inLevel}XP</span>
         <span class="levels-xpbar-next" style="font-size:13px">${total}XP</span>
       </div>
-      <div class="wallet-currency-row">
-        <div class="currency-item shift">${icShift(26)} <span>${wallet.shift ?? wallet.soft ?? 0}</span></div>
-        <div class="currency-item nova">${icNova(26)} <span>${wallet.nova ?? wallet.hard ?? 0}</span></div>
+      <div style="display:flex;gap:18px;margin-top:12px;font-weight:800;font-size:15px;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">${icShift(18)} <span style="color:var(--cyan-dark)">${wallet.shift ?? wallet.soft ?? 0}</span></div>
+        <div style="display:flex;align-items:center;gap:6px">${icNova(18)} <span style="color:var(--yellow)">${wallet.nova ?? wallet.hard ?? 0}</span></div>
       </div>
     `;
-    if (ach) {
-      state.achData = ach;
-    }
+    if (ach) state.achData = ach;
     startChestTimer();
   } catch (e) {
     box.textContent = 'Не удалось загрузить';
@@ -976,15 +975,6 @@ async function loadAdminFeedback() {
   try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
   catch (e) { state.adminFeedback = []; }
 }
-async function loadWallPosts() {
-  try {
-    const params = {scope: state.wallScope};
-    if (state.wallCategory) params.category = state.wallCategory;
-    if (state.wallSubject) params.subject = state.wallSubject;
-    const r = await apiGet('/api/wall', params);
-    state.wallPosts = r.items || [];
-  } catch (e) { state.wallPosts = []; }
-}
 
 async function loadTabData(tab) {
   state.loading = true;
@@ -1010,9 +1000,6 @@ async function loadTabData(tab) {
     } else if (tab === 'profile') {
       await loadProfile();
       await loadScholarship();
-    } else if (tab === 'hub') {
-      await loadProfile();
-      await loadWallPosts();
     }
   } catch (e) { console.error(e); state.error = e.message; }
   state.loading = false;
@@ -1049,15 +1036,6 @@ function calcLevelInfo(xp) {
     left -= need; lvl++;
   }
   return {level: 30, inLevel: left, toNext: 500};
-}
-function levelTitleByLevel(lvl) {
-  if (lvl <= 5) return 'Первокурсник';
-  if (lvl <= 10) return 'Второкурсник';
-  if (lvl <= 15) return 'Третьекурсник';
-  if (lvl <= 20) return 'Старшекурсник';
-  if (lvl <= 25) return 'Магистрант';
-  if (lvl <= 29) return 'Аспирант';
-  return 'Легенда ИРНИТУ';
 }
 function levelRewardByLevel(lvl) {
   if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
@@ -1723,372 +1701,6 @@ function bsPollStart() {
   }, 2000);
 }
 
-const WALL_CATS = {
-  question: {label:'Вопрос', cls:'quest', icon:'ic-comment'},
-  homework: {label:'ДЗ', cls:'hw', icon:'ic-task'},
-  help:     {label:'Просьба', cls:'help', icon:'ic-hub'},
-  announce: {label:'Объявление', cls:'ann', icon:'ic-flag'},
-};
-function wallFmtTime(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    const now = new Date();
-    const diff = (now - d) / 1000;
-    if (diff < 60) return 'только что';
-    if (diff < 3600) return Math.floor(diff/60) + ' мин назад';
-    if (diff < 86400) return Math.floor(diff/3600) + ' ч назад';
-    if (diff < 604800) return Math.floor(diff/86400) + ' дн назад';
-    return d.toLocaleDateString('ru-RU');
-  } catch(e) { return ''; }
-}
-function wallCatBadge(cat) {
-  const c = WALL_CATS[cat] || WALL_CATS.question;
-  return `<span class="wall-post-badge ${c.cls}">${c.label}</span>`;
-}
-function wallInitials(name) {
-  return (name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
-}
-function renderHub() {
-  if (state.wallPost) return renderWallDetail();
-  let html = '';
-  html += `<div class="wall-tabs">
-    <button data-action="wall-scope" data-value="general" class="${state.wallScope==='general'?'active':''}">Общая</button>
-    <button data-action="wall-scope" data-value="group" class="${state.wallScope==='group'?'active':''}">Моя группа</button>
-  </div>`;
-  html += `<button class="btn wall-new-btn" data-action="wall-new">${icon('ic-plus',18)} Новый пост</button>`;
-  html += `<div class="wall-cats">
-    <button class="wall-cat ${!state.wallCategory?'active':''}" data-action="wall-cat" data-value="">Все</button>
-    ${Object.entries(WALL_CATS).map(([k,v]) =>
-      `<button class="wall-cat ${v.cls} ${state.wallCategory===k?'active':''}" data-action="wall-cat" data-value="${k}">${v.label}</button>`
-    ).join('')}
-  </div>`;
-  html += `<input class="wall-search" id="wall-search" placeholder="Поиск по постам..." value="${escapeHtml(state.wallSearch)}">`;
-  const q = (state.wallSearch || '').toLowerCase().trim();
-  const posts = (state.wallPosts || []).filter(p => {
-    if (!q) return true;
-    return (p.text || '').toLowerCase().includes(q) || (p.author || '').toLowerCase().includes(q);
-  });
-  if (!posts.length) {
-    html += `<div class="wall-empty">${state.wallScope==='group' ? 'В стене группы пока пусто' : 'Пока постов нет. Напиши первый!'}</div>`;
-    return html;
-  }
-  for (const p of posts) html += renderWallPostCard(p);
-  return html;
-}
-function renderWallPostCard(p) {
-  const cat = WALL_CATS[p.category] || WALL_CATS.question;
-  const initial = wallInitials(p.author);
-  const subjectTag = p.subject ? `<div class="wall-post-subject">${icon('ic-note',12)} ${escapeHtml(p.subject)}</div>` : '';
-  const mineActions = (p.is_mine || p.is_admin) ? `
-    <button class="wall-act" data-action="wall-edit-post" data-id="${p.id}">${icon('ic-edit',16)}</button>
-    <button class="wall-act" data-action="wall-del-post" data-id="${p.id}">${icon('ic-trash',16)}</button>
-  ` : '';
-  const reportBtn = (!p.is_mine && !p.is_admin) ? `
-    <button class="wall-act" data-action="wall-report" data-type="post" data-id="${p.id}">${icon('ic-flag',16)}</button>
-  ` : '';
-  return `<div class="wall-post cat-${cat.cls}" data-action="wall-open-post" data-id="${p.id}">
-    <div class="wall-post-head">
-      <div class="wall-post-av">${escapeHtml(initial)}</div>
-      <div class="wall-post-meta">
-        <div class="wall-post-author">${escapeHtml(p.author)}</div>
-        <div class="wall-post-time">${wallFmtTime(p.created_at)}${p.edited?' · изменён':''}</div>
-      </div>
-      ${wallCatBadge(p.category)}
-    </div>
-    ${subjectTag}
-    <div class="wall-post-text">${escapeHtml(p.text)}</div>
-    <div class="wall-post-actions" onclick="event.stopPropagation()">
-      <button class="wall-act ${p.liked?'liked':''}" data-action="wall-like" data-type="post" data-id="${p.id}">
-        ${icon(p.liked?'ic-like-fill':'ic-like',18)} ${p.likes}
-      </button>
-      <button class="wall-act" data-action="wall-open-post" data-id="${p.id}">
-        ${icon('ic-comment',18)} ${p.comments_count}
-      </button>
-      ${p.solved ? `<span class="wall-act solved-badge">${icon('ic-solve',16)} Решено</span>` : ''}
-      ${mineActions}
-      ${reportBtn}
-    </div>
-  </div>`;
-}
-function renderWallDetail() {
-  const post = state.wallPost;
-  if (!post) return '<div class="wall-empty">Пост не найден</div>';
-  const cat = WALL_CATS[post.category] || WALL_CATS.question;
-  const initial = wallInitials(post.author);
-  const subjectTag = post.subject ? `<div class="wall-post-subject">${icon('ic-note',12)} ${escapeHtml(post.subject)}</div>` : '';
-  let html = `<button class="btn btn-secondary" data-action="wall-back" style="margin-bottom:12px">${icon('ic-chevron-left',16)} К списку</button>`;
-  html += `<div class="wall-detail-head">
-    <div class="wall-post-head">
-      <div class="wall-post-av">${escapeHtml(initial)}</div>
-      <div class="wall-post-meta">
-        <div class="wall-post-author">${escapeHtml(post.author)}</div>
-        <div class="wall-post-time">${wallFmtTime(post.created_at)}${post.edited?' · изменён':''}</div>
-      </div>
-      ${wallCatBadge(post.category)}
-    </div>
-    ${subjectTag}
-    <div class="wall-post-text">${escapeHtml(post.text)}</div>
-    <div class="wall-post-actions">
-      <button class="wall-act ${post.liked?'liked':''}" data-action="wall-like" data-type="post" data-id="${post.id}">
-        ${icon(post.liked?'ic-like-fill':'ic-like',18)} ${post.likes}
-      </button>
-      ${post.solved ? `<span class="wall-act solved-badge">${icon('ic-solve',16)} Решено</span>` : ''}
-    </div>
-  </div>`;
-  html += `<div class="card-title" style="margin-bottom:10px">Комментарии (${state.wallComments.length})</div>`;
-  if (!state.wallComments.length) html += `<div class="wall-empty">Пока ни одного ответа</div>`;
-  else for (const c of state.wallComments) html += renderWallComment(c, post);
-  html += `<div class="card" style="margin-top:12px">
-    <textarea class="input" id="wall-comment-input" placeholder="Написать ответ..." rows="3"></textarea>
-    <button class="btn" data-action="wall-comment-send" style="width:100%">${icon('ic-send',16)} Отправить</button>
-  </div>`;
-  return html;
-}
-function renderWallComment(c, post) {
-  const initial = wallInitials(c.author);
-  const canSolve = (post.is_mine || post.is_admin) && !c.is_solution;
-  const canUnsolve = (post.is_mine || post.is_admin) && c.is_solution;
-  const mineActions = (c.is_mine || c.is_admin) ? `
-    <button class="wall-act" data-action="wall-edit-comment" data-id="${c.id}">${icon('ic-edit',14)}</button>
-    <button class="wall-act" data-action="wall-del-comment" data-id="${c.id}">${icon('ic-trash',14)}</button>
-  ` : '';
-  const reportBtn = (!c.is_mine && !c.is_admin) ? `
-    <button class="wall-act" data-action="wall-report" data-type="comment" data-id="${c.id}">${icon('ic-flag',14)}</button>
-  ` : '';
-  return `<div class="wall-comment ${c.is_solution?'is-solution':''}">
-    ${c.is_solution ? `<div class="wall-solved-tag">${icon('ic-solve',10)} Решение</div>` : ''}
-    <div class="wall-comment-head">
-      <div class="wall-comment-av">${escapeHtml(initial)}</div>
-      <div class="wall-comment-author">${escapeHtml(c.author)}</div>
-      <div class="wall-comment-time">${wallFmtTime(c.created_at)}</div>
-    </div>
-    <div class="wall-comment-text">${escapeHtml(c.text)}</div>
-    <div class="wall-comment-actions">
-      <button class="wall-act ${c.liked?'liked':''}" data-action="wall-like" data-type="comment" data-id="${c.id}">
-        ${icon(c.liked?'ic-like-fill':'ic-like',16)} ${c.likes}
-      </button>
-      ${canSolve ? `<button class="wall-act" data-action="wall-solve" data-id="${c.id}">${icon('ic-solve',14)} Решение</button>` : ''}
-      ${canUnsolve ? `<button class="wall-act solved-badge" data-action="wall-solve" data-id="${c.id}">${icon('ic-solve',14)} Снять</button>` : ''}
-      ${mineActions}
-      ${reportBtn}
-    </div>
-  </div>`;
-}
-async function wallSetScope(scope) {
-  state.wallScope = scope;
-  await loadWallPosts();
-  render();
-}
-async function wallSetCategory(cat) {
-  state.wallCategory = cat || null;
-  await loadWallPosts();
-  render();
-}
-async function wallOpenPost(postId) {
-  try {
-    const r = await apiGet('/api/wall/post', {id: postId});
-    state.wallPost = r.post;
-    state.wallComments = r.comments || [];
-    render();
-  } catch (e) { toast('Не удалось открыть', 'error'); }
-}
-async function wallLike(targetType, targetId) {
-  try {
-    const r = await apiPost('/api/wall/like', {target_type: targetType, target_id: targetId});
-    if (targetType === 'post') {
-      if (state.wallPost && state.wallPost.id === targetId) {
-        state.wallPost.likes = r.likes; state.wallPost.liked = r.liked;
-      } else {
-        const p = state.wallPosts.find(x => x.id === targetId);
-        if (p) { p.likes = r.likes; p.liked = r.liked; }
-      }
-    } else {
-      const c = state.wallComments.find(x => x.id === targetId);
-      if (c) { c.likes = r.likes; c.liked = r.liked; }
-    }
-    haptic('light'); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function wallSendComment() {
-  const el = document.getElementById('wall-comment-input');
-  const text = (el?.value || '').trim();
-  if (!text) { toast('Пусто', 'error'); return; }
-  if (!state.wallPost) return;
-  try {
-    await apiPost('/api/wall/comment', {post_id: state.wallPost.id, text});
-    haptic('success'); popIcon('ic-check');
-    await wallOpenPost(state.wallPost.id);
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function wallToggleSolve(commentId) {
-  if (!state.wallPost) return;
-  try {
-    await apiPost('/api/wall/solve', {post_id: state.wallPost.id, comment_id: commentId});
-    haptic('success');
-    await wallOpenPost(state.wallPost.id);
-  } catch (e) { toast(e.message, 'error'); }
-}
-function wallNewPost() {
-  const subs = state.scholarship?.available_subjects || [];
-  const cats = [
-    {k:'question', l:'Вопрос'}, {k:'homework', l:'ДЗ'},
-    {k:'help', l:'Просьба'}, {k:'announce', l:'Объявление'},
-  ];
-  const renderBody = () => `
-    <div class="label">КАТЕГОРИЯ</div>
-    <div class="wall-form-cat">
-      ${cats.map(c => `<button class="${state.wallForm.category===c.k?'active':''}" data-cat="${c.k}">${c.l}</button>`).join('')}
-    </div>
-    <div class="label">КУДА</div>
-    <div class="wall-scope-row">
-      <button class="${state.wallForm.scope==='general'?'active':''}" data-scope="general">Общая</button>
-      <button class="${state.wallForm.scope==='group'?'active':''}" data-scope="group">Моя группа</button>
-    </div>
-    <div class="label">ПРЕДМЕТ (необязательно)</div>
-    <input class="input" id="wall-subject" placeholder="Например: Матан" value="${escapeHtml(state.wallForm.subject)}" maxlength="100">
-    ${subs.length ? `<div class="choice-row" style="max-height:120px;overflow-y:auto">${subs.slice(0,15).map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
-    <div class="label">ТЕКСТ</div>
-    <textarea class="input" id="wall-text" rows="5" maxlength="1500" placeholder="Расскажи, что нужно...">${escapeHtml(state.wallForm.text)}</textarea>
-  `;
-  const attach = () => {
-    document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
-      state.wallForm.category = b.dataset.cat;
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-    document.querySelectorAll('[data-scope]').forEach(b => b.onclick = () => {
-      state.wallForm.scope = b.dataset.scope;
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => {
-      state.wallForm.subject = b.dataset.subj;
-      document.getElementById('wall-subject').value = b.dataset.subj;
-      document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-    });
-    const si = document.getElementById('wall-subject');
-    if (si) si.oninput = (e) => state.wallForm.subject = e.target.value;
-    const ti = document.getElementById('wall-text');
-    if (ti) ti.oninput = (e) => state.wallForm.text = e.target.value;
-  };
-  modalOpen({
-    title:'НОВЫЙ ПОСТ',
-    body: renderBody(),
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'ОПУБЛИКОВАТЬ', style:'btn', onClick: async () => {
-        const text = (document.getElementById('wall-text')?.value || '').trim();
-        const subject = (document.getElementById('wall-subject')?.value || '').trim();
-        if (!text) { toast('Введи текст', 'error'); return; }
-        try {
-          await apiPost('/api/wall/create', {
-            text, subject, category: state.wallForm.category, scope: state.wallForm.scope,
-          });
-          state.wallForm = {text:'', category:'question', subject:'', scope:'general'};
-          haptic('success'); toast('Опубликовано', 'success');
-          await loadWallPosts(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  attach();
-}
-function wallEditPost(postId) {
-  const p = state.wallPosts.find(x => x.id === postId) || (state.wallPost?.id===postId ? state.wallPost : null);
-  if (!p) return;
-  let form = {text: p.text, category: p.category, subject: p.subject || ''};
-  const cats = [
-    {k:'question', l:'Вопрос'}, {k:'homework', l:'ДЗ'},
-    {k:'help', l:'Просьба'}, {k:'announce', l:'Объявление'},
-  ];
-  const renderBody = () => `
-    <div class="label">КАТЕГОРИЯ</div>
-    <div class="wall-form-cat">
-      ${cats.map(c => `<button class="${form.category===c.k?'active':''}" data-cat="${c.k}">${c.l}</button>`).join('')}
-    </div>
-    <div class="label">ПРЕДМЕТ</div>
-    <input class="input" id="wall-edit-subject" value="${escapeHtml(form.subject)}" maxlength="100">
-    <div class="label">ТЕКСТ</div>
-    <textarea class="input" id="wall-edit-text" rows="5" maxlength="1500">${escapeHtml(form.text)}</textarea>
-  `;
-  const attach = () => {
-    document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
-      form.category = b.dataset.cat;
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-  };
-  modalOpen({
-    title:'РЕДАКТИРОВАТЬ',
-    body: renderBody(),
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const text = (document.getElementById('wall-edit-text')?.value || '').trim();
-        const subject = (document.getElementById('wall-edit-subject')?.value || '').trim();
-        if (!text) { toast('Пусто', 'error'); return; }
-        try {
-          await apiPost('/api/wall/edit', {target_type:'post', target_id: postId, text, subject, category: form.category});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadWallPosts();
-          if (state.wallPost?.id === postId) await wallOpenPost(postId);
-          render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  attach();
-}
-function wallEditComment(commentId) {
-  const c = state.wallComments.find(x => x.id === commentId);
-  if (!c) return;
-  modalOpen({
-    title:'РЕДАКТИРОВАТЬ',
-    body: `<div class="label">ТЕКСТ</div><textarea class="input" id="wall-edit-c" rows="4" maxlength="1000">${escapeHtml(c.text)}</textarea>`,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const text = (document.getElementById('wall-edit-c')?.value || '').trim();
-        if (!text) { toast('Пусто', 'error'); return; }
-        try {
-          await apiPost('/api/wall/edit', {target_type:'comment', target_id: commentId, text});
-          haptic('success');
-          if (state.wallPost) await wallOpenPost(state.wallPost.id);
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-}
-function wallDelete(targetType, targetId) {
-  modalConfirm('УДАЛИТЬ?', 'Отменить нельзя.', async () => {
-    try {
-      await apiPost('/api/wall/delete', {target_type: targetType, target_id: targetId});
-      haptic('success');
-      if (targetType === 'post') { state.wallPost = null; await loadWallPosts(); }
-      else if (state.wallPost) await wallOpenPost(state.wallPost.id);
-      render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'УДАЛИТЬ');
-}
-function wallReport(targetType, targetId) {
-  modalOpen({
-    title:'ЖАЛОБА',
-    body: `<div class="label">ПРИЧИНА</div><textarea class="input" id="wall-report-reason" rows="3" placeholder="Опиши, что не так" maxlength="500"></textarea>`,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'ОТПРАВИТЬ', style:'btn-red', onClick: async () => {
-        const reason = (document.getElementById('wall-report-reason')?.value || '').trim();
-        try {
-          await apiPost('/api/wall/report', {target_type: targetType, target_id: targetId, reason});
-          haptic('success'); toast('Жалоба отправлена', 'success');
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-}
-
 function actionOpenNotifyEditor() {
   haptic('light');
   const p = state.profile;
@@ -2660,14 +2272,13 @@ function actionChestModal(id) {
   const dropsHtml = meta.drops.map(d =>
     `<div class="chest-drop"><span>${escapeHtml(d[0])}</span><span class="chance">${escapeHtml(d[1])}</span></div>`
   ).join('');
-  const bannerHtml = `<div style="margin:-8px -8px 14px -8px;border-radius:var(--r-md);overflow:hidden">${icon('ic-banner-'+id, 200)}</div>`;
   const timerHtml = isCapsule && !canOpenCapsule && st.next_at
     ? `<div class="card-subtitle" style="text-align:center;margin-top:10px">Доступно через <b data-chest-timer="${escapeHtml(st.next_at)}">--:--:--</b></div>`
     : '';
   modalOpen({
     title: meta.name.toUpperCase(),
     body: `
-      ${bannerHtml}
+      <div style="text-align:center;margin-bottom:8px">${icon(meta.icon, 96)}</div>
       <div class="card-subtitle" style="text-align:center;margin-bottom:12px">${escapeHtml(meta.costLabel)}</div>
       <div class="label">Что может выпасть</div>
       <div class="chest-drops">${dropsHtml}</div>
@@ -2903,20 +2514,6 @@ function attachHandlers() {
     if (file) actionAIPhotoSelected(file);
     e.target.value = '';
   });
-  const wallSearch = document.getElementById('wall-search');
-  if (wallSearch && !wallSearch._bound) {
-    wallSearch._bound = true;
-    let timer = null;
-    wallSearch.addEventListener('input', (e) => {
-      state.wallSearch = e.target.value;
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        render();
-        const inp = document.getElementById('wall-search');
-        if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
-      }, 250);
-    });
-  }
 }
 
 function handleAction(el) {
@@ -2985,19 +2582,6 @@ function handleAction(el) {
   else if (a === 'export-pdf') actionExportPdf();
   else if (a === 'show-my-feedback') actionShowMyFeedback();
   else if (a === 'att-help') actionAttHelp();
-  else if (a === 'wall-scope') wallSetScope(el.dataset.value);
-  else if (a === 'wall-cat') wallSetCategory(el.dataset.value);
-  else if (a === 'wall-new') wallNewPost();
-  else if (a === 'wall-open-post') wallOpenPost(parseInt(el.dataset.id));
-  else if (a === 'wall-back') { state.wallPost = null; state.wallComments = []; render(); }
-  else if (a === 'wall-like') wallLike(el.dataset.type, parseInt(el.dataset.id));
-  else if (a === 'wall-comment-send') wallSendComment();
-  else if (a === 'wall-solve') wallToggleSolve(parseInt(el.dataset.id));
-  else if (a === 'wall-edit-post') wallEditPost(parseInt(el.dataset.id));
-  else if (a === 'wall-edit-comment') wallEditComment(parseInt(el.dataset.id));
-  else if (a === 'wall-del-post') wallDelete('post', parseInt(el.dataset.id));
-  else if (a === 'wall-del-comment') wallDelete('comment', parseInt(el.dataset.id));
-  else if (a === 'wall-report') wallReport(el.dataset.type, parseInt(el.dataset.id));
 }
 function actionDayToday() {
   state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; render();
