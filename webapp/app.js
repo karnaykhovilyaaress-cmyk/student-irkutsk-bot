@@ -307,6 +307,8 @@ function renderSchedule() {
   </div>`;
   return html;
 }
+
+
 function renderTodayBlock() {
   const s = state.schedule;
   if (!s) return '<div class="empty">Нет данных о расписании</div>';
@@ -683,6 +685,7 @@ function calcLevelInfo(xp) {
   return {level: 30, inLevel: left, toNext: 500};
 }
 
+
 function renderProfile() {
   const p = state.profile;
   const u = state.user;
@@ -700,18 +703,6 @@ function renderProfile() {
   if (u.username) metaParts.push('@' + u.username);
 
   let html = `<div class="profile-hero">
-    <div class="profile-hero-bg">
-      <div class="profile-hero-bg-logo">
-        <svg viewBox="0 0 200 240" xmlns="http://www.w3.org/2000/svg">
-          <path class="sketch-main"
-            d="M 30 20 L 30 160 C 30 200, 170 200, 170 160 L 170 20 M 100 20 L 100 178"
-            fill="none" stroke="#3EE6D2" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
-          <path class="sketch"
-            d="M 30 20 L 30 160 C 30 200, 170 200, 170 160 L 170 20 M 100 20 L 100 178"
-            fill="none" stroke="#7FE9FF" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" opacity=".55"/>
-        </svg>
-      </div>
-    </div>
     <img class="profile-hero-head" src="/assets/head_1.webp" alt="">
     <div class="profile-hero-name">
       <span class="profile-hero-name-text">${escapeHtml(displayName)}</span>
@@ -1073,6 +1064,7 @@ async function openLeaderboard() {
       actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
   } catch (e) { toast('Ошибка', 'error'); }
 }
+
 
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
@@ -1655,6 +1647,7 @@ function bsPollStart() {
     } catch (e) {}
   }, 2000);
 }
+
 
 function actionOpenNotifyEditor() {
   haptic('light');
