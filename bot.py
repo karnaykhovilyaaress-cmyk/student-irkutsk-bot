@@ -16,7 +16,6 @@ try:
 except Exception:
     _FPDF_AVAILABLE = False
 
-
 def clean_latex(text):
     if not text: return text
     text = re.sub(r"\$\$(.+?)\$\$", r"\1", text, flags=re.DOTALL)
@@ -54,7 +53,6 @@ def clean_latex(text):
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
-
 def clean_markdown(text):
     if not text: return text
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
@@ -77,7 +75,6 @@ def clean_markdown(text):
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
 
 TOKEN = os.getenv("BOT_TOKEN", "")
 GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
@@ -188,7 +185,6 @@ for _lvl in range(1, 31):
     elif _lvl <= 20: LEVEL_REWARDS[_lvl] = {"shift":600,"nova":8,"xp":0}
     else: LEVEL_REWARDS[_lvl] = {"shift":1500,"nova":25,"xp":0}
 
-
 def calc_level(xp):
     lvl = 1; left = int(xp or 0)
     while lvl <= 30:
@@ -196,7 +192,6 @@ def calc_level(xp):
         if left < need: return lvl, left, need
         left -= need; lvl += 1
     return 30, left, 500
-
 
 def level_title(lvl):
     if lvl <= 5: return "Первокурсник"
@@ -206,7 +201,6 @@ def level_title(lvl):
     if lvl <= 25: return "Магистрант"
     if lvl <= 29: return "Аспирант"
     return "Легенда ИРНИТУ"
-
 
 def roll_chest_drop(chest_id):
     chest = CHESTS.get(chest_id)
@@ -219,10 +213,8 @@ def roll_chest_drop(chest_id):
     last = chest["drops"][-1]
     return {"type": last["type"], "amount": random.randint(last["min"], last["max"])}
 
-
 def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
 def _monday_of_week(d): return d - timedelta(days=d.weekday())
-
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -313,31 +305,7 @@ def init_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS achievement_rewards (user_id INTEGER, ach_id TEXT, xp INTEGER DEFAULT 0,
         shift INTEGER DEFAULT 0, nova INTEGER DEFAULT 0, granted_at TEXT, PRIMARY KEY (user_id, ach_id))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS level_rewards (user_id INTEGER, level INTEGER, claimed_at TEXT, PRIMARY KEY (user_id, level))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS wall_posts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, group_id TEXT DEFAULT NULL,
-        scope TEXT DEFAULT 'general', category TEXT DEFAULT 'question', subject TEXT DEFAULT NULL,
-        text TEXT NOT NULL, likes INTEGER DEFAULT 0, comments_count INTEGER DEFAULT 0,
-        solved_comment_id INTEGER DEFAULT NULL, edited_at TEXT DEFAULT NULL, is_deleted INTEGER DEFAULT 0,
-        created_at TEXT, updated_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS wall_comments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
-        text TEXT NOT NULL, likes INTEGER DEFAULT 0, edited_at TEXT DEFAULT NULL, is_deleted INTEGER DEFAULT 0, created_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS wall_likes (
-        user_id INTEGER, target_type TEXT, target_id INTEGER, PRIMARY KEY (user_id, target_type, target_id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS wall_reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, reporter_id INTEGER, target_type TEXT, target_id INTEGER,
-        reason TEXT, status TEXT DEFAULT 'new', created_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS wall_bans (
-        user_id INTEGER PRIMARY KEY, reason TEXT, until TEXT, banned_at TEXT)""")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_wall_posts_created ON wall_posts(created_at DESC)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_wall_posts_scope ON wall_posts(scope)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_wall_comments_post ON wall_comments(post_id)")
-    try: conn.execute("ALTER TABLE user_stats ADD COLUMN wall_solved INTEGER DEFAULT 0")
-    except: pass
-    try: conn.execute("ALTER TABLE user_stats ADD COLUMN wall_posts INTEGER DEFAULT 0")
-    except: pass
     conn.commit(); conn.close()
-
 
 def _ensure_user(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -350,12 +318,10 @@ def _ensure_user(user_id):
     conn.execute("INSERT OR IGNORE INTO user_stats (user_id, first_seen, last_seen) VALUES (?, ?, ?)", (user_id, now, now))
     conn.commit(); conn.close()
 
-
 def _update_user_meta(user_id, username, first_name):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (username, first_name, user_id))
     conn.commit(); conn.close()
-
 
 def wallet_get(user_id):
     _ensure_user(user_id)
@@ -381,7 +347,6 @@ def wallet_get(user_id):
         "capsule_opened_at": capsule_opened_at, "chest_opened_at": capsule_opened_at,
         "level": lvl, "level_title": level_title(lvl), "xp_in_level": in_lvl, "xp_to_next": to_next}
 
-
 def wallet_add(user_id, xp=0, shift=0, nova=0):
     _ensure_user(user_id)
     now = datetime.now(timezone.utc).isoformat()
@@ -389,7 +354,6 @@ def wallet_add(user_id, xp=0, shift=0, nova=0):
     conn.execute("UPDATE wallet SET xp = xp + ?, shift = shift + ?, nova = nova + ?, updated_at = ? WHERE user_id = ?",
         (int(xp), int(shift), int(nova), now, user_id))
     conn.commit(); conn.close()
-
 
 def wallet_set_name(user_id, name):
     _ensure_user(user_id); name = (name or "").strip()
@@ -400,14 +364,12 @@ def wallet_set_name(user_id, name):
     conn.execute("UPDATE wallet SET custom_name=?, updated_at=? WHERE user_id=?", (name, now, user_id))
     conn.commit(); conn.close()
 
-
 def wallet_set_avatar(user_id, idx):
     _ensure_user(user_id); idx = max(0, min(int(idx), 11))
     now = datetime.now(timezone.utc).isoformat()
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE wallet SET avatar_idx=?, updated_at=? WHERE user_id=?", (idx, now, user_id))
     conn.commit(); conn.close()
-
 
 def wallet_consume(user_id, currency, amount):
     if currency not in ("shift", "nova"): return False
@@ -420,7 +382,6 @@ def wallet_consume(user_id, currency, amount):
     conn.commit(); conn.close()
     return True
 
-
 def wallet_use_free_name(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
@@ -431,13 +392,11 @@ def wallet_use_free_name(user_id):
     conn.commit(); conn.close()
     return True
 
-
 def wallet_add_free_name(user_id):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE wallet SET free_name_changes = free_name_changes + 1 WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def wallet_leaderboard(limit=10):
     conn = sqlite3.connect(DB_PATH)
@@ -445,7 +404,6 @@ def wallet_leaderboard(limit=10):
         FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.xp > 0 ORDER BY w.xp DESC LIMIT ?""", (limit,)).fetchall()
     conn.close()
     return rows
-
 
 def stats_update_streak(user_id):
     _ensure_user(user_id)
@@ -465,14 +423,12 @@ def stats_update_streak(user_id):
     conn.commit(); conn.close()
     return streak
 
-
 def stats_inc(user_id, field, by=1):
     _ensure_user(user_id)
-    if field not in ("tasks_done", "notes_added", "wall_solved", "wall_posts"): return
+    if field not in ("tasks_done", "notes_added"): return
     conn = sqlite3.connect(DB_PATH)
     conn.execute(f"UPDATE user_stats SET {field} = COALESCE({field}, 0) + ? WHERE user_id=?", (int(by), user_id))
     conn.commit(); conn.close()
-
 
 def stats_get(user_id):
     _ensure_user(user_id)
@@ -482,13 +438,11 @@ def stats_get(user_id):
     if not row: return {"tasks_done":0,"notes_added":0,"first_seen":None,"last_seen":None,"streak":0}
     return {"tasks_done": row[0] or 0, "notes_added": row[1] or 0, "first_seen": row[2], "last_seen": row[3], "streak": row[4] or 0}
 
-
 def achievements_get(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT ach_id, unlocked_at FROM achievements WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     return {r[0]: r[1] for r in rows}
-
 
 def achievement_unlock(user_id, ach_id):
     if ach_id not in ACHIEVEMENTS: return False
@@ -500,13 +454,11 @@ def achievement_unlock(user_id, ach_id):
     conn.commit(); conn.close()
     return True
 
-
 def bs_count_wins(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT COUNT(*) FROM bs_games WHERE winner=? AND status='finished'", (user_id,)).fetchone()
     conn.close()
     return row[0] if row else 0
-
 
 def check_and_award_achievements(user_id):
     newly = []
@@ -548,7 +500,6 @@ def check_and_award_achievements(user_id):
     conn.commit(); conn.close()
     return newly
 
-
 def chest_status(user_id, chest_id="capsule"):
     chest = CHESTS.get(chest_id)
     if not chest: return {"can_open": False, "next_at": None, "last_opened": None}
@@ -565,7 +516,6 @@ def chest_status(user_id, chest_id="capsule"):
                 can_open = False; next_at_iso = (last_dt + timedelta(hours=cooldown_h)).isoformat()
         except: pass
     return {"can_open": can_open, "next_at": next_at_iso, "last_opened": last}
-
 
 def chest_open(user_id, chest_id):
     chest = CHESTS.get(chest_id)
@@ -594,13 +544,11 @@ def chest_open(user_id, chest_id):
         conn.commit(); conn.close()
     return {"type": reward["type"], "amount": reward["amount"], "label": label, "chest": chest_id}, None
 
-
 def level_rewards_claimed(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT level FROM level_rewards WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     return sorted([r[0] for r in rows])
-
 
 def level_reward_claim(user_id, lvl):
     wallet = wallet_get(user_id)
@@ -616,7 +564,6 @@ def level_reward_claim(user_id, lvl):
     conn.commit(); conn.close()
     return rw, None
 
-
 def game_get_scores(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT game_id, best_score, plays_count FROM game_scores WHERE user_id=?", (user_id,)).fetchall()
@@ -625,7 +572,6 @@ def game_get_scores(user_id):
     for gid in GAMES:
         if gid not in result: result[gid] = {"best": 0, "plays": 0}
     return result
-
 
 def game_save_score(user_id, game_id, score):
     if game_id not in GAMES: return None
@@ -646,7 +592,6 @@ def game_save_score(user_id, game_id, score):
     conn.commit(); conn.close()
     return {"best": new_best, "is_record": is_record, "plays": plays}
 
-
 def game_leaderboard(game_id, limit=10):
     if game_id not in GAMES: return []
     conn = sqlite3.connect(DB_PATH)
@@ -656,13 +601,11 @@ def game_leaderboard(game_id, limit=10):
     conn.close()
     return [(uid, score, custom_name or first_name or '', username) for uid, score, first_name, username, custom_name in rows]
 
-
 def user_exists(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row is not None
-
 
 def daily_subscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -670,12 +613,10 @@ def daily_subscribe(user_id):
         (user_id, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
-
 def daily_unsubscribe(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def daily_is_subscribed(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -683,13 +624,11 @@ def daily_is_subscribed(user_id):
     conn.close()
     return row is not None
 
-
 def daily_get_all_subscribers():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
     conn.close()
     return [r[0] for r in rows]
-
 
 def set_scholarship_amount(user_id, amount):
     conn = sqlite3.connect(DB_PATH)
@@ -697,13 +636,11 @@ def set_scholarship_amount(user_id, amount):
         (user_id, amount, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
-
 def get_scholarship_amount(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row else None
-
 
 def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
     conn = sqlite3.connect(DB_PATH)
@@ -717,13 +654,11 @@ def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
             (user_id, subject, grade, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
-
 def get_grades(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') FROM grades WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
-
 
 def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None, semester=None):
     conn = sqlite3.connect(DB_PATH); fields = []; values = []
@@ -736,12 +671,10 @@ def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None
     conn.execute(f"UPDATE grades SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
-
 def delete_grade(grade_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
     conn.commit(); conn.close()
-
 
 def clear_grades(user_id, semester=None):
     conn = sqlite3.connect(DB_PATH)
@@ -749,13 +682,11 @@ def clear_grades(user_id, semester=None):
     else: conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
 
-
 def save_user_group(user_id, group_id, group_name):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET group_id=?, group_name=? WHERE user_id=?", (group_id, group_name, user_id))
     conn.commit(); conn.close()
-
 
 def get_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -763,12 +694,10 @@ def get_user_group(user_id):
     conn.close()
     return row if row and row[0] else None
 
-
 def delete_user_group(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def set_user_subgroup(user_id, subgroup):
     _ensure_user(user_id)
@@ -776,13 +705,11 @@ def set_user_subgroup(user_id, subgroup):
     conn.execute("UPDATE users SET subgroup=? WHERE user_id=?", (subgroup, user_id))
     conn.commit(); conn.close()
 
-
 def get_user_subgroup(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT subgroup FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row and row[0] else 0
-
 
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
@@ -790,20 +717,17 @@ def set_notify_changes(user_id, enabled):
     conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?", (1 if enabled else 0, user_id))
     conn.commit(); conn.close()
 
-
 def get_notify_changes(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return bool(row and row[0])
 
-
 def set_notify_settings(user_id, ntype, hour, minute):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?", (ntype, hour, minute, user_id))
     conn.commit(); conn.close()
-
 
 def get_notify_settings(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -813,13 +737,11 @@ def get_notify_settings(user_id):
         return {"type": row[0], "hour": row[1] if row[1] is not None else 0, "minute": row[2] if row[2] is not None else 0}
     return None
 
-
 def set_notify_before_min(user_id, minutes):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET notify_before_min=? WHERE user_id=?", (int(minutes), user_id))
     conn.commit(); conn.close()
-
 
 def get_notify_before_min(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -827,13 +749,11 @@ def get_notify_before_min(user_id):
     conn.close()
     return int(row[0]) if row and row[0] is not None else 0
 
-
 def get_users_for_notification():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute FROM users WHERE notify_type IS NOT NULL AND notify_type != '' AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
-
 
 def get_users_for_change_tracking():
     conn = sqlite3.connect(DB_PATH)
@@ -841,13 +761,11 @@ def get_users_for_change_tracking():
     conn.close()
     return rows
 
-
 def get_users_for_lesson_reminder():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id, group_id, subgroup, notify_before_min FROM users WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
-
 
 def get_total_users():
     conn = sqlite3.connect(DB_PATH)
@@ -855,16 +773,13 @@ def get_total_users():
     conn.close()
     return n
 
-
 def get_all_user_ids():
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
-
 def is_vip(user_id): return True
-
 
 def get_cached_schedule(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
@@ -877,13 +792,11 @@ def get_cached_schedule(group_id, week_start):
     except: pass
     return None
 
-
 def save_cached_schedule(group_id, week_start, html):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
         (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
-
 
 def save_snapshot(group_id, week_start, snapshot_str):
     conn = sqlite3.connect(DB_PATH)
@@ -891,13 +804,11 @@ def save_snapshot(group_id, week_start, snapshot_str):
         (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
-
 def get_snapshot(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
     conn.close()
     return row[0] if row else None
-
 
 def make_snapshot_str(days):
     parts = []
@@ -907,7 +818,6 @@ def make_snapshot_str(days):
             parts.append(f"{day_key}|{les.get('time','')}|{les.get('subject','')}|{les.get('type','')}|{les.get('teacher','')}|{les.get('auditorium','')}|{les.get('subgroup','')}")
     return "\n".join(sorted(parts))
 
-
 def save_feedback(user_id, username, text, admin_msg_id=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
@@ -916,12 +826,10 @@ def save_feedback(user_id, username, text, admin_msg_id=None):
     conn.commit(); conn.close()
     return fid
 
-
 def update_feedback_admin_msg(feedback_id, admin_msg_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET admin_msg_id=? WHERE id=?", (admin_msg_id, feedback_id))
     conn.commit(); conn.close()
-
 
 def get_pending_feedback():
     conn = sqlite3.connect(DB_PATH)
@@ -929,12 +837,10 @@ def get_pending_feedback():
     conn.close()
     return rows
 
-
 def set_feedback_status(feedback_id, status):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
     conn.commit(); conn.close()
-
 
 def mark_feedback_answered(feedback_id, reply_text=None):
     conn = sqlite3.connect(DB_PATH)
@@ -942,13 +848,11 @@ def mark_feedback_answered(feedback_id, reply_text=None):
         (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
     conn.commit(); conn.close()
 
-
 def get_feedback_by_id(feedback_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?", (feedback_id,)).fetchone()
     conn.close()
     return row
-
 
 def get_user_feedback(user_id, limit=30):
     conn = sqlite3.connect(DB_PATH)
@@ -957,7 +861,6 @@ def get_user_feedback(user_id, limit=30):
     conn.close()
     return rows
 
-
 def add_task(user_id, text, due_date=None, priority=2, due_time=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute("INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time) VALUES (?, ?, ?, 0, ?, ?, ?)",
@@ -965,7 +868,6 @@ def add_task(user_id, text, due_date=None, priority=2, due_time=None):
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
-
 
 def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_time=None, reset_due=False):
     conn = sqlite3.connect(DB_PATH); fields = []; values = []
@@ -980,14 +882,12 @@ def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_t
     conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
-
 def get_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE id=? AND user_id=?",
         (task_id, user_id)).fetchone()
     conn.close()
     return row
-
 
 def get_user_tasks(user_id, only_active=True):
     conn = sqlite3.connect(DB_PATH)
@@ -998,7 +898,6 @@ def get_user_tasks(user_id, only_active=True):
     conn.close()
     return rows
 
-
 def get_done_tasks(user_id, days=7):
     conn = sqlite3.connect(DB_PATH)
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -1007,32 +906,27 @@ def get_done_tasks(user_id, days=7):
     conn.close()
     return rows
 
-
 def mark_task_done(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
         (datetime.now(timezone.utc).isoformat(), task_id, user_id))
     conn.commit(); conn.close()
 
-
 def delete_task(task_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
     conn.commit(); conn.close()
-
 
 def clear_done_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
     conn.commit(); conn.close()
 
-
 def count_user_tasks(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return (row[0] or 0, row[1] or 0)
-
 
 def add_or_update_note(user_id, subject, text):
     conn = sqlite3.connect(DB_PATH)
@@ -1045,19 +939,16 @@ def add_or_update_note(user_id, subject, text):
             (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
-
 def get_user_notes(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
 
-
 def delete_note_by_id(note_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
     conn.commit(); conn.close()
-
 
 def attendance_set(user_id, date, time, subject, status):
     if status not in ("", "was", "missed", "sick", "excused"): return False
@@ -1070,7 +961,6 @@ def attendance_set(user_id, date, time, subject, status):
     conn.commit(); conn.close()
     return True
 
-
 def attendance_get_map(user_id, dates):
     if not dates: return {}
     conn = sqlite3.connect(DB_PATH)
@@ -1079,7 +969,6 @@ def attendance_get_map(user_id, dates):
         (user_id, *dates)).fetchall()
     conn.close()
     return {(d, t, s): st for d, t, s, st in rows}
-
 
 def attendance_stats(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -1090,7 +979,6 @@ def attendance_stats(user_id):
         if status in result: result[status] = count
     return result
 
-
 def ai_get_history(user_id, limit=30):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
@@ -1098,19 +986,16 @@ def ai_get_history(user_id, limit=30):
     rows.reverse()
     return rows
 
-
 def ai_save_message(user_id, role, text, has_photo=0):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
         (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
-
 def ai_clear_history(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
-
 
 def get_export_data(user_id):
     saved = get_user_group(user_id)
@@ -1134,10 +1019,8 @@ def get_export_data(user_id):
         "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
         "attendance": att}
 
-
 def _bs_now(): return datetime.now(timezone.utc).isoformat()
 def _bs_new_game_id(): return secrets.token_hex(8)
-
 
 def _bs_new_code():
     for _ in range(50):
@@ -1147,7 +1030,6 @@ def _bs_new_code():
         conn.close()
         if not row: return code
     return f"{random.randint(100000, 999999)}"
-
 
 def _bs_validate_ships(ships):
     if not ships or not isinstance(ships, list): return False
@@ -1168,13 +1050,11 @@ def _bs_validate_ships(ships):
             occupied.add((x, y))
     return True
 
-
 def _bs_check_win(ships, shots):
     if not ships: return False
     all_cells = {(c[0], c[1]) for s in ships for c in s["cells"]}
     hit_cells = {(sh.get("x"), sh.get("y")) for sh in shots}
     return all_cells.issubset(hit_cells)
-
 
 def _bs_get_game(game_id):
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
@@ -1182,13 +1062,11 @@ def _bs_get_game(game_id):
     conn.close()
     return dict(row) if row else None
 
-
 def _bs_get_game_by_code(code):
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing') ORDER BY created_at DESC LIMIT 1", (code,)).fetchone()
     conn.close()
     return dict(row) if row else None
-
 
 def _bs_update_game(game_id, **fields):
     if not fields: return
@@ -1199,18 +1077,15 @@ def _bs_update_game(game_id, **fields):
     conn.execute(f"UPDATE bs_games SET {keys} WHERE game_id=?", values)
     conn.commit(); conn.close()
 
-
 def _bs_delete_game(game_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM bs_games WHERE game_id=?", (game_id,))
     conn.commit(); conn.close()
 
-
 def _bs_player_side(game, user_id):
     if game["p1_id"] == user_id: return 1
     if game["p2_id"] == user_id: return 2
     return 0
-
 
 def _bs_user_in_active_game(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -1218,13 +1093,11 @@ def _bs_user_in_active_game(user_id):
     conn.close()
     return row[0] if row else None
 
-
 def _bs_get_user_name(user_id):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT COALESCE(custom_name, first_name, username, 'Игрок') FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row and row[0] else f"Игрок-{str(user_id)[-4:]}"
-
 
 def _bs_finish_game(game_id, winner_id, surrender_by=0):
     game = _bs_get_game(game_id)
@@ -1238,7 +1111,6 @@ def _bs_finish_game(game_id, winner_id, surrender_by=0):
     wallet_add(winner_id, shift=bet * 2, xp=50)
     _bs_update_game(game_id, status="finished", winner=winner_id, surrender_by=surrender_by)
 
-
 def _bs_cancel_any_waiting(user_id):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT game_id, bet FROM bs_games WHERE p1_id=? AND status='waiting' AND (p2_id IS NULL OR p2_id=0)", (user_id,)).fetchall()
@@ -1246,7 +1118,6 @@ def _bs_cancel_any_waiting(user_id):
     for game_id, bet in rows:
         wallet_add(user_id, shift=bet or 0)
         _bs_delete_game(game_id)
-
 
 def _bs_cleanup_stale_games():
     threshold = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
@@ -1257,7 +1128,6 @@ def _bs_cleanup_stale_games():
         if p1_id: wallet_add(p1_id, shift=bet or 0)
         if p2_id: wallet_add(p2_id, shift=bet or 0)
         _bs_delete_game(game_id)
-
 
 def exchange_shift_to_nova(user_id, amount_shift):
     try: amount_shift = int(amount_shift)
@@ -1272,7 +1142,6 @@ def exchange_shift_to_nova(user_id, amount_shift):
     if rw: wallet_add(user_id, xp=rw["xp"], shift=rw["shift"], nova=rw["nova"])
     return {"soft_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA, "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
         "hard_received": amount_nova, "nova_received": amount_nova}
-
 
 # === GROUPS_ЗДЕСЬ ===
 GROUPS = {
@@ -1604,12 +1473,10 @@ GROUPS = {
     ],
 }
 
-
 LESSON_TIMES = {"8:15":"9:45","8:30":"10:00","10:00":"11:30","10:10":"11:40",
     "11:45":"13:15","12:00":"13:30","13:45":"15:15","14:00":"15:30",
     "15:30":"17:00","15:45":"17:15","17:10":"18:40","17:25":"18:55",
     "18:50":"20:20","19:05":"20:35"}
-
 
 def _filter_lessons_by_subgroup(lessons, subgroup):
     if not subgroup: return lessons
@@ -1618,7 +1485,6 @@ def _filter_lessons_by_subgroup(lessons, subgroup):
         if not les["subgroup"]: result.append(les)
         elif str(subgroup) == str(les["subgroup"]): result.append(les)
     return result
-
 
 def parse_schedule(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -1666,7 +1532,6 @@ def parse_schedule(html):
         days.append({"date": date_str, "name": day_name, "lessons": lessons})
     return week_parity, days
 
-
 async def fetch_week_html(group_id, target_monday, use_cache=True):
     week_start_str = target_monday.strftime("%Y-%m-%d")
     if use_cache:
@@ -1690,7 +1555,6 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
             if row: return row[0]
         return ""
 
-
 def _verify_webapp_init_full(init_data):
     if not init_data: return None
     try:
@@ -1700,253 +1564,9 @@ def _verify_webapp_init_full(init_data):
         logging.warning(f"[WEB] initData verify error: {e}")
     return None
 
-
 def _verify_webapp_init(init_data):
     u = _verify_webapp_init_full(init_data)
     return u.id if u else None
-
-
-# ============================================================
-#              СТУДХАБ — ХЕЛПЕРЫ
-# ============================================================
-
-def _wall_get_group_id(user_id):
-    g = get_user_group(user_id)
-    return g[0] if g else None
-
-
-def _wall_is_banned(user_id):
-    if user_id == ADMIN_ID: return False
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT until FROM wall_bans WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    if not row: return False
-    until = row[0]
-    if not until: return True
-    try:
-        if datetime.fromisoformat(until) > datetime.now(timezone.utc): return True
-    except: pass
-    return False
-
-
-def _wall_ban_user(user_id, reason, days):
-    conn = sqlite3.connect(DB_PATH)
-    until = None
-    if days and days > 0:
-        until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
-    conn.execute("INSERT OR REPLACE INTO wall_bans (user_id, reason, until, banned_at) VALUES (?, ?, ?, ?)",
-        (user_id, reason or "", until, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-
-def _wall_unban_user(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM wall_bans WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-
-
-def _wall_get_name(user_id): return _bs_get_user_name(user_id)
-
-
-def wall_add_post(user_id, text, category="question", subject=None, scope="general", group_id=None):
-    text = (text or "").strip()
-    if not text or len(text) > 1500: return None
-    cat = category if category in ("question","homework","help","announce") else "question"
-    sc = scope if scope in ("general","group") else "general"
-    subj = (subject or "").strip()[:100] or None
-    if sc == "group" and not group_id: return None
-    conn = sqlite3.connect(DB_PATH)
-    now = datetime.now(timezone.utc).isoformat()
-    cur = conn.execute("INSERT INTO wall_posts (user_id, group_id, scope, category, subject, text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (user_id, group_id, sc, cat, subj, text, now, now))
-    pid = cur.lastrowid
-    conn.commit(); conn.close()
-    return pid
-
-
-def wall_get_posts(user_id, scope="general", subject=None, category=None, limit=30, offset=0):
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-    query = "SELECT * FROM wall_posts WHERE is_deleted=0 AND scope=?"
-    params = [scope]
-    if scope == "group":
-        gid = _wall_get_group_id(user_id)
-        if not gid:
-            conn.close(); return []
-        query += " AND group_id=?"; params.append(gid)
-    if subject: query += " AND subject=?"; params.append(subject)
-    if category: query += " AND category=?"; params.append(category)
-    query += " ORDER BY id DESC LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def wall_get_post(post_id):
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT * FROM wall_posts WHERE id=? AND is_deleted=0", (post_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def wall_update_post(post_id, user_id, new_text=None, new_category=None, new_subject=None):
-    post = wall_get_post(post_id)
-    if not post: return False
-    if post["user_id"] != user_id and user_id != ADMIN_ID: return False
-    fields = []; values = []
-    if new_text is not None:
-        t = (new_text or "").strip()[:1500]
-        if not t: return False
-        fields.append("text=?"); values.append(t)
-    if new_category is not None:
-        c = new_category if new_category in ("question","homework","help","announce") else post["category"]
-        fields.append("category=?"); values.append(c)
-    if new_subject is not None:
-        s = (new_subject or "").strip()[:100] or None
-        fields.append("subject=?"); values.append(s)
-    if not fields: return False
-    fields.append("edited_at=?"); values.append(datetime.now(timezone.utc).isoformat())
-    fields.append("updated_at=?"); values.append(datetime.now(timezone.utc).isoformat())
-    values.append(post_id)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(f"UPDATE wall_posts SET {', '.join(fields)} WHERE id=?", values)
-    conn.commit(); conn.close()
-    return True
-
-
-def wall_delete_post(post_id, user_id):
-    post = wall_get_post(post_id)
-    if not post: return False
-    if post["user_id"] != user_id and user_id != ADMIN_ID: return False
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wall_posts SET is_deleted=1 WHERE id=?", (post_id,))
-    conn.commit(); conn.close()
-    return True
-
-
-def wall_add_comment(post_id, user_id, text):
-    text = (text or "").strip()
-    if not text or len(text) > 1000: return None
-    conn = sqlite3.connect(DB_PATH)
-    now = datetime.now(timezone.utc).isoformat()
-    cur = conn.execute("INSERT INTO wall_comments (post_id, user_id, text, created_at) VALUES (?, ?, ?, ?)",
-        (post_id, user_id, text, now))
-    cid = cur.lastrowid
-    conn.execute("UPDATE wall_posts SET comments_count = comments_count + 1, updated_at=? WHERE id=?", (now, post_id))
-    conn.commit(); conn.close()
-    return cid
-
-
-def wall_get_comments(post_id, limit=200):
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM wall_comments WHERE post_id=? AND is_deleted=0 ORDER BY id ASC LIMIT ?",
-        (post_id, limit)).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def wall_update_comment(comment_id, user_id, new_text):
-    t = (new_text or "").strip()[:1000]
-    if not t: return False
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT user_id FROM wall_comments WHERE id=?", (comment_id,)).fetchone()
-    if not row or (row[0] != user_id and user_id != ADMIN_ID):
-        conn.close(); return False
-    conn.execute("UPDATE wall_comments SET text=?, edited_at=? WHERE id=?",
-        (t, datetime.now(timezone.utc).isoformat(), comment_id))
-    conn.commit(); conn.close()
-    return True
-
-
-def wall_delete_comment(comment_id, user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT user_id, post_id FROM wall_comments WHERE id=?", (comment_id,)).fetchone()
-    if not row: conn.close(); return False
-    if row[0] != user_id and user_id != ADMIN_ID:
-        conn.close(); return False
-    conn.execute("UPDATE wall_comments SET is_deleted=1 WHERE id=?", (comment_id,))
-    conn.execute("UPDATE wall_posts SET comments_count = MAX(0, comments_count - 1) WHERE id=?", (row[1],))
-    conn.commit(); conn.close()
-    return True
-
-
-def wall_toggle_like(user_id, target_type, target_id):
-    if target_type not in ("post", "comment"): return None
-    conn = sqlite3.connect(DB_PATH)
-    exists = conn.execute("SELECT 1 FROM wall_likes WHERE user_id=? AND target_type=? AND target_id=?",
-        (user_id, target_type, target_id)).fetchone()
-    table = "wall_posts" if target_type == "post" else "wall_comments"
-    if exists:
-        conn.execute("DELETE FROM wall_likes WHERE user_id=? AND target_type=? AND target_id=?",
-            (user_id, target_type, target_id))
-        conn.execute(f"UPDATE {table} SET likes = MAX(0, likes - 1) WHERE id=?", (target_id,))
-        liked = False
-    else:
-        conn.execute("INSERT INTO wall_likes (user_id, target_type, target_id) VALUES (?, ?, ?)",
-            (user_id, target_type, target_id))
-        conn.execute(f"UPDATE {table} SET likes = likes + 1 WHERE id=?", (target_id,))
-        liked = True
-    conn.commit()
-    row = conn.execute(f"SELECT likes FROM {table} WHERE id=?", (target_id,)).fetchone()
-    conn.close()
-    return {"liked": liked, "likes": row[0] if row else 0}
-
-
-def wall_mark_solved(post_id, user_id, comment_id):
-    post = wall_get_post(post_id)
-    if not post: return False
-    if post["user_id"] != user_id and user_id != ADMIN_ID: return False
-    conn = sqlite3.connect(DB_PATH)
-    if post["solved_comment_id"] == comment_id:
-        conn.execute("UPDATE wall_posts SET solved_comment_id=NULL WHERE id=?", (post_id,))
-        conn.commit(); conn.close()
-        return True
-    conn.execute("UPDATE wall_posts SET solved_comment_id=? WHERE id=?", (comment_id, post_id))
-    conn.commit(); conn.close()
-    conn = sqlite3.connect(DB_PATH)
-    crow = conn.execute("SELECT user_id FROM wall_comments WHERE id=? AND post_id=?", (comment_id, post_id)).fetchone()
-    conn.close()
-    if crow and crow[0] != user_id:
-        wallet_add(crow[0], xp=30, shift=10, nova=1)
-        stats_inc(crow[0], "wall_solved", 1)
-        check_and_award_achievements(crow[0])
-    return True
-
-
-def wall_report(reporter_id, target_type, target_id, reason):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT INTO wall_reports (reporter_id, target_type, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?)",
-        (reporter_id, target_type, target_id, reason or "", datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-
-def wall_get_reports(status="new", limit=50):
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM wall_reports WHERE status=? ORDER BY id DESC LIMIT ?", (status, limit)).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def wall_check_like(user_id, target_type, target_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT 1 FROM wall_likes WHERE user_id=? AND target_type=? AND target_id=?",
-        (user_id, target_type, target_id)).fetchone()
-    conn.close()
-    return bool(row)
-
-
-def _wall_post_dict(p, user_id):
-    return {"id": p["id"], "user_id": p["user_id"], "author": _wall_get_name(p["user_id"]),
-        "scope": p["scope"], "category": p["category"], "subject": p["subject"],
-        "text": p["text"], "likes": p["likes"], "liked": wall_check_like(user_id, "post", p["id"]),
-        "comments_count": p["comments_count"], "solved": bool(p["solved_comment_id"]),
-        "is_mine": p["user_id"] == user_id, "is_admin": user_id == ADMIN_ID,
-        "edited": bool(p.get("edited_at")), "created_at": p["created_at"]}
-
-
-# ============================================================
-#                 API: РАСПИСАНИЕ / ЮЗЕР
-# ============================================================
 
 async def api_schedule(request):
     init_data = request.query.get("initData", "")
@@ -1975,7 +1595,6 @@ async def api_schedule(request):
             "attendance": att_map.get(key, "")})
     return web.json_response({"date": day["date"], "dayName": day["name"], "group": group_name,
         "subgroup": subgroup, "lessons": lessons_out})
-
 
 async def api_week(request):
     init_data = request.query.get("initData", "")
@@ -2006,7 +1625,6 @@ async def api_week(request):
                 "attendance": att_map.get(key, "")})
         days_out.append({"date": d["date"], "name": d["name"], "lessons": lessons_out})
     return web.json_response({"group": group_name, "subgroup": subgroup, "days": days_out})
-
 
 async def api_me(request):
     init_data = request.query.get("initData", "")
@@ -2042,14 +1660,12 @@ async def api_me(request):
         "display_name": display_name, "player_tag": player_tag, "wallet": wallet,
         "streak": streak, "achievements": ach, "chat_unread": 0})
 
-
 async def api_wallet(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     _ensure_user(user_id); check_and_award_achievements(user_id)
     return web.json_response({"wallet": wallet_get(user_id)})
-
 
 async def api_set_name(request):
     try: body = await request.json()
@@ -2068,7 +1684,6 @@ async def api_set_name(request):
     wallet_set_name(user_id, name)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "used_free": used_free})
 
-
 async def api_set_avatar(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2079,7 +1694,6 @@ async def api_set_avatar(request):
     idx = max(0, min(idx, 11))
     wallet_set_avatar(user_id, idx)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
-
 
 async def api_exchange(request):
     try: body = await request.json()
@@ -2102,18 +1716,12 @@ async def api_exchange(request):
         "hard_received": result["hard_received"], "shift_spent": result["shift_spent"],
         "nova_received": result["nova_received"], "wallet": wallet_get(user_id)})
 
-
-# ============================================================
-#                 API: КЕЙСЫ / ДОСТИЖЕНИЯ / УРОВНИ
-# ============================================================
-
 async def api_chest_status(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     chest_id = request.query.get("chest_id", "capsule")
     return web.json_response(chest_status(user_id, chest_id))
-
 
 async def api_chest_open(request):
     try: body = await request.json()
@@ -2130,7 +1738,6 @@ async def api_chest_open(request):
         return web.json_response({"error": err, "message": msg}, status=400)
     check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "reward": reward, "wallet": wallet_get(user_id)})
-
 
 async def api_achievements(request):
     init_data = request.query.get("initData", "")
@@ -2168,7 +1775,6 @@ async def api_achievements(request):
         "got": len(unlocked), "can_claim_count": sum(1 for x in items if x["can_claim"]),
         "total_reward": total_reward})
 
-
 async def api_achievement_claim(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2195,13 +1801,11 @@ async def api_achievement_claim(request):
         "reward": {"xp": xp, "shift": shift, "nova": nova, "soft": shift, "hard": nova},
         "wallet": wallet_get(user_id)})
 
-
 async def api_level_rewards(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     return web.json_response({"claimed": level_rewards_claimed(user_id)})
-
 
 async def api_level_reward_claim(request):
     try: body = await request.json()
@@ -2213,7 +1817,6 @@ async def api_level_reward_claim(request):
     rw, err = level_reward_claim(user_id, lvl)
     if err: return web.json_response({"error": err}, status=400)
     return web.json_response({"ok": True, "reward": rw, "wallet": wallet_get(user_id)})
-
 
 async def api_wallet_leaderboard(request):
     init_data = request.query.get("initData", "")
@@ -2230,13 +1833,7 @@ async def api_wallet_leaderboard(request):
             "display": display, "is_me": uid == user_id})
     return web.json_response({"items": items})
 
-
-# ============================================================
-#                 API: ГРУППЫ / ЗАДАЧИ / ЗАМЕТКИ
-# ============================================================
-
 async def api_groups(request): return web.json_response({"groups": GROUPS})
-
 
 async def api_set_group(request):
     try: body = await request.json()
@@ -2250,7 +1847,6 @@ async def api_set_group(request):
     save_user_group(user_id, group_id, group_name); set_user_subgroup(user_id, subgroup)
     return web.json_response({"ok": True})
 
-
 async def api_set_subgroup(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2259,7 +1855,6 @@ async def api_set_subgroup(request):
     subgroup = int(body.get("subgroup", 0))
     set_user_subgroup(user_id, subgroup)
     return web.json_response({"ok": True})
-
 
 def _task_to_dict(row):
     tid, text, due_date, done, created_at, priority, due_time = row
@@ -2274,7 +1869,6 @@ def _task_to_dict(row):
     if p not in (1, 2, 3): p = 2
     return {"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
         "priority": p, "done": bool(done), "overdue": overdue}
-
 
 async def api_tasks(request):
     init_data = request.query.get("initData", "")
@@ -2294,7 +1888,6 @@ async def api_tasks(request):
     active, done_count = count_user_tasks(user_id)
     return web.json_response({"tasks": tasks, "active": active, "done": done_count})
 
-
 async def api_task_add(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2309,7 +1902,6 @@ async def api_task_add(request):
     tid = add_task(user_id, text, due_date, priority, due_time)
     wallet_add(user_id, xp=5, shift=1); check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "id": tid, "wallet": wallet_get(user_id)})
-
 
 async def api_task_update(request):
     try: body = await request.json()
@@ -2335,7 +1927,6 @@ async def api_task_update(request):
         due_time=due_time if due_time is not None else None, reset_due=reset_due)
     return web.json_response({"ok": True})
 
-
 async def api_task_delete(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2346,7 +1937,6 @@ async def api_task_delete(request):
     delete_task(tid, user_id)
     return web.json_response({"ok": True})
 
-
 async def api_task_clear(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2355,14 +1945,12 @@ async def api_task_clear(request):
     clear_done_tasks(user_id)
     return web.json_response({"ok": True})
 
-
 async def api_notes(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     rows = get_user_notes(user_id)
     return web.json_response({"notes": [{"id": nid, "subject": subj, "text": txt} for nid, subj, txt in rows]})
-
 
 async def api_note_save(request):
     try: body = await request.json()
@@ -2378,7 +1966,6 @@ async def api_note_save(request):
     new_ach = check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
 
-
 async def api_note_delete(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2388,11 +1975,6 @@ async def api_note_delete(request):
     if not nid: return web.json_response({"error": "no_id"}, status=400)
     delete_note_by_id(nid, user_id)
     return web.json_response({"ok": True})
-
-
-# ============================================================
-#        API: УВЕДОМЛЕНИЯ / ЦИТАТЫ / СТИПЕНДИЯ / ПОСЕЩ
-# ============================================================
 
 async def api_notify_set(request):
     try: body = await request.json()
@@ -2417,7 +1999,6 @@ async def api_notify_set(request):
     set_notify_settings(user_id, ntype, hour, minute)
     return web.json_response({"ok": True, "type": ntype, "hour": hour, "minute": minute})
 
-
 async def api_notify_set_before(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2429,13 +2010,11 @@ async def api_notify_set_before(request):
     set_notify_before_min(user_id, minutes)
     return web.json_response({"ok": True, "minutes": minutes})
 
-
 async def api_quote(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     return web.json_response({"quote": random.choice(DAILY_QUOTES), "subscribed": daily_is_subscribed(user_id)})
-
 
 async def api_quote_subscribe(request):
     try: body = await request.json()
@@ -2446,7 +2025,6 @@ async def api_quote_subscribe(request):
     if sub: daily_subscribe(user_id)
     else: daily_unsubscribe(user_id)
     return web.json_response({"ok": True, "subscribed": sub})
-
 
 async def api_scholarship(request):
     init_data = request.query.get("initData", "")
@@ -2485,7 +2063,6 @@ async def api_scholarship(request):
         "count_auto": count_auto, "forecast": forecast,
         "available_subjects": available_subjects, "semesters": semesters})
 
-
 async def api_scholarship_set_amount(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2495,7 +2072,6 @@ async def api_scholarship_set_amount(request):
     if amount < 0 or amount > 100000: return web.json_response({"error": "invalid"}, status=400)
     set_scholarship_amount(user_id, amount)
     return web.json_response({"ok": True})
-
 
 async def api_scholarship_add_grade(request):
     try: body = await request.json()
@@ -2511,7 +2087,6 @@ async def api_scholarship_add_grade(request):
     upsert_grade(user_id, subject, grade, is_auto, semester); wallet_add(user_id, xp=5, shift=1)
     new_ach = check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
-
 
 async def api_scholarship_update_grade(request):
     try: body = await request.json()
@@ -2535,7 +2110,6 @@ async def api_scholarship_update_grade(request):
     update_grade_by_id(gid, user_id, subject if subject else None, grade, is_auto, semester)
     return web.json_response({"ok": True})
 
-
 async def api_scholarship_delete_grade(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2546,7 +2120,6 @@ async def api_scholarship_delete_grade(request):
     delete_grade(gid, user_id)
     return web.json_response({"ok": True})
 
-
 async def api_scholarship_clear(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2556,7 +2129,6 @@ async def api_scholarship_clear(request):
     if semester is not None: semester = (semester or "").strip() or None
     clear_grades(user_id, semester)
     return web.json_response({"ok": True})
-
 
 async def api_attendance_set(request):
     try: body = await request.json()
@@ -2574,11 +2146,6 @@ async def api_attendance_set(request):
     if status == "was":
         wallet_add(user_id, xp=3, shift=1); check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "status": status, "wallet": wallet_get(user_id)})
-
-
-# ============================================================
-#                 API: AI
-# ============================================================
 
 async def api_ai(request):
     try: body = await request.json()
@@ -2609,7 +2176,6 @@ async def api_ai(request):
         logging.exception("[AI-WEB]")
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
-
 async def api_ai_photo(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2634,7 +2200,6 @@ async def api_ai_photo(request):
             async with session.post(ocr_url, headers=ocr_headers, json=ocr_body,
                                     timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status != 200:
-                    err_text = await resp.text()
                     return web.json_response({"error": "ocr_failed", "message": f"OCR HTTP {resp.status}"}, status=500)
                 ocr_result = await resp.json()
         recognized_text = ""
@@ -2672,7 +2237,6 @@ async def api_ai_photo(request):
     except Exception as e:
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
-
 async def api_ai_history(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -2680,7 +2244,6 @@ async def api_ai_history(request):
     rows = ai_get_history(user_id, limit=30)
     items = [{"id": r[0], "role": r[1], "text": r[2], "has_photo": bool(r[3])} for r in rows]
     return web.json_response({"items": items})
-
 
 async def api_ai_clear_history(request):
     try: body = await request.json()
@@ -2690,11 +2253,6 @@ async def api_ai_clear_history(request):
     ai_clear_history(user_id)
     return web.json_response({"ok": True})
 
-
-# ============================================================
-#                 API: FEEDBACK / GAMES / BS
-# ============================================================
-
 async def api_feedback_my(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -2703,7 +2261,6 @@ async def api_feedback_my(request):
     items = [{"id": r[0], "text": r[1], "status": r[2], "created_at": r[3],
         "answered_at": r[4], "admin_reply": r[5]} for r in rows]
     return web.json_response({"items": items})
-
 
 async def api_feedback(request):
     try: body = await request.json()
@@ -2720,7 +2277,6 @@ async def api_feedback(request):
     except Exception as e:
         logging.error(f"[FEEDBACK-WEB] {e}")
     return web.json_response({"ok": True, "id": fid})
-
 
 async def api_game_info(request):
     init_data = request.query.get("initData", "")
@@ -2744,7 +2300,6 @@ async def api_game_info(request):
         s = scores.get(gid, {"best": 0, "plays": 0})
         games_out.append({"id": gid, "name": meta["name"], "desc": meta["desc"], "best": s["best"], "plays": s["plays"]})
     return web.json_response({"games": games_out, "scores": scores, "tops": tops})
-
 
 async def api_game_submit(request):
     try: body = await request.json()
@@ -2781,13 +2336,11 @@ async def api_game_submit(request):
         "plays": result["plays"], "soft_reward": soft_reward, "xp_reward": xp_reward,
         "hard_reward": hard_reward, "wallet": wallet, "top": items})
 
-
 def _bs_make_result_for(game, user_id):
     winner = game.get("winner") or 0; bet = game.get("bet") or 0
     if winner == 0: return {"outcome": "draw", "reward": 0, "loss": 0, "wallet": wallet_get(user_id)}
     if winner == user_id: return {"outcome": "win", "reward": bet, "loss": 0, "wallet": wallet_get(user_id)}
     return {"outcome": "lose", "reward": 0, "loss": bet, "wallet": wallet_get(user_id)}
-
 
 async def api_bs_create(request):
     try: body = await request.json()
@@ -2814,7 +2367,6 @@ async def api_bs_create(request):
     return web.json_response({"ok": True, "status": "waiting", "game_id": game_id,
         "code": code, "bet": bet, "wallet": wallet_get(user_id)})
 
-
 async def api_bs_join(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2839,7 +2391,6 @@ async def api_bs_join(request):
     return web.json_response({"ok": True, "game_id": game["game_id"],
         "opponent_name": _bs_get_user_name(game["p1_id"]), "bet": bet, "side": 2,
         "wallet": wallet_get(user_id)})
-
 
 async def api_bs_find(request):
     try: body = await request.json()
@@ -2880,7 +2431,6 @@ async def api_bs_find(request):
     return web.json_response({"ok": True, "status": "queued", "game_id": game_id,
         "code": code, "bet": bet, "wallet": wallet_get(user_id)})
 
-
 async def api_bs_ready(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2904,7 +2454,6 @@ async def api_bs_ready(request):
     return web.json_response({"ok": True,
         "status": "playing" if game["status"] == "playing" else "waiting",
         "your_turn": (game["turn"] == side) if game["status"] == "playing" else False})
-
 
 async def api_bs_state(request):
     init_data = request.query.get("initData", "")
@@ -2949,7 +2498,6 @@ async def api_bs_state(request):
         "your_turn": game["turn"] == side, "my_ships": my_ships, "my_shots": my_shots_out,
         "enemy_shots": enemy_shots_out, "enemy_ships": enemy_ships if game["status"] == "finished" else None,
         "opponent_name": opponent_name, "log": log})
-
 
 async def api_bs_fire(request):
     try: body = await request.json()
@@ -3001,7 +2549,6 @@ async def api_bs_fire(request):
     return web.json_response({"ok": True, "result": result_type, "sunk_ship": sunk_cells,
         "your_turn": game["turn"] == side, "status": "playing"})
 
-
 async def api_bs_surrender(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -3017,7 +2564,6 @@ async def api_bs_surrender(request):
     _bs_finish_game(game_id, opponent, surrender_by=user_id)
     game = _bs_get_game(game_id)
     return web.json_response({"ok": True, "result": _bs_make_result_for(game, user_id)})
-
 
 async def api_bs_cancel(request):
     try: body = await request.json()
@@ -3037,7 +2583,6 @@ async def api_bs_cancel(request):
         return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
     return web.json_response({"error": "cant_cancel"}, status=400)
 
-
 async def api_bs_bot_start(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -3052,7 +2597,6 @@ async def api_bs_bot_start(request):
     if not wallet_consume(user_id, "shift", bet):
         return web.json_response({"error": "consume_failed"}, status=500)
     return web.json_response({"ok": True, "bet": bet, "wallet": wallet_get(user_id)})
-
 
 async def api_bs_finish_bot(request):
     try: body = await request.json()
@@ -3071,221 +2615,6 @@ async def api_bs_finish_bot(request):
     elif outcome == "draw": wallet_add(user_id, shift=bet)
     check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "reward": reward, "loss": loss, "wallet": wallet_get(user_id)})
-
-
-# ============================================================
-#                 API: СТУДХАБ
-# ============================================================
-
-async def api_wall_list(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    scope = request.query.get("scope", "general")
-    if scope not in ("general", "group"): scope = "general"
-    subject = request.query.get("subject") or None
-    category = request.query.get("category") or None
-    try: limit = min(int(request.query.get("limit", "30")), 100)
-    except: limit = 30
-    try: offset = max(int(request.query.get("offset", "0")), 0)
-    except: offset = 0
-    posts = wall_get_posts(user_id, scope=scope, subject=subject, category=category, limit=limit, offset=offset)
-    items = [_wall_post_dict(p, user_id) for p in posts]
-    return web.json_response({"items": items, "scope": scope})
-
-
-async def api_wall_create(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    if _wall_is_banned(user_id):
-        return web.json_response({"error": "banned", "message": "Ты заблокирован в СтудХабе"}, status=403)
-    text = (body.get("text") or "").strip()
-    if not text: return web.json_response({"error": "empty"}, status=400)
-    if len(text) > 1500: text = text[:1500]
-    category = body.get("category", "question")
-    subject = (body.get("subject") or "").strip() or None
-    scope = body.get("scope", "general")
-    if scope not in ("general", "group"): scope = "general"
-    group_id = None
-    if scope == "group":
-        group_id = _wall_get_group_id(user_id)
-        if not group_id: return web.json_response({"error": "no_group", "message": "Сначала выбери группу"}, status=400)
-    pid = wall_add_post(user_id, text, category, subject, scope, group_id)
-    if not pid: return web.json_response({"error": "failed"}, status=500)
-    wallet_add(user_id, xp=5, shift=1); stats_inc(user_id, "wall_posts", 1)
-    check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "id": pid})
-
-
-async def api_wall_post_get(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try: post_id = int(request.query.get("id", "0"))
-    except: post_id = 0
-    post = wall_get_post(post_id)
-    if not post: return web.json_response({"error": "not_found"}, status=404)
-    comments = wall_get_comments(post_id)
-    items = []
-    for c in comments:
-        items.append({"id": c["id"], "user_id": c["user_id"], "author": _wall_get_name(c["user_id"]),
-            "text": c["text"], "likes": c["likes"], "liked": wall_check_like(user_id, "comment", c["id"]),
-            "is_solution": post["solved_comment_id"] == c["id"], "is_mine": c["user_id"] == user_id,
-            "is_admin": user_id == ADMIN_ID, "edited": bool(c.get("edited_at")), "created_at": c["created_at"]})
-    return web.json_response({"post": _wall_post_dict(post, user_id), "comments": items})
-
-
-async def api_wall_comment(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    if _wall_is_banned(user_id): return web.json_response({"error": "banned"}, status=403)
-    try: post_id = int(body.get("post_id", 0))
-    except: post_id = 0
-    text = (body.get("text") or "").strip()
-    if not post_id or not text: return web.json_response({"error": "empty"}, status=400)
-    if len(text) > 1000: text = text[:1000]
-    post = wall_get_post(post_id)
-    if not post: return web.json_response({"error": "not_found"}, status=404)
-    cid = wall_add_comment(post_id, user_id, text)
-    if not cid: return web.json_response({"error": "failed"}, status=500)
-    wallet_add(user_id, xp=3, shift=1); check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "id": cid})
-
-
-async def api_wall_like(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    target_type = (body.get("target_type") or "").strip()
-    try: target_id = int(body.get("target_id", 0))
-    except: target_id = 0
-    if target_type not in ("post", "comment") or not target_id:
-        return web.json_response({"error": "bad_target"}, status=400)
-    res = wall_toggle_like(user_id, target_type, target_id)
-    return web.json_response({"ok": True, **(res or {})})
-
-
-async def api_wall_solve(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        post_id = int(body.get("post_id", 0)); comment_id = int(body.get("comment_id", 0))
-    except: return web.json_response({"error": "bad_ids"}, status=400)
-    if not post_id or not comment_id: return web.json_response({"error": "bad_ids"}, status=400)
-    ok = wall_mark_solved(post_id, user_id, comment_id)
-    if not ok: return web.json_response({"error": "forbidden"}, status=403)
-    return web.json_response({"ok": True})
-
-
-async def api_wall_edit(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    target_type = (body.get("target_type") or "").strip()
-    try: target_id = int(body.get("target_id", 0))
-    except: target_id = 0
-    new_text = body.get("text")
-    if not target_id: return web.json_response({"error": "bad_id"}, status=400)
-    if target_type == "post":
-        ok = wall_update_post(target_id, user_id, new_text=new_text,
-            new_category=body.get("category"), new_subject=body.get("subject"))
-    elif target_type == "comment":
-        ok = wall_update_comment(target_id, user_id, new_text)
-    else: return web.json_response({"error": "bad_target"}, status=400)
-    if not ok: return web.json_response({"error": "forbidden"}, status=403)
-    return web.json_response({"ok": True})
-
-
-async def api_wall_delete(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    target_type = (body.get("target_type") or "").strip()
-    try: target_id = int(body.get("target_id", 0))
-    except: target_id = 0
-    if target_type == "post": ok = wall_delete_post(target_id, user_id)
-    elif target_type == "comment": ok = wall_delete_comment(target_id, user_id)
-    else: return web.json_response({"error": "bad_target"}, status=400)
-    if not ok: return web.json_response({"error": "forbidden"}, status=403)
-    return web.json_response({"ok": True})
-
-
-async def api_wall_report(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    target_type = (body.get("target_type") or "").strip()
-    try: target_id = int(body.get("target_id", 0))
-    except: target_id = 0
-    reason = (body.get("reason") or "").strip()[:500]
-    if target_type not in ("post", "comment") or not target_id:
-        return web.json_response({"error": "bad_target"}, status=400)
-    wall_report(user_id, target_type, target_id, reason)
-    return web.json_response({"ok": True})
-
-
-async def api_wall_moderation(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id or user_id != ADMIN_ID: return web.json_response({"error": "forbidden"}, status=403)
-    reports = wall_get_reports(status="new", limit=50); items = []
-    for r in reports:
-        target_preview = ""
-        if r["target_type"] == "post":
-            post = wall_get_post(r["target_id"])
-            if post: target_preview = (post.get("text") or "")[:100]
-        elif r["target_type"] == "comment":
-            conn = sqlite3.connect(DB_PATH)
-            row = conn.execute("SELECT text FROM wall_comments WHERE id=?", (r["target_id"],)).fetchone()
-            conn.close()
-            if row: target_preview = (row[0] or "")[:100]
-        items.append({"id": r["id"], "reporter_id": r["reporter_id"],
-            "reporter": _wall_get_name(r["reporter_id"]), "target_type": r["target_type"],
-            "target_id": r["target_id"], "reason": r["reason"],
-            "created_at": r["created_at"], "preview": target_preview})
-    return web.json_response({"items": items})
-
-
-async def api_wall_ban(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id or user_id != ADMIN_ID: return web.json_response({"error": "forbidden"}, status=403)
-    try: target_id = int(body.get("user_id", 0))
-    except: target_id = 0
-    if not target_id: return web.json_response({"error": "bad_user"}, status=400)
-    try: days = int(body.get("days", 0))
-    except: days = 0
-    reason = (body.get("reason") or "").strip()[:200]
-    _wall_ban_user(target_id, reason, days)
-    return web.json_response({"ok": True})
-
-
-async def api_wall_unban(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id or user_id != ADMIN_ID: return web.json_response({"error": "forbidden"}, status=403)
-    try: target_id = int(body.get("user_id", 0))
-    except: target_id = 0
-    if not target_id: return web.json_response({"error": "bad_user"}, status=400)
-    _wall_unban_user(target_id)
-    return web.json_response({"ok": True})
-
-
-# ============================================================
-#                 PDF / АДМИН / WEBAPP
-# ============================================================
 
 def _find_or_download_pdf_font():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3320,13 +2649,11 @@ def _find_or_download_pdf_font():
         logging.warning(f"[PDF FONT] {e}")
     return None
 
-
 def _pdf_short(text, limit=120):
     if not text: return ""
     s = str(text).replace("\r", "").strip()
     if len(s) > limit: s = s[:limit - 1] + "…"
     return s
-
 
 def generate_user_pdf(user_id):
     if not _FPDF_AVAILABLE: raise RuntimeError("fpdf2 не установлена")
@@ -3418,7 +2745,6 @@ def generate_user_pdf(user_id):
     if isinstance(out, str): out = out.encode("latin-1")
     return bytes(out)
 
-
 async def api_export(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -3435,19 +2761,16 @@ async def api_export(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
-
 def _admin_only(init_data):
     user_id = _verify_webapp_init(init_data)
     if not user_id or user_id != ADMIN_ID: return None
     return user_id
-
 
 async def api_admin_stats(request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
     return web.json_response({"total_users": get_total_users(), "vip_count": 0,
         "pending_feedback": len(get_pending_feedback())})
-
 
 async def api_admin_feedback_list(request):
     init_data = request.query.get("initData", "")
@@ -3456,7 +2779,6 @@ async def api_admin_feedback_list(request):
     return web.json_response({"items": [{"id": fid, "user_id": uid, "username": uname,
         "text": text, "created": created, "status": status}
         for fid, uid, uname, text, created, status in rows]})
-
 
 async def api_admin_feedback_reply(request):
     try: body = await request.json()
@@ -3474,7 +2796,6 @@ async def api_admin_feedback_reply(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def api_admin_feedback_postpone(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -3483,7 +2804,6 @@ async def api_admin_feedback_postpone(request):
     if not fid: return web.json_response({"error": "no_id"}, status=400)
     set_feedback_status(fid, "postponed")
     return web.json_response({"ok": True})
-
 
 async def api_admin_broadcast(request):
     try: body = await request.json()
@@ -3502,7 +2822,6 @@ async def api_admin_broadcast(request):
     asyncio.create_task(_run())
     return web.json_response({"ok": True, "started": True})
 
-
 async def api_admin_monitor(request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
@@ -3514,7 +2833,6 @@ async def api_admin_monitor(request):
                 return web.json_response({"status": response.status, "ok": response.status == 200})
     except Exception as e:
         return web.json_response({"status": 0, "ok": False, "error": str(e)})
-
 
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
@@ -3580,18 +2898,6 @@ async def start_webapp():
     app.router.add_get("/api/level-rewards", api_level_rewards)
     app.router.add_post("/api/level-reward-claim", api_level_reward_claim)
     app.router.add_get("/api/wallet/leaderboard", api_wallet_leaderboard)
-    app.router.add_get("/api/wall", api_wall_list)
-    app.router.add_post("/api/wall/create", api_wall_create)
-    app.router.add_get("/api/wall/post", api_wall_post_get)
-    app.router.add_post("/api/wall/comment", api_wall_comment)
-    app.router.add_post("/api/wall/like", api_wall_like)
-    app.router.add_post("/api/wall/solve", api_wall_solve)
-    app.router.add_post("/api/wall/edit", api_wall_edit)
-    app.router.add_post("/api/wall/delete", api_wall_delete)
-    app.router.add_post("/api/wall/report", api_wall_report)
-    app.router.add_get("/api/wall/moderation", api_wall_moderation)
-    app.router.add_post("/api/wall/ban", api_wall_ban)
-    app.router.add_post("/api/wall/unban", api_wall_unban)
     app.router.add_get("/api/admin/stats", api_admin_stats)
     app.router.add_get("/api/admin/feedback-list", api_admin_feedback_list)
     app.router.add_post("/api/admin/feedback-reply", api_admin_feedback_reply)
@@ -3599,34 +2905,48 @@ async def start_webapp():
     app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
     app.router.add_get("/api/admin/monitor", api_admin_monitor)
     if webapp_dir:
+        NO_CACHE = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
         async def index_handler(request):
             p = os.path.join(webapp_dir, "index.html")
-            return web.FileResponse(p) if os.path.isfile(p) else web.Response(text="not found", status=404)
+            if os.path.isfile(p):
+                return web.FileResponse(p, headers=NO_CACHE)
+            return web.Response(text="not found", status=404)
         async def style_handler(request):
             p = os.path.join(webapp_dir, "style.css")
-            return web.FileResponse(p, headers={"Content-Type": "text/css"}) if os.path.isfile(p) else web.Response(status=404)
+            if os.path.isfile(p):
+                return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "text/css"})
+            return web.Response(status=404)
         async def appjs_handler(request):
             p = os.path.join(webapp_dir, "app.js")
-            return web.FileResponse(p, headers={"Content-Type": "application/javascript"}) if os.path.isfile(p) else web.Response(status=404)
-        async def favicon_handler(request): return web.Response(status=204)
+            if os.path.isfile(p):
+                return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
+            return web.Response(status=404)
         async def asset_handler(request):
-            name = request.match_info.get("name", ""); safe_name = os.path.basename(name)
-            if not safe_name or safe_name.startswith("."): return web.Response(status=404)
+            name = request.match_info.get("name", "")
+            safe_name = os.path.basename(name)
+            if not safe_name or safe_name.startswith("."):
+                return web.Response(status=404)
             p = os.path.join(webapp_dir, "assets", safe_name)
-            return web.FileResponse(p) if os.path.isfile(p) else web.Response(status=404)
+            if os.path.isfile(p):
+                return web.FileResponse(p, headers=NO_CACHE)
+            return web.Response(status=404)
+        async def favicon_handler(request): return web.Response(status=204)
         app.router.add_get("/", index_handler)
         app.router.add_get("/index.html", index_handler)
         app.router.add_get("/style.css", style_handler)
         app.router.add_get("/app.js", appjs_handler)
-        app.router.add_get("/favicon.ico", favicon_handler)
         app.router.add_get("/assets/{name}", asset_handler)
+        app.router.add_get("/favicon.ico", favicon_handler)
     else:
         async def root(request): return web.Response(text="webapp not found", status=404)
         app.router.add_get("/", root)
     runner = web.AppRunner(app); await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port); await site.start()
     logging.info(f"[WEB] на 0.0.0.0:{port}")
-
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
@@ -3638,12 +2958,10 @@ async def cmd_start(message: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]])
     await message.answer("Привет! Открой приложение.", reply_markup=kb)
 
-
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID: await message.answer("Только для админа."); return
     await message.answer("АДМИН-КОМАНДЫ:\n/backup — прислать users.db\n/restore — восстановить базу\n/admin — справка")
-
 
 @dp.message(Command("backup"))
 async def cmd_backup(message: Message):
@@ -3653,7 +2971,6 @@ async def cmd_backup(message: Message):
         doc = FSInputFile(DB_PATH, filename="users_backup.db")
         await message.answer_document(doc, caption=f"Резервная копия. Всего: {total}")
     except Exception as e: await message.answer(f"Ошибка: {e}")
-
 
 @dp.message(Command("restore"))
 async def cmd_restore(message: Message):
@@ -3665,7 +2982,6 @@ async def cmd_restore(message: Message):
         init_db()
         await message.answer(f"База восстановлена. Всего: {get_total_users()}")
     except Exception as e: await message.answer(f"Ошибка: {e}")
-
 
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
@@ -3698,7 +3014,6 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         await bot.send_message(user_id, "\n".join(lines), parse_mode=None)
     except Exception as e: logging.error(f"[NOTIFY] user={user_id}: {e}")
 
-
 async def send_lesson_reminder(user_id, les, before_min):
     try:
         subject = les.get("subject", "Пара"); time_str = les.get("time", "")
@@ -3711,7 +3026,6 @@ async def send_lesson_reminder(user_id, les, before_min):
         await bot.send_message(user_id, text, parse_mode=None)
     except Exception as e: logging.error(f"[REMIND] user={user_id}: {e}")
 
-
 async def send_daily_quotes():
     subs = daily_get_all_subscribers()
     if not subs: return
@@ -3721,7 +3035,6 @@ async def send_daily_quotes():
         try: await bot.send_message(uid, text, parse_mode=None)
         except: pass
         await asyncio.sleep(0.05)
-
 
 async def notification_worker():
     last_quote_date = None
@@ -3737,7 +3050,6 @@ async def notification_worker():
                 await send_daily_quotes()
         except: logging.exception("[NOTIFY]")
         await asyncio.sleep(60 - datetime.now().second)
-
 
 async def lesson_reminder_worker():
     sent_keys = set()
@@ -3776,7 +3088,6 @@ async def lesson_reminder_worker():
         except: logging.exception("[REMIND]")
         await asyncio.sleep(60)
 
-
 async def check_schedule_changes():
     users = get_users_for_change_tracking()
     if not users: return
@@ -3805,7 +3116,6 @@ async def check_schedule_changes():
                     except: pass
         except: pass
 
-
 async def change_worker():
     await asyncio.sleep(180)
     while True:
@@ -3813,13 +3123,11 @@ async def change_worker():
         except: logging.exception("[CHANGE]")
         await asyncio.sleep(1800)
 
-
 async def bs_cleanup_worker():
     while True:
         try: _bs_cleanup_stale_games()
         except: pass
         await asyncio.sleep(600)
-
 
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
@@ -3835,7 +3143,6 @@ async def main():
     asyncio.create_task(change_worker())
     asyncio.create_task(bs_cleanup_worker())
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
