@@ -15,7 +15,7 @@ setTimeout(() => {
   if (sp) sp.classList.add('hide');
   if (app) app.style.display = '';
   setTimeout(() => { if (sp) sp.remove(); }, 600);
-}, 2200);
+}, 3700);
 
 const state = {
   tab:'schedule', loading:false, error:null, user:tgUser, isAdmin:false,
@@ -702,9 +702,13 @@ function renderProfile() {
   let html = `<div class="profile-hero">
     <div class="profile-hero-bg">
       <div class="profile-hero-bg-logo">
-        <svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
-          <path d="M 30 20 L 30 150 C 30 190, 170 190, 170 150 L 170 20 L 140 20 L 140 140 C 140 165, 60 165, 60 140 L 60 20 L 30 20 Z M 90 20 L 90 155 C 90 175, 110 175, 110 155 L 110 20 L 90 20 Z"
-            fill="none" stroke="#3EE6D2" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+        <svg viewBox="0 0 200 240" xmlns="http://www.w3.org/2000/svg">
+          <path class="sketch-main"
+            d="M 30 20 L 30 160 C 30 200, 170 200, 170 160 L 170 20 M 100 20 L 100 178"
+            fill="none" stroke="#3EE6D2" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
+          <path class="sketch"
+            d="M 30 20 L 30 160 C 30 200, 170 200, 170 160 L 170 20 M 100 20 L 100 178"
+            fill="none" stroke="#7FE9FF" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" opacity=".55"/>
         </svg>
       </div>
     </div>
