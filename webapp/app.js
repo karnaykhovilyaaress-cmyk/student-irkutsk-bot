@@ -15,7 +15,7 @@ setTimeout(() => {
   if (sp) sp.classList.add('hide');
   if (app) app.style.display = '';
   setTimeout(() => { if (sp) sp.remove(); }, 600);
-}, 1200);
+}, 2200);
 
 const state = {
   tab:'schedule', loading:false, error:null, user:tgUser, isAdmin:false,
@@ -664,10 +664,6 @@ function renderAdmin() {
   return html;
 }
 
-function headForLevel(level) {
-  if (level <= 15) return 1;
-  return 2;
-}
 function levelTitleByLevel(lvl) {
   if (lvl <= 5) return 'Первокурсник';
   if (lvl <= 10) return 'Второкурсник';
@@ -677,112 +673,108 @@ function levelTitleByLevel(lvl) {
   if (lvl <= 29) return 'Аспирант';
   return 'Легенда ИРНИТУ';
 }
+function calcLevelInfo(xp) {
+  let lvl = 1, left = xp || 0;
+  while (lvl <= 30) {
+    const need = lvl * 500;
+    if (left < need) return {level: lvl, inLevel: left, toNext: need - left};
+    left -= need; lvl++;
+  }
+  return {level: 30, inLevel: left, toNext: 500};
+}
 
 function renderProfile() {
   const p = state.profile;
   const u = state.user;
-  const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Гость';
+  const wallet = p?.wallet || {};
+  const displayName = wallet.custom_name || [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Гость';
+  const level = wallet.level || 1;
+  const title = levelTitleByLevel(level);
+  const xp = wallet.xp || 0;
+  const lv = calcLevelInfo(xp);
+  const total = lv.inLevel + lv.toNext;
+  const pct = total ? (lv.inLevel / total) * 100 : 0;
+
   const metaParts = [];
-  if (p?.group) metaParts.push(p.group + (p.subgroup ? ` (подгр. ${p.subgroup})` : ''));
+  if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · подгр. ${p.subgroup}` : ''));
   if (u.username) metaParts.push('@' + u.username);
 
-  const level = p?.wallet?.level || 1;
-  const headNum = headForLevel(level);
-  const title = levelTitleByLevel(level);
-
-  let html = `<div class="profile-head-3d">
-    <img class="head-img" src="/assets/head_${headNum}.webp" alt="">
-    <div class="profile-level-badge">${level} LVL</div>
-    <div class="profile-title-3d">${escapeHtml(title)}</div>
-  </div>`;
-  html += `<div class="card" style="text-align:center">
-    <div class="card-title" style="justify-content:center">${escapeHtml(fullName)}</div>
-    ${metaParts.length ? `<div class="card-subtitle">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
-  </div>`;
-
-  html += `<div class="card" id="wallet-card">
-    <div class="card-title">Уровень и кошелёк</div>
-    <div id="wallet-body" class="card-subtitle">Загрузка...</div>
-    <div class="actions-row" style="margin-top:10px">
-      <button class="btn btn-secondary" data-action="open-levels">УРОВНИ</button>
-      <button class="btn btn-secondary" data-action="open-leaderboard">ТОП</button>
+  let html = `<div class="profile-hero">
+    <div class="profile-hero-bg">
+      <div class="profile-hero-bg-logo">
+        <svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 30 20 L 30 150 C 30 190, 170 190, 170 150 L 170 20 L 140 20 L 140 140 C 140 165, 60 165, 60 140 L 60 20 L 30 20 Z M 90 20 L 90 155 C 90 175, 110 175, 110 155 L 110 20 L 90 20 Z"
+            fill="none" stroke="#3EE6D2" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+    <img class="profile-hero-head" src="/assets/head_1.webp" alt="">
+    <div class="profile-hero-name">
+      <span class="profile-hero-name-text">${escapeHtml(displayName)}</span>
+      <button class="profile-name-edit" data-action="set-name" title="Изменить имя">
+        ${icon('ic-pencil',16)}
+      </button>
+    </div>
+    <div class="profile-hero-level">
+      <span class="profile-hero-level-num">${level} LVL</span>
+      <span class="profile-hero-level-dot">·</span>
+      <span class="profile-hero-level-title">${escapeHtml(title)}</span>
+    </div>
+    ${metaParts.length ? `<div class="profile-hero-meta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+    <div class="profile-hero-xpbar">
+      <div class="profile-hero-xpbar-fill" style="width:${pct}%"></div>
+      <span class="profile-hero-xpbar-cur">${lv.inLevel} XP</span>
+      <span class="profile-hero-xpbar-next">${total} XP</span>
+    </div>
+    <div class="profile-hero-wallet">
+      <div class="profile-hero-wallet-item">
+        <div class="profile-hero-wallet-icon">${icShift(28)}</div>
+        <div class="profile-hero-wallet-body">
+          <div class="profile-hero-wallet-value">${wallet.shift ?? wallet.soft ?? 0}</div>
+          <div class="profile-hero-wallet-label">Шифт</div>
+        </div>
+      </div>
+      <div class="profile-hero-wallet-item">
+        <div class="profile-hero-wallet-icon">${icNova(28)}</div>
+        <div class="profile-hero-wallet-body">
+          <div class="profile-hero-wallet-value">${wallet.nova ?? wallet.hard ?? 0}</div>
+          <div class="profile-hero-wallet-label">Нова</div>
+        </div>
+      </div>
+    </div>
+    <div class="profile-hero-actions">
+      <button class="btn btn-secondary" data-action="open-levels">${icon('ic-gift',14)} УРОВНИ</button>
+      <button class="btn btn-secondary" data-action="open-leaderboard">${icon('ic-trophy',14)} ТОП</button>
+      <button class="btn btn-secondary" data-action="exchange">${icon('ic-exchange',14)} ОБМЕН</button>
     </div>
   </div>`;
 
+  const achCanClaim = state.achData?.can_claim_count || 0;
+  const achGot = state.achData?.got || 0;
+  const achTotal = state.achData?.total || 0;
+
+  html += `<div class="section-title">Кейсы</div>`;
   html += `<div class="card">
-    <div class="card-title">Кейсы</div>
-    <div class="card-subtitle">Капсула — бесплатно раз в 24 часа.</div>
+    <div class="card-subtitle" style="margin-bottom:10px">Капсула — раз в 24 часа бесплатно.</div>
     <div class="chests-grid">
-      ${renderChestTile('capsule', 'Капсула', 'Раз в 24 часа')}
+      ${renderChestTile('capsule', 'Капсула', 'Бесплатно')}
       ${renderChestTile('relic', 'Реликт', '50 Шифт')}
       ${renderChestTile('artifact', 'Артефакт', '15 Нова')}
       ${renderChestTile('core', 'Ядро', '80 Нова')}
     </div>
   </div>`;
 
+  html += `<div class="section-title">Достижения</div>`;
   html += `<div class="card">
-    <div class="card-title">Обменник</div>
-    <div class="card-subtitle">100 ${icShift(14)} Шифт = 1 ${icNova(14)} Нова</div>
-    <div class="actions-row"><button class="btn" data-action="exchange">${icon('ic-exchange',16)} ОБМЕНЯТЬ</button></div>
-  </div>`;
-
-  const achCanClaim = state.achData?.can_claim_count || 0;
-  const achGot = state.achData?.got || 0;
-  const achTotal = state.achData?.total || 0;
-  html += `<div class="card">
-    <div class="card-title">Достижения${achCanClaim>0 ? ` · ${achCanClaim}` : ''}</div>
-    <div class="card-subtitle">${achTotal ? `${achGot} из ${achTotal}` : '12 достижений'}</div>
-    <div class="actions-row">
-      <button class="btn ${achCanClaim>0?'':'btn-secondary'}" data-action="show-achievements">
-        ${achCanClaim>0 ? `${icon('ic-gift',16)} ЗАБРАТЬ ${achCanClaim}` : 'ПОСМОТРЕТЬ'}
-      </button>
+    <div class="ach-mini-row">
+      <div class="ach-mini-num">${achGot}<span class="ach-mini-of">/${achTotal || 12}</span></div>
+      <div class="ach-mini-label">разблокировано</div>
+      ${achCanClaim > 0 ? `<button class="btn btn-gold" data-action="show-achievements" style="margin-left:auto">${icon('ic-gift',14)} ЗАБРАТЬ ${achCanClaim}</button>` : ''}
     </div>
+    ${achCanClaim === 0 ? `<div class="actions-row"><button class="btn btn-secondary" data-action="show-achievements" style="width:100%">ПОСМОТРЕТЬ ВСЕ</button></div>` : ''}
   </div>`;
 
-  html += `<div class="card">
-    <div class="card-title">Профиль</div>
-    <div class="actions-row">
-      <button class="btn btn-secondary" data-action="set-name">${icon('ic-pencil',14)} Сменить ник</button>
-      <button class="btn btn-secondary" data-action="set-avatar">Аватар</button>
-    </div>
-  </div>`;
-
-  html += `<div class="card">
-    <div class="card-title">Как заработать XP</div>
-    <div class="xp-table">
-      <div class="xp-row"><span>Выполнить задачу</span><b>+20</b></div>
-      <div class="xp-row"><span>Добавить задачу</span><b>+5</b></div>
-      <div class="xp-row"><span>Заметка</span><b>+3</b></div>
-      <div class="xp-row"><span>Оценка</span><b>+5</b></div>
-      <div class="xp-row"><span>Посещение пары</span><b>+3</b></div>
-      <div class="xp-row"><span>Игра (за очко)</span><b>+2</b></div>
-      <div class="xp-row"><span>Новый рекорд</span><b>+30</b></div>
-      <div class="xp-row"><span>Победа в бою</span><b>+50</b></div>
-    </div>
-  </div>`;
-
-  html += `<div class="card">
-    <div class="card-title">Как заработать валюту</div>
-    <div class="xp-table">
-      <div class="xp-row"><span>Выполнить задачу</span><b>+5 ${icShift(12)}</b></div>
-      <div class="xp-row"><span>Посещение пары</span><b>+1 ${icShift(12)}</b></div>
-      <div class="xp-row"><span>Flappy за очко</span><b>+1 ${icShift(12)}</b></div>
-      <div class="xp-row"><span>Новый рекорд Flappy</span><b>+1 ${icNova(12)}</b></div>
-      <div class="xp-row"><span>Победа в бою</span><b>×2 ставки</b></div>
-      <div class="xp-row"><span>Капсула</span><b>10–40 ${icShift(12)}</b></div>
-    </div>
-  </div>`;
-
-  if (p) {
-    html += `<div class="card">
-      <div class="card-title">Статистика</div>
-      <div class="card-subtitle">Активных задач: ${p.tasks_active ?? 0}</div>
-      <div class="card-subtitle">Выполнено: ${p.tasks_done ?? 0}</div>
-      <div class="card-subtitle">Заметок: ${p.notes_count ?? 0}</div>
-      <div class="card-subtitle">Оценок: ${p.grades_count ?? 0}</div>
-    </div>`;
-  }
-
+  html += `<div class="section-title">Учёба</div>`;
   html += `<div class="card">
     <div class="card-title">Моя группа</div>
     <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
@@ -791,7 +783,6 @@ function renderProfile() {
       ${p?.group ? `<button class="btn btn-secondary" data-action="forget-group">Забыть</button>` : ''}
     </div>
   </div>`;
-
   html += `<div class="card">
     <div class="card-title">Подгруппа</div>
     <div class="card-subtitle">${p?.subgroup ? 'Подгруппа ' + p.subgroup : 'не выбрана'}</div>
@@ -799,33 +790,6 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="set-subgroup" data-value="0">ВСЕ</button>
       <button class="btn btn-secondary" data-action="set-subgroup" data-value="1">1</button>
       <button class="btn btn-secondary" data-action="set-subgroup" data-value="2">2</button>
-    </div>
-  </div>`;
-
-  const notifyOn = !!p?.notify_type;
-  const notifyLabel = notifyOn ? `${p.notify_type==='today'?'Сегодня':'Завтра'} в ${String(p.notify_hour).padStart(2,'0')}:${String(p.notify_minute||0).padStart(2,'0')}` : 'выключены';
-
-  html += `<div class="card">
-    <div class="card-title">Уведомления</div>
-    <div class="card-subtitle">Расписание: ${escapeHtml(notifyLabel)}</div>
-    <div class="card-subtitle">За N минут: ${p?.notify_before_min ? p.notify_before_min + ' мин' : 'выкл'}</div>
-    <div class="actions-row">
-      <button class="btn" data-action="notify-open">${notifyOn?'Изменить':'Включить'}</button>
-      <button class="btn btn-secondary" data-action="notify-before">За N минут</button>
-    </div>
-    <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;font-weight:500">
-      <input type="checkbox" id="notify-changes" ${p?.notify_changes?'checked':''} style="width:20px;height:20px;accent-color:var(--cyan)">
-      <span>Следить за изменениями расписания</span>
-    </label>
-  </div>`;
-
-  html += `<div class="card">
-    <div class="card-title">Цитата дня</div>
-    <div class="card-subtitle">${p?.daily_subscribed ? 'Подписан — приходит в 10:00' : 'Не подписан'}</div>
-    <div class="actions-row">
-      ${p?.daily_subscribed
-        ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
-        : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
     </div>
   </div>`;
 
@@ -837,32 +801,52 @@ function renderProfile() {
     if (s.grades.length) html += `<div class="card-subtitle">Средний балл: ${s.avg}</div>`;
     if (s.forecast) html += `<div class="card-subtitle">${escapeHtml(stripEmoji(s.forecast))}</div>`;
   }
-  if (state.scholarship?.grades?.length) {
-    for (const g of state.scholarship.grades) {
-      html += `<div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider)">
-        <span>${escapeHtml(g.subject)}</span>
-        <span style="font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan-dark);font-size:20px">${g.grade}</span>
-      </div>`;
-    }
-  }
   html += `<div class="actions-row">
     <button class="btn btn-secondary" data-action="sch-set-amount">Сумма</button>
-    <button class="btn btn-secondary" data-action="sch-add-grade">Добавить оценку</button>
+    <button class="btn btn-secondary" data-action="sch-add-grade">Оценка</button>
     <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
   </div></div>`;
 
+  const notifyOn = !!p?.notify_type;
+  const notifyLabel = notifyOn ? `${p.notify_type==='today'?'Сегодня':'Завтра'} в ${String(p.notify_hour).padStart(2,'0')}:${String(p.notify_minute||0).padStart(2,'0')}` : 'выключены';
+
+  html += `<div class="section-title">Настройки</div>`;
   html += `<div class="card">
-    <div class="card-title">Экспорт и обращения</div>
+    <div class="card-title">Уведомления</div>
+    <div class="card-subtitle">Расписание: ${escapeHtml(notifyLabel)}</div>
+    <div class="card-subtitle">За N минут: ${p?.notify_before_min ? p.notify_before_min + ' мин' : 'выкл'}</div>
     <div class="actions-row">
-      <button class="btn btn-secondary" data-action="export-pdf">${icon('ic-pdf',14)} PDF</button>
-      <button class="btn btn-secondary" data-action="show-my-feedback">${icon('ic-chat',14)} Мои обращения</button>
+      <button class="btn" data-action="notify-open">${notifyOn?'Изменить':'Включить'}</button>
+      <button class="btn btn-secondary" data-action="notify-before">За N минут</button>
+    </div>
+    <label class="switch-row">
+      <input type="checkbox" id="notify-changes" ${p?.notify_changes?'checked':''}>
+      <span>Следить за изменениями расписания</span>
+    </label>
+  </div>`;
+
+  html += `<div class="card">
+    <div class="card-title">Цитата дня</div>
+    <div class="card-subtitle">${p?.daily_subscribed ? 'Приходит каждый день в 10:00' : 'Отключена'}</div>
+    <div class="actions-row">
+      ${p?.daily_subscribed
+        ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>`
+        : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
+    </div>
+  </div>`;
+
+  html += `<div class="section-title">Прочее</div>`;
+  html += `<div class="card">
+    <div class="actions-row">
+      <button class="btn btn-secondary" data-action="export-pdf" style="flex:1">${icon('ic-pdf',14)} Экспорт PDF</button>
+      <button class="btn btn-secondary" data-action="show-my-feedback" style="flex:1">${icon('ic-chat',14)} Обращения</button>
     </div>
   </div>`;
 
   html += `<div class="card">
     <div class="card-title">Обратная связь</div>
     <textarea class="input" id="feedback-text" placeholder="Сообщение админу..." rows="3"></textarea>
-    <button class="btn" data-action="feedback-send">Отправить</button>
+    <button class="btn" data-action="feedback-send" style="width:100%">Отправить</button>
   </div>`;
 
   return html;
@@ -881,7 +865,6 @@ function renderChestTile(id, name, sub) {
     <div class="chest-sub">${escapeHtml(sub)}</div>
   </div>`;
 }
-
 function startChestTimer() {
   if (state.chestTimer) clearInterval(state.chestTimer);
   const update = () => {
@@ -895,10 +878,7 @@ function startChestTimer() {
   update();
   state.chestTimer = setInterval(update, 1000);
 }
-
 async function loadWalletIntoProfile() {
-  const box = document.getElementById('wallet-body');
-  if (!box) return;
   try {
     const [w, ach, chest] = await Promise.all([
       apiGet('/api/wallet'),
@@ -906,30 +886,10 @@ async function loadWalletIntoProfile() {
       apiGet('/api/chest/status').catch(() => null),
     ]);
     state.chestStatus = chest;
-    const wallet = w.wallet || {};
-    const xp = wallet.xp || 0;
-    const lv = calcLevelInfo(xp);
-    const total = lv.inLevel + lv.toNext;
-    const pct = total ? (lv.inLevel / total) * 100 : 0;
-    box.innerHTML = `
-      <div style="font-family:'Anton',sans-serif;font-style:italic;font-size:24px;color:var(--text);margin-bottom:6px">
-        ${lv.level} LVL · ${levelTitleByLevel(lv.level)}
-      </div>
-      <div class="levels-xpbar" style="margin:10px 0;height:32px">
-        <div class="levels-xpbar-fill" style="width:${pct}%"></div>
-        <span class="levels-xpbar-cur" style="font-size:13px">${lv.inLevel}XP</span>
-        <span class="levels-xpbar-next" style="font-size:13px">${total}XP</span>
-      </div>
-      <div style="display:flex;gap:18px;margin-top:12px;font-weight:800;font-size:15px;align-items:center">
-        <div style="display:flex;align-items:center;gap:6px">${icShift(18)} <span style="color:var(--cyan-dark)">${wallet.shift ?? wallet.soft ?? 0}</span></div>
-        <div style="display:flex;align-items:center;gap:6px">${icNova(18)} <span style="color:var(--yellow)">${wallet.nova ?? wallet.hard ?? 0}</span></div>
-      </div>
-    `;
+    if (w.wallet && state.profile) state.profile.wallet = w.wallet;
     if (ach) state.achData = ach;
     startChestTimer();
-  } catch (e) {
-    box.textContent = 'Не удалось загрузить';
-  }
+  } catch (e) {}
 }
 
 async function loadSchedule() {
@@ -1028,15 +988,6 @@ async function loadTodayAndRender() {
   render();
 }
 
-function calcLevelInfo(xp) {
-  let lvl = 1, left = xp || 0;
-  while (lvl <= 30) {
-    const need = lvl * 500;
-    if (left < need) return {level: lvl, inLevel: left, toNext: need - left};
-    left -= need; lvl++;
-  }
-  return {level: 30, inLevel: left, toNext: 500};
-}
 function levelRewardByLevel(lvl) {
   if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
   if (lvl <= 10) return `+250 ${icShift(14)} · +3 ${icNova(14)}`;
@@ -2211,22 +2162,40 @@ async function actionAdminFbPostpone(fid) {
   } catch (e) { toast(e.message, 'error'); }
 }
 function actionSetName() {
+  const p = state.profile;
+  const wallet = p?.wallet || {};
+  const currentName = wallet.custom_name || '';
+  const freeChanges = wallet.free_name_changes || 0;
+  const hasCustom = !!wallet.custom_name;
+  const costText = !hasCustom
+    ? 'Первая установка — бесплатно'
+    : (freeChanges > 0
+        ? `У тебя ${freeChanges} бесплатных смен`
+        : 'Смена стоит 5 Нова');
+
   modalOpen({
-    title:'НОВЫЙ НИК',
+    title:'ИЗМЕНИТЬ ИМЯ',
     body: `
-      <div class="label">ДО 24 СИМВОЛОВ</div>
-      <input class="input" id="set-name-input" maxlength="24" placeholder="Например: АСУб-23-1">
-      <div class="card-subtitle" style="margin-top:8px">Первая смена — бесплатно. Дальше — 5 Нова.</div>
+      <div class="card-subtitle" style="text-align:center;margin-bottom:12px">
+        Это имя видят все игроки: в топе, играх, обмене.
+      </div>
+      <div class="label">НОВОЕ ИМЯ</div>
+      <input class="input" id="set-name-input" maxlength="24" placeholder="Например: Студент-Легенда" value="${escapeHtml(currentName)}" autocomplete="off">
+      <div class="card-subtitle" style="text-align:center;margin-top:8px">${escapeHtml(costText)}</div>
     `,
     actions:[
       {label:'ОТМЕНА', style:'btn-secondary'},
       {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
         const v = (document.getElementById('set-name-input')?.value || '').trim();
-        if (!v) { toast('Пустой ник', 'error'); return; }
+        if (!v) { toast('Введи имя', 'error'); return; }
+        if (v === currentName) { toast('Это твоё текущее имя', 'info'); return; }
         try {
           await apiPost('/api/set-name', {name: v});
-          haptic('success'); toast('Ник обновлён', 'success');
-          await loadProfile(); render();
+          haptic('success');
+          popIcon('ic-check');
+          toast('Имя изменено', 'success');
+          await loadProfile();
+          render();
         } catch (e) {
           if (e.code === 'need_hard') toast('Нужно 5 Нова', 'error');
           else toast(e.message, 'error');
@@ -2234,25 +2203,12 @@ function actionSetName() {
       }}
     ]
   });
-  setTimeout(() => document.getElementById('set-name-input')?.focus(), 100);
+  setTimeout(() => {
+    const inp = document.getElementById('set-name-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }, 150);
 }
-function actionSetAvatar() {
-  modalOpen({
-    title:'АВАТАР',
-    body: `<div class="label">ИНДЕКС 0–11</div><input class="input" id="avatar-idx" type="number" min="0" max="11" value="${state.profile?.wallet?.avatar_idx || 0}">`,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const idx = parseInt(document.getElementById('avatar-idx')?.value || '0') || 0;
-        try {
-          await apiPost('/api/set-avatar', {idx: Math.max(0, Math.min(11, idx))});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadProfile(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-}
+
 const CHEST_META = {
   capsule:  {name:'Капсула',  icon:'ic-case-capsule',  costLabel:'Бесплатно (раз в 24 ч)',
              drops:[['Шифт 10–40','55%'],['XP 50–150','30%'],['Нова ×1','10%'],['Шифт ×100','5%']]},
@@ -2575,7 +2531,6 @@ function handleAction(el) {
   else if (a === 'open-levels') openLevels();
   else if (a === 'open-leaderboard') openLeaderboard();
   else if (a === 'set-name') actionSetName();
-  else if (a === 'set-avatar') actionSetAvatar();
   else if (a === 'chest-modal') actionChestModal(el.dataset.id);
   else if (a === 'exchange') actionExchange();
   else if (a === 'show-achievements') actionShowAchievements();
