@@ -749,14 +749,11 @@ function renderProfile() {
   const achTotal = state.achData?.total || 0;
 
   html += `<div class="section-title">Кейсы</div>`;
-  html += `<div class="card">
-    <div class="card-subtitle" style="margin-bottom:10px">Капсула — раз в 24 часа бесплатно.</div>
-    <div class="chests-grid">
-      ${renderChestTile('capsule', 'Капсула', 'Бесплатно')}
-      ${renderChestTile('relic', 'Реликт', '50 Шифт')}
-      ${renderChestTile('artifact', 'Артефакт', '15 Нова')}
-      ${renderChestTile('core', 'Ядро', '80 Нова')}
-    </div>
+  html += `<div class="chests-grid chests-grid-img">
+    ${renderChestTile('capsule', 'Капсула', 'Бесплатно')}
+    ${renderChestTile('relic', 'Реликт', '50 Шифт')}
+    ${renderChestTile('artifact', 'Артефакт', '15 Нова')}
+    ${renderChestTile('core', 'Ядро', '80 Нова')}
   </div>`;
 
   html += `<div class="section-title">Достижения</div>`;
@@ -853,9 +850,11 @@ function renderChestTile(id, name, sub) {
   const timer = id === 'capsule' && status.next_at
     ? `<div class="chest-timer" data-chest-timer="${escapeHtml(status.next_at)}">--:--:--</div>`
     : '';
-  return `<div class="chest-card ${canOpen?'':'locked'}" data-action="chest-modal" data-id="${id}">
+  return `<div class="chest-card chest-card-img ${canOpen?'':'locked'}" data-action="chest-modal" data-id="${id}">
     ${timer}
-    <div class="chest-icon">${icon('ic-case-'+id, 56)}</div>
+    <div class="chest-img-wrap">
+      <img class="chest-img" src="/assets/${id}.webp" alt="${escapeHtml(name)}" loading="lazy">
+    </div>
     <div class="chest-name">${escapeHtml(name)}</div>
     <div class="chest-sub">${escapeHtml(sub)}</div>
   </div>`;
@@ -2207,13 +2206,13 @@ function actionSetName() {
 }
 
 const CHEST_META = {
-  capsule:  {name:'Капсула',  icon:'ic-case-capsule',  costLabel:'Бесплатно (раз в 24 ч)',
+  capsule:  {name:'Капсула',  img:'/assets/capsule.webp',  costLabel:'Бесплатно (раз в 24 ч)',
              drops:[['Шифт 10–40','55%'],['XP 50–150','30%'],['Нова ×1','10%'],['Шифт ×100','5%']]},
-  relic:    {name:'Реликт',   icon:'ic-case-relic',    costLabel:'50 Шифт',
+  relic:    {name:'Реликт',   img:'/assets/relic.webp',    costLabel:'50 Шифт',
              drops:[['Шифт 60–150','50%'],['XP 200–500','30%'],['Нова 1–3','18%'],['Нова ×10','2%']]},
-  artifact: {name:'Артефакт', icon:'ic-case-artifact', costLabel:'15 Нова',
+  artifact: {name:'Артефакт', img:'/assets/artifact.webp', costLabel:'15 Нова',
              drops:[['Шифт ×500','30%'],['XP ×1000','30%'],['Нова 5–15','35%'],['Нова ×50','5%']]},
-  core:     {name:'Ядро',     icon:'ic-case-core',     costLabel:'80 Нова',
+  core:     {name:'Ядро',     img:'/assets/core.webp',     costLabel:'80 Нова',
              drops:[['Шифт ×2000','25%'],['XP ×5000','25%'],['Нова 30–60','40%'],['Нова ×200','10%']]},
 };
 function actionChestModal(id) {
@@ -2231,7 +2230,9 @@ function actionChestModal(id) {
   modalOpen({
     title: meta.name.toUpperCase(),
     body: `
-      <div style="text-align:center;margin-bottom:8px">${icon(meta.icon, 96)}</div>
+      <div style="text-align:center;margin-bottom:8px">
+        <img src="${meta.img}" alt="${escapeHtml(meta.name)}" style="max-width:220px;width:70%;height:auto;border-radius:18px">
+      </div>
       <div class="card-subtitle" style="text-align:center;margin-bottom:12px">${escapeHtml(meta.costLabel)}</div>
       <div class="label">Что может выпасть</div>
       <div class="chest-drops">${dropsHtml}</div>
@@ -2244,7 +2245,7 @@ function actionChestModal(id) {
          if (isCapsule && !canOpenCapsule) { toast('Ещё рано', 'error'); return; }
          try {
            const r = await apiPost('/api/chest/open', {type: id});
-           haptic('success'); popIcon(meta.icon);
+           haptic('success'); popIcon('ic-gift');
            toast(r.reward?.label || '', 'success');
            state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
            await loadProfile(); render(); startChestTimer();
