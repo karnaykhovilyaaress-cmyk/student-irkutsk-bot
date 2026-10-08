@@ -191,49 +191,66 @@
 
 <div id="splash">
   <div class="splash-logo-wrap">
-    <svg class="splash-logo" viewBox="0 0 220 260" xmlns="http://www.w3.org/2000/svg">
+    <svg class="splash-logo" viewBox="0 0 220 280" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="uGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="uFront" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stop-color="#FFFFFF"/>
-          <stop offset="35%" stop-color="#E8FFFC"/>
+          <stop offset="30%" stop-color="#E8FFFC"/>
           <stop offset="70%" stop-color="#7FE9FF"/>
           <stop offset="100%" stop-color="#3EE6D2"/>
         </linearGradient>
+        <linearGradient id="uSide" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#1FB8A6"/>
+          <stop offset="100%" stop-color="#0E6A63"/>
+        </linearGradient>
+        <linearGradient id="uTop" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#A8F5EC"/>
+          <stop offset="100%" stop-color="#3EE6D2"/>
+        </linearGradient>
         <filter id="uGlow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feGaussianBlur stdDeviation="8" result="blur"/>
           <feMerge>
             <feMergeNode in="blur"/>
             <feMergeNode in="SourceGraphic"/>
           </feMerge>
         </filter>
+        <filter id="uShadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="12"/>
+        </filter>
       </defs>
 
-      <!-- Тень-подложка (3D) -->
-      <g opacity="0.32" filter="url(#uGlow)">
-        <path d="M 55 40 L 55 180 C 55 215, 165 215, 165 180 L 165 40"
-              fill="none" stroke="#0E6A63" stroke-width="32" stroke-linejoin="round" stroke-linecap="round"
-              transform="translate(6, 8)"/>
-        <path d="M 110 40 L 110 200" fill="none" stroke="#0E6A63" stroke-width="32"
-              stroke-linecap="round" transform="translate(6, 8)"/>
-      </g>
+      <ellipse cx="110" cy="245" rx="72" ry="12" fill="#0E6A63" opacity="0.35" filter="url(#uShadow)"/>
 
-      <!-- Основная буква U -->
-      <g filter="url(#uGlow)">
+      <g transform="translate(8, 8)">
         <path d="M 55 40 L 55 180 C 55 215, 165 215, 165 180 L 165 40"
-              fill="none" stroke="url(#uGrad1)" stroke-width="32"
+              fill="none" stroke="url(#uSide)" stroke-width="34"
               stroke-linejoin="round" stroke-linecap="round"/>
         <path d="M 110 40 L 110 200"
-              fill="none" stroke="url(#uGrad1)" stroke-width="32"
+              fill="none" stroke="url(#uSide)" stroke-width="34"
               stroke-linecap="round"/>
       </g>
 
-      <!-- Блики (3D отражения) -->
+      <g transform="translate(0, -4)">
+        <path d="M 55 40 L 55 180 C 55 215, 165 215, 165 180 L 165 40"
+              fill="none" stroke="url(#uTop)" stroke-width="20"
+              stroke-linejoin="round" stroke-linecap="round" opacity="0.6"/>
+      </g>
+
+      <g filter="url(#uGlow)">
+        <path d="M 55 40 L 55 180 C 55 215, 165 215, 165 180 L 165 40"
+              fill="none" stroke="url(#uFront)" stroke-width="32"
+              stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M 110 40 L 110 200"
+              fill="none" stroke="url(#uFront)" stroke-width="32"
+              stroke-linecap="round"/>
+      </g>
+
       <path d="M 65 50 L 65 175 C 65 200, 100 208, 105 208"
-            fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+            fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity="0.9"/>
       <path d="M 120 50 L 120 175" fill="none" stroke="#FFFFFF" stroke-width="3"
-            stroke-linecap="round" opacity="0.5"/>
+            stroke-linecap="round" opacity="0.55"/>
       <path d="M 155 50 L 155 170" fill="none" stroke="#0E6A63" stroke-width="4"
-            stroke-linecap="round" opacity="0.4"/>
+            stroke-linecap="round" opacity="0.5"/>
     </svg>
   </div>
   <div class="splash-text" id="splashText">
