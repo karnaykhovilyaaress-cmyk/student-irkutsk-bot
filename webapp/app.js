@@ -28,14 +28,32 @@ const state = {
   aiMessages:[], aiPending:false, aiPendingPhoto:null,
   adminStats:null, adminFeedback:[], adminMonitor:null, adminBusy:false,
   achData:null, chestStatus:null, chestTimer:null,
+  avatarGender:'male',
 };
+
+/* ==== ПРЕДЗАГРУЗКА КАРТИНОК — чтобы не мигали чёрным ==== */
+const IMG_CACHE = {};
+function preloadImages() {
+  const urls = [
+    '/assets/head_1.webp', '/assets/head_2.webp',
+    '/assets/ic_shift.webp', '/assets/ic_nova.webp',
+    '/assets/capsule.webp', '/assets/relic.webp', '/assets/artifact.webp', '/assets/core.webp',
+  ];
+  urls.forEach(u => { const i = new Image(); i.src = u; IMG_CACHE[u] = i; });
+}
+preloadImages();
 
 function icon(id, size=16, cls='') {
   return `<svg width="${size}" height="${size}" class="${cls}"><use href="#${id}"/></svg>`;
 }
-function icShift(size=16) { return icon('ic-shift', size, 'ic-shift-c'); }
-function icNova(size=16)  { return icon('ic-nova',  size, 'ic-nova-c'); }
-function icXp(size=16)    { return icon('ic-xp',    size); }
+/* Заменяем иконки валют на картинки */
+function icShift(size=18) { return `<img class="coin" style="width:${size}px;height:${size}px" src="/assets/ic_shift.webp" alt="">`; }
+function icNova(size=18)  { return `<img class="coin" style="width:${size}px;height:${size}px" src="/assets/ic_nova.webp"  alt="">`; }
+function icXp(size=16)    { return icon('ic-xp', size); }
+function avatarImg(gender) {
+  const g = (gender === 'female') ? 'head_2.webp' : 'head_1.webp';
+  return `/assets/${g}`;
+}
 
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}\u{2764}\u{2705}\u{274C}\u{2757}\u{2728}\u{1F4A5}\u{1F525}\u{1F4E6}\u{1F48E}\u{1F3C6}\u{1F389}\u{1F381}\u{1F4B0}\u{1F4B8}\u{1F4B5}]/gu;
 function stripEmoji(s){ return (s||'').replace(EMOJI_RE,'').replace(/\s+/g,' ').trim(); }
@@ -217,17 +235,25 @@ function render() {
   if (state.tab === 'schedule' && !state.loading) attachSwipe();
 }
 
+/* ==== ШАПКА РАСПИСАНИЯ — с аватаркой ==== */
 function renderUserBar() {
   const u = state.user;
   const p = state.profile;
-  const initials = ((u.first_name?.[0]||'')+(u.last_name?.[0]||'')).toUpperCase() || '?';
+  const gender = p?.avatar_gender || state.avatarGender || 'male';
+  const wallet = p?.wallet || {};
+  /* Имя: если custom_name — используем его, иначе имя Telegram */
+  const displayName = wallet.custom_name
+    || [u.first_name, u.last_name].filter(Boolean).join(' ')
+    || 'Гость';
   const metaParts = [];
   if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
-  if (u.username) metaParts.push('@' + u.username);
+  if (u.username && !wallet.custom_name) metaParts.push('@' + u.username);
   return `<div class="user-bar" data-action="go-profile">
-    <div class="user-bar-avatar">${escapeHtml(initials)}</div>
+    <div class="user-bar-avatar">
+      <img src="${avatarImg(gender)}" alt="">
+    </div>
     <div class="user-bar-info">
-      <div class="user-bar-name">${escapeHtml(u.first_name||'Гость')}</div>
+      <div class="user-bar-name">${escapeHtml(displayName)}</div>
       <div class="user-bar-meta">${escapeHtml(metaParts.join(' · ')||'профиль не заполнен')}</div>
     </div>
     <div class="user-bar-badges">
@@ -685,6 +711,186 @@ function calcLevelInfo(xp) {
   return {level: 30, inLevel: left, toNext: 500};
 }
 
+async function loadSchedule() {
+  try { state.schedule = await apiGet('/api/schedule'); }
+  catch (e) { state.schedule = {error:'load_error', message:e.message}; }
+}
+async function loadTasks() {
+  try {
+    const doneParam = state.tasksView === 'done' ? '1' : '0';
+    const r = await apiGet('/api/tasks', {done: doneParam});
+    state.tasks = r.tasks || [];
+    state.tasksStats = {active: r.active || 0, done: r.done || 0};
+  } catch (e) { state.tasks = []; }
+}
+async function loadNotes() {
+  try {
+    const r = await apiGet('/api/notes');
+    state.notes = r.notes || [];
+    const subs = new Set(state.notes.map(n => n.subject));
+    state.notesSubjects = Array.from(subs);
+  } catch (e) { state.notes = []; }
+}
+async function loadProfile() {
+  try {
+    state.profile = await apiGet('/api/me');
+    state.isAdmin = !!state.profile.is_admin;
+    if (state.profile.avatar_gender) state.avatarGender = state.profile.avatar_gender;
+  } catch (e) { state.profile = {error:e.message}; }
+}
+async function loadScholarship() {
+  try { state.scholarship = await apiGet('/api/scholarship'); }
+  catch (e) { state.scholarship = null; }
+}
+async function loadGroups(force=false) {
+  if (state.groups && !force) return;
+  try { const r = await apiGet('/api/groups'); state.groups = r.groups; }
+  catch (e) { state.groups = {}; }
+}
+async function loadAdminStats() {
+  try { state.adminStats = await apiGet('/api/admin/stats'); }
+  catch (e) { state.adminStats = null; }
+}
+async function loadAdminFeedback() {
+  try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
+  catch (e) { state.adminFeedback = []; }
+}
+
+async function loadTabData(tab) {
+  state.loading = true;
+  state.error = null;
+  state.notifyEditor = false;
+  render();
+  try {
+    if (tab === 'schedule') {
+      state.scheduleViewMode = 'today';
+      state.weekOffset = 0;
+      state.scheduleDay = 'today';
+      state.weekDays = null;
+      await loadProfile();
+      await loadSchedule();
+      ensureWeekLoaded().catch(()=>{});
+    } else if (tab === 'tasks') await loadTasks();
+    else if (tab === 'notes') await loadNotes();
+    else if (tab === 'games') await loadProfile();
+    else if (tab === 'ai') await loadProfile();
+    else if (tab === 'admin') {
+      await loadProfile();
+      if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
+    } else if (tab === 'profile') {
+      await loadProfile();
+      await loadScholarship();
+    }
+  } catch (e) { console.error(e); state.error = e.message; }
+  state.loading = false;
+  render();
+}
+
+async function ensureWeekLoaded() {
+  if (state.weekDays?.days?.length) return true;
+  try { state.weekDays = await apiGet('/api/week', {offset:0}); return true; }
+  catch(e){ return false; }
+}
+async function loadWeekAndRender() {
+  try {
+    const r = await apiGet('/api/week', {offset: state.weekOffset});
+    state.weekDays = r;
+    state.scheduleViewMode = 'week';
+    render();
+  } catch (e) { toast('Ошибка загрузки', 'error'); }
+}
+async function loadTodayAndRender() {
+  state.scheduleViewMode = 'today';
+  state.weekOffset = 0;
+  state.weekDays = null;
+  state.scheduleDay = 'today';
+  await loadSchedule();
+  render();
+}
+
+/* ===== УРОВНИ ===== */
+function levelRewardByLevel(lvl) {
+  if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
+  if (lvl <= 10) return `+250 ${icShift(14)} · +3 ${icNova(14)}`;
+  if (lvl <= 20) return `+600 ${icShift(14)} · +8 ${icNova(14)}`;
+  return `+1500 ${icShift(14)} · +25 ${icNova(14)}`;
+}
+async function openLevels() {
+  const screen = document.getElementById('screen-levels');
+  if (!screen) return;
+  screen.style.display = 'block';
+  document.getElementById('bottom-nav').style.display = 'none';
+  document.getElementById('levelsBack').onclick = closeLevels;
+  const w = await apiGet('/api/wallet').catch(()=>null);
+  if (!w) return;
+  const wallet = w.wallet || {};
+  const xp = wallet.xp || 0;
+  const lv = calcLevelInfo(xp);
+  document.getElementById('levelsCurrent').textContent = lv.level;
+  document.getElementById('levelsLeft').textContent = lv.toNext + 'XP';
+  document.getElementById('levelsSoft').textContent = wallet.shift ?? wallet.soft ?? 0;
+  document.getElementById('levelsHard').textContent = wallet.nova ?? wallet.hard ?? 0;
+  const total = lv.inLevel + lv.toNext;
+  const pct = total ? (lv.inLevel / total) * 100 : 0;
+  document.getElementById('levelsXpFill').style.width = pct + '%';
+  document.getElementById('levelsXpCur').textContent = lv.inLevel + 'XP';
+  document.getElementById('levelsXpNext').textContent = total + 'XP';
+  const claimed = await apiGet('/api/level-rewards').catch(()=>({claimed:[]}));
+  const claimedSet = new Set(claimed.claimed || []);
+  const list = document.getElementById('levelsList');
+  let html = '';
+  for (let i = 1; i <= 30; i++) {
+    const need = i * 500;
+    const canClaim = lv.level >= i;
+    const isClaimed = claimedSet.has(i);
+    const cls = isClaimed ? 'done' : (i === lv.level ? 'current' : (i < lv.level ? 'done' : 'locked'));
+    const btnLabel = isClaimed ? 'ПОЛУЧЕНО' : (canClaim ? 'ЗАБРАТЬ' : 'ЗАКРЫТО');
+    const disabled = !canClaim || isClaimed;
+    html += `<div class="levels-row ${cls}">
+      <div class="levels-row-left">
+        <div class="levels-row-name">УРОВЕНЬ ${i}</div>
+        <div class="levels-row-sub">от ${need.toLocaleString('ru-RU')}XP · ${levelTitleByLevel(i)}</div>
+        <div class="levels-row-reward">${levelRewardByLevel(i)}</div>
+      </div>
+      <button class="levels-row-btn" data-level="${i}" ${disabled?'disabled':''}>${btnLabel}</button>
+    </div>`;
+  }
+  list.innerHTML = html;
+  list.querySelectorAll('button[data-level]').forEach(btn => {
+    btn.onclick = async () => {
+      const lvl = parseInt(btn.dataset.level, 10);
+      try {
+        const r = await apiPost('/api/level-reward-claim', {level: lvl});
+        haptic('success'); popIcon('ic-gift');
+        const rw = r.reward || {};
+        toast(`+${rw.shift||0} Шифт · +${rw.nova||0} Нова`, 'success');
+        closeLevels(); openLevels();
+      } catch (e) {
+        if (e.code === 'already') toast('Уже получено', 'error');
+        else if (e.code === 'locked') toast('Уровень не достигнут', 'error');
+        else toast(e.message, 'error');
+      }
+    };
+  });
+}
+function closeLevels() {
+  document.getElementById('screen-levels').style.display = 'none';
+  document.getElementById('bottom-nav').style.display = '';
+  if (state && state.tab === 'profile') loadTabData('profile');
+}
+async function openLeaderboard() {
+  try {
+    const d = await apiGet('/api/wallet/leaderboard');
+    const rows = d.items.map(it => `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--divider)">
+      <span style="font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan-dark);min-width:28px;font-size:18px">${it.rank}</span>
+      <span style="flex:1;font-weight:600${it.is_me?';color:var(--cyan-dark)':''}">${escapeHtml(it.display)}${it.is_me?' (ты)':''}</span>
+      <span style="font-family:'Anton',sans-serif;font-style:italic;display:flex;align-items:center;gap:4px">${it.xp} ${icXp(14)}</span>
+    </div>`).join('');
+    modalOpen({title:'ТОП ИГРОКОВ', body: rows || '<div class="empty">Пока нет игроков</div>',
+      actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
+  } catch (e) { toast('Ошибка', 'error'); }
+}
+
 
 function renderProfile() {
   const p = state.profile;
@@ -697,13 +903,20 @@ function renderProfile() {
   const lv = calcLevelInfo(xp);
   const total = lv.inLevel + lv.toNext;
   const pct = total ? (lv.inLevel / total) * 100 : 0;
+  const gender = state.avatarGender || p?.avatar_gender || 'male';
 
   const metaParts = [];
   if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · подгр. ${p.subgroup}` : ''));
-  if (u.username) metaParts.push('@' + u.username);
+  if (u.username && !wallet.custom_name) metaParts.push('@' + u.username);
 
   let html = `<div class="profile-hero">
-    <img class="profile-hero-head" src="/assets/head_1.webp" alt="">
+    <img class="profile-hero-head" src="${avatarImg(gender)}" alt="">
+    <div class="avatar-switch-wrap">
+      <div class="avatar-switch">
+        <button class="${gender==='male'?'active':''}" data-action="set-gender" data-value="male">♂ Он</button>
+        <button class="${gender==='female'?'active':''}" data-action="set-gender" data-value="female">♀ Она</button>
+      </div>
+    </div>
     <div class="profile-hero-name">
       <span class="profile-hero-name-text">${escapeHtml(displayName)}</span>
       <button class="profile-name-edit" data-action="set-name" title="Изменить имя">
@@ -723,14 +936,14 @@ function renderProfile() {
     </div>
     <div class="profile-hero-wallet">
       <div class="profile-hero-wallet-item">
-        <div class="profile-hero-wallet-icon">${icShift(28)}</div>
+        <div class="profile-hero-wallet-icon"><img src="/assets/ic_shift.webp" alt=""></div>
         <div class="profile-hero-wallet-body">
           <div class="profile-hero-wallet-value">${wallet.shift ?? wallet.soft ?? 0}</div>
           <div class="profile-hero-wallet-label">Шифт</div>
         </div>
       </div>
       <div class="profile-hero-wallet-item">
-        <div class="profile-hero-wallet-icon">${icNova(28)}</div>
+        <div class="profile-hero-wallet-icon"><img src="/assets/ic_nova.webp" alt=""></div>
         <div class="profile-hero-wallet-body">
           <div class="profile-hero-wallet-value">${wallet.nova ?? wallet.hard ?? 0}</div>
           <div class="profile-hero-wallet-label">Нова</div>
@@ -884,184 +1097,6 @@ async function loadWalletIntoProfile() {
     if (ach) state.achData = ach;
     startChestTimer();
   } catch (e) {}
-}
-
-async function loadSchedule() {
-  try { state.schedule = await apiGet('/api/schedule'); }
-  catch (e) { state.schedule = {error:'load_error', message:e.message}; }
-}
-async function loadTasks() {
-  try {
-    const doneParam = state.tasksView === 'done' ? '1' : '0';
-    const r = await apiGet('/api/tasks', {done: doneParam});
-    state.tasks = r.tasks || [];
-    state.tasksStats = {active: r.active || 0, done: r.done || 0};
-  } catch (e) { state.tasks = []; }
-}
-async function loadNotes() {
-  try {
-    const r = await apiGet('/api/notes');
-    state.notes = r.notes || [];
-    const subs = new Set(state.notes.map(n => n.subject));
-    state.notesSubjects = Array.from(subs);
-  } catch (e) { state.notes = []; }
-}
-async function loadProfile() {
-  try {
-    state.profile = await apiGet('/api/me');
-    state.isAdmin = !!state.profile.is_admin;
-  } catch (e) { state.profile = {error:e.message}; }
-}
-async function loadScholarship() {
-  try { state.scholarship = await apiGet('/api/scholarship'); }
-  catch (e) { state.scholarship = null; }
-}
-async function loadGroups(force=false) {
-  if (state.groups && !force) return;
-  try { const r = await apiGet('/api/groups'); state.groups = r.groups; }
-  catch (e) { state.groups = {}; }
-}
-async function loadAdminStats() {
-  try { state.adminStats = await apiGet('/api/admin/stats'); }
-  catch (e) { state.adminStats = null; }
-}
-async function loadAdminFeedback() {
-  try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
-  catch (e) { state.adminFeedback = []; }
-}
-
-async function loadTabData(tab) {
-  state.loading = true;
-  state.error = null;
-  state.notifyEditor = false;
-  render();
-  try {
-    if (tab === 'schedule') {
-      state.scheduleViewMode = 'today';
-      state.weekOffset = 0;
-      state.scheduleDay = 'today';
-      state.weekDays = null;
-      await loadProfile();
-      await loadSchedule();
-      ensureWeekLoaded().catch(()=>{});
-    } else if (tab === 'tasks') await loadTasks();
-    else if (tab === 'notes') await loadNotes();
-    else if (tab === 'games') await loadProfile();
-    else if (tab === 'ai') await loadProfile();
-    else if (tab === 'admin') {
-      await loadProfile();
-      if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
-    } else if (tab === 'profile') {
-      await loadProfile();
-      await loadScholarship();
-    }
-  } catch (e) { console.error(e); state.error = e.message; }
-  state.loading = false;
-  render();
-}
-
-async function ensureWeekLoaded() {
-  if (state.weekDays?.days?.length) return true;
-  try { state.weekDays = await apiGet('/api/week', {offset:0}); return true; }
-  catch(e){ return false; }
-}
-async function loadWeekAndRender() {
-  try {
-    const r = await apiGet('/api/week', {offset: state.weekOffset});
-    state.weekDays = r;
-    state.scheduleViewMode = 'week';
-    render();
-  } catch (e) { toast('Ошибка загрузки', 'error'); }
-}
-async function loadTodayAndRender() {
-  state.scheduleViewMode = 'today';
-  state.weekOffset = 0;
-  state.weekDays = null;
-  state.scheduleDay = 'today';
-  await loadSchedule();
-  render();
-}
-
-function levelRewardByLevel(lvl) {
-  if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
-  if (lvl <= 10) return `+250 ${icShift(14)} · +3 ${icNova(14)}`;
-  if (lvl <= 20) return `+600 ${icShift(14)} · +8 ${icNova(14)}`;
-  return `+1500 ${icShift(14)} · +25 ${icNova(14)}`;
-}
-async function openLevels() {
-  const screen = document.getElementById('screen-levels');
-  if (!screen) return;
-  screen.style.display = 'block';
-  document.getElementById('bottom-nav').style.display = 'none';
-  document.getElementById('levelsBack').onclick = closeLevels;
-  const w = await apiGet('/api/wallet').catch(()=>null);
-  if (!w) return;
-  const wallet = w.wallet || {};
-  const xp = wallet.xp || 0;
-  const lv = calcLevelInfo(xp);
-  document.getElementById('levelsCurrent').textContent = lv.level;
-  document.getElementById('levelsLeft').textContent = lv.toNext + 'XP';
-  document.getElementById('levelsSoft').textContent = wallet.shift ?? wallet.soft ?? 0;
-  document.getElementById('levelsHard').textContent = wallet.nova ?? wallet.hard ?? 0;
-  const total = lv.inLevel + lv.toNext;
-  const pct = total ? (lv.inLevel / total) * 100 : 0;
-  document.getElementById('levelsXpFill').style.width = pct + '%';
-  document.getElementById('levelsXpCur').textContent = lv.inLevel + 'XP';
-  document.getElementById('levelsXpNext').textContent = total + 'XP';
-  const claimed = await apiGet('/api/level-rewards').catch(()=>({claimed:[]}));
-  const claimedSet = new Set(claimed.claimed || []);
-  const list = document.getElementById('levelsList');
-  let html = '';
-  for (let i = 1; i <= 30; i++) {
-    const need = i * 500;
-    const canClaim = lv.level >= i;
-    const isClaimed = claimedSet.has(i);
-    const cls = isClaimed ? 'done' : (i === lv.level ? 'current' : (i < lv.level ? 'done' : 'locked'));
-    const btnLabel = isClaimed ? 'ПОЛУЧЕНО' : (canClaim ? 'ЗАБРАТЬ' : 'ЗАКРЫТО');
-    const disabled = !canClaim || isClaimed;
-    html += `<div class="levels-row ${cls}">
-      <div class="levels-row-left">
-        <div class="levels-row-name">УРОВЕНЬ ${i}</div>
-        <div class="levels-row-sub">от ${need.toLocaleString('ru-RU')}XP · ${levelTitleByLevel(i)}</div>
-        <div class="levels-row-reward">${levelRewardByLevel(i)}</div>
-      </div>
-      <button class="levels-row-btn" data-level="${i}" ${disabled?'disabled':''}>${btnLabel}</button>
-    </div>`;
-  }
-  list.innerHTML = html;
-  list.querySelectorAll('button[data-level]').forEach(btn => {
-    btn.onclick = async () => {
-      const lvl = parseInt(btn.dataset.level, 10);
-      try {
-        const r = await apiPost('/api/level-reward-claim', {level: lvl});
-        haptic('success'); popIcon('ic-gift');
-        const rw = r.reward || {};
-        toast(`+${rw.shift||0} Шифт · +${rw.nova||0} Нова`, 'success');
-        closeLevels(); openLevels();
-      } catch (e) {
-        if (e.code === 'already') toast('Уже получено', 'error');
-        else if (e.code === 'locked') toast('Уровень не достигнут', 'error');
-        else toast(e.message, 'error');
-      }
-    };
-  });
-}
-function closeLevels() {
-  document.getElementById('screen-levels').style.display = 'none';
-  document.getElementById('bottom-nav').style.display = '';
-  if (state && state.tab === 'profile') loadTabData('profile');
-}
-async function openLeaderboard() {
-  try {
-    const d = await apiGet('/api/wallet/leaderboard');
-    const rows = d.items.map(it => `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--divider)">
-      <span style="font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan-dark);min-width:28px;font-size:18px">${it.rank}</span>
-      <span style="flex:1;font-weight:600${it.is_me?';color:var(--cyan-dark)':''}">${escapeHtml(it.display)}${it.is_me?' (ты)':''}</span>
-      <span style="font-family:'Anton',sans-serif;font-style:italic;display:flex;align-items:center;gap:4px">${it.xp} ${icXp(14)}</span>
-    </div>`).join('');
-    modalOpen({title:'ТОП ИГРОКОВ', body: rows || '<div class="empty">Пока нет игроков</div>',
-      actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
-  } catch (e) { toast('Ошибка', 'error'); }
 }
 
 
@@ -1402,7 +1437,7 @@ function bsRenderBets() {
   [10,50,100,500].forEach(v => {
     const b = document.createElement('button');
     b.className = 'bs-bet' + (v === BS.bet ? ' active' : '');
-    b.innerHTML = `${v} ${icShift(14)}`;
+    b.innerHTML = `${v} <img class="coin" src="/assets/ic_shift.webp" style="width:16px;height:16px" alt="">`;
     b.onclick = () => { BS.bet = v; bsRenderBets(); };
     box.appendChild(b);
   });
@@ -1647,7 +1682,6 @@ function bsPollStart() {
   }, 2000);
 }
 
-
 function actionOpenNotifyEditor() {
   haptic('light');
   const p = state.profile;
@@ -1725,6 +1759,24 @@ async function actionSetSubgroup(value) {
     if (state.profile) state.profile.subgroup = value;
     haptic('success'); render();
   } catch (e) { toast(e.message, 'error'); }
+}
+/* ==== СМЕНА ПОЛА АВАТАРА ==== */
+async function actionSetGender(value) {
+  if (value !== 'male' && value !== 'female') return;
+  if (state.avatarGender === value) return;
+  const prev = state.avatarGender;
+  state.avatarGender = value;
+  if (state.profile) state.profile.avatar_gender = value;
+  render();
+  try {
+    await apiPost('/api/set-avatar-gender', {gender: value});
+    haptic('success');
+  } catch (e) {
+    state.avatarGender = prev;
+    if (state.profile) state.profile.avatar_gender = prev;
+    render();
+    toast(e.message, 'error');
+  }
 }
 async function actionQuoteSubscribe(value) {
   try {
@@ -2173,7 +2225,7 @@ function actionSetName() {
     title:'ИЗМЕНИТЬ ИМЯ',
     body: `
       <div class="card-subtitle" style="text-align:center;margin-bottom:12px">
-        Это имя видят все игроки: в топе, играх, обмене.
+        Это имя видят все игроки: в топе, играх, шапке расписания.
       </div>
       <div class="label">НОВОЕ ИМЯ</div>
       <input class="input" id="set-name-input" maxlength="24" placeholder="Например: Студент-Легенда" value="${escapeHtml(currentName)}" autocomplete="off">
@@ -2205,6 +2257,7 @@ function actionSetName() {
   }, 150);
 }
 
+/* ===== КЕЙСЫ (без SVG) ===== */
 const CHEST_META = {
   capsule:  {name:'Капсула',  img:'/assets/capsule.webp',  costLabel:'Бесплатно (раз в 24 ч)',
              drops:[['Шифт 10–40','55%'],['XP 50–150','30%'],['Нова ×1','10%'],['Шифт ×100','5%']]},
@@ -2215,6 +2268,8 @@ const CHEST_META = {
   core:     {name:'Ядро',     img:'/assets/core.webp',     costLabel:'80 Нова',
              drops:[['Шифт ×2000','25%'],['XP ×5000','25%'],['Нова 30–60','40%'],['Нова ×200','10%']]},
 };
+
+/* Модалка "Что может выпасть" — открытие теперь через chest.js (рулетка) */
 function actionChestModal(id) {
   const meta = CHEST_META[id];
   if (!meta) return;
@@ -2231,7 +2286,7 @@ function actionChestModal(id) {
     title: meta.name.toUpperCase(),
     body: `
       <div style="text-align:center;margin-bottom:8px">
-        <img src="${meta.img}" alt="${escapeHtml(meta.name)}" style="max-width:220px;width:70%;height:auto;border-radius:18px">
+        <img src="${meta.img}" alt="${escapeHtml(meta.name)}" style="max-width:220px;width:70%;height:auto;border-radius:18px" draggable="false">
       </div>
       <div class="card-subtitle" style="text-align:center;margin-bottom:12px">${escapeHtml(meta.costLabel)}</div>
       <div class="label">Что может выпасть</div>
@@ -2243,29 +2298,31 @@ function actionChestModal(id) {
       {label: isCapsule ? (canOpenCapsule ? 'ОТКРЫТЬ' : 'ЖДИ') : 'ОТКРЫТЬ', style: 'btn',
        onClick: async () => {
          if (isCapsule && !canOpenCapsule) { toast('Ещё рано', 'error'); return; }
-         try {
-           const r = await apiPost('/api/chest/open', {type: id});
-           haptic('success'); popIcon('ic-gift');
-           toast(r.reward?.label || '', 'success');
-           state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
-           await loadProfile(); render(); startChestTimer();
-         } catch (e) {
-           if (e.code === 'already_opened') toast('Уже открыт', 'error');
-           else if (e.code === 'not_enough_shift') toast('Недостаточно Шифт', 'error');
-           else if (e.code === 'not_enough_nova') toast('Недостаточно Нова', 'error');
-           else toast(e.message, 'error');
+         /* Открываем рулетку через chest.js */
+         if (typeof openChestRoulette === 'function') {
+           openChestRoulette(id, async (res) => {
+             if (res.ok) {
+               state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
+               await loadProfile();
+               render();
+               startChestTimer();
+             }
+           });
+         } else {
+           toast('Рулетка не загружена', 'error');
          }
        }}
     ]
   });
   startChestTimer();
 }
+
 function actionExchange() {
   modalOpen({
     title:'ОБМЕННИК',
     body: `
       <div class="card-subtitle" style="text-align:center;margin-bottom:12px;display:flex;align-items:center;gap:8px;justify-content:center">
-        100 ${icShift(16)} Шифт = 1 ${icNova(16)} Нова
+        100 <img class="coin" src="/assets/ic_shift.webp" style="width:18px;height:18px" alt=""> Шифт = 1 <img class="coin" src="/assets/ic_nova.webp" style="width:18px;height:18px" alt=""> Нова
       </div>
       <div class="label">СКОЛЬКО ШИФТ</div>
       <input class="input" id="ex-amount" type="number" min="100" step="100" value="100">
@@ -2297,6 +2354,8 @@ function actionExchange() {
     });
   }, 0);
 }
+
+/* ===== ДОСТИЖЕНИЯ — с фиксом кнопки "Забрать" ===== */
 function achIconById(id) { return `ic-ach-${id}`; }
 async function actionShowAchievements() {
   try {
@@ -2344,9 +2403,12 @@ function renderAchievementsModal(d) {
           haptic('success'); popIcon('ic-gift');
           toast(`+${r.reward.xp} XP · +${r.reward.soft} Шифт · +${r.reward.hard} Нова`, 'success');
           await loadProfile();
+          /* ОБНОВЛЯЕМ оба состояния: данные достижений И модалку */
           const dd = await apiGet('/api/achievements');
           state.achData = dd;
           renderAchievementsModal(dd);
+          /* Обновляем и профиль, чтобы кнопка "ЗАБРАТЬ N" исчезла */
+          if (state.tab === 'profile') render();
         } catch (e) { toast(e.message, 'error'); }
       };
     });
@@ -2366,6 +2428,7 @@ function renderAchievementsModal(d) {
       const dd = await apiGet('/api/achievements');
       state.achData = dd;
       renderAchievementsModal(dd);
+      if (state.tab === 'profile') render();
     };
   }, 0);
 }
@@ -2473,6 +2536,7 @@ function attachHandlers() {
 function handleAction(el) {
   const a = el.dataset.action;
   if (a === 'set-subgroup') actionSetSubgroup(parseInt(el.dataset.value));
+  else if (a === 'set-gender') actionSetGender(el.dataset.value);
   else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(el.dataset.value));
   else if (a === 'feedback-send') actionFeedbackSend();
   else if (a === 'task-done') actionTaskDone(parseInt(el.dataset.id));
