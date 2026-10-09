@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging
+import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging, shutil
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from aiohttp import web
@@ -226,7 +226,8 @@ def init_db():
         "ALTER TABLE users ADD COLUMN last_notified_at TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN notify_before_min INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN username TEXT DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL"]:
+        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN avatar_gender TEXT DEFAULT 'male'"]:
         try: conn.execute(a)
         except: pass
     conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
@@ -306,6 +307,7 @@ def init_db():
         shift INTEGER DEFAULT 0, nova INTEGER DEFAULT 0, granted_at TEXT, PRIMARY KEY (user_id, ach_id))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS level_rewards (user_id INTEGER, level INTEGER, claimed_at TEXT, PRIMARY KEY (user_id, level))""")
     conn.commit(); conn.close()
+
 
 def _ensure_user(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -711,6 +713,19 @@ def get_user_subgroup(user_id):
     conn.close()
     return row[0] if row and row[0] else 0
 
+def set_user_avatar_gender(user_id, gender):
+    _ensure_user(user_id)
+    if gender not in ("male", "female"): gender = "male"
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE users SET avatar_gender=? WHERE user_id=?", (gender, user_id))
+    conn.commit(); conn.close()
+
+def get_user_avatar_gender(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT avatar_gender FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    return (row[0] if row and row[0] else "male")
+
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
@@ -1018,6 +1033,7 @@ def get_export_data(user_id):
         "grades": [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4]} for g in grades],
         "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
         "attendance": att}
+
 
 def _bs_now(): return datetime.now(timezone.utc).isoformat()
 def _bs_new_game_id(): return secrets.token_hex(8)
@@ -1555,6 +1571,7 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
             if row: return row[0]
         return ""
 
+
 def _verify_webapp_init_full(init_data):
     if not init_data: return None
     try:
@@ -1645,6 +1662,7 @@ async def api_me(request):
         display_name = full or "PLAYER"
     player_tag = f"PLAYER-{str(user_id)[-6:].upper()}"
     return web.json_response({"user_id": user_id, "is_admin": user_id == ADMIN_ID,
+        "avatar_gender": get_user_avatar_gender(user_id),
         "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id), "tasks_active": active, "tasks_done": done,
         "notes_count": len(notes), "scholarship_amount": amount, "grades_count": len(grades),
@@ -1694,6 +1712,16 @@ async def api_set_avatar(request):
     idx = max(0, min(idx, 11))
     wallet_set_avatar(user_id, idx)
     return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
+
+async def api_set_avatar_gender(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    gender = (body.get("gender") or "male").strip().lower()
+    if gender not in ("male", "female"): gender = "male"
+    set_user_avatar_gender(user_id, gender)
+    return web.json_response({"ok": True, "avatar_gender": gender})
 
 async def api_exchange(request):
     try: body = await request.json()
@@ -2621,12 +2649,15 @@ def _find_or_download_pdf_font():
     candidates = [
         os.path.join(base_dir, "fonts", "DejaVuSans.ttf"),
         os.path.join(base_dir, "webapp", "fonts", "DejaVuSans.ttf"),
+        os.path.join(os.getcwd(), "fonts", "DejaVuSans.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "fonts/DejaVuSans.ttf"]
     for p in candidates:
-        if os.path.isfile(p): return p
+        if os.path.isfile(p):
+            logging.info(f"[PDF FONT] найден: {p}")
+            return p
     try:
         target_dir = os.path.join(base_dir, "fonts"); os.makedirs(target_dir, exist_ok=True)
         target = os.path.join(target_dir, "DejaVuSans.ttf")
@@ -2834,6 +2865,7 @@ async def api_admin_monitor(request):
     except Exception as e:
         return web.json_response({"status": 0, "ok": False, "error": str(e)})
 
+
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -2849,6 +2881,7 @@ async def start_webapp():
     app.router.add_get("/api/wallet", api_wallet)
     app.router.add_post("/api/set-name", api_set_name)
     app.router.add_post("/api/set-avatar", api_set_avatar)
+    app.router.add_post("/api/set-avatar-gender", api_set_avatar_gender)
     app.router.add_post("/api/exchange-soft-to-hard", api_exchange)
     app.router.add_get("/api/groups", api_groups)
     app.router.add_post("/api/set-group", api_set_group)
@@ -2925,6 +2958,11 @@ async def start_webapp():
             if os.path.isfile(p):
                 return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
             return web.Response(status=404)
+        async def chestjs_handler(request):
+            p = os.path.join(webapp_dir, "chest.js")
+            if os.path.isfile(p):
+                return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
+            return web.Response(status=404)
         async def asset_handler(request):
             name = request.match_info.get("name", "")
             safe_name = os.path.basename(name)
@@ -2939,6 +2977,7 @@ async def start_webapp():
         app.router.add_get("/index.html", index_handler)
         app.router.add_get("/style.css", style_handler)
         app.router.add_get("/app.js", appjs_handler)
+        app.router.add_get("/chest.js", chestjs_handler)
         app.router.add_get("/assets/{name}", asset_handler)
         app.router.add_get("/favicon.ico", favicon_handler)
     else:
@@ -2947,6 +2986,8 @@ async def start_webapp():
     runner = web.AppRunner(app); await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port); await site.start()
     logging.info(f"[WEB] на 0.0.0.0:{port}")
+
+# ===================== КОМАНДЫ БОТА =====================
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
@@ -2960,28 +3001,75 @@ async def cmd_start(message: Message):
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
-    if message.from_user.id != ADMIN_ID: await message.answer("Только для админа."); return
-    await message.answer("АДМИН-КОМАНДЫ:\n/backup — прислать users.db\n/restore — восстановить базу\n/admin — справка")
+    if message.from_user.id != ADMIN_ID:
+        await message.answer(f"⛔ Только для админа.\nТвой ID: {message.from_user.id}"); return
+    await message.answer(
+        "🛠 АДМИН-КОМАНДЫ:\n"
+        "/backup — прислать users.db\n"
+        "/restore — восстановить базу (отправь .db с подписью)\n"
+        "/whereami — где лежит база и твой ID\n"
+        "/admin — эта справка")
+
+@dp.message(Command("whereami"))
+async def cmd_whereami(message: Message):
+    db_abs = os.path.abspath(DB_PATH)
+    exists = os.path.isfile(db_abs)
+    size = os.path.getsize(db_abs) if exists else 0
+    text = (f"🆔 Твой ID: {message.from_user.id}\n"
+            f"👤 ADMIN_ID: {ADMIN_ID}\n"
+            f"📁 cwd: {os.getcwd()}\n"
+            f"📁 DB_PATH: {DB_PATH}\n"
+            f"📁 abs: {db_abs}\n"
+            f"✅ exists: {exists}\n"
+            f"📦 size: {size} B ({size // 1024} КБ)")
+    await message.answer(text)
 
 @dp.message(Command("backup"))
 async def cmd_backup(message: Message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID:
+        await message.answer(f"⛔ Только для админа.\nТвой ID: {message.from_user.id}\nНужен: {ADMIN_ID}")
+        return
     try:
+        db_abs = os.path.abspath(DB_PATH)
+        logging.info(f"[BACKUP] запрос от {message.from_user.id}, db={db_abs}")
+        if not os.path.isfile(db_abs):
+            await message.answer(f"❌ Файл базы не найден:\n{db_abs}"); return
+        size_kb = os.path.getsize(db_abs) // 1024
         total = get_total_users()
-        doc = FSInputFile(DB_PATH, filename="users_backup.db")
-        await message.answer_document(doc, caption=f"Резервная копия. Всего: {total}")
-    except Exception as e: await message.answer(f"Ошибка: {e}")
+        fname = f"users_backup_{_now_irkutsk().strftime('%Y%m%d_%H%M')}.db"
+        doc = FSInputFile(db_abs, filename=fname)
+        await message.answer_document(doc, caption=f"✅ Резервная копия\nПользователей: {total}\nРазмер: {size_kb} КБ\nПуть: {db_abs}")
+    except Exception as e:
+        logging.exception("[BACKUP]")
+        await message.answer(f"❌ Ошибка бэкапа: {e}")
 
 @dp.message(Command("restore"))
 async def cmd_restore(message: Message):
-    if message.from_user.id != ADMIN_ID: return
-    if not message.document: await message.answer("Пришли .db с /restore."); return
+    if message.from_user.id != ADMIN_ID:
+        await message.answer(f"⛔ Только для админа.\nТвой ID: {message.from_user.id}")
+        return
+    if not message.document:
+        await message.answer("📎 Пришли .db ФАЙЛ с подписью /restore (в одном сообщении)."); return
+    fname = (message.document.file_name or "").lower()
+    if not fname.endswith(".db"):
+        await message.answer("❌ Нужен файл с расширением .db"); return
     try:
+        db_abs = os.path.abspath(DB_PATH)
+        logging.info(f"[RESTORE] запрос от {message.from_user.id}, target={db_abs}")
+        if os.path.isfile(db_abs):
+            bak = db_abs + ".before_restore_" + _now_irkutsk().strftime('%Y%m%d_%H%M%S')
+            shutil.copy2(db_abs, bak)
+            logging.info(f"[RESTORE] старая база сохранена как {bak}")
+        os.makedirs(os.path.dirname(db_abs) or ".", exist_ok=True)
         file = await bot.get_file(message.document.file_id)
-        await bot.download_file(file.file_path, DB_PATH)
+        await bot.download_file(file.file_path, db_abs)
         init_db()
-        await message.answer(f"База восстановлена. Всего: {get_total_users()}")
-    except Exception as e: await message.answer(f"Ошибка: {e}")
+        await message.answer(f"✅ База восстановлена.\nВсего пользователей: {get_total_users()}\nФайл: {db_abs}")
+    except Exception as e:
+        logging.exception("[RESTORE]")
+        await message.answer(f"❌ Ошибка восстановления: {e}")
+
+# ===================== РАССЫЛКИ И ВОРКЕРЫ =====================
 
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
