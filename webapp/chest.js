@@ -1,17 +1,9 @@
-/* ===== РУЛЕТКА КЕЙСА (CS:GO style) =====
-   Открывается из actionChestModal → openChestRoulette(id, callback).
-   Сама дергает /api/chest/open, крутит ленту, показывает результат.
-*/
-
 const CHEST_DROP_ICONS = {
-  /* что нарисовать в ячейке ленты в зависимости от типа дропа */
   shift:     '/assets/ic_shift.webp',
   nova:      '/assets/ic_nova.webp',
-  xp:        '/assets/ic_xp.webp',       /* если нет — покажется алт */
+  xp:        '/assets/ic_xp.webp',
   default:   '/assets/ic_shift.webp',
 };
-
-/* Карта наград для визуального разнообразия ленты (исходя из CHESTS в app.py) */
 const CHEST_FAKE_POOL = {
   capsule:  [
     {type:'shift', amount:15,  rar:'common', label:'+15'},
@@ -48,19 +40,15 @@ const CHEST_FAKE_POOL = {
     {type:'nova',  amount:200, rar:'legend', label:'+200 Нова'},
   ],
 };
-
 function _chestIconFor(drop) {
   if (!drop) return CHEST_DROP_ICONS.default;
   return CHEST_DROP_ICONS[drop.type] || CHEST_DROP_ICONS.default;
 }
-
 function _randomFakeCell(chestId) {
   const pool = CHEST_FAKE_POOL[chestId] || CHEST_FAKE_POOL.capsule;
   return pool[Math.floor(Math.random() * pool.length)];
 }
-
 function _buildRouletteStrip(chestId, winDrop) {
-  /* 40 ячеек, победитель — в позиции 32 */
   const N = 40, WIN_POS = 32;
   const cells = [];
   for (let i = 0; i < N; i++) {
@@ -90,9 +78,7 @@ function _coinIconByType(t) {
   if (t === 'nova')  return '/assets/ic_nova.webp';
   return '/assets/ic_xp.webp';
 }
-
 let _rouletteRoot = null;
-
 function openChestRoulette(chestId, onDone) {
   if (!_rouletteRoot) {
     _rouletteRoot = document.createElement('div');
@@ -116,8 +102,6 @@ function openChestRoulette(chestId, onDone) {
   document.getElementById('rouletteClose').onclick = () => {
     _rouletteRoot.classList.remove('on');
   };
-
-  /* 1. Сначала запрос на сервер — узнаём, что выпадет */
   const initData = (window.Telegram?.WebApp?.initData) || '';
   fetch('/api/chest/open', {
     method:'POST',
@@ -144,7 +128,6 @@ function openChestRoulette(chestId, onDone) {
       if (typeof onDone === 'function') onDone({ok:false, error:'network'});
     });
 }
-
 function _showRouletteError(msg) {
   const win = document.getElementById('rouletteWin');
   if (win) {
@@ -157,6 +140,7 @@ function _showRouletteError(msg) {
   }, 1800);
 }
 
+
 function _runRoulette(chestId, winDrop, wallet, done) {
   const { cells, winPos } = _buildRouletteStrip(chestId, winDrop);
   const strip = document.getElementById('rouletteStrip');
@@ -165,8 +149,6 @@ function _runRoulette(chestId, winDrop, wallet, done) {
   const flash = document.getElementById('rouletteFlash');
   win.classList.remove('on');
   win.innerHTML = '';
-
-  /* Рендер ячеек */
   strip.innerHTML = cells.map((c, i) => `
     <div class="roulette-cell rar-${c.rar||'common'}" data-idx="${i}">
       <img class="rc-icon" src="${_coinIconByType(c.type)}" alt="">
@@ -175,27 +157,20 @@ function _runRoulette(chestId, winDrop, wallet, done) {
   `).join('');
   strip.style.transition = 'none';
   strip.style.transform = 'translateX(0)';
-
-  /* После отрисовки измеряем и вычисляем смещение */
   requestAnimationFrame(() => {
-    const cellW = 132 + 12;            /* ширина ячейки + gap */
+    const cellW = 132 + 12;
     const viewportW = viewport.clientWidth;
-    /* Целимся так, чтобы центр ячейки winPos оказался в центре viewport */
     const cellCenter = winPos * cellW + 132 / 2;
     const offset = cellCenter - viewportW / 2;
-    const duration = 4200;             /* длительность анимации, мс */
+    const duration = 4200;
     strip.style.transition = `transform ${duration}ms cubic-bezier(.15,.85,.25,1)`;
     strip.style.transform = `translateX(-${offset}px)`;
-
-    /* Через duration — финал */
     setTimeout(() => {
       flash.classList.add('on');
       if (window.Telegram?.WebApp?.HapticFeedback) {
         try { window.Telegram.WebApp.HapticFeedback.notificationOccurred('success'); } catch(e){}
       }
       setTimeout(() => flash.classList.remove('on'), 300);
-
-      /* Показываем плашку с выигрышем */
       const label = winDrop.label || _fmtDropLabel(winDrop);
       win.innerHTML = `
         <img class="roulette-win-icon" src="${_coinIconByType(winDrop.type)}" alt="">
@@ -203,8 +178,6 @@ function _runRoulette(chestId, winDrop, wallet, done) {
         <div class="roulette-win-sub">${(wallet && (wallet.shift != null)) ? `Баланс: ${wallet.shift} Шифт · ${wallet.nova} Нова` : ''}</div>
       `;
       win.classList.add('on');
-
-      /* Автозакрытие через 3 секунды, либо по клику */
       const closeTimer = setTimeout(() => {
         _rouletteRoot.classList.remove('on');
         if (typeof done === 'function') done();
