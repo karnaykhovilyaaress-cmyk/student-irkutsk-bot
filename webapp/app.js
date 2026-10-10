@@ -341,7 +341,6 @@ function renderSchedule() {
   return html;
 }
 
-
 function renderTodayBlock() {
   const s = state.schedule;
   if (!s) return '<div class="empty">Нет данных о расписании</div>';
@@ -413,6 +412,7 @@ function attachSwipe() {
     dx = 0;
   });
 }
+
 
 function getCourseFromGroup(name) {
   const m = String(name).match(/-(\d{2})-/);
@@ -510,7 +510,7 @@ function renderNotifyEditor() {
   const mm = state.notifyEditorMinute;
   const timeVal = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   return `
-    <div class="picker-header" style="padding-top:calc(var(--safe-top) + 12px)">
+    <div class="picker-header">
       <button class="picker-back" data-action="notify-back">${icon('ic-chevron-left',20)}</button>
       <div class="picker-title">Уведомления</div>
     </div>
@@ -590,6 +590,230 @@ function renderNotes() {
     </div>`;
   }
   return html;
+}
+
+function renderGames() {
+  return `<div class="games-list">
+    <div class="game-card">
+      <div class="game-card-title">${icon('ic-game-flappy',28)} ДО ПАРЫ УСПЕТЬ</div>
+      <div class="game-card-sub">Пролетай между парами, собирай бонусы, ставь рекорды.</div>
+      <div class="actions-row">
+        <button class="btn" data-action="open-flappy">ИГРАТЬ</button>
+        <button class="btn btn-secondary" data-action="open-flappy-records">РЕКОРДЫ</button>
+      </div>
+    </div>
+    <div class="game-card">
+      <div class="game-card-title">${icon('ic-game-bs',28)} МОРСКОЙ БОЙ</div>
+      <div class="game-card-sub">PvP по коду или с ботом. Ставки: 10 / 50 / 100 / 500 Шифт.</div>
+      <div class="actions-row">
+        <button class="btn" data-action="open-bs">ОТКРЫТЬ</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+
+function renderAI() {
+  let html = '';
+  if (!state.aiMessages.length) {
+    html += `<div class="card">
+      <div class="card-title">AI Помощник</div>
+      <div class="card-subtitle">Задай вопрос или прикрепи фото с задачей.</div>
+    </div>`;
+  } else {
+    for (const m of state.aiMessages) {
+      const txt = stripEmoji(m.text);
+      if (m.role === 'user') {
+        if (m.photo) {
+          html += `<div class="card" style="background:var(--cyan);color:#0A0E0F;padding:10px">
+            <img src="${m.photo}" style="width:100%;border-radius:12px;display:block;margin-bottom:8px" alt="">
+            <div style="font-weight:600">${escapeHtml(txt||'')}</div>
+          </div>`;
+        } else {
+          html += `<div class="card" style="background:var(--cyan);color:#0A0E0F"><div style="font-weight:600">${escapeHtml(txt)}</div></div>`;
+        }
+      } else {
+        html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(txt)}</div></div>`;
+      }
+    }
+  }
+  if (state.aiPending) html += '<div class="skeleton-card"></div>';
+  const hasPhoto = !!state.aiPendingPhoto;
+  html += `<div style="margin-top:12px">`;
+  if (hasPhoto) {
+    html += `<div style="position:relative;margin-bottom:8px">
+      <img src="${state.aiPendingPhoto}" style="width:100%;border-radius:16px;display:block;max-height:200px;object-fit:cover" alt="">
+      <button data-action="ai-photo-remove" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:rgba(10,14,15,.85);color:#FFF;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">${icon('ic-close',14)}</button>
+    </div>`;
+  }
+  html += `<textarea class="input" id="ai-input" placeholder="Напиши вопрос..." rows="3" ${state.aiPending?'disabled':''}></textarea>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-secondary" data-action="ai-photo-open" ${state.aiPending?'disabled':''} style="flex:0;padding:12px 18px">${icon('ic-attach',20)}</button>
+      <button class="btn" data-action="ai-send" ${state.aiPending?'disabled':''} style="flex:1">${icon('ic-send',18)} Отправить</button>
+    </div>
+    <button class="btn btn-secondary" data-action="ai-clear" style="width:100%;margin-top:6px">Очистить</button>
+    <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
+  </div>`;
+  return html;
+}
+
+function renderAdmin() {
+  if (!state.isAdmin) return '<div class="empty">Доступ только для админа</div>';
+  let html = '';
+  if (state.adminStats) {
+    html += `<div class="card">
+      <div class="card-title">Статистика</div>
+      <div class="card-subtitle">Пользователей: ${state.adminStats.total_users}</div>
+      <div class="card-subtitle">Обращений: ${state.adminStats.pending_feedback}</div>
+    </div>`;
+  } else html += '<div class="skeleton-card"></div>';
+  html += `<div class="card">
+    <div class="card-title">Мониторинг ИРНИТУ</div>
+    ${state.adminMonitor
+      ? (state.adminMonitor.ok
+          ? `<div class="card-subtitle" style="color:var(--green)">Отвечает (HTTP ${state.adminMonitor.status})</div>`
+          : `<div class="card-subtitle overdue">Не отвечает</div>`)
+      : '<div class="card-subtitle">Не проверено</div>'}
+    <div class="actions-row"><button class="btn btn-secondary" data-action="admin-monitor">Проверить</button></div>
+  </div>`;
+  html += `<div class="card">
+    <div class="card-title">Рассылка</div>
+    <textarea class="input" id="admin-broadcast-text" placeholder="Текст..." rows="3"></textarea>
+    <button class="btn" data-action="admin-broadcast">Отправить</button>
+  </div>`;
+  if (state.adminFeedback?.length > 0) {
+    html += `<div class="card"><div class="card-title">Обращения (${state.adminFeedback.length})</div>`;
+    for (const f of state.adminFeedback) {
+      html += `<div style="border-bottom:1px solid var(--divider);padding:10px 0">
+        <div class="card-subtitle">#${f.id} | ${escapeHtml(f.username || f.user_id)}${f.status==='postponed'?' [отложено]':''}</div>
+        <div style="white-space:pre-wrap;margin-top:4px;color:var(--text)">${escapeHtml(f.text)}</div>
+        <div class="actions-row">
+          <button class="btn btn-secondary" data-action="admin-fb-reply" data-id="${f.id}">Ответить</button>
+          <button class="btn btn-secondary" data-action="admin-fb-postpone" data-id="${f.id}">Отложить</button>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  } else {
+    html += `<div class="card"><div class="card-subtitle">Обращений нет.</div></div>`;
+  }
+  return html;
+}
+
+function levelTitleByLevel(lvl) {
+  if (lvl <= 5) return 'Первокурсник';
+  if (lvl <= 10) return 'Второкурсник';
+  if (lvl <= 15) return 'Третьекурсник';
+  if (lvl <= 20) return 'Старшекурсник';
+  if (lvl <= 25) return 'Магистрант';
+  if (lvl <= 29) return 'Аспирант';
+  return 'Легенда ИРНИТУ';
+}
+function calcLevelInfo(xp) {
+  let lvl = 1, left = xp || 0;
+  while (lvl <= 30) {
+    const need = lvl * 500;
+    if (left < need) return {level: lvl, inLevel: left, toNext: need - left};
+    left -= need; lvl++;
+  }
+  return {level: 30, inLevel: left, toNext: 500};
+}
+
+async function loadSchedule() {
+  try { state.schedule = await apiGet('/api/schedule'); }
+  catch (e) { state.schedule = {error:'load_error', message:e.message}; }
+}
+async function loadTasks() {
+  try {
+    const doneParam = state.tasksView === 'done' ? '1' : '0';
+    const r = await apiGet('/api/tasks', {done: doneParam});
+    state.tasks = r.tasks || [];
+    state.tasksStats = {active: r.active || 0, done: r.done || 0};
+  } catch (e) { state.tasks = []; }
+}
+async function loadNotes() {
+  try {
+    const r = await apiGet('/api/notes');
+    state.notes = r.notes || [];
+    const subs = new Set(state.notes.map(n => n.subject));
+    state.notesSubjects = Array.from(subs);
+  } catch (e) { state.notes = []; }
+}
+async function loadProfile() {
+  try {
+    state.profile = await apiGet('/api/me');
+    state.isAdmin = !!state.profile.is_admin;
+    if (state.profile.avatar_gender) state.avatarGender = state.profile.avatar_gender;
+  } catch (e) { state.profile = {error:e.message}; }
+}
+async function loadScholarship() {
+  try { state.scholarship = await apiGet('/api/scholarship'); }
+  catch (e) { state.scholarship = null; }
+}
+async function loadGroups(force=false) {
+  if (state.groups && !force) return;
+  try { const r = await apiGet('/api/groups'); state.groups = r.groups; }
+  catch (e) { state.groups = {}; }
+}
+async function loadAdminStats() {
+  try { state.adminStats = await apiGet('/api/admin/stats'); }
+  catch (e) { state.adminStats = null; }
+}
+async function loadAdminFeedback() {
+  try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; }
+  catch (e) { state.adminFeedback = []; }
+}
+
+async function loadTabData(tab) {
+  state.loading = true;
+  state.error = null;
+  state.notifyEditor = false;
+  render();
+  try {
+    if (tab === 'schedule') {
+      state.scheduleViewMode = 'today';
+      state.weekOffset = 0;
+      state.scheduleDay = 'today';
+      state.weekDays = null;
+      await loadProfile();
+      await loadSchedule();
+      ensureWeekLoaded().catch(()=>{});
+    } else if (tab === 'tasks') await loadTasks();
+    else if (tab === 'notes') await loadNotes();
+    else if (tab === 'games') await loadProfile();
+    else if (tab === 'ai') await loadProfile();
+    else if (tab === 'admin') {
+      await loadProfile();
+      if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]);
+    } else if (tab === 'profile') {
+      await loadProfile();
+      await loadScholarship();
+    }
+  } catch (e) { console.error(e); state.error = e.message; }
+  state.loading = false;
+  render();
+}
+
+async function ensureWeekLoaded() {
+  if (state.weekDays?.days?.length) return true;
+  try { state.weekDays = await apiGet('/api/week', {offset:0}); return true; }
+  catch(e){ return false; }
+}
+async function loadWeekAndRender() {
+  try {
+    const r = await apiGet('/api/week', {offset: state.weekOffset});
+    state.weekDays = r;
+    state.scheduleViewMode = 'week';
+    render();
+  } catch (e) { toast('Ошибка загрузки', 'error'); }
+}
+async function loadTodayAndRender() {
+  state.scheduleViewMode = 'today';
+  state.weekOffset = 0;
+  state.weekDays = null;
+  state.scheduleDay = 'today';
+  await loadSchedule();
+  render();
 }
 
 
@@ -879,36 +1103,7 @@ async function loadWalletIntoProfile() {
     if (w.wallet && state.profile) state.profile.wallet = w.wallet;
     if (ach) state.achData = ach;
     startChestTimer();
-    /* Обновляем ТОЛЬКО числа, не перерисовывая картинки кейсов и аватар */
-    if (state.tab === 'profile') updateProfileValuesOnly();
   } catch (e) {}
-}
-
-function updateProfileValuesOnly() {
-  const p = state.profile;
-  if (!p) return;
-  const wallet = p.wallet || {};
-  /* Балансы валют в профиле */
-  const walletValues = document.querySelectorAll('.profile-hero-wallet-value');
-  if (walletValues.length >= 2) {
-    walletValues[0].textContent = wallet.shift ?? wallet.soft ?? 0;
-    walletValues[1].textContent = wallet.nova ?? wallet.hard ?? 0;
-  }
-  /* XP-полоса */
-  const xp = wallet.xp || 0;
-  const lv = calcLevelInfo(xp);
-  const total = lv.inLevel + lv.toNext;
-  const pct = total ? (lv.inLevel / total) * 100 : 0;
-  const fill = document.querySelector('.profile-hero-xpbar-fill');
-  if (fill) fill.style.width = pct + '%';
-  const cur = document.querySelector('.profile-hero-xpbar-cur');
-  if (cur) cur.textContent = lv.inLevel + ' XP';
-  const next = document.querySelector('.profile-hero-xpbar-next');
-  if (next) next.textContent = total + ' XP';
-  const lvlNum = document.querySelector('.profile-hero-level-num');
-  if (lvlNum) lvlNum.textContent = lv.level + ' LVL';
-  const lvlTitle = document.querySelector('.profile-hero-level-title');
-  if (lvlTitle) lvlTitle.textContent = levelTitleByLevel(lv.level);
 }
 
 
@@ -2113,7 +2308,7 @@ function actionChestModal(id) {
              if (res.ok) {
                state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
                await loadProfile();
-               updateProfileValuesOnly();
+               render();
                startChestTimer();
              }
            });
@@ -2150,8 +2345,7 @@ function actionExchange() {
           const r = await apiPost('/api/exchange-soft-to-hard', {amount});
           haptic('success'); popIcon('ic-exchange');
           toast(`${r.soft_spent} Шифт → ${r.hard_received} Нова`, 'success');
-          await loadProfile();
-          updateProfileValuesOnly();
+          await loadProfile(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
     ]
