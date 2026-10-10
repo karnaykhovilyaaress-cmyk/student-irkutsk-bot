@@ -5,10 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#3EE6D2">
 <title>Student IRK</title>
-<link rel="stylesheet" href="/style.css?v=10">
+<link rel="stylesheet" href="/style.css?v=11">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+
+<!-- ===== ФОН С ЗВЕЗДОЙ И МАЗКАМИ ===== -->
+<div id="bg-art" aria-hidden="true">
+  <svg class="bg-star" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="starGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#7FE9FF"/>
+        <stop offset="50%" stop-color="#3EE6D2"/>
+        <stop offset="100%" stop-color="#1FB8A6"/>
+      </linearGradient>
+    </defs>
+    <g transform="translate(200,200)">
+      <path d="M 0,-180 L 30,-30 L 180,0 L 30,30 L 0,180 L -30,30 L -180,0 L -30,-30 Z" fill="url(#starGrad)" opacity="0.9"/>
+      <path d="M 0,-120 L 20,-20 L 120,0 L 20,20 L 0,120 L -20,20 L -120,0 L -20,-20 Z" fill="#FFFFFF" opacity="0.65"/>
+    </g>
+  </svg>
+  <svg class="bg-strokes" viewBox="0 0 400 800" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="strokeGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#3EE6D2" stop-opacity="0"/>
+        <stop offset="50%" stop-color="#3EE6D2" stop-opacity="0.9"/>
+        <stop offset="100%" stop-color="#7FE9FF" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="strokeGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#0E6A63" stop-opacity="0"/>
+        <stop offset="50%" stop-color="#0E6A63" stop-opacity="0.7"/>
+        <stop offset="100%" stop-color="#3EE6D2" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="M -20,150 Q 120,260 180,420 T 420,720" fill="none" stroke="url(#strokeGrad1)" stroke-width="42" stroke-linecap="round" opacity="0.85"/>
+    <path d="M -20,240 Q 100,360 200,540 T 420,830" fill="none" stroke="url(#strokeGrad2)" stroke-width="22" stroke-linecap="round" opacity="0.55"/>
+    <path d="M 420,120 Q 260,300 200,470 T -20,760" fill="none" stroke="url(#strokeGrad1)" stroke-width="30" stroke-linecap="round" opacity="0.7"/>
+  </svg>
+  <div class="bg-noise"></div>
+</div>
 
 <svg style="display:none" xmlns="http://www.w3.org/2000/svg">
   <symbol id="ic-xp" viewBox="0 0 24 24">
