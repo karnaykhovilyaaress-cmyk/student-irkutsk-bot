@@ -117,7 +117,6 @@ function toast(text, type='info') {
     setTimeout(()=>el.remove(), 300);
   }, 2200);
 }
-
 function modalOpen({title, body, actions}) {
   const m = document.getElementById('modal');
   document.getElementById('modalTitle').innerHTML = title;
@@ -174,6 +173,7 @@ function fmtCountdown(ms) {
   return `${h}:${m}:${s}`;
 }
 
+
 function render() {
   const content = document.getElementById('content');
   const title = document.getElementById('page-title');
@@ -182,11 +182,15 @@ function render() {
   const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры',
     ai:'AI', admin:'Админ', profile:'Профиль'};
 
-  /* 🎨 Устанавливаем класс фона в зависимости от вкладки */
+  /* 🎨 Класс фона вкладки — на #app и на body */
+  const _tab = state.tab || 'schedule';
+  const _bgClasses = ['bg-schedule','bg-tasks','bg-notes','bg-games','bg-ai','bg-admin','bg-profile'];
   if (appEl) {
-    appEl.classList.remove('bg-schedule','bg-tasks','bg-notes','bg-games','bg-ai','bg-admin','bg-profile');
-    appEl.classList.add('bg-' + (state.tab || 'schedule'));
+    appEl.classList.remove(..._bgClasses);
+    appEl.classList.add('bg-' + _tab);
   }
+  document.body.classList.remove(..._bgClasses);
+  document.body.classList.add('bg-' + _tab);
 
   if (state.notifyEditor) {
     appEl?.classList.add('picker-open');
@@ -337,7 +341,6 @@ function renderSchedule() {
   return html;
 }
 
-
 function renderTodayBlock() {
   const s = state.schedule;
   if (!s) return '<div class="empty">Нет данных о расписании</div>';
@@ -409,6 +412,7 @@ function attachSwipe() {
     dx = 0;
   });
 }
+
 
 function getCourseFromGroup(name) {
   const m = String(name).match(/-(\d{2})-/);
@@ -588,7 +592,6 @@ function renderNotes() {
   return html;
 }
 
-
 function renderGames() {
   return `<div class="games-list">
     <div class="game-card">
@@ -608,6 +611,7 @@ function renderGames() {
     </div>
   </div>`;
 }
+
 
 function renderAI() {
   let html = '';
@@ -2316,7 +2320,6 @@ function actionChestModal(id) {
   });
   startChestTimer();
 }
-
 function actionExchange() {
   modalOpen({
     title:'ОБМЕННИК',
