@@ -28,59 +28,62 @@ html,body{margin:0 !important;padding:0 !important;width:100%;height:100%;min-he
 #app.picker-open .header,#app.picker-open .bottom-nav{display:none}
 #app.picker-open{padding-bottom:var(--safe-bottom)}
 
-/* ===== ФОН С ЗВЕЗДОЙ И МАЗКАМИ ===== */
+/* ===== ФОН С ЗВЕЗДОЙ (статичный) ===== */
 #bg-art{
   position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;
   background:
-    radial-gradient(ellipse 110% 70% at 50% -10%, #E6FFFC 0%, #F4FEFC 30%, #FFFFFF 65%),
-    linear-gradient(180deg, #FAFFFF 0%, #FFFFFF 100%);
+    radial-gradient(ellipse 120% 70% at 50% -10%, #E6F8FC 0%, #F4FCFE 30%, #FFFFFF 70%),
+    linear-gradient(180deg, #F0F8FA 0%, #FFFFFF 55%, #F8FCFD 100%);
 }
 #bg-art .bg-star{
   position:absolute;
-  width:135vmin;height:135vmin;
-  top:-40vmin;right:-28vmin;
-  opacity:.9;
-  filter:drop-shadow(0 30px 60px rgba(62,230,210,.55)) drop-shadow(0 0 50px rgba(127,233,255,.7));
-  animation:starPulse 9s ease-in-out infinite;
-  transition:filter .7s ease;
+  width:120vmin;height:120vmin;
+  top:-30vmin;right:-25vmin;
+  opacity:.88;
+  filter:
+    drop-shadow(0 24px 48px rgba(62,230,210,.35))
+    drop-shadow(0 0 32px rgba(127,233,255,.45));
 }
-@keyframes starPulse{
-  0%,100%{transform:scale(1) rotate(0deg)}
-  50%{transform:scale(1.06) rotate(7deg)}
-}
-#bg-art .bg-strokes{
+#bg-art .bg-orbits{
   position:absolute;inset:0;
   width:100%;height:100%;
   opacity:.9;
-  transition:opacity .7s ease;
+}
+#bg-art .bg-crystals{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  opacity:.7;
+  filter:blur(0.3px);
 }
 #bg-art .bg-noise{
   position:absolute;inset:0;pointer-events:none;
   background-image:
-    radial-gradient(rgba(10,14,15,.03) 1px, transparent 1px),
-    radial-gradient(rgba(10,14,15,.02) 1px, transparent 1px);
+    radial-gradient(rgba(10,14,15,.025) 1px, transparent 1px),
+    radial-gradient(rgba(10,14,15,.015) 1px, transparent 1px);
   background-size:22px 22px, 14px 14px;
   background-position:0 0, 7px 7px;
   mix-blend-mode:multiply;
-  opacity:.6;
+  opacity:.55;
 }
+
+/* Переключение цвета звезды по вкладкам (без анимации) */
 body.bg-tasks #bg-art .bg-star{
-  filter:drop-shadow(0 30px 60px rgba(34,160,107,.55)) drop-shadow(0 0 50px rgba(127,233,184,.7));
+  filter:drop-shadow(0 24px 48px rgba(34,160,107,.35)) drop-shadow(0 0 32px rgba(127,233,184,.5));
 }
 body.bg-notes #bg-art .bg-star{
-  filter:drop-shadow(0 30px 60px rgba(124,92,255,.55)) drop-shadow(0 0 50px rgba(62,230,210,.7));
+  filter:drop-shadow(0 24px 48px rgba(124,92,255,.35)) drop-shadow(0 0 32px rgba(62,230,210,.5));
 }
 body.bg-games #bg-art .bg-star{
-  filter:drop-shadow(0 30px 60px rgba(255,164,43,.55)) drop-shadow(0 0 50px rgba(255,107,158,.7));
+  filter:drop-shadow(0 24px 48px rgba(255,164,43,.35)) drop-shadow(0 0 32px rgba(255,107,158,.5));
 }
 body.bg-ai #bg-art .bg-star{
-  filter:drop-shadow(0 30px 60px rgba(74,158,255,.55)) drop-shadow(0 0 50px rgba(62,230,210,.7));
+  filter:drop-shadow(0 24px 48px rgba(74,158,255,.35)) drop-shadow(0 0 32px rgba(62,230,210,.5));
 }
 body.bg-profile #bg-art .bg-star{
-  filter:drop-shadow(0 30px 60px rgba(31,184,166,.65)) drop-shadow(0 0 50px rgba(14,106,99,.6));
+  filter:drop-shadow(0 24px 48px rgba(31,184,166,.45)) drop-shadow(0 0 32px rgba(14,106,99,.4));
 }
 body.bg-admin #bg-art .bg-star{
-  filter:drop-shadow(0 30px 60px rgba(226,58,58,.55)) drop-shadow(0 0 50px rgba(255,164,43,.55));
+  filter:drop-shadow(0 24px 48px rgba(226,58,58,.35)) drop-shadow(0 0 32px rgba(255,164,43,.4));
 }
 
 /* ===== КАРТИНКИ ВАЛЮТ ===== */
