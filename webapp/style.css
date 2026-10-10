@@ -613,3 +613,15 @@ textarea.input{resize:vertical;min-height:88px}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-thumb{background:rgba(62,230,210,.5);border-radius:3px}
 ::-webkit-scrollbar-track{background:transparent}
+
+
+/* Принудительно показываем фон */
+#bg-art{display:block !important;z-index:0 !important}
+#bg-art .bg-star{z-index:1 !important}
+#bg-art .bg-strokes{z-index:1 !important}
+#app{background:transparent !important;position:relative;z-index:2 !important}
+body{background:transparent !important}
+html{background:#FFFFFF}
+#app::before{display:none !important}
+#app.bg-schedule::before,#app.bg-tasks::before,#app.bg-notes::before,
+#app.bg-games::before,#app.bg-ai::before,#app.bg-profile::before,#app.bg-admin::before{display:none !important}
