@@ -582,3 +582,8 @@ textarea.input{resize:vertical;min-height:88px}
 
 #app.bg-schedule::before,#app.bg-tasks::before,#app.bg-notes::before,
 #app.bg-games::before,#app.bg-ai::before,#app.bg-profile::before,#app.bg-admin::before{display:none !important}
+
+
+html, body { background: transparent !important; }
+#app { background: transparent !important; }
+#bg-art { z-index: 0 !important; }
