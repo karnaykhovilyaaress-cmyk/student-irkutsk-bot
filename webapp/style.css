@@ -28,62 +28,23 @@ html,body{margin:0 !important;padding:0 !important;width:100%;height:100%;min-he
 #app.picker-open .header,#app.picker-open .bottom-nav{display:none}
 #app.picker-open{padding-bottom:var(--safe-bottom)}
 
-/* ===== ФОН С ЗВЕЗДОЙ (статичный) ===== */
+/* ===== ФОН — КАРТИНКА ===== */
 #bg-art{
-  position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;
-  background:
-    radial-gradient(ellipse 120% 70% at 50% -10%, #E6F8FC 0%, #F4FCFE 30%, #FFFFFF 70%),
-    linear-gradient(180deg, #F0F8FA 0%, #FFFFFF 55%, #F8FCFD 100%);
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  pointer-events:none;
+  background-image:url('/assets/bg.jpg');
+  background-size:cover;
+  background-position:center center;
+  background-repeat:no-repeat;
+  background-attachment:fixed;
 }
-#bg-art .bg-star{
-  position:absolute;
-  width:120vmin;height:120vmin;
-  top:-30vmin;right:-25vmin;
-  opacity:.88;
-  filter:
-    drop-shadow(0 24px 48px rgba(62,230,210,.35))
-    drop-shadow(0 0 32px rgba(127,233,255,.45));
-}
-#bg-art .bg-orbits{
-  position:absolute;inset:0;
-  width:100%;height:100%;
-  opacity:.9;
-}
-#bg-art .bg-crystals{
-  position:absolute;inset:0;
-  width:100%;height:100%;
-  opacity:.7;
-  filter:blur(0.3px);
-}
-#bg-art .bg-noise{
-  position:absolute;inset:0;pointer-events:none;
-  background-image:
-    radial-gradient(rgba(10,14,15,.025) 1px, transparent 1px),
-    radial-gradient(rgba(10,14,15,.015) 1px, transparent 1px);
-  background-size:22px 22px, 14px 14px;
-  background-position:0 0, 7px 7px;
-  mix-blend-mode:multiply;
-  opacity:.55;
-}
-
-/* Переключение цвета звезды по вкладкам (без анимации) */
-body.bg-tasks #bg-art .bg-star{
-  filter:drop-shadow(0 24px 48px rgba(34,160,107,.35)) drop-shadow(0 0 32px rgba(127,233,184,.5));
-}
-body.bg-notes #bg-art .bg-star{
-  filter:drop-shadow(0 24px 48px rgba(124,92,255,.35)) drop-shadow(0 0 32px rgba(62,230,210,.5));
-}
-body.bg-games #bg-art .bg-star{
-  filter:drop-shadow(0 24px 48px rgba(255,164,43,.35)) drop-shadow(0 0 32px rgba(255,107,158,.5));
-}
-body.bg-ai #bg-art .bg-star{
-  filter:drop-shadow(0 24px 48px rgba(74,158,255,.35)) drop-shadow(0 0 32px rgba(62,230,210,.5));
-}
-body.bg-profile #bg-art .bg-star{
-  filter:drop-shadow(0 24px 48px rgba(31,184,166,.45)) drop-shadow(0 0 32px rgba(14,106,99,.4));
-}
-body.bg-admin #bg-art .bg-star{
-  filter:drop-shadow(0 24px 48px rgba(226,58,58,.35)) drop-shadow(0 0 32px rgba(255,164,43,.4));
+@media (max-width:480px){
+  #bg-art{
+    background-size:auto 100%;
+    background-position:center top;
+  }
 }
 
 /* ===== КАРТИНКИ ВАЛЮТ ===== */
