@@ -31,7 +31,6 @@ const state = {
   avatarGender:'male',
 };
 
-/* ==== ПРЕДЗАГРУЗКА КАРТИНОК — чтобы не мигали чёрным ==== */
 const IMG_CACHE = {};
 function preloadImages() {
   const urls = [
@@ -46,7 +45,6 @@ preloadImages();
 function icon(id, size=16, cls='') {
   return `<svg width="${size}" height="${size}" class="${cls}"><use href="#${id}"/></svg>`;
 }
-/* Заменяем иконки валют на картинки */
 function icShift(size=18) { return `<img class="coin" style="width:${size}px;height:${size}px" src="/assets/ic_shift.webp" alt="">`; }
 function icNova(size=18)  { return `<img class="coin" style="width:${size}px;height:${size}px" src="/assets/ic_nova.webp"  alt="">`; }
 function icXp(size=16)    { return icon('ic-xp', size); }
@@ -197,7 +195,6 @@ function render() {
     attachHandlers();
     return;
   }
-  
   if (state.pickerMode) {
     appEl?.classList.add('picker-open');
     title.textContent = state.pickerMode === 'institute' ? 'Институт'
@@ -242,13 +239,11 @@ function render() {
   if (state.tab === 'schedule' && !state.loading) attachSwipe();
 }
 
-/* ==== ШАПКА РАСПИСАНИЯ — с аватаркой ==== */
 function renderUserBar() {
   const u = state.user;
   const p = state.profile;
   const gender = p?.avatar_gender || state.avatarGender || 'male';
   const wallet = p?.wallet || {};
-  /* Имя: если custom_name — используем его, иначе имя Telegram */
   const displayName = wallet.custom_name
     || [u.first_name, u.last_name].filter(Boolean).join(' ')
     || 'Гость';
@@ -815,7 +810,6 @@ async function loadTodayAndRender() {
   render();
 }
 
-/* ===== УРОВНИ ===== */
 function levelRewardByLevel(lvl) {
   if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
   if (lvl <= 10) return `+250 ${icShift(14)} · +3 ${icNova(14)}`;
@@ -1106,7 +1100,6 @@ async function loadWalletIntoProfile() {
   } catch (e) {}
 }
 
-
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
   score:0, best:0, top:[],
@@ -1396,1240 +1389,196 @@ function flappyShowOverlay(mode, score) {
 function flappyHideOverlay() { document.getElementById('flappyOverlay').classList.add('hidden'); }
 function flappyShowRecords() { flappyShowOverlay('records'); }
 
-const BS = {
-  bet:10, gameId:null, side:0,
-  myShips:[], myShots:[], enemyShots:[],
-  status:'lobby', isBot:false, pollTimer:null,
-  botShips:[], botShots:[],
+
+const CHEST_DROP_ICONS = {
+  shift:     '/assets/ic_shift.webp',
+  nova:      '/assets/ic_nova.webp',
+  xp:        '/assets/ic_xp.webp',
+  default:   '/assets/ic_shift.webp',
 };
-const BS_SHIPS = [{size:4,count:1},{size:3,count:2},{size:2,count:3},{size:1,count:4}];
-function openBs() {
-  const screen = document.getElementById('screen-bs');
-  if (!screen) return;
-  screen.style.display = 'block';
-  document.getElementById('bottom-nav').style.display = 'none';
-  document.getElementById('bsBack').onclick = closeBs;
-  bsRenderBets();
-  document.getElementById('bsCreate').onclick = bsCreate;
-  document.getElementById('bsFind').onclick = bsFind;
-  document.getElementById('bsBot').onclick = bsBotStart;
-  document.getElementById('bsJoin').onclick = bsJoin;
-  document.getElementById('bsRandom').onclick = bsRandomShips;
-  document.getElementById('bsReady').onclick = bsReady;
-  document.getElementById('bsSurrender').onclick = bsSurrender;
-  document.querySelectorAll('.bs-board-tab').forEach(t => {
-    t.onclick = () => {
-      document.querySelectorAll('.bs-board-tab').forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-      const mine = t.dataset.bsTab === 'mine';
-      document.getElementById('bsMyField').style.display = mine ? 'grid' : 'none';
-      document.getElementById('bsEnemyField').style.display = mine ? 'none' : 'grid';
-      if (!mine) bsRenderEnemyField();
-      else bsRenderMyField();
-    };
-  });
-  bsShowLobby();
-}
-function closeBs() {
-  if (BS.pollTimer) clearInterval(BS.pollTimer);
-  BS.pollTimer = null;
-  BS.gameId = null;
-  document.getElementById('screen-bs').style.display = 'none';
-  document.getElementById('bottom-nav').style.display = '';
-  if (state.tab === 'games') loadTabData('games');
-}
-function bsRenderBets() {
-  const box = document.getElementById('bsBets');
-  box.innerHTML = '';
-  [10,50,100,500].forEach(v => {
-    const b = document.createElement('button');
-    b.className = 'bs-bet' + (v === BS.bet ? ' active' : '');
-    b.innerHTML = `${v} <img class="coin" src="/assets/ic_shift.webp" style="width:16px;height:16px" alt="">`;
-    b.onclick = () => { BS.bet = v; bsRenderBets(); };
-    box.appendChild(b);
-  });
-}
-function bsShowLobby() {
-  document.getElementById('bsLobby').style.display = '';
-  document.getElementById('bsGame').style.display = 'none';
-  BS.status = 'lobby'; BS.isBot = false;
-  BS.myShips = []; BS.myShots = []; BS.enemyShots = [];
-}
-function bsShowGame() {
-  document.getElementById('bsLobby').style.display = 'none';
-  document.getElementById('bsGame').style.display = '';
-}
-async function bsCreate() {
-  try {
-    const r = await apiPost('/api/bs/create', {bet: BS.bet});
-    BS.gameId = r.game_id; BS.side = 1;
-    haptic('success'); bsShowGame(); bsRandomShips(); bsRenderFleet();
-    modalOpen({title:'ИГРА СОЗДАНА',
-      body:`Код: <div style="font-family:'Anton',sans-serif;font-size:36px;text-align:center;color:var(--cyan-dark);letter-spacing:6px;margin:12px 0">${r.code}</div>`,
-      actions:[{label:'ОК', style:'btn'}]});
-    bsPollStart();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function bsJoin() {
-  const code = document.getElementById('bsCode').value.trim();
-  if (code.length !== 6) { toast('Код — 6 цифр', 'error'); return; }
-  try {
-    const r = await apiPost('/api/bs/join', {code});
-    BS.gameId = r.game_id; BS.side = 2;
-    haptic('success'); bsShowGame(); bsRandomShips(); bsRenderFleet(); bsPollStart();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function bsFind() {
-  try {
-    const r = await apiPost('/api/bs/find', {bet: BS.bet});
-    BS.gameId = r.game_id; BS.side = r.side || 1;
-    haptic('success'); bsShowGame(); bsRandomShips(); bsRenderFleet();
-    if (r.status === 'queued') document.getElementById('bsStatus').textContent = 'Ожидание соперника...';
-    bsPollStart();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function bsBotStart() {
-  try {
-    await apiPost('/api/bs/bot-start', {bet: BS.bet});
-    BS.isBot = true; BS.gameId = 'bot'; BS.side = 1;
-    haptic('success'); bsShowGame();
-    BS.botShips = bsEmptyShips(); BS.botShots = [];
-    bsRandomShips(); bsRenderFleet();
-    BS.status = 'placing';
-    document.getElementById('bsStatus').textContent = 'Расставляй корабли и жми ГОТОВ';
-  } catch (e) { toast(e.message, 'error'); }
-}
-function bsEmptyShips() {
-  const res = []; const sizes = [];
-  BS_SHIPS.forEach(s => { for (let i=0; i<s.count; i++) sizes.push(s.size); });
-  const grid = Array.from({length:10}, () => Array(10).fill(0));
-  for (const size of sizes) {
-    let placed = false;
-    for (let t=0; t<500 && !placed; t++) {
-      const horiz = Math.random() < 0.5;
-      const x = Math.floor(Math.random() * (horiz ? 10-size+1 : 10));
-      const y = Math.floor(Math.random() * (horiz ? 10 : 10-size+1));
-      const cells = [];
-      for (let k=0; k<size; k++) cells.push([horiz?x+k:x, horiz?y:y+k]);
-      let ok = true;
-      for (const [cx,cy] of cells) {
-        for (let dx=-1; dx<=1; dx++) for (let dy=-1; dy<=1; dy++) {
-          const nx = cx+dx, ny = cy+dy;
-          if (nx<0||nx>9||ny<0||ny>9) continue;
-          if (grid[ny][nx]) ok = false;
-        }
-      }
-      if (ok) {
-        for (const [cx,cy] of cells) grid[cy][cx] = 1;
-        res.push({size, cells: cells.map(c => ({x:c[0], y:c[1]}))});
-        placed = true;
-      }
-    }
-  }
-  return res;
-}
-function bsRandomShips() {
-  BS.myShips = bsEmptyShips();
-  bsRenderMyField(); bsRenderEnemyField();
-}
-function bsRenderMyField() {
-  const box = document.getElementById('bsMyField');
-  if (!box) return;
-  box.innerHTML = '';
-  for (let y=0; y<10; y++) for (let x=0; x<10; x++) {
-    const c = document.createElement('div');
-    c.className = 'bs-cell';
-    const isShip = BS.myShips.some(s => s.cells.some(cc => cc.x === x && cc.y === y));
-    const shot = BS.enemyShots.find(s => s.x === x && s.y === y);
-    if (shot) c.classList.add(isShip ? 'hit' : 'miss');
-    else if (isShip) c.classList.add('ship');
-    box.appendChild(c);
-  }
-}
-function bsRenderEnemyField() {
-  const box = document.getElementById('bsEnemyField');
-  if (!box) return;
-  box.innerHTML = '';
-  for (let y=0; y<10; y++) for (let x=0; x<10; x++) {
-    const c = document.createElement('div');
-    c.className = 'bs-cell';
-    const shot = BS.myShots.find(s => s.x === x && s.y === y);
-    if (shot) {
-      if (shot.result === 'hit') c.classList.add('hit');
-      else if (shot.result === 'sunk') c.classList.add('sunk');
-      else c.classList.add('miss');
-    } else if (BS.status === 'playing') {
-      c.onclick = () => bsFire(x, y);
-    }
-    box.appendChild(c);
-  }
-}
-function bsRenderFleet() {
-  const box = document.getElementById('bsFleet');
-  if (!box) return;
-  const left = {};
-  BS_SHIPS.forEach(s => left[s.size] = (left[s.size]||0) + s.count);
-  BS.myShips.forEach(s => { left[s.size] = Math.max(0, (left[s.size]||0) - 1); });
-  box.innerHTML = BS_SHIPS.map(sh =>
-    `<div class="bs-fleet-item">${sh.size}-палуб: ${left[sh.size] || 0}/${sh.count}</div>`).join('');
-}
-async function bsReady() {
-  if (!BS.myShips.length) { toast('Расставь корабли', 'error'); return; }
-  if (BS.isBot) {
-    BS.status = 'playing'; bsRenderEnemyField(); bsRenderMyField();
-    document.getElementById('bsStatus').textContent = 'Твой ход';
-    haptic('success'); return;
-  }
-  try {
-    const r = await apiPost('/api/bs/ready', {game_id: BS.gameId, ships: BS.myShips});
-    haptic('success');
-    if (r.status === 'playing') {
-      BS.status = 'playing'; bsRenderEnemyField();
-      document.getElementById('bsStatus').textContent = r.your_turn ? 'Твой ход' : 'Ход соперника';
-    } else document.getElementById('bsStatus').textContent = 'Ждём соперника...';
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function bsFire(x, y) {
-  if (BS.status !== 'playing') return;
-  if (BS.isBot) {
-    let hitShip = null;
-    for (const s of BS.botShips) if (s.cells.some(c => c.x === x && c.y === y)) { hitShip = s; break; }
-    if (!hitShip) {
-      BS.myShots.push({x, y, result:'miss'}); bsRenderEnemyField();
-      haptic('error'); setTimeout(bsBotFire, 500); return;
-    }
-    const sunk = hitShip.cells.every(c =>
-      BS.myShots.some(s => s.x === c.x && s.y === c.y) || (c.x === x && c.y === y));
-    BS.myShots.push({x, y, result: sunk ? 'sunk' : 'hit'});
-    bsRenderEnemyField(); haptic('success');
-    const allEnemyCells = BS.botShips.flatMap(s => s.cells);
-    const allHit = allEnemyCells.every(c => BS.myShots.some(s => s.x === c.x && s.y === c.y));
-    if (allHit) {
-      BS.status = 'finished';
-      document.getElementById('bsStatus').textContent = 'Ты победил!';
-      apiPost('/api/bs/finish-bot', {bet: BS.bet, outcome:'win'}).catch(()=>{});
-      popIcon('ic-trophy'); return;
-    }
-    if (!sunk) return;
-    setTimeout(bsBotFire, 500); return;
-  }
-  try {
-    const r = await apiPost('/api/bs/fire', {game_id: BS.gameId, x, y});
-    if (r.result === 'miss') haptic('error'); else haptic('success');
-    BS.myShots.push({x, y, result: r.result});
-    bsRenderEnemyField();
-    document.getElementById('bsStatus').textContent = r.your_turn ? 'Твой ход' : 'Ход соперника';
-    if (r.status === 'finished') {
-      BS.status = 'finished';
-      const res = r.result_data || {};
-      if (res.outcome === 'win') { document.getElementById('bsStatus').textContent = 'Победа!'; popIcon('ic-trophy'); }
-      else if (res.outcome === 'lose') document.getElementById('bsStatus').textContent = 'Поражение';
-      else document.getElementById('bsStatus').textContent = 'Ничья';
-    }
-  } catch (e) { haptic('error'); toast(e.message, 'error'); }
-}
-function bsBotFire() {
-  if (BS.status !== 'playing') return;
-  let x, y, t = 0;
-  do {
-    x = Math.floor(Math.random()*10);
-    y = Math.floor(Math.random()*10);
-    t++;
-  } while (BS.botShots.some(s => s.x === x && s.y === y) && t < 300);
-  BS.botShots.push({x, y});
-  const isHit = BS.myShips.some(s => s.cells.some(c => c.x === x && c.y === y));
-  BS.enemyShots.push({x, y});
-  bsRenderMyField();
-  haptic(isHit ? 'error' : 'light');
-  const allMyCells = BS.myShips.flatMap(s => s.cells);
-  const allHit = allMyCells.every(c => BS.enemyShots.some(s => s.x === c.x && s.y === c.y));
-  if (allHit) {
-    BS.status = 'finished';
-    document.getElementById('bsStatus').textContent = 'Бот победил';
-    apiPost('/api/bs/finish-bot', {bet: BS.bet, outcome:'lose'}).catch(()=>{});
-    return;
-  }
-  document.getElementById('bsStatus').textContent = 'Твой ход';
-}
-async function bsSurrender() {
-  modalConfirm('СДАТЬСЯ?', 'Ты потеряешь ставку.', async () => {
-    if (BS.isBot) {
-      BS.status = 'finished';
-      apiPost('/api/bs/finish-bot', {bet: BS.bet, outcome:'lose'}).catch(()=>{});
-      document.getElementById('bsStatus').textContent = 'Ты сдался';
-      return;
-    }
-    try {
-      await apiPost('/api/bs/surrender', {game_id: BS.gameId});
-      BS.status = 'finished';
-      document.getElementById('bsStatus').textContent = 'Ты сдался';
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'СДАТЬСЯ');
-}
-function bsPollStart() {
-  if (BS.pollTimer) clearInterval(BS.pollTimer);
-  BS.pollTimer = setInterval(async () => {
-    if (!BS.gameId || BS.isBot) return;
-    try {
-      const s = await apiGet('/api/bs/state', {game_id: BS.gameId});
-      if (s.status === 'playing') {
-        BS.status = 'playing';
-        BS.myShots = s.my_shots || [];
-        BS.enemyShots = s.enemy_shots || [];
-        document.getElementById('bsStatus').textContent = s.your_turn ? 'Твой ход' : 'Ход соперника';
-        bsRenderEnemyField(); bsRenderMyField();
-      } else if (s.status === 'finished') {
-        clearInterval(BS.pollTimer);
-        BS.status = 'finished';
-        const r = s.result || {};
-        document.getElementById('bsStatus').textContent =
-          r.outcome === 'win' ? 'Победа!' : r.outcome === 'lose' ? 'Поражение' : 'Ничья';
-      }
-    } catch (e) {}
-  }, 2000);
-}
-
-function actionOpenNotifyEditor() {
-  haptic('light');
-  const p = state.profile;
-  state.notifyEditorType = p?.notify_type || 'today';
-  state.notifyEditorHour = (p?.notify_hour >= 0) ? p.notify_hour : 8;
-  state.notifyEditorMinute = p?.notify_minute || 0;
-  state.notifyEditor = true;
-  render();
-}
-function actionNotifyBack() { state.notifyEditor = false; render(); }
-function actionNotifySetType(ntype) {
-  state.notifyEditorType = ntype;
-  if (ntype === 'today' && state.notifyEditorHour > 10) {
-    state.notifyEditorHour = 8; state.notifyEditorMinute = 0;
-  }
-  render();
-}
-async function actionNotifySave() {
-  const input = document.getElementById('notify-time-input');
-  if (!input) return;
-  const val = (input.value || '').trim();
-  if (!/^\d{1,2}:\d{2}$/.test(val)) { toast('Введи ЧЧ:ММ', 'error'); return; }
-  const [hhStr, mmStr] = val.split(':');
-  const hh = parseInt(hhStr, 10), mm = parseInt(mmStr, 10);
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { toast('Неверное время', 'error'); return; }
-  if (state.notifyEditorType === 'today' && hh > 10) { toast('Для «Сегодня» — не позже 10:00', 'error'); return; }
-  try {
-    await apiPost('/api/notify-set', {type: state.notifyEditorType, hour: hh, minute: mm});
-    state.notifyEditor = false; haptic('success'); toast('Сохранено', 'success');
-    await loadProfile(); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionNotifyOff() {
-  try {
-    await apiPost('/api/notify-set', {type: null});
-    state.notifyEditor = false; haptic('success'); toast('Уведомления выключены');
-    await loadProfile(); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionChooseGroup() {
-  await loadGroups(true);
-  if (!state.groups || !Object.keys(state.groups).length) { toast('Не удалось загрузить', 'error'); return; }
-  state.pickerMode = 'institute';
-  state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
-  render();
-}
-function actionPickerBack() {
-  if (state.pickerMode === 'group') { state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = ''; }
-  else if (state.pickerMode === 'course') { state.pickerMode = 'institute'; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = ''; }
-  else { state.pickerMode = null; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = ''; }
-  render();
-}
-function actionPickerChooseInstitute(inst) {
-  state.pickerInstitute = inst; state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = '';
-  render();
-}
-function actionPickerChooseCourse(course) {
-  state.pickerCourse = parseInt(course, 10); state.pickerMode = 'group'; state.pickerSearch = '';
-  render();
-}
-async function actionPickerChooseGroup(groupId, groupName) {
-  haptic('success');
-  try {
-    await apiPost('/api/set-group', {group_id: groupId, group_name: groupName, subgroup: state.profile?.subgroup || 0});
-    if (state.profile) state.profile.group = groupName;
-    state.pickerMode = null; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
-    await loadProfile(); await loadSchedule();
-    toast('Группа обновлена', 'success');
-    render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionSetSubgroup(value) {
-  try {
-    await apiPost('/api/set-subgroup', {subgroup: value});
-    if (state.profile) state.profile.subgroup = value;
-    haptic('success'); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-/* ==== СМЕНА ПОЛА АВАТАРА ==== */
-async function actionSetGender(value) {
-  if (value !== 'male' && value !== 'female') return;
-  if (state.avatarGender === value) return;
-  const prev = state.avatarGender;
-  state.avatarGender = value;
-  if (state.profile) state.profile.avatar_gender = value;
-  render();
-  try {
-    await apiPost('/api/set-avatar-gender', {gender: value});
-    haptic('success');
-  } catch (e) {
-    state.avatarGender = prev;
-    if (state.profile) state.profile.avatar_gender = prev;
-    render();
-    toast(e.message, 'error');
-  }
-}
-async function actionQuoteSubscribe(value) {
-  try {
-    await apiPost('/api/quote-subscribe', {subscribe: value === 1});
-    if (state.profile) state.profile.daily_subscribed = value === 1;
-    haptic('success'); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionFeedbackSend() {
-  const el = document.getElementById('feedback-text');
-  if (!el) return;
-  const text = (el.value || '').trim();
-  if (!text) { toast('Пустое сообщение', 'error'); return; }
-  try {
-    await apiPost('/api/feedback', {text});
-    el.value = ''; haptic('success'); toast('Отправлено', 'success');
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionTaskDone(id) {
-  try {
-    await apiPost('/api/task-update', {id, done: true});
-    haptic('success'); popIcon('ic-check');
-    await loadTasks(); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionTaskDelete(id) {
-  modalConfirm('УДАЛИТЬ ЗАДАЧУ?', 'Отменить не получится.', async () => {
-    try {
-      await apiPost('/api/task-delete', {id});
-      haptic('success'); await loadTasks(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'УДАЛИТЬ');
-}
-async function actionTasksClear() {
-  modalConfirm('ОЧИСТИТЬ?', 'Все выполненные задачи удалятся.', async () => {
-    try {
-      await apiPost('/api/task-clear');
-      haptic('success'); await loadTasks(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ОЧИСТИТЬ');
-}
-function actionTaskAdd() {
-  let form = {text:'', priority:2, due:'none', customDate:'', customTime:''};
-  const renderBody = () => `
-    <div class="label">ЧТО СДЕЛАТЬ</div>
-    <input class="input" id="task-text" placeholder="Например: сдать лабу" value="${escapeHtml(form.text)}" maxlength="200">
-    <div class="label">ПРИОРИТЕТ</div>
-    <div class="choice-row">
-      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
-      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
-      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
-    </div>
-    <div class="label">КОГДА</div>
-    <div class="choice-row">
-      <button class="choice ${form.due==='none'?'active':''}" data-due="none">Без срока</button>
-      <button class="choice ${form.due==='today'?'active':''}" data-due="today">Сегодня</button>
-      <button class="choice ${form.due==='tomorrow'?'active':''}" data-due="tomorrow">Завтра</button>
-      <button class="choice ${form.due==='custom'?'active':''}" data-due="custom">Своя дата</button>
-    </div>
-    ${form.due==='custom' ? `
-      <div class="date-input-row">
-        <input type="date" id="task-date" value="${escapeHtml(form.customDate)}">
-        <input type="time" id="task-time" value="${escapeHtml(form.customTime)}">
-      </div>` : ''}
-  `;
-  const attach = () => {
-    const ti = document.getElementById('task-text');
-    if (ti) ti.oninput = (e) => form.text = e.target.value;
-    const di = document.getElementById('task-date');
-    if (di) di.onchange = (e) => form.customDate = e.target.value;
-    const ti2 = document.getElementById('task-time');
-    if (ti2) ti2.onchange = (e) => form.customTime = e.target.value;
-    document.querySelectorAll('[data-due]').forEach(b => b.onclick = () => {
-      form.due = b.dataset.due;
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-    document.querySelectorAll('[data-prio]').forEach(b => b.onclick = () => {
-      form.priority = parseInt(b.dataset.prio);
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-  };
-  modalOpen({
-    title:'НОВАЯ ЗАДАЧА',
-    body: renderBody(),
-    actions: [
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const ti = document.getElementById('task-text');
-        const text = (ti?.value || form.text || '').trim();
-        if (!text) { toast('Введи текст', 'error'); return; }
-        let due_date = null, due_time = null;
-        const today = nowIrkutsk();
-        if (form.due === 'today') due_date = fmtDate(today);
-        else if (form.due === 'tomorrow') due_date = fmtDate(addDays(today,1));
-        else if (form.due === 'custom' && form.customDate) {
-          const [y,m,d] = form.customDate.split('-');
-          due_date = `${d}.${m}.${y}`;
-          if (form.customTime) due_time = form.customTime;
-        }
-        try {
-          await apiPost('/api/task-add', {text, due_date, due_time, priority: form.priority});
-          haptic('success'); toast('Задача добавлена', 'success');
-          await loadTasks(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  attach();
-}
-function actionTaskEdit(id) {
-  const t = state.tasks.find(x => x.id === id);
-  if (!t) return;
-  let form = {text: t.text, priority: t.priority || 2};
-  const renderBody = () => `
-    <div class="label">ТЕКСТ</div>
-    <input class="input" id="task-edit-text" value="${escapeHtml(form.text)}" maxlength="200">
-    <div class="label">ПРИОРИТЕТ</div>
-    <div class="choice-row">
-      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
-      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
-      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
-    </div>
-  `;
-  const attach = () => {
-    document.querySelectorAll('[data-prio]').forEach(b => b.onclick = () => {
-      form.priority = parseInt(b.dataset.prio);
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-  };
-  modalOpen({
-    title:'ИЗМЕНИТЬ ЗАДАЧУ',
-    body: renderBody(),
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const ti = document.getElementById('task-edit-text');
-        const text = (ti?.value || form.text || '').trim();
-        if (!text) { toast('Пустой текст', 'error'); return; }
-        try {
-          await apiPost('/api/task-update', {id, text, priority: form.priority});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadTasks(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  attach();
-}
-function actionNoteAdd() {
-  let form = {subject:'', text:''};
-  const renderBody = () => `
-    <div class="label">ПРЕДМЕТ</div>
-    <input class="input" id="note-subj" placeholder="Название предмета" value="${escapeHtml(form.subject)}" maxlength="100">
-    ${state.notesSubjects?.length ? `<div class="choice-row" style="margin-top:4px">${state.notesSubjects.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
-    <div class="label">ТЕКСТ</div>
-    <textarea class="input" id="note-text" rows="4" maxlength="500">${escapeHtml(form.text)}</textarea>
-  `;
-  const attach = () => {
-    const si = document.getElementById('note-subj');
-    if (si) si.oninput = (e) => form.subject = e.target.value;
-    const ti = document.getElementById('note-text');
-    if (ti) ti.oninput = (e) => form.text = e.target.value;
-    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => {
-      form.subject = b.dataset.subj;
-      document.getElementById('note-subj').value = form.subject;
-      document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-    });
-  };
-  modalOpen({
-    title:'НОВАЯ ЗАМЕТКА',
-    body: renderBody(),
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const s = (document.getElementById('note-subj')?.value || form.subject || '').trim();
-        const t = (document.getElementById('note-text')?.value || form.text || '').trim();
-        if (!s || !t) { toast('Заполни оба поля', 'error'); return; }
-        try {
-          await apiPost('/api/note-save', {subject: s, text: t});
-          haptic('success'); toast('Заметка сохранена', 'success');
-          await loadNotes(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  attach();
-}
-function actionNoteEdit(id) {
-  const n = state.notes.find(x => x.id === id);
-  if (!n) return;
-  modalOpen({
-    title:'ИЗМЕНИТЬ ЗАМЕТКУ',
-    body: `
-      <div class="label">ПРЕДМЕТ</div>
-      <input class="input" id="note-edit-subj" value="${escapeHtml(n.subject)}" maxlength="100">
-      <div class="label">ТЕКСТ</div>
-      <textarea class="input" id="note-edit-text" rows="4" maxlength="500">${escapeHtml(n.text)}</textarea>
-    `,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const s = (document.getElementById('note-edit-subj')?.value || '').trim();
-        const t = (document.getElementById('note-edit-text')?.value || '').trim();
-        if (!s || !t) { toast('Заполни оба поля', 'error'); return; }
-        try {
-          await apiPost('/api/note-save', {subject: s, text: t});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadNotes(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-}
-async function actionNoteDelete(id) {
-  modalConfirm('УДАЛИТЬ ЗАМЕТКУ?', 'Восстановить нельзя.', async () => {
-    try {
-      await apiPost('/api/note-delete', {id});
-      haptic('success'); await loadNotes(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'УДАЛИТЬ');
-}
-function actionScholarshipSetAmount() {
-  let amount = state.scholarship?.amount || 0;
-  modalOpen({
-    title:'СУММА СТИПЕНДИИ',
-    body: `
-      <div class="label">руб. в месяц</div>
-      <input class="input" id="sch-amount" type="number" min="0" max="100000" value="${amount}">
-      <div class="choice-row">
-        <button class="choice" data-amt="0">Не получаю</button>
-        <button class="choice" data-amt="3000">3000</button>
-        <button class="choice" data-amt="5000">5000</button>
-        <button class="choice" data-amt="7000">7000</button>
-      </div>
-    `,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const v = parseInt(document.getElementById('sch-amount')?.value || '0') || 0;
-        try {
-          await apiPost('/api/scholarship-set-amount', {amount: v});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadScholarship(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  setTimeout(() => {
-    document.querySelectorAll('[data-amt]').forEach(b => b.onclick = () => {
-      const inp = document.getElementById('sch-amount');
-      if (inp) inp.value = b.dataset.amt;
-    });
-  }, 0);
-}
-function actionScholarshipAddGrade() {
-  let form = {subject:'', grade:5};
-  const subs = state.scholarship?.available_subjects || [];
-  const renderBody = () => `
-    <div class="label">ПРЕДМЕТ</div>
-    <input class="input" id="gr-subj" placeholder="Название" value="${escapeHtml(form.subject)}" maxlength="100">
-    ${subs.length ? `<div class="choice-row" style="margin-top:4px;max-height:140px;overflow-y:auto">${subs.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
-    <div class="label">ОЦЕНКА</div>
-    <div class="choice-row">${[2,3,4,5].map(g => `<button class="choice ${form.grade===g?'active':''}" data-grade="${g}">${g}</button>`).join('')}</div>
-  `;
-  const attach = () => {
-    const si = document.getElementById('gr-subj');
-    if (si) si.oninput = (e) => form.subject = e.target.value;
-    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => {
-      form.subject = b.dataset.subj;
-      document.getElementById('gr-subj').value = form.subject;
-      document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-    });
-    document.querySelectorAll('[data-grade]').forEach(b => b.onclick = () => {
-      form.grade = parseInt(b.dataset.grade);
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-  };
-  modalOpen({
-    title:'ДОБАВИТЬ ОЦЕНКУ',
-    body: renderBody(),
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const s = (document.getElementById('gr-subj')?.value || '').trim();
-        if (!s) { toast('Введи предмет', 'error'); return; }
-        try {
-          await apiPost('/api/scholarship-add-grade', {subject: s, grade: form.grade});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadScholarship(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  attach();
-}
-async function actionScholarshipClear() {
-  modalConfirm('ОЧИСТИТЬ ОЦЕНКИ?', 'Все оценки удалятся.', async () => {
-    try {
-      await apiPost('/api/scholarship-clear');
-      haptic('success'); await loadScholarship(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ОЧИСТИТЬ');
-}
-async function actionAISend() {
-  const el = document.getElementById('ai-input');
-  const question = (el?.value || '').trim();
-  const hasPhoto = !!state.aiPendingPhoto;
-  if (!question && !hasPhoto) { toast('Введи вопрос', 'error'); return; }
-  if (hasPhoto) {
-    state.aiMessages.push({role:'user', text: question || 'Что на фото?', photo: state.aiPendingPhoto});
-    const photo = state.aiPendingPhoto;
-    state.aiPendingPhoto = null;
-    state.aiPending = true;
-    if (el) el.value = '';
-    render();
-    try {
-      const r = await apiPost('/api/ai-photo', {photo, question});
-      state.aiMessages.push({role:'assistant', text: r.answer || 'Нет ответа'});
-      haptic('success');
-    } catch (e) {
-      state.aiMessages.push({role:'assistant', text: 'Ошибка: ' + e.message});
-      haptic('error');
-    } finally { state.aiPending = false; render(); }
-    return;
-  }
-  state.aiMessages.push({role:'user', text: question});
-  state.aiPending = true;
-  if (el) el.value = '';
-  render();
-  try {
-    const r = await apiPost('/api/ai', {question});
-    state.aiMessages.push({role:'assistant', text: r.answer || 'Нет ответа'});
-    haptic('success');
-  } catch (e) {
-    state.aiMessages.push({role:'assistant', text: 'Ошибка: ' + e.message});
-    haptic('error');
-  } finally { state.aiPending = false; render(); }
-}
-function actionAIClear() {
-  modalConfirm('ОЧИСТИТЬ ЧАТ?', 'История удалится.', async () => {
-    state.aiMessages = []; state.aiPendingPhoto = null;
-    try { await apiPost('/api/ai/clear-history'); } catch(e){}
-    render();
-  }, 'ОЧИСТИТЬ');
-}
-function actionAIPhotoOpen() {
-  const input = document.getElementById('ai-photo-input');
-  if (input) input.click();
-}
-function actionAIPhotoRemove() { state.aiPendingPhoto = null; render(); }
-function actionAIPhotoSelected(file) {
-  if (!file) return;
-  if (file.size > 8 * 1024 * 1024) { toast('Фото до 8 МБ', 'error'); return; }
-  if (!file.type.startsWith('image/')) { toast('Нужно изображение', 'error'); return; }
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const img = new Image();
-    img.onload = () => {
-      const maxSide = 1600;
-      let w = img.width, h = img.height;
-      if (w > maxSide || h > maxSide) {
-        if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
-        else { w = Math.round(w * maxSide / h); h = maxSide; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      state.aiPendingPhoto = canvas.toDataURL('image/jpeg', 0.85);
-      render();
-    };
-    img.onerror = () => toast('Не удалось прочитать', 'error');
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-async function actionForgetGroup() {
-  modalConfirm('ЗАБЫТЬ ГРУППУ?', 'Расписание перестанет показываться.', async () => {
-    try {
-      await apiPost('/api/set-group', {group_id:'', group_name:'', subgroup:0});
-      if (state.profile) { state.profile.group = null; state.profile.group_id = null; }
-      haptic('success'); await loadProfile(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ЗАБЫТЬ');
-}
-async function actionAdminMonitor() {
-  try { state.adminMonitor = await apiGet('/api/admin/monitor'); }
-  catch (e) { state.adminMonitor = {ok:false, status:0, error:e.message}; }
-  render();
-}
-function actionAdminBroadcast() {
-  const el = document.getElementById('admin-broadcast-text');
-  const text = (el?.value || '').trim();
-  if (!text) { toast('Пустое', 'error'); return; }
-  modalConfirm('ОТПРАВИТЬ ВСЕМ?', 'Уйдёт всем.', async () => {
-    try {
-      await apiPost('/api/admin/broadcast', {text});
-      if (el) el.value = '';
-      haptic('success'); toast('Рассылка запущена', 'success');
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ОТПРАВИТЬ');
-}
-function actionAdminFbReply(fid) {
-  modalOpen({
-    title:'ОТВЕТ',
-    body: `<div class="label">ТЕКСТ</div><textarea class="input" id="fb-reply-text" rows="4"></textarea>`,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'ОТПРАВИТЬ', style:'btn', onClick: async () => {
-        const t = (document.getElementById('fb-reply-text')?.value || '').trim();
-        if (!t) { toast('Пусто', 'error'); return; }
-        try {
-          await apiPost('/api/admin/feedback-reply', {id: fid, text: t});
-          haptic('success'); toast('Отправлено', 'success');
-          await loadAdminFeedback(); await loadAdminStats(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-}
-async function actionAdminFbPostpone(fid) {
-  try {
-    await apiPost('/api/admin/feedback-postpone', {id: fid});
-    haptic('success');
-    await loadAdminFeedback(); await loadAdminStats(); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-function actionSetName() {
-  const p = state.profile;
-  const wallet = p?.wallet || {};
-  const currentName = wallet.custom_name || '';
-  const freeChanges = wallet.free_name_changes || 0;
-  const hasCustom = !!wallet.custom_name;
-  const costText = !hasCustom
-    ? 'Первая установка — бесплатно'
-    : (freeChanges > 0
-        ? `У тебя ${freeChanges} бесплатных смен`
-        : 'Смена стоит 5 Нова');
-
-  modalOpen({
-    title:'ИЗМЕНИТЬ ИМЯ',
-    body: `
-      <div class="card-subtitle" style="text-align:center;margin-bottom:12px">
-        Это имя видят все игроки: в топе, играх, шапке расписания.
-      </div>
-      <div class="label">НОВОЕ ИМЯ</div>
-      <input class="input" id="set-name-input" maxlength="24" placeholder="Например: Студент-Легенда" value="${escapeHtml(currentName)}" autocomplete="off">
-      <div class="card-subtitle" style="text-align:center;margin-top:8px">${escapeHtml(costText)}</div>
-    `,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const v = (document.getElementById('set-name-input')?.value || '').trim();
-        if (!v) { toast('Введи имя', 'error'); return; }
-        if (v === currentName) { toast('Это твоё текущее имя', 'info'); return; }
-        try {
-          await apiPost('/api/set-name', {name: v});
-          haptic('success');
-          popIcon('ic-check');
-          toast('Имя изменено', 'success');
-          await loadProfile();
-          render();
-        } catch (e) {
-          if (e.code === 'need_hard') toast('Нужно 5 Нова', 'error');
-          else toast(e.message, 'error');
-        }
-      }}
-    ]
-  });
-  setTimeout(() => {
-    const inp = document.getElementById('set-name-input');
-    if (inp) { inp.focus(); inp.select(); }
-  }, 150);
-}
-
-/* ===== КЕЙСЫ (без SVG) ===== */
-const CHEST_META = {
-  capsule:  {name:'Капсула',  img:'/assets/capsule.webp',  costLabel:'Бесплатно (раз в 24 ч)',
-             drops:[['Шифт 10–40','55%'],['XP 50–150','30%'],['Нова ×1','10%'],['Шифт ×100','5%']]},
-  relic:    {name:'Реликт',   img:'/assets/relic.webp',    costLabel:'50 Шифт',
-             drops:[['Шифт 60–150','50%'],['XP 200–500','30%'],['Нова 1–3','18%'],['Нова ×10','2%']]},
-  artifact: {name:'Артефакт', img:'/assets/artifact.webp', costLabel:'15 Нова',
-             drops:[['Шифт ×500','30%'],['XP ×1000','30%'],['Нова 5–15','35%'],['Нова ×50','5%']]},
-  core:     {name:'Ядро',     img:'/assets/core.webp',     costLabel:'80 Нова',
-             drops:[['Шифт ×2000','25%'],['XP ×5000','25%'],['Нова 30–60','40%'],['Нова ×200','10%']]},
+const CHEST_FAKE_POOL = {
+  capsule:  [
+    {type:'shift', amount:15,  rar:'common', label:'+15'},
+    {type:'shift', amount:30,  rar:'common', label:'+30'},
+    {type:'xp',    amount:80,  rar:'common', label:'+80 XP'},
+    {type:'shift', amount:40,  rar:'rare',   label:'+40'},
+    {type:'xp',    amount:140, rar:'rare',   label:'+140 XP'},
+    {type:'nova',  amount:1,   rar:'rare',   label:'+1 Нова'},
+    {type:'shift', amount:100, rar:'legend', label:'+100'},
+  ],
+  relic:    [
+    {type:'shift', amount:60,  rar:'common', label:'+60'},
+    {type:'shift', amount:90,  rar:'common', label:'+90'},
+    {type:'xp',    amount:250, rar:'rare',   label:'+250 XP'},
+    {type:'shift', amount:150, rar:'rare',   label:'+150'},
+    {type:'nova',  amount:2,   rar:'epic',   label:'+2 Нова'},
+    {type:'xp',    amount:500, rar:'epic',   label:'+500 XP'},
+    {type:'nova',  amount:10,  rar:'legend', label:'+10 Нова'},
+  ],
+  artifact: [
+    {type:'shift', amount:500, rar:'rare',   label:'+500'},
+    {type:'xp',    amount:1000,rar:'rare',   label:'+1000 XP'},
+    {type:'nova',  amount:5,   rar:'epic',   label:'+5 Нова'},
+    {type:'nova',  amount:12,  rar:'epic',   label:'+12 Нова'},
+    {type:'nova',  amount:15,  rar:'legend', label:'+15 Нова'},
+    {type:'nova',  amount:50,  rar:'legend', label:'+50 Нова'},
+  ],
+  core:     [
+    {type:'shift', amount:2000,rar:'epic',   label:'+2000'},
+    {type:'xp',    amount:5000,rar:'epic',   label:'+5000 XP'},
+    {type:'nova',  amount:30,  rar:'epic',   label:'+30 Нова'},
+    {type:'nova',  amount:45,  rar:'legend', label:'+45 Нова'},
+    {type:'nova',  amount:60,  rar:'legend', label:'+60 Нова'},
+    {type:'nova',  amount:200, rar:'legend', label:'+200 Нова'},
+  ],
 };
-
-/* Модалка "Что может выпасть" — открытие теперь через chest.js (рулетка) */
-function actionChestModal(id) {
-  const meta = CHEST_META[id];
-  if (!meta) return;
-  const isCapsule = id === 'capsule';
-  const st = state.chestStatus || {};
-  const canOpenCapsule = !isCapsule || st.can_open !== false;
-  const dropsHtml = meta.drops.map(d =>
-    `<div class="chest-drop"><span>${escapeHtml(d[0])}</span><span class="chance">${escapeHtml(d[1])}</span></div>`
-  ).join('');
-  const timerHtml = isCapsule && !canOpenCapsule && st.next_at
-    ? `<div class="card-subtitle" style="text-align:center;margin-top:10px">Доступно через <b data-chest-timer="${escapeHtml(st.next_at)}">--:--:--</b></div>`
-    : '';
-  modalOpen({
-    title: meta.name.toUpperCase(),
-    body: `
-      <div style="text-align:center;margin-bottom:8px">
-        <img src="${meta.img}" alt="${escapeHtml(meta.name)}" style="max-width:220px;width:70%;height:auto;border-radius:18px" draggable="false">
-      </div>
-      <div class="card-subtitle" style="text-align:center;margin-bottom:12px">${escapeHtml(meta.costLabel)}</div>
-      <div class="label">Что может выпасть</div>
-      <div class="chest-drops">${dropsHtml}</div>
-      ${timerHtml}
-    `,
-    actions: [
-      {label:'ЗАКРЫТЬ', style:'btn-secondary'},
-      {label: isCapsule ? (canOpenCapsule ? 'ОТКРЫТЬ' : 'ЖДИ') : 'ОТКРЫТЬ', style: 'btn',
-       onClick: async () => {
-         if (isCapsule && !canOpenCapsule) { toast('Ещё рано', 'error'); return; }
-         /* Открываем рулетку через chest.js */
-         if (typeof openChestRoulette === 'function') {
-           openChestRoulette(id, async (res) => {
-             if (res.ok) {
-               state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
-               await loadProfile();
-               render();
-               startChestTimer();
-             }
-           });
-         } else {
-           toast('Рулетка не загружена', 'error');
-         }
-       }}
-    ]
-  });
-  startChestTimer();
+function _chestIconFor(drop) {
+  if (!drop) return CHEST_DROP_ICONS.default;
+  return CHEST_DROP_ICONS[drop.type] || CHEST_DROP_ICONS.default;
 }
-
-function actionExchange() {
-  modalOpen({
-    title:'ОБМЕННИК',
-    body: `
-      <div class="card-subtitle" style="text-align:center;margin-bottom:12px;display:flex;align-items:center;gap:8px;justify-content:center">
-        100 <img class="coin" src="/assets/ic_shift.webp" style="width:18px;height:18px" alt=""> Шифт = 1 <img class="coin" src="/assets/ic_nova.webp" style="width:18px;height:18px" alt=""> Нова
+function _randomFakeCell(chestId) {
+  const pool = CHEST_FAKE_POOL[chestId] || CHEST_FAKE_POOL.capsule;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+function _buildRouletteStrip(chestId, winDrop) {
+  const N = 40, WIN_POS = 32;
+  const cells = [];
+  for (let i = 0; i < N; i++) {
+    if (i === WIN_POS) {
+      cells.push({
+        type: winDrop.type,
+        amount: winDrop.amount,
+        rar: 'legend',
+        label: winDrop.label || _fmtDropLabel(winDrop),
+        isWin: true,
+      });
+    } else {
+      const fake = _randomFakeCell(chestId);
+      cells.push({...fake, isWin:false});
+    }
+  }
+  return { cells, winPos: WIN_POS };
+}
+function _fmtDropLabel(drop) {
+  if (drop.type === 'xp') return `+${drop.amount} XP`;
+  if (drop.type === 'shift') return `+${drop.amount}`;
+  if (drop.type === 'nova') return `+${drop.amount} Нова`;
+  return `+${drop.amount}`;
+}
+function _coinIconByType(t) {
+  if (t === 'shift') return '/assets/ic_shift.webp';
+  if (t === 'nova')  return '/assets/ic_nova.webp';
+  return '/assets/ic_xp.webp';
+}
+let _rouletteRoot = null;
+function openChestRoulette(chestId, onDone) {
+  if (!_rouletteRoot) {
+    _rouletteRoot = document.createElement('div');
+    _rouletteRoot.id = 'chestRoulette';
+    document.body.appendChild(_rouletteRoot);
+  }
+  const meta = (typeof CHEST_META !== 'undefined' && CHEST_META[chestId]) || {name: chestId};
+  _rouletteRoot.innerHTML = `
+    <div class="roulette-wrap">
+      <button class="roulette-close" id="rouletteClose"><svg width="16" height="16"><use href="#ic-close"/></svg></button>
+      <div class="roulette-title">${meta.name.toUpperCase()}</div>
+      <div class="roulette-viewport" id="rouletteViewport">
+        <div class="roulette-strip" id="rouletteStrip"></div>
+        <div class="roulette-pointer"></div>
+        <div class="roulette-flash" id="rouletteFlash"></div>
       </div>
-      <div class="label">СКОЛЬКО ШИФТ</div>
-      <input class="input" id="ex-amount" type="number" min="100" step="100" value="100">
-      <div class="choice-row">
-        <button class="choice" data-ex="100">100</button>
-        <button class="choice" data-ex="500">500</button>
-        <button class="choice" data-ex="1000">1000</button>
-        <button class="choice" data-ex="5000">5000</button>
-      </div>
-    `,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'ОБМЕНЯТЬ', style:'btn', onClick: async () => {
-        const amount = parseInt(document.getElementById('ex-amount')?.value || '0') || 0;
-        if (amount < 100) { toast('Минимум 100', 'error'); return; }
-        try {
-          const r = await apiPost('/api/exchange-soft-to-hard', {amount});
-          haptic('success'); popIcon('ic-exchange');
-          toast(`${r.soft_spent} Шифт → ${r.hard_received} Нова`, 'success');
-          await loadProfile(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  setTimeout(() => {
-    document.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => {
-      const inp = document.getElementById('ex-amount');
-      if (inp) inp.value = b.dataset.ex;
+      <div class="roulette-win" id="rouletteWin"></div>
+    </div>
+  `;
+  _rouletteRoot.classList.add('on');
+  document.getElementById('rouletteClose').onclick = () => {
+    _rouletteRoot.classList.remove('on');
+  };
+  const initData = (window.Telegram?.WebApp?.initData) || '';
+  fetch('/api/chest/open', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({initData, type: chestId}),
+  }).then(r => r.json().then(j => ({ok:r.ok, status:r.status, data:j})))
+    .then(({ok, status, data}) => {
+      if (!ok) {
+        const msg = data.message || ({
+          already_opened: 'Кейс уже открыт',
+          not_enough_shift: 'Недостаточно Шифт',
+          not_enough_nova: 'Недостаточно Нова',
+        }[data.error] || 'Ошибка');
+        _showRouletteError(msg);
+        if (typeof onDone === 'function') onDone({ok:false, error:data.error});
+        return;
+      }
+      _runRoulette(chestId, data.reward, data.wallet, () => {
+        if (typeof onDone === 'function') onDone({ok:true, reward:data.reward, wallet:data.wallet});
+      });
+    })
+    .catch(err => {
+      _showRouletteError(err.message || 'Сеть недоступна');
+      if (typeof onDone === 'function') onDone({ok:false, error:'network'});
     });
-  }, 0);
 }
-
-/* ===== ДОСТИЖЕНИЯ — с фиксом кнопки "Забрать" ===== */
-function achIconById(id) { return `ic-ach-${id}`; }
-async function actionShowAchievements() {
-  try {
-    const d = await apiGet('/api/achievements');
-    state.achData = d;
-    renderAchievementsModal(d);
-  } catch (e) { toast(e.message, 'error'); }
-}
-function renderAchievementsModal(d) {
-  const claimable = d.items.filter(x => x.can_claim);
-  let body = `<div class="ach-progress"><div class="ach-progress-num">${d.got} / ${d.total}</div><div class="ach-progress-label">Разблокировано</div></div>`;
-  if (claimable.length > 0) {
-    const tr = d.total_reward;
-    body += `<div class="card" style="background:var(--cyan);color:#0A0E0F;border:none">
-      <div style="font-weight:800;text-align:center;margin-bottom:8px">Доступно: ${claimable.length}</div>
-      <div style="text-align:center;font-family:'Anton',sans-serif;font-style:italic;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap">
-        <span>+${tr.xp} ${icXp(14)}</span>
-        <span>+${tr.soft} ${icShift(14)}</span>
-        <span>+${tr.hard} ${icNova(14)}</span>
-      </div>
-      <button class="btn btn-red" data-action="ach-claim-all" style="width:100%;margin-top:12px;background:#0A0E0F;color:#FFF">ЗАБРАТЬ ВСЁ</button>
-    </div>`;
+function _showRouletteError(msg) {
+  const win = document.getElementById('rouletteWin');
+  if (win) {
+    win.classList.add('on');
+    win.innerHTML = `<div class="roulette-win-label" style="color:#E23A3A">ОШИБКА</div>
+      <div class="roulette-win-sub">${(msg||'').replace(/[<>&]/g,'')}</div>`;
   }
-  body += '<div class="ach-grid">';
-  for (const a of d.items) {
-    const cls = !a.unlocked ? 'locked' : (a.can_claim ? 'claimable' : (a.claimed ? 'claimed' : ''));
-    body += `<div class="ach-card ${cls}">
-      <div class="ach-icon">${icon(achIconById(a.id),36)}</div>
-      <div class="ach-body">
-        <div class="ach-name">${escapeHtml(a.name)}</div>
-        <div class="ach-desc">${escapeHtml(a.desc)}</div>
-        <div class="ach-reward">+${a.reward.xp} ${icXp(14)}${a.reward.soft ? ` · +${a.reward.soft} ${icShift(14)}` : ''}${a.reward.hard ? ` · +${a.reward.hard} ${icNova(14)}` : ''}</div>
-      </div>
-      ${a.can_claim ? `<button class="ach-claim" data-action="ach-claim" data-id="${a.id}">ЗАБРАТЬ</button>`
-        : a.claimed ? `<button class="ach-claim claimed" disabled>${icon('ic-check',14)}</button>` : ''}
-    </div>`;
-  }
-  body += '</div>';
-  modalOpen({title:'ДОСТИЖЕНИЯ', body, actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
   setTimeout(() => {
-    document.querySelectorAll('[data-action="ach-claim"]').forEach(b => {
-      b.onclick = async () => {
-        try {
-          const r = await apiPost('/api/achievement-claim', {ach_id: b.dataset.id});
-          haptic('success'); popIcon('ic-gift');
-          toast(`+${r.reward.xp} XP · +${r.reward.soft} Шифт · +${r.reward.hard} Нова`, 'success');
-          await loadProfile();
-          /* ОБНОВЛЯЕМ оба состояния: данные достижений И модалку */
-          const dd = await apiGet('/api/achievements');
-          state.achData = dd;
-          renderAchievementsModal(dd);
-          /* Обновляем и профиль, чтобы кнопка "ЗАБРАТЬ N" исчезла */
-          if (state.tab === 'profile') render();
-        } catch (e) { toast(e.message, 'error'); }
+    if (_rouletteRoot) _rouletteRoot.classList.remove('on');
+  }, 1800);
+}
+function _runRoulette(chestId, winDrop, wallet, done) {
+  const { cells, winPos } = _buildRouletteStrip(chestId, winDrop);
+  const strip = document.getElementById('rouletteStrip');
+  const viewport = document.getElementById('rouletteViewport');
+  const win = document.getElementById('rouletteWin');
+  const flash = document.getElementById('rouletteFlash');
+  win.classList.remove('on');
+  win.innerHTML = '';
+  strip.innerHTML = cells.map((c, i) => `
+    <div class="roulette-cell rar-${c.rar||'common'}" data-idx="${i}">
+      <img class="rc-icon" src="${_coinIconByType(c.type)}" alt="">
+      <div class="rc-label">${c.label}</div>
+    </div>
+  `).join('');
+  strip.style.transition = 'none';
+  strip.style.transform = 'translateX(0)';
+  requestAnimationFrame(() => {
+    const cellW = 132 + 12;
+    const viewportW = viewport.clientWidth;
+    const cellCenter = winPos * cellW + 132 / 2;
+    const offset = cellCenter - viewportW / 2;
+    const duration = 4200;
+    strip.style.transition = `transform ${duration}ms cubic-bezier(.15,.85,.25,1)`;
+    strip.style.transform = `translateX(-${offset}px)`;
+    setTimeout(() => {
+      flash.classList.add('on');
+      if (window.Telegram?.WebApp?.HapticFeedback) {
+        try { window.Telegram.WebApp.HapticFeedback.notificationOccurred('success'); } catch(e){}
+      }
+      setTimeout(() => flash.classList.remove('on'), 300);
+      const label = winDrop.label || _fmtDropLabel(winDrop);
+      win.innerHTML = `
+        <img class="roulette-win-icon" src="${_coinIconByType(winDrop.type)}" alt="">
+        <div class="roulette-win-label">${label}</div>
+        <div class="roulette-win-sub">${(wallet && (wallet.shift != null)) ? `Баланс: ${wallet.shift} Шифт · ${wallet.nova} Нова` : ''}</div>
+      `;
+      win.classList.add('on');
+      const closeTimer = setTimeout(() => {
+        _rouletteRoot.classList.remove('on');
+        if (typeof done === 'function') done();
+      }, 3200);
+      _rouletteRoot.onclick = (e) => {
+        if (e.target === _rouletteRoot || e.target.closest('.roulette-close')) {
+          clearTimeout(closeTimer);
+          _rouletteRoot.classList.remove('on');
+          if (typeof done === 'function') done();
+        }
       };
-    });
-    const allBtn = document.querySelector('[data-action="ach-claim-all"]');
-    if (allBtn) allBtn.onclick = async () => {
-      const pending = d.items.filter(x => x.can_claim);
-      let totalXp = 0, totalSoft = 0, totalHard = 0;
-      for (const it of pending) {
-        try {
-          const r = await apiPost('/api/achievement-claim', {ach_id: it.id});
-          totalXp += r.reward.xp; totalSoft += r.reward.soft; totalHard += r.reward.hard;
-        } catch(e){}
-      }
-      haptic('success'); popIcon('ic-gift');
-      toast(`+${totalXp} XP · +${totalSoft} Шифт · +${totalHard} Нова`, 'success');
-      await loadProfile();
-      const dd = await apiGet('/api/achievements');
-      state.achData = dd;
-      renderAchievementsModal(dd);
-      if (state.tab === 'profile') render();
-    };
-  }, 0);
-}
-function actionExportPdf() {
-  modalConfirm('ЭКСПОРТ PDF?', 'PDF придёт в чат с ботом.', async () => {
-    try {
-      await apiPost('/api/export');
-      haptic('success'); toast('PDF отправлен в Telegram', 'success');
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ЭКСПОРТ');
-}
-async function actionShowMyFeedback() {
-  try {
-    const d = await apiGet('/api/feedback/my');
-    if (!d.items.length) { toast('Обращений нет'); return; }
-    const body = d.items.map(f => `
-      <div style="border-bottom:1px solid var(--divider);padding:12px 0">
-        <div style="font-size:11px;color:var(--text-2);margin-bottom:4px">#${f.id} · ${escapeHtml(f.status)}</div>
-        <div style="font-weight:500;color:var(--text)">${escapeHtml(f.text)}</div>
-        ${f.admin_reply ? `<div style="margin-top:6px;color:var(--cyan-dark);font-weight:600">Ответ: ${escapeHtml(f.admin_reply)}</div>` : ''}
-      </div>
-    `).join('');
-    modalOpen({title:'МОИ ОБРАЩЕНИЯ', body, actions:[{label:'ЗАКРЫТЬ', style:'btn-secondary'}]});
-  } catch (e) { toast(e.message, 'error'); }
-}
-function actionSetNotifyBefore() {
-  modalOpen({
-    title:'НАПОМИНАНИЕ',
-    body: `<div class="card-subtitle">За сколько минут до пары</div><div class="choice-row">${[0,5,10,15,20,30,60].map(v => `<button class="choice" data-nb="${v}">${v===0?'Выкл':v+' мин'}</button>`).join('')}</div>`,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const v = state._pendingNb || 0;
-        try {
-          await apiPost('/api/notify-set-before', {minutes: v});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadProfile(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  setTimeout(() => {
-    document.querySelectorAll('[data-nb]').forEach(b => b.onclick = () => {
-      state._pendingNb = parseInt(b.dataset.nb);
-      document.querySelectorAll('[data-nb]').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-    });
-  }, 0);
-}
-async function actionAttendanceSet(date, time, subject, status) {
-  try { await apiPost('/api/attendance-set', {date, time, subject, status}); haptic('success'); }
-  catch (e) { toast(e.message, 'error'); }
-}
-function actionAttHelp() {
-  modalOpen({
-    title:'КАК РАБОТАЕТ',
-    body: `
-      <div class="label">${icon('ic-was',18)} ПОСЕЩЕНО</div><div class="card-subtitle">+3 XP и +1 Шифт.</div>
-      <div class="label">${icon('ic-missed',18)} ПРОПУЩЕНО</div><div class="card-subtitle">Пропуск без причины.</div>
-      <div class="label">${icon('ic-sick',18)} БОЛЕЛ</div><div class="card-subtitle">Пропуск по болезни.</div>
-      <div class="label">${icon('ic-excused',18)} УВАЖИТЕЛЬНАЯ</div><div class="card-subtitle">Уважительная причина.</div>
-    `,
-    actions:[{label:'ПОНЯТНО', style:'btn'}]
+    }, duration + 80);
   });
 }
-
-function attachHandlers() {
-  document.querySelectorAll('[data-action]').forEach(el => {
-    if (el._bound) return;
-    el._bound = true;
-    el.addEventListener('click', () => handleAction(el));
-  });
-  document.querySelectorAll('[data-att]').forEach(el => {
-    if (el._bound) return;
-    el._bound = true;
-    el.addEventListener('click', async () => {
-      const att = el.dataset.att;
-      const siblings = el.parentElement.querySelectorAll('[data-att]');
-      siblings.forEach(s => s.classList.remove('on-was','on-missed','on-sick','on-excused'));
-      el.classList.add('on-' + att);
-      haptic('success');
-      await actionAttendanceSet(el.dataset.date, el.dataset.time, el.dataset.subject, att);
-    });
-  });
-  const notifyCb = document.getElementById('notify-changes');
-  if (notifyCb) notifyCb.addEventListener('change', async (e) => {
-    const val = e.target.checked;
-    try {
-      await apiPost('/api/notify-set', {changes: val});
-      if (state.profile) state.profile.notify_changes = val;
-      haptic('success');
-    } catch (err) {
-      haptic('error'); toast(err.message, 'error');
-      e.target.checked = !val;
-    }
-  });
-  const aiPhotoInput = document.getElementById('ai-photo-input');
-  if (aiPhotoInput) aiPhotoInput.addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) actionAIPhotoSelected(file);
-    e.target.value = '';
-  });
-}
-
-function handleAction(el) {
-  const a = el.dataset.action;
-  if (a === 'set-subgroup') actionSetSubgroup(parseInt(el.dataset.value));
-  else if (a === 'set-gender') actionSetGender(el.dataset.value);
-  else if (a === 'quote-subscribe') actionQuoteSubscribe(parseInt(el.dataset.value));
-  else if (a === 'feedback-send') actionFeedbackSend();
-  else if (a === 'task-done') actionTaskDone(parseInt(el.dataset.id));
-  else if (a === 'task-delete') actionTaskDelete(parseInt(el.dataset.id));
-  else if (a === 'task-add-open') actionTaskAdd();
-  else if (a === 'task-edit-open') actionTaskEdit(parseInt(el.dataset.id));
-  else if (a === 'tasks-clear') actionTasksClear();
-  else if (a === 'tasks-show-active') { state.tasksView = 'active'; loadTasks().then(render); }
-  else if (a === 'tasks-show-done') { state.tasksView = 'done'; loadTasks().then(render); }
-  else if (a === 'note-add-open') actionNoteAdd();
-  else if (a === 'note-edit-open') actionNoteEdit(parseInt(el.dataset.id));
-  else if (a === 'note-delete') actionNoteDelete(parseInt(el.dataset.id));
-  else if (a === 'sch-set-amount') actionScholarshipSetAmount();
-  else if (a === 'sch-add-grade') actionScholarshipAddGrade();
-  else if (a === 'sch-clear') actionScholarshipClear();
-  else if (a === 'ai-send') actionAISend();
-  else if (a === 'ai-clear') actionAIClear();
-  else if (a === 'ai-photo-open') actionAIPhotoOpen();
-  else if (a === 'ai-photo-remove') actionAIPhotoRemove();
-  else if (a === 'choose-group') actionChooseGroup();
-  else if (a === 'forget-group') actionForgetGroup();
-  else if (a === 'picker-back') actionPickerBack();
-  else if (a === 'picker-choose-institute') actionPickerChooseInstitute(el.dataset.value);
-  else if (a === 'picker-choose-course') actionPickerChooseCourse(el.dataset.value);
-  else if (a === 'picker-choose-group') actionPickerChooseGroup(el.dataset.id, el.dataset.name);
-  else if (a === 'notify-open') actionOpenNotifyEditor();
-  else if (a === 'notify-back') actionNotifyBack();
-  else if (a === 'notify-set-type') actionNotifySetType(el.dataset.value);
-  else if (a === 'notify-save') actionNotifySave();
-  else if (a === 'notify-off') actionNotifyOff();
-  else if (a === 'notify-before') actionSetNotifyBefore();
-  else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
-  else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; state.scheduleDay = null; loadWeekAndRender(); }
-  else if (a === 'week-next') { state.weekOffset += 1; state.scheduleViewMode = 'week'; state.scheduleDay = null; loadWeekAndRender(); }
-  else if (a === 'week-current') {
-    const now = nowIrkutsk();
-    state.weekOffset = (now.getDay() === 0) ? 1 : 0;
-    state.scheduleViewMode = 'week'; state.scheduleDay = null;
-    loadWeekAndRender();
-  }
-  else if (a === 'week-today') { loadTodayAndRender(); }
-  else if (a === 'day-today') { state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; haptic('light'); render(); }
-  else if (a === 'day-tomorrow') {
-    state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today'; haptic('light');
-    if (!state.weekDays) { render(); ensureWeekLoaded().then(render); } else render();
-  }
-  else if (a === 'admin-monitor') actionAdminMonitor();
-  else if (a === 'admin-broadcast') actionAdminBroadcast();
-  else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
-  else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
-  else if (a === 'open-flappy') openFlappy(false);
-  else if (a === 'open-flappy-records') openFlappy(true);
-  else if (a === 'open-bs') openBs();
-  else if (a === 'open-levels') openLevels();
-  else if (a === 'open-leaderboard') openLeaderboard();
-  else if (a === 'set-name') actionSetName();
-  else if (a === 'chest-modal') actionChestModal(el.dataset.id);
-  else if (a === 'exchange') actionExchange();
-  else if (a === 'show-achievements') actionShowAchievements();
-  else if (a === 'export-pdf') actionExportPdf();
-  else if (a === 'show-my-feedback') actionShowMyFeedback();
-  else if (a === 'att-help') actionAttHelp();
-}
-function actionDayToday() {
-  state.scheduleDay = 'today'; state.scheduleViewMode = 'today'; render();
-}
-function actionDayTomorrow() {
-  state.scheduleDay = 'tomorrow'; state.scheduleViewMode = 'today';
-  if (!state.weekDays) { render(); ensureWeekLoaded().then(render); } else render();
-}
-
-document.querySelectorAll('.nav-btn').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const tab = btn.dataset.tab;
-    if (state.tab === tab) return;
-    state.tab = tab;
-    haptic('light');
-    await loadTabData(tab);
-  });
-});
-document.getElementById('refresh-btn').addEventListener('click', async () => {
-  haptic('light');
-  if (state.tab === 'schedule' && state.scheduleViewMode === 'week') await loadWeekAndRender();
-  else await loadTabData(state.tab);
-});
-
-(async function init() {
-  await loadTabData(state.tab);
-})();
