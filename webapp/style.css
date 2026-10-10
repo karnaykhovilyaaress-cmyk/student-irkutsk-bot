@@ -586,4 +586,30 @@ textarea.input{resize:vertical;min-height:88px}
 
 html, body { background: transparent !important; }
 #app { background: transparent !important; }
+
+
+/* ===== УВЕДОМЛЕНИЯ — коррекция отступов ===== */
+.picker-header + .card,
+.picker-header + .actions-row{
+  margin-top: 0;
+}
+.picker-header{
+  padding-top: calc(var(--safe-top) + 12px);
+}
+.picker-header + .card .card-title{
+  margin-top: 0;
+}
+#notify-time-input{
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 12px 14px;
+  text-align: left;
+  letter-spacing: 0;
+}
+input[type="time"]{
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: 'Inter', sans-serif;
+}
 #bg-art { z-index: 0 !important; }
