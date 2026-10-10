@@ -183,6 +183,12 @@ function render() {
   const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры',
     ai:'AI', admin:'Админ', profile:'Профиль'};
 
+  /* 🎨 Устанавливаем класс фона в зависимости от вкладки */
+  if (appEl) {
+    appEl.classList.remove('bg-schedule','bg-tasks','bg-notes','bg-games','bg-ai','bg-admin','bg-profile');
+    appEl.classList.add('bg-' + (state.tab || 'schedule'));
+  }
+
   if (state.notifyEditor) {
     appEl?.classList.add('picker-open');
     title.textContent = 'Уведомления';
@@ -191,6 +197,7 @@ function render() {
     attachHandlers();
     return;
   }
+  
   if (state.pickerMode) {
     appEl?.classList.add('picker-open');
     title.textContent = state.pickerMode === 'institute' ? 'Институт'
