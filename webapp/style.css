@@ -20,13 +20,13 @@
 html{
   margin:0 !important;padding:0 !important;
   width:100%;height:100%;
-  background:#FFFFFF !important;
+  background:#FFFFFF;
   overflow-x:hidden;
 }
 body{
   margin:0 !important;padding:0 !important;
-  width:100%;min-height:100vh;min-height:100dvh;
-  background:#FFFFFF !important;
+  width:100%;min-height:100vh;
+  background:#FFFFFF;
   color:var(--text);
   font-family:'Inter',system-ui,sans-serif;font-size:15px;line-height:1.45;
   overflow-x:hidden;
@@ -34,25 +34,23 @@ body{
   overscroll-behavior:none;
 }
 
-#bg-art{display:none !important;}
+/* Фон-картинка отключена, но элемент оставлен для совместимости */
+#bg-art{
+  display:none !important;
+}
 
 body.picker-open{
   overflow:hidden;
-  height:100dvh;
-  position:fixed;
-  inset:0;
 }
 
 #app{
-  display:flex;flex-direction:column;width:100%;min-height:100vh;min-height:100dvh;
+  display:flex;flex-direction:column;width:100%;min-height:100vh;
   padding-bottom:calc(120px + var(--safe-bottom));
   position:relative;
-  background:#FFFFFF;
 }
 #app.picker-open .header,#app.picker-open .bottom-nav{display:none}
 #app.picker-open{
   padding-bottom:var(--safe-bottom);
-  min-height:100dvh;
 }
 
 .coin{width:22px;height:22px;display:inline-block;vertical-align:-4px;object-fit:contain;pointer-events:none;user-select:none}
@@ -362,15 +360,7 @@ textarea.input{resize:vertical;min-height:88px}
   width:100%;
   box-sizing:border-box;
   padding:calc(var(--tg-top) + var(--safe-top) + 8px) 16px 14px;
-  position:sticky;
-  top:0;
-  left:0;
-  right:0;
-  z-index:20;
-  margin:0;
-  background:linear-gradient(180deg,#FFFFFF 75%,rgba(255,255,255,0));
-  backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px);
+  background:#FFFFFF;
 }
 .picker-back{width:40px;height:40px;border-radius:50%;background:rgba(10,14,15,.06);border:none;color:var(--text);
   cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -411,7 +401,6 @@ textarea.input{resize:vertical;min-height:88px}
 .time-quick-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
 .time-quick-row .choice{flex:0 0 auto;padding:8px 14px;font-size:12px;}
 
-/* Кнопка "ГОТОВО" над клавиатурой */
 .time-done-row{display:flex;justify-content:flex-end;margin-top:10px}
 .time-done-btn{background:#0A0E0F;color:#FFF;border:none;border-radius:999px;padding:8px 18px;
   font-family:'Inter',sans-serif;font-weight:800;font-size:12px;letter-spacing:.5px;text-transform:uppercase;
@@ -470,12 +459,12 @@ textarea.input{resize:vertical;min-height:88px}
 .ach-claim:disabled{opacity:.4;cursor:default}
 .ach-claim.claimed{background:var(--bg-2);color:var(--text-2)}
 
-/* ===== XP-ИНФО (в экране уровней) ===== */
+/* ===== XP-ИНФО В ЭКРАНЕ УРОВНЕЙ ===== */
 .xp-info-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .xp-info-row{display:flex;justify-content:space-between;align-items:center;gap:12px;
   background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
   border-radius:14px;padding:10px 14px;font-size:13px}
-.xp-info-row .xp-info-label{color:#E6F7F3;font-weight:600;flex:1;min-width:0}
+.xp-info-row .xp-info-label{color:#E6F7F3;font-weight:600;flex:1;min-width:0;line-height:1.35}
 .xp-info-row .xp-info-rewards{display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;
   font-family:'Anton',sans-serif;font-style:italic;color:var(--cyan);font-size:13px;
   align-items:center}
