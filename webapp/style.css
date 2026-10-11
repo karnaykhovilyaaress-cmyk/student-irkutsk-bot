@@ -15,30 +15,62 @@
   --safe-bottom:env(safe-area-inset-bottom,0px);
   --tg-top:96px;
 }
+
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0 !important;padding:0 !important;width:100%;height:100%;min-height:100vh;min-height:100dvh;
-  background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:15px;line-height:1.45;
-  overflow-x:hidden;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+
+html{
+  margin:0 !important;padding:0 !important;
+  width:100%;height:100%;
+  background:#FFFFFF !important;
+  overflow-x:hidden;
+}
+body{
+  margin:0 !important;padding:0 !important;
+  width:100%;min-height:100vh;min-height:100dvh;
+  background:#FFFFFF !important;
+  color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;font-size:15px;line-height:1.45;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior:none;
+}
+
+/* Когда открыт пикер/редактор — фиксируем высоту, чтобы клавиатура не сдвигала */
+body.picker-open{
+  overflow:hidden;
+  height:100dvh;
+  position:fixed;
+  inset:0;
+}
 
 #app{
   display:flex;flex-direction:column;width:100%;min-height:100vh;min-height:100dvh;
   padding-bottom:calc(120px + var(--safe-bottom));
   position:relative;
+  background:transparent;
 }
 #app.picker-open .header,#app.picker-open .bottom-nav{display:none}
-#app.picker-open{padding-bottom:var(--safe-bottom)}
+#app.picker-open{
+  padding-bottom:var(--safe-bottom);
+  min-height:100dvh;
+}
 
 /* ===== ФОН — КАРТИНКА ===== */
 #bg-art{
   position:fixed;
-  inset:0;
+  top:0;left:0;right:0;
+  width:100%;
+  height:100vh;
+  height:100dvh;
+  min-height:100vh;
+  min-height:100dvh;
   z-index:-1;
   pointer-events:none;
+  background-color:#FFFFFF;
   background-image:url('/assets/bg.jpg');
   background-size:cover;
   background-position:center center;
   background-repeat:no-repeat;
-  background-attachment:fixed;
 }
 @media (max-width:480px){
   #bg-art{
@@ -369,8 +401,23 @@ textarea.input{resize:vertical;min-height:88px}
 .game-card-sub{font-size:13px;color:var(--text-2);margin-bottom:12px;line-height:1.5;font-weight:500}
 
 /* ===== ПИКЕР ГРУПП ===== */
-.picker-header{display:flex;align-items:center;gap:12px;padding:calc(var(--tg-top) + var(--safe-top) + 8px) 16px 14px;
-  position:sticky;top:0;z-index:20;background:linear-gradient(180deg,rgba(255,255,255,.99) 70%,transparent);backdrop-filter:blur(14px)}
+.picker-header{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  width:100%;
+  box-sizing:border-box;
+  padding:calc(var(--tg-top) + var(--safe-top) + 8px) 16px 14px;
+  position:sticky;
+  top:0;
+  left:0;
+  right:0;
+  z-index:20;
+  margin:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.99) 70%,rgba(255,255,255,0));
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
 .picker-back{width:40px;height:40px;border-radius:50%;background:rgba(10,14,15,.06);border:none;color:var(--text);
   cursor:pointer;display:flex;align-items:center;justify-content:center}
 .picker-title{font-family:'Anton',sans-serif;font-size:20px;font-style:italic;letter-spacing:1px;text-transform:uppercase}
@@ -580,28 +627,46 @@ textarea.input{resize:vertical;min-height:88px}
 
 
 /* ══════════════════════════════════════════════════════════════
-   ФИКС РЕДАКТОРА УВЕДОМЛЕНИЙ И ПИКЕРА
+   ФИКС РЕДАКТОРА УВЕДОМЛЕНИЙ / ПИКЕРА / КЛАВИАТУРЫ
    ══════════════════════════════════════════════════════════════ */
 
-/* Шапка пикера/редактора на всю ширину, без боковых отступов */
-.picker-header{
-  width:100% !important;
-  box-sizing:border-box !important;
-  padding:calc(var(--tg-top) + var(--safe-top) + 8px) 16px 14px !important;
-  margin:0 !important;
+/* Полноширинный контент в режиме пикера/редактора */
+#app.picker-open{
+  overflow-x:hidden;
 }
-
-/* Контент пикера тоже на всю ширину */
 #app.picker-open .content{
   padding:0 16px !important;
   width:100% !important;
   box-sizing:border-box !important;
-}
-#app.picker-open{
-  overflow-x:hidden !important;
+  display:flex;
+  flex-direction:column;
+  gap:0;
 }
 
-/* Поля ввода времени */
+/* КАРТОЧКИ в редакторе — на всю ширину */
+#app.picker-open .card{
+  width:100%;
+  box-sizing:border-box;
+}
+
+/* Шапка редактора/пикера на всю ширину, прилипает к верху */
+.picker-header{
+  width:100% !important;
+  box-sizing:border-box !important;
+  margin:0 !important;
+  padding:calc(var(--tg-top) + var(--safe-top) + 8px) 16px 14px !important;
+  position:sticky !important;
+  top:0 !important;
+  left:0 !important;
+  right:0 !important;
+  z-index:30 !important;
+  background:linear-gradient(180deg,rgba(255,255,255,.99) 75%,rgba(255,255,255,0)) !important;
+  backdrop-filter:blur(16px) !important;
+  -webkit-backdrop-filter:blur(16px) !important;
+  border-radius:0 0 20px 20px;
+}
+
+/* Поля времени */
 .time-input-row{
   display:flex;
   align-items:flex-end;
@@ -636,6 +701,7 @@ textarea.input{resize:vertical;min-height:88px}
   -moz-appearance:textfield;
   appearance:textfield;
   box-sizing:border-box;
+  background:#FFF;
 }
 .time-input::-webkit-outer-spin-button,
 .time-input::-webkit-inner-spin-button{
@@ -664,7 +730,16 @@ textarea.input{resize:vertical;min-height:88px}
   font-size:12px;
 }
 
+/* При фокусе на поле — карточка поднимается над клавиатурой */
+#app.picker-open .card:focus-within{
+  position:relative;
+  z-index:25;
+}
 
-html, body { background: transparent !important; }
-#app { background: transparent !important; }
-#bg-art { z-index: 0 !important; }
+/* Скрываем чёрные полосы сверху/снизу при поднятой клавиатуре */
+@media (max-height:700px){
+  #bg-art{
+    background-size:cover;
+    background-position:center center;
+  }
+}
