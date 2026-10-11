@@ -4,3 +4,5 @@ beautifulsoup4
 gigachat
 python-dotenv
 fpdf2
+python-pptx
+Pillow
