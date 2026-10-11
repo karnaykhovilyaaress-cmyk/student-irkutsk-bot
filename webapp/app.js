@@ -173,7 +173,6 @@ function fmtCountdown(ms) {
   return `${h}:${m}:${s}`;
 }
 
-
 function render() {
   const content = document.getElementById('content');
   const title = document.getElementById('page-title');
@@ -182,7 +181,6 @@ function render() {
   const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры',
     ai:'AI', admin:'Админ', profile:'Профиль'};
 
-  /* 🎨 Класс фона вкладки — на #app и на body */
   const _tab = state.tab || 'schedule';
   const _bgClasses = ['bg-schedule','bg-tasks','bg-notes','bg-games','bg-ai','bg-admin','bg-profile'];
   if (appEl) {
@@ -413,7 +411,6 @@ function attachSwipe() {
   });
 }
 
-
 function getCourseFromGroup(name) {
   const m = String(name).match(/-(\d{2})-/);
   if (!m) return null;
@@ -504,11 +501,12 @@ function pickerAttachSearch() {
     }, 0);
   });
 }
+
+/* ── Исправленный редактор уведомлений (без <input type="time">) ── */
 function renderNotifyEditor() {
   const cur = state.notifyEditorType;
   const hh = state.notifyEditorHour;
   const mm = state.notifyEditorMinute;
-  const timeVal = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   return `
     <div class="picker-header">
       <button class="picker-back" data-action="notify-back">${icon('ic-chevron-left',20)}</button>
@@ -525,7 +523,17 @@ function renderNotifyEditor() {
     <div class="card">
       <div class="card-title">Во сколько</div>
       <div class="card-subtitle">Время по Иркутску</div>
-      <input type="time" id="notify-time-input" class="input" value="${timeVal}">
+      <div class="time-input-row">
+        <div class="time-field">
+          <label>Часы</label>
+          <input class="input time-input" id="notify-hour-input" type="number" inputmode="numeric" min="0" max="23" value="${String(hh).padStart(2,'0')}">
+        </div>
+        <div class="time-sep">:</div>
+        <div class="time-field">
+          <label>Минуты</label>
+          <input class="input time-input" id="notify-minute-input" type="number" inputmode="numeric" min="0" max="59" value="${String(mm).padStart(2,'0')}">
+        </div>
+      </div>
     </div>
     <div class="actions-row" style="margin-top:16px">
       <button class="btn" data-action="notify-save" style="flex:1">Сохранить</button>
@@ -611,7 +619,6 @@ function renderGames() {
     </div>
   </div>`;
 }
-
 
 function renderAI() {
   let html = '';
@@ -816,7 +823,6 @@ async function loadTodayAndRender() {
   render();
 }
 
-
 function levelRewardByLevel(lvl) {
   if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
   if (lvl <= 10) return `+250 ${icShift(14)} · +3 ${icNova(14)}`;
@@ -945,14 +951,14 @@ function renderProfile() {
       <div class="profile-hero-wallet-item">
         <div class="profile-hero-wallet-icon"><img src="/assets/ic_shift.webp" alt=""></div>
         <div class="profile-hero-wallet-body">
-          <div class="profile-hero-wallet-value">${wallet.shift ?? wallet.soft ?? 0}</div>
+          <div class="profile-hero-wallet-value" id="wallet-shift-value">${wallet.shift ?? wallet.soft ?? 0}</div>
           <div class="profile-hero-wallet-label">Шифт</div>
         </div>
       </div>
       <div class="profile-hero-wallet-item">
         <div class="profile-hero-wallet-icon"><img src="/assets/ic_nova.webp" alt=""></div>
         <div class="profile-hero-wallet-body">
-          <div class="profile-hero-wallet-value">${wallet.nova ?? wallet.hard ?? 0}</div>
+          <div class="profile-hero-wallet-value" id="wallet-nova-value">${wallet.nova ?? wallet.hard ?? 0}</div>
           <div class="profile-hero-wallet-label">Нова</div>
         </div>
       </div>
@@ -969,7 +975,7 @@ function renderProfile() {
   const achTotal = state.achData?.total || 0;
 
   html += `<div class="section-title">Кейсы</div>`;
-  html += `<div class="chests-grid chests-grid-img">
+  html += `<div class="chests-grid chests-grid-img" id="chests-grid">
     ${renderChestTile('capsule', 'Капсула', 'Бесплатно')}
     ${renderChestTile('relic', 'Реликт', '50 Шифт')}
     ${renderChestTile('artifact', 'Артефакт', '15 Нова')}
@@ -1106,6 +1112,15 @@ async function loadWalletIntoProfile() {
   } catch (e) {}
 }
 
+/* ── Точечное обновление кошелька после открытия кейса (без render()) ── */
+function patchWalletInProfile(wallet) {
+  if (!wallet || !state.profile) return;
+  state.profile.wallet = Object.assign({}, state.profile.wallet || {}, wallet);
+  const shiftEl = document.getElementById('wallet-shift-value');
+  const novaEl  = document.getElementById('wallet-nova-value');
+  if (shiftEl) shiftEl.textContent = wallet.shift ?? wallet.soft ?? 0;
+  if (novaEl)  novaEl.textContent  = wallet.nova  ?? wallet.hard ?? 0;
+}
 
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
@@ -1395,7 +1410,6 @@ function flappyShowOverlay(mode, score) {
 }
 function flappyHideOverlay() { document.getElementById('flappyOverlay').classList.add('hidden'); }
 function flappyShowRecords() { flappyShowOverlay('records'); }
-
 
 const BS = {
   bet:10, gameId:null, side:0,
@@ -1690,7 +1704,6 @@ function bsPollStart() {
   }, 2000);
 }
 
-
 function actionOpenNotifyEditor() {
   haptic('light');
   const p = state.profile;
@@ -1709,14 +1722,18 @@ function actionNotifySetType(ntype) {
   render();
 }
 async function actionNotifySave() {
-  const input = document.getElementById('notify-time-input');
-  if (!input) return;
-  const val = (input.value || '').trim();
-  if (!/^\d{1,2}:\d{2}$/.test(val)) { toast('Введи ЧЧ:ММ', 'error'); return; }
-  const [hhStr, mmStr] = val.split(':');
-  const hh = parseInt(hhStr, 10), mm = parseInt(mmStr, 10);
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { toast('Неверное время', 'error'); return; }
-  if (state.notifyEditorType === 'today' && hh > 10) { toast('Для «Сегодня» — не позже 10:00', 'error'); return; }
+  const hourInput = document.getElementById('notify-hour-input');
+  const minuteInput = document.getElementById('notify-minute-input');
+  if (!hourInput || !minuteInput) return;
+  let hh = parseInt(hourInput.value, 10);
+  let mm = parseInt(minuteInput.value, 10);
+  if (isNaN(hh)) hh = 0;
+  if (isNaN(mm)) mm = 0;
+  hh = Math.max(0, Math.min(23, hh));
+  mm = Math.max(0, Math.min(59, mm));
+  if (state.notifyEditorType === 'today' && hh > 10) {
+    toast('Для «Сегодня» — не позже 10:00', 'error'); return;
+  }
   try {
     await apiPost('/api/notify-set', {type: state.notifyEditorType, hour: hh, minute: mm});
     state.notifyEditor = false; haptic('success'); toast('Сохранено', 'success');
@@ -2306,9 +2323,19 @@ function actionChestModal(id) {
          if (typeof openChestRoulette === 'function') {
            openChestRoulette(id, async (res) => {
              if (res.ok) {
-               state.chestStatus = await apiGet('/api/chest/status').catch(()=>null);
-               await loadProfile();
-               render();
+               /* ── Точечное обновление без render() ── */
+               const newChestStatus = await apiGet('/api/chest/status').catch(()=>null);
+               if (newChestStatus) state.chestStatus = newChestStatus;
+               if (res.wallet) patchWalletInProfile(res.wallet);
+               else {
+                 const w = await apiGet('/api/wallet').catch(()=>null);
+                 if (w && w.wallet) patchWalletInProfile(w.wallet);
+               }
+               /* Обновляем только таймер капсулы в DOM, без перерисовки */
+               const capsuleTimerEl = document.querySelector('.chest-card[data-id="capsule"] .chest-timer');
+               if (state.chestStatus?.next_at && capsuleTimerEl) {
+                 capsuleTimerEl.setAttribute('data-chest-timer', state.chestStatus.next_at);
+               }
                startChestTimer();
              }
            });
@@ -2345,7 +2372,7 @@ function actionExchange() {
           const r = await apiPost('/api/exchange-soft-to-hard', {amount});
           haptic('success'); popIcon('ic-exchange');
           toast(`${r.soft_spent} Шифт → ${r.hard_received} Нова`, 'success');
-          await loadProfile(); render();
+          if (r.wallet) patchWalletInProfile(r.wallet);
         } catch (e) { toast(e.message, 'error'); }
       }}
     ]
