@@ -173,6 +173,7 @@ function fmtCountdown(ms) {
   return `${h}:${m}:${s}`;
 }
 
+
 function render() {
   const content = document.getElementById('content');
   const title = document.getElementById('page-title');
@@ -181,6 +182,7 @@ function render() {
   const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры',
     ai:'AI', admin:'Админ', profile:'Профиль'};
 
+  /* 🎨 Класс фона вкладки — на #app и на body */
   const _tab = state.tab || 'schedule';
   const _bgClasses = ['bg-schedule','bg-tasks','bg-notes','bg-games','bg-ai','bg-admin','bg-profile'];
   if (appEl) {
@@ -196,6 +198,7 @@ function render() {
     navEl.style.display = 'none';
     content.innerHTML = renderNotifyEditor();
     attachHandlers();
+    setTimeout(notifyAttachInputHandlers, 50);
     return;
   }
   if (state.pickerMode) {
@@ -411,6 +414,7 @@ function attachSwipe() {
   });
 }
 
+
 function getCourseFromGroup(name) {
   const m = String(name).match(/-(\d{2})-/);
   if (!m) return null;
@@ -502,11 +506,13 @@ function pickerAttachSearch() {
   });
 }
 
-/* ── Исправленный редактор уведомлений (без <input type="time">) ── */
+/* ── Рендер редактора уведомлений ── */
 function renderNotifyEditor() {
   const cur = state.notifyEditorType;
   const hh = state.notifyEditorHour;
   const mm = state.notifyEditorMinute;
+  const hhStr = String(hh).padStart(2, '0');
+  const mmStr = String(mm).padStart(2, '0');
   return `
     <div class="picker-header">
       <button class="picker-back" data-action="notify-back">${icon('ic-chevron-left',20)}</button>
@@ -518,21 +524,33 @@ function renderNotifyEditor() {
         <button data-action="notify-set-type" data-value="today" class="${cur==='today'?'active':''}">Сегодня</button>
         <button data-action="notify-set-type" data-value="tomorrow" class="${cur==='tomorrow'?'active':''}">Завтра</button>
       </div>
-      <div class="card-subtitle">${cur==='today' ? 'Расписание на сегодня. До 10:00.' : 'Расписание на завтра. Любое время.'}</div>
+      <div class="card-subtitle">${cur==='today' ? 'Расписание на сегодня. Время — не позже 10:00.' : 'Расписание на завтра. Любое время.'}</div>
     </div>
     <div class="card">
       <div class="card-title">Во сколько</div>
-      <div class="card-subtitle">Время по Иркутску</div>
+      <div class="card-subtitle">Время по Иркутску · ${cur==='today' ? 'макс. 10:00' : 'любое'}</div>
       <div class="time-input-row">
         <div class="time-field">
           <label>Часы</label>
-          <input class="input time-input" id="notify-hour-input" type="number" inputmode="numeric" min="0" max="23" value="${String(hh).padStart(2,'0')}">
+          <input class="input time-input" id="notify-hour-input"
+            type="text" inputmode="numeric" pattern="[0-9]*"
+            maxlength="2" value="${hhStr}"
+            autocomplete="off" autocorrect="off" spellcheck="false">
         </div>
         <div class="time-sep">:</div>
         <div class="time-field">
           <label>Минуты</label>
-          <input class="input time-input" id="notify-minute-input" type="number" inputmode="numeric" min="0" max="59" value="${String(mm).padStart(2,'0')}">
+          <input class="input time-input" id="notify-minute-input"
+            type="text" inputmode="numeric" pattern="[0-9]*"
+            maxlength="2" value="${mmStr}"
+            autocomplete="off" autocorrect="off" spellcheck="false">
         </div>
+      </div>
+      <div class="time-quick-row">
+        <button class="choice" data-action="notify-quick" data-h="7" data-m="0">07:00</button>
+        <button class="choice" data-action="notify-quick" data-h="8" data-m="0">08:00</button>
+        <button class="choice" data-action="notify-quick" data-h="9" data-m="0">09:00</button>
+        <button class="choice" data-action="notify-quick" data-h="10" data-m="0">10:00</button>
       </div>
     </div>
     <div class="actions-row" style="margin-top:16px">
@@ -540,6 +558,145 @@ function renderNotifyEditor() {
       <button class="btn btn-secondary" data-action="notify-off" style="flex:1">Выключить</button>
     </div>
   `;
+}
+
+/* ── Открытие редактора: сохраняем текущие значения ── */
+function actionOpenNotifyEditor() {
+  haptic('light');
+  const p = state.profile;
+  state.notifyEditorType = p?.notify_type || 'today';
+  const h = (p?.notify_hour != null && p.notify_hour >= 0) ? p.notify_hour : 8;
+  const m = (p?.notify_minute != null && p.notify_minute >= 0) ? p.notify_minute : 0;
+  state.notifyEditorHour = Math.max(0, Math.min(23, h));
+  state.notifyEditorMinute = Math.max(0, Math.min(59, m));
+  state.notifyEditor = true;
+  render();
+}
+
+/* ── Смена типа: today / tomorrow ── */
+function actionNotifySetType(ntype) {
+  state.notifyEditorType = ntype;
+  // Если выбрали "Сегодня" и текущий час больше 10 — сбрасываем на 8:00
+  if (ntype === 'today' && state.notifyEditorHour > 10) {
+    state.notifyEditorHour = 8;
+    state.notifyEditorMinute = 0;
+  }
+  render();
+}
+
+/* ── Живая валидация полей часов и минут ── */
+function notifyAttachInputHandlers() {
+  const hourInput = document.getElementById('notify-hour-input');
+  const minuteInput = document.getElementById('notify-minute-input');
+  if (!hourInput || !minuteInput) return;
+
+  const setupField = (input, maxVal, minVal = 0, isHour = false) => {
+    input.oninput = null;
+    input.onkeydown = null;
+    input.onblur = null;
+    input.onfocus = null;
+
+    input.onfocus = () => { try { input.select(); } catch(e){} };
+
+    input.oninput = (e) => {
+      let v = e.target.value.replace(/\D/g, '');
+      if (v.length > 2) v = v.slice(0, 2);
+      // Первая цифра не больше первой цифры максимума
+      if (v.length === 1) {
+        const firstMax = Math.floor(maxVal / 10);
+        if (parseInt(v, 10) > firstMax && maxVal < 100) {
+          v = v.slice(0, 0); // не даём ввести недопустимую первую цифру
+        }
+      }
+      e.target.value = v;
+    };
+
+    input.onblur = () => {
+      let v = input.value.replace(/\D/g, '');
+      if (v === '') v = '0';
+      let n = parseInt(v, 10);
+      if (isNaN(n)) n = 0;
+      if (n < minVal) n = minVal;
+      if (n > maxVal) n = maxVal;
+      input.value = String(n).padStart(2, '0');
+      if (input.id === 'notify-hour-input') state.notifyEditorHour = n;
+      if (input.id === 'notify-minute-input') state.notifyEditorMinute = n;
+    };
+
+    input.onkeydown = (e) => {
+      const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter'];
+      if (allowed.includes(e.key)) return;
+      if (!/^\d$/.test(e.key)) e.preventDefault();
+    };
+  };
+
+  const maxHour = state.notifyEditorType === 'today' ? 10 : 23;
+  setupField(hourInput, maxHour, 0, true);
+  setupField(minuteInput, 59, 0, false);
+}
+
+/* ── Сохранение уведомления ── */
+async function actionNotifySave() {
+  const hourInput = document.getElementById('notify-hour-input');
+  const minuteInput = document.getElementById('notify-minute-input');
+  if (!hourInput || !minuteInput) return;
+
+  let hh = parseInt((hourInput.value || '0').replace(/\D/g, ''), 10);
+  let mm = parseInt((minuteInput.value || '0').replace(/\D/g, ''), 10);
+  if (isNaN(hh)) hh = 0;
+  if (isNaN(mm)) mm = 0;
+
+  const maxHour = state.notifyEditorType === 'today' ? 10 : 23;
+  if (hh < 0 || hh > maxHour) {
+    haptic('error');
+    toast(state.notifyEditorType === 'today'
+      ? 'Для «Сегодня» часы — от 0 до 10'
+      : 'Часы — от 0 до 23', 'error');
+    hourInput.focus();
+    return;
+  }
+  if (mm < 0 || mm > 59) {
+    haptic('error');
+    toast('Минуты — от 0 до 59', 'error');
+    minuteInput.focus();
+    return;
+  }
+
+  try {
+    await apiPost('/api/notify-set', {type: state.notifyEditorType, hour: hh, minute: mm});
+    state.notifyEditor = false;
+    haptic('success');
+    toast('Сохранено', 'success');
+    await loadProfile();
+    render();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ── Быстрый выбор времени ── */
+function actionNotifyQuick(h, m) {
+  const hourInput = document.getElementById('notify-hour-input');
+  const minuteInput = document.getElementById('notify-minute-input');
+  if (hourInput) hourInput.value = String(h).padStart(2, '0');
+  if (minuteInput) minuteInput.value = String(m).padStart(2, '0');
+  state.notifyEditorHour = h;
+  state.notifyEditorMinute = m;
+  haptic('light');
+}
+
+/* ── Выключение уведомлений ── */
+async function actionNotifyOff() {
+  try {
+    await apiPost('/api/notify-set', {type: null});
+    state.notifyEditor = false; haptic('success'); toast('Уведомления выключены');
+    await loadProfile(); render();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ── Возврат из редактора ── */
+function actionNotifyBack() {
+  document.activeElement?.blur?.();
+  state.notifyEditor = false;
+  render();
 }
 
 function renderTasks() {
@@ -619,6 +776,7 @@ function renderGames() {
     </div>
   </div>`;
 }
+
 
 function renderAI() {
   let html = '';
@@ -822,6 +980,7 @@ async function loadTodayAndRender() {
   await loadSchedule();
   render();
 }
+
 
 function levelRewardByLevel(lvl) {
   if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
@@ -1122,6 +1281,7 @@ function patchWalletInProfile(wallet) {
   if (novaEl)  novaEl.textContent  = wallet.nova  ?? wallet.hard ?? 0;
 }
 
+
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
   score:0, best:0, top:[],
@@ -1410,6 +1570,7 @@ function flappyShowOverlay(mode, score) {
 }
 function flappyHideOverlay() { document.getElementById('flappyOverlay').classList.add('hidden'); }
 function flappyShowRecords() { flappyShowOverlay('records'); }
+
 
 const BS = {
   bet:10, gameId:null, side:0,
@@ -1704,55 +1865,14 @@ function bsPollStart() {
   }, 2000);
 }
 
-function actionOpenNotifyEditor() {
-  haptic('light');
-  const p = state.profile;
-  state.notifyEditorType = p?.notify_type || 'today';
-  state.notifyEditorHour = (p?.notify_hour >= 0) ? p.notify_hour : 8;
-  state.notifyEditorMinute = p?.notify_minute || 0;
-  state.notifyEditor = true;
-  render();
-}
-function actionNotifyBack() { state.notifyEditor = false; render(); }
-function actionNotifySetType(ntype) {
-  state.notifyEditorType = ntype;
-  if (ntype === 'today' && state.notifyEditorHour > 10) {
-    state.notifyEditorHour = 8; state.notifyEditorMinute = 0;
-  }
-  render();
-}
-async function actionNotifySave() {
-  const hourInput = document.getElementById('notify-hour-input');
-  const minuteInput = document.getElementById('notify-minute-input');
-  if (!hourInput || !minuteInput) return;
-  let hh = parseInt(hourInput.value, 10);
-  let mm = parseInt(minuteInput.value, 10);
-  if (isNaN(hh)) hh = 0;
-  if (isNaN(mm)) mm = 0;
-  hh = Math.max(0, Math.min(23, hh));
-  mm = Math.max(0, Math.min(59, mm));
-  if (state.notifyEditorType === 'today' && hh > 10) {
-    toast('Для «Сегодня» — не позже 10:00', 'error'); return;
-  }
-  try {
-    await apiPost('/api/notify-set', {type: state.notifyEditorType, hour: hh, minute: mm});
-    state.notifyEditor = false; haptic('success'); toast('Сохранено', 'success');
-    await loadProfile(); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionNotifyOff() {
-  try {
-    await apiPost('/api/notify-set', {type: null});
-    state.notifyEditor = false; haptic('success'); toast('Уведомления выключены');
-    await loadProfile(); render();
-  } catch (e) { toast(e.message, 'error'); }
-}
-async function actionChooseGroup() {
-  await loadGroups(true);
-  if (!state.groups || !Object.keys(state.groups).length) { toast('Не удалось загрузить', 'error'); return; }
-  state.pickerMode = 'institute';
-  state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
-  render();
+
+function actionChooseGroup() {
+  loadGroups(true).then(() => {
+    if (!state.groups || !Object.keys(state.groups).length) { toast('Не удалось загрузить', 'error'); return; }
+    state.pickerMode = 'institute';
+    state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
+    render();
+  });
 }
 function actionPickerBack() {
   if (state.pickerMode === 'group') { state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = ''; }
@@ -2323,7 +2443,6 @@ function actionChestModal(id) {
          if (typeof openChestRoulette === 'function') {
            openChestRoulette(id, async (res) => {
              if (res.ok) {
-               /* ── Точечное обновление без render() ── */
                const newChestStatus = await apiGet('/api/chest/status').catch(()=>null);
                if (newChestStatus) state.chestStatus = newChestStatus;
                if (res.wallet) patchWalletInProfile(res.wallet);
@@ -2331,7 +2450,6 @@ function actionChestModal(id) {
                  const w = await apiGet('/api/wallet').catch(()=>null);
                  if (w && w.wallet) patchWalletInProfile(w.wallet);
                }
-               /* Обновляем только таймер капсулы в DOM, без перерисовки */
                const capsuleTimerEl = document.querySelector('.chest-card[data-id="capsule"] .chest-timer');
                if (state.chestStatus?.next_at && capsuleTimerEl) {
                  capsuleTimerEl.setAttribute('data-chest-timer', state.chestStatus.next_at);
@@ -2591,6 +2709,7 @@ function handleAction(el) {
   else if (a === 'notify-open') actionOpenNotifyEditor();
   else if (a === 'notify-back') actionNotifyBack();
   else if (a === 'notify-set-type') actionNotifySetType(el.dataset.value);
+  else if (a === 'notify-quick') actionNotifyQuick(parseInt(el.dataset.h,10), parseInt(el.dataset.m,10));
   else if (a === 'notify-save') actionNotifySave();
   else if (a === 'notify-off') actionNotifyOff();
   else if (a === 'notify-before') actionSetNotifyBefore();
