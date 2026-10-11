@@ -115,7 +115,7 @@ function toast(text, type='info') {
     el.style.opacity = '0';
     el.style.transform = 'translateY(20px)';
     setTimeout(()=>el.remove(), 300);
-  }, 2200);
+  }, 2400);
 }
 function modalOpen({title, body, actions}) {
   const m = document.getElementById('modal');
@@ -173,7 +173,6 @@ function fmtCountdown(ms) {
   return `${h}:${m}:${s}`;
 }
 
-
 function render() {
   const content = document.getElementById('content');
   const title = document.getElementById('page-title');
@@ -182,27 +181,19 @@ function render() {
   const titles = {schedule:'Расписание', tasks:'Задачи', notes:'Заметки', games:'Игры',
     ai:'AI', admin:'Админ', profile:'Профиль'};
 
-  /* 🎨 Класс фона вкладки — на #app и на body */
-  const _tab = state.tab || 'schedule';
-  const _bgClasses = ['bg-schedule','bg-tasks','bg-notes','bg-games','bg-ai','bg-admin','bg-profile'];
-  if (appEl) {
-    appEl.classList.remove(..._bgClasses);
-    appEl.classList.add('bg-' + _tab);
-  }
-  document.body.classList.remove(..._bgClasses);
-  document.body.classList.add('bg-' + _tab);
-
   if (state.notifyEditor) {
     appEl?.classList.add('picker-open');
+    document.body.classList.add('picker-open');
     title.textContent = 'Уведомления';
     navEl.style.display = 'none';
     content.innerHTML = renderNotifyEditor();
     attachHandlers();
-    setTimeout(notifyAttachInputHandlers, 50);
+    setTimeout(notifyAttachInputHandlers, 30);
     return;
   }
   if (state.pickerMode) {
     appEl?.classList.add('picker-open');
+    document.body.classList.add('picker-open');
     title.textContent = state.pickerMode === 'institute' ? 'Институт'
       : state.pickerMode === 'course' ? 'Курс' : 'Группа';
     navEl.style.display = 'none';
@@ -216,6 +207,7 @@ function render() {
     return;
   }
   appEl?.classList.remove('picker-open');
+  document.body.classList.remove('picker-open');
   navEl.style.display = '';
 
   title.textContent = titles[state.tab] || 'Студент';
@@ -414,7 +406,6 @@ function attachSwipe() {
   });
 }
 
-
 function getCourseFromGroup(name) {
   const m = String(name).match(/-(\d{2})-/);
   if (!m) return null;
@@ -506,13 +497,19 @@ function pickerAttachSearch() {
   });
 }
 
-/* ── Рендер редактора уведомлений ── */
+/* ══════════════════════════════════════════════════════════════
+   УВЕДОМЛЕНИЯ — с валидацией
+   ══════════════════════════════════════════════════════════════ */
+
 function renderNotifyEditor() {
   const cur = state.notifyEditorType;
   const hh = state.notifyEditorHour;
   const mm = state.notifyEditorMinute;
   const hhStr = String(hh).padStart(2, '0');
   const mmStr = String(mm).padStart(2, '0');
+  const isToday = cur === 'today';
+  const capText = isToday ? 'макс. 10:00' : '00:00 – 23:59';
+  const capClass = isToday ? 'time-cap warn' : 'time-cap';
   return `
     <div class="picker-header">
       <button class="picker-back" data-action="notify-back">${icon('ic-chevron-left',20)}</button>
@@ -521,14 +518,21 @@ function renderNotifyEditor() {
     <div class="card">
       <div class="card-title">Когда напоминать</div>
       <div class="tab-buttons" style="margin-bottom:12px">
-        <button data-action="notify-set-type" data-value="today" class="${cur==='today'?'active':''}">Сегодня</button>
-        <button data-action="notify-set-type" data-value="tomorrow" class="${cur==='tomorrow'?'active':''}">Завтра</button>
+        <button data-action="notify-set-type" data-value="today" class="${isToday?'active':''}">Сегодня</button>
+        <button data-action="notify-set-type" data-value="tomorrow" class="${!isToday?'active':''}">Завтра</button>
       </div>
-      <div class="card-subtitle">${cur==='today' ? 'Расписание на сегодня. Время — не позже 10:00.' : 'Расписание на завтра. Любое время.'}</div>
+      <div class="card-subtitle">
+        ${isToday
+          ? 'Расписание на сегодня. Время — не позже 10:00 утра.'
+          : 'Расписание на завтра. Любое время от 00:00 до 23:59.'}
+      </div>
     </div>
     <div class="card">
-      <div class="card-title">Во сколько</div>
-      <div class="card-subtitle">Время по Иркутску · ${cur==='today' ? 'макс. 10:00' : 'любое'}</div>
+      <div class="card-title" style="justify-content:space-between">
+        <span>Во сколько</span>
+        <span class="${capClass}">${capText}</span>
+      </div>
+      <div class="card-subtitle">Время по Иркутску</div>
       <div class="time-input-row">
         <div class="time-field">
           <label>Часы</label>
@@ -546,6 +550,7 @@ function renderNotifyEditor() {
             autocomplete="off" autocorrect="off" spellcheck="false">
         </div>
       </div>
+      <div class="time-hint" id="notify-hint"></div>
       <div class="time-quick-row">
         <button class="choice" data-action="notify-quick" data-h="7" data-m="0">07:00</button>
         <button class="choice" data-action="notify-quick" data-h="8" data-m="0">08:00</button>
@@ -560,120 +565,209 @@ function renderNotifyEditor() {
   `;
 }
 
-/* ── Открытие редактора: сохраняем текущие значения ── */
 function actionOpenNotifyEditor() {
   haptic('light');
   const p = state.profile;
-  state.notifyEditorType = p?.notify_type || 'today';
-  const h = (p?.notify_hour != null && p.notify_hour >= 0) ? p.notify_hour : 8;
-  const m = (p?.notify_minute != null && p.notify_minute >= 0) ? p.notify_minute : 0;
-  state.notifyEditorHour = Math.max(0, Math.min(23, h));
-  state.notifyEditorMinute = Math.max(0, Math.min(59, m));
+  const ntype = p?.notify_type || 'today';
+  state.notifyEditorType = ntype;
+  let h = (p?.notify_hour != null && p.notify_hour >= 0) ? p.notify_hour : 8;
+  let m = (p?.notify_minute != null && p.notify_minute >= 0) ? p.notify_minute : 0;
+  if (ntype === 'today' && (h > 10 || (h === 10 && m > 0))) { h = 8; m = 0; }
+  h = Math.max(0, Math.min(23, h));
+  m = Math.max(0, Math.min(59, m));
+  state.notifyEditorHour = h;
+  state.notifyEditorMinute = m;
   state.notifyEditor = true;
   render();
 }
 
-/* ── Смена типа: today / tomorrow ── */
 function actionNotifySetType(ntype) {
+  haptic('light');
   state.notifyEditorType = ntype;
-  // Если выбрали "Сегодня" и текущий час больше 10 — сбрасываем на 8:00
-  if (ntype === 'today' && state.notifyEditorHour > 10) {
-    state.notifyEditorHour = 8;
-    state.notifyEditorMinute = 0;
+  if (ntype === 'today') {
+    if (state.notifyEditorHour > 10 ||
+        (state.notifyEditorHour === 10 && state.notifyEditorMinute > 0)) {
+      state.notifyEditorHour = 8;
+      state.notifyEditorMinute = 0;
+    }
   }
   render();
 }
 
-/* ── Живая валидация полей часов и минут ── */
 function notifyAttachInputHandlers() {
   const hourInput = document.getElementById('notify-hour-input');
   const minuteInput = document.getElementById('notify-minute-input');
+  const hintEl = document.getElementById('notify-hint');
   if (!hourInput || !minuteInput) return;
 
-  const setupField = (input, maxVal, minVal = 0, isHour = false) => {
-    input.oninput = null;
-    input.onkeydown = null;
-    input.onblur = null;
-    input.onfocus = null;
+  const showHint = (text, type) => {
+    if (!hintEl) return;
+    hintEl.textContent = text || '';
+    hintEl.className = 'time-hint' + (type ? ' ' + type : '');
+  };
+  const setError = (input, on) => {
+    if (!input) return;
+    if (on) {
+      input.classList.add('input-error');
+      input.style.animation = 'none';
+      void input.offsetWidth;
+      input.style.animation = '';
+    } else {
+      input.classList.remove('input-error');
+    }
+  };
 
+  const validate = () => {
+    const type = state.notifyEditorType;
+    const hStr = hourInput.value.replace(/\D/g, '');
+    const mStr = minuteInput.value.replace(/\D/g, '');
+    const h = hStr === '' ? NaN : parseInt(hStr, 10);
+    const m = mStr === '' ? NaN : parseInt(mStr, 10);
+    let errH = null, errM = null;
+    if (!isNaN(h)) {
+      if (h < 0 || h > 23) errH = 'Часы — от 0 до 23';
+      else if (type === 'today' && h > 10) errH = 'Для «Сегодня» часы — не позже 10';
+    }
+    if (!isNaN(m)) {
+      if (m < 0 || m > 59) errM = 'Минуты — от 0 до 59';
+    }
+    if (!errH && !errM && !isNaN(h) && !isNaN(m)) {
+      if (type === 'today' && (h > 10 || (h === 10 && m > 0))) {
+        errH = 'Для «Сегодня» время — не позже 10:00';
+      }
+    }
+    setError(hourInput, !!errH);
+    setError(minuteInput, !!errM);
+    if (errH && errM) showHint(errH + ' · ' + errM, 'warn');
+    else if (errH) showHint(errH, 'warn');
+    else if (errM) showHint(errM, 'warn');
+    else if (!isNaN(h) && !isNaN(m)) {
+      showHint(type === 'today' ? 'Можно сохранить: время до 10:00' : 'Можно сохранить: любое время', 'ok');
+    } else showHint('');
+    return { ok: !errH && !errM, h, m, errH, errM };
+  };
+
+  const setupField = (input) => {
+    input.oninput = null; input.onkeydown = null;
+    input.onblur = null; input.onfocus = null;
     input.onfocus = () => { try { input.select(); } catch(e){} };
-
     input.oninput = (e) => {
       let v = e.target.value.replace(/\D/g, '');
       if (v.length > 2) v = v.slice(0, 2);
-      // Первая цифра не больше первой цифры максимума
-      if (v.length === 1) {
-        const firstMax = Math.floor(maxVal / 10);
-        if (parseInt(v, 10) > firstMax && maxVal < 100) {
-          v = v.slice(0, 0); // не даём ввести недопустимую первую цифру
-        }
-      }
       e.target.value = v;
+      validate();
     };
-
     input.onblur = () => {
       let v = input.value.replace(/\D/g, '');
       if (v === '') v = '0';
       let n = parseInt(v, 10);
       if (isNaN(n)) n = 0;
-      if (n < minVal) n = minVal;
-      if (n > maxVal) n = maxVal;
+      const isHour = input.id === 'notify-hour-input';
+      const maxV = isHour ? 23 : 59;
+      if (n < 0) n = 0;
+      if (n > maxV) n = maxV;
       input.value = String(n).padStart(2, '0');
-      if (input.id === 'notify-hour-input') state.notifyEditorHour = n;
-      if (input.id === 'notify-minute-input') state.notifyEditorMinute = n;
+      if (isHour) state.notifyEditorHour = n;
+      else state.notifyEditorMinute = n;
+      validate();
     };
-
     input.onkeydown = (e) => {
-      const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter'];
+      const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight',
+        'ArrowUp','ArrowDown','Enter'];
       if (allowed.includes(e.key)) return;
       if (!/^\d$/.test(e.key)) e.preventDefault();
     };
   };
 
-  const maxHour = state.notifyEditorType === 'today' ? 10 : 23;
-  setupField(hourInput, maxHour, 0, true);
-  setupField(minuteInput, 59, 0, false);
+  setupField(hourInput);
+  setupField(minuteInput);
+  validate();
 }
 
-/* ── Сохранение уведомления ── */
 async function actionNotifySave() {
   const hourInput = document.getElementById('notify-hour-input');
   const minuteInput = document.getElementById('notify-minute-input');
+  const hintEl = document.getElementById('notify-hint');
   if (!hourInput || !minuteInput) return;
 
-  let hh = parseInt((hourInput.value || '0').replace(/\D/g, ''), 10);
-  let mm = parseInt((minuteInput.value || '0').replace(/\D/g, ''), 10);
-  if (isNaN(hh)) hh = 0;
-  if (isNaN(mm)) mm = 0;
+  const setError = (input, on) => {
+    if (!input) return;
+    if (on) {
+      input.classList.add('input-error');
+      input.style.animation = 'none';
+      void input.offsetWidth;
+      input.style.animation = '';
+    } else input.classList.remove('input-error');
+  };
+  const showHint = (text, type) => {
+    if (!hintEl) return;
+    hintEl.textContent = text || '';
+    hintEl.className = 'time-hint' + (type ? ' ' + type : '');
+  };
 
-  const maxHour = state.notifyEditorType === 'today' ? 10 : 23;
-  if (hh < 0 || hh > maxHour) {
-    haptic('error');
-    toast(state.notifyEditorType === 'today'
-      ? 'Для «Сегодня» часы — от 0 до 10'
-      : 'Часы — от 0 до 23', 'error');
-    hourInput.focus();
-    return;
+  const hStr = hourInput.value.replace(/\D/g, '');
+  const mStr = minuteInput.value.replace(/\D/g, '');
+  const hh = hStr === '' ? NaN : parseInt(hStr, 10);
+  const mm = mStr === '' ? NaN : parseInt(mStr, 10);
+
+  setError(hourInput, false);
+  setError(minuteInput, false);
+
+  if (isNaN(hh)) {
+    setError(hourInput, true); haptic('error');
+    showHint('Введи часы (0–23)', 'warn');
+    toast('Введи часы числом', 'error'); hourInput.focus(); return;
+  }
+  if (isNaN(mm)) {
+    setError(minuteInput, true); haptic('error');
+    showHint('Введи минуты (0–59)', 'warn');
+    toast('Введи минуты числом', 'error'); minuteInput.focus(); return;
+  }
+  if (hh < 0 || hh > 23) {
+    setError(hourInput, true); haptic('error');
+    showHint('Часы — от 0 до 23', 'warn');
+    toast('Часы могут быть от 0 до 23', 'error'); hourInput.focus(); return;
   }
   if (mm < 0 || mm > 59) {
-    haptic('error');
-    toast('Минуты — от 0 до 59', 'error');
-    minuteInput.focus();
-    return;
+    setError(minuteInput, true); haptic('error');
+    showHint('Минуты — от 0 до 59', 'warn');
+    toast('Минуты могут быть от 0 до 59', 'error'); minuteInput.focus(); return;
+  }
+  if (state.notifyEditorType === 'today') {
+    if (hh > 10 || (hh === 10 && mm > 0)) {
+      setError(hourInput, true); haptic('error');
+      showHint('Для «Сегодня» время не позже 10:00', 'warn');
+      toast('На сегодня нельзя ставить позже 10:00', 'error');
+      hourInput.focus(); return;
+    }
   }
 
   try {
     await apiPost('/api/notify-set', {type: state.notifyEditorType, hour: hh, minute: mm});
     state.notifyEditor = false;
+    document.body.classList.remove('picker-open');
     haptic('success');
     toast('Сохранено', 'success');
     await loadProfile();
     render();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    if (e.code === 'today_limit') {
+      haptic('error');
+      setError(hourInput, true);
+      showHint('Для «Сегодня» время не позже 10:00', 'warn');
+      toast('На сегодня нельзя ставить позже 10:00', 'error');
+    } else {
+      toast(e.message, 'error');
+    }
+  }
 }
 
-/* ── Быстрый выбор времени ── */
 function actionNotifyQuick(h, m) {
+  if (state.notifyEditorType === 'today' && (h > 10 || (h === 10 && m > 0))) {
+    haptic('error');
+    toast('Для «Сегодня» — не позже 10:00', 'error');
+    return;
+  }
   const hourInput = document.getElementById('notify-hour-input');
   const minuteInput = document.getElementById('notify-minute-input');
   if (hourInput) hourInput.value = String(h).padStart(2, '0');
@@ -681,23 +775,27 @@ function actionNotifyQuick(h, m) {
   state.notifyEditorHour = h;
   state.notifyEditorMinute = m;
   haptic('light');
+  if (typeof notifyAttachInputHandlers === 'function') notifyAttachInputHandlers();
 }
 
-/* ── Выключение уведомлений ── */
 async function actionNotifyOff() {
   try {
     await apiPost('/api/notify-set', {type: null});
-    state.notifyEditor = false; haptic('success'); toast('Уведомления выключены');
+    state.notifyEditor = false;
+    document.body.classList.remove('picker-open');
+    haptic('success'); toast('Уведомления выключены');
     await loadProfile(); render();
   } catch (e) { toast(e.message, 'error'); }
 }
 
-/* ── Возврат из редактора ── */
 function actionNotifyBack() {
   document.activeElement?.blur?.();
   state.notifyEditor = false;
+  document.body.classList.remove('picker-open');
   render();
 }
+
+/* ══════════════════════════════════════════════════════════════ */
 
 function renderTasks() {
   const tasks = state.tasks;
@@ -776,7 +874,6 @@ function renderGames() {
     </div>
   </div>`;
 }
-
 
 function renderAI() {
   let html = '';
@@ -933,6 +1030,7 @@ async function loadTabData(tab) {
   state.loading = true;
   state.error = null;
   state.notifyEditor = false;
+  document.body.classList.remove('picker-open');
   render();
   try {
     if (tab === 'schedule') {
@@ -980,7 +1078,6 @@ async function loadTodayAndRender() {
   await loadSchedule();
   render();
 }
-
 
 function levelRewardByLevel(lvl) {
   if (lvl <= 5) return `+100 ${icShift(14)} · +1 ${icNova(14)}`;
@@ -1270,8 +1367,6 @@ async function loadWalletIntoProfile() {
     startChestTimer();
   } catch (e) {}
 }
-
-/* ── Точечное обновление кошелька после открытия кейса (без render()) ── */
 function patchWalletInProfile(wallet) {
   if (!wallet || !state.profile) return;
   state.profile.wallet = Object.assign({}, state.profile.wallet || {}, wallet);
@@ -1280,7 +1375,6 @@ function patchWalletInProfile(wallet) {
   if (shiftEl) shiftEl.textContent = wallet.shift ?? wallet.soft ?? 0;
   if (novaEl)  novaEl.textContent  = wallet.nova  ?? wallet.hard ?? 0;
 }
-
 
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
@@ -1570,7 +1664,6 @@ function flappyShowOverlay(mode, score) {
 }
 function flappyHideOverlay() { document.getElementById('flappyOverlay').classList.add('hidden'); }
 function flappyShowRecords() { flappyShowOverlay('records'); }
-
 
 const BS = {
   bet:10, gameId:null, side:0,
@@ -1864,7 +1957,6 @@ function bsPollStart() {
     } catch (e) {}
   }, 2000);
 }
-
 
 function actionChooseGroup() {
   loadGroups(true).then(() => {
