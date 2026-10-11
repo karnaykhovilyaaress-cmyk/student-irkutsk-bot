@@ -582,3 +582,26 @@ textarea.input{resize:vertical;min-height:88px}
 html, body { background: transparent !important; }
 #app { background: transparent !important; }
 #bg-art { z-index: 0 !important; }
+
+/* ── Поля времени в редакторе уведомлений ── */
+.time-input-row{display:flex;align-items:flex-end;gap:10px;margin-top:10px}
+.time-field{flex:1;display:flex;flex-direction:column;gap:6px}
+.time-field label{font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;padding-left:4px}
+.time-input{text-align:center;font-family:'Anton',sans-serif;font-style:italic;font-size:22px;
+  padding:12px 8px;margin-bottom:0;-moz-appearance:textfield;appearance:textfield}
+.time-input::-webkit-outer-spin-button,
+.time-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.time-sep{font-family:'Anton',sans-serif;font-style:italic;font-size:24px;color:var(--text-2);padding-bottom:6px}
+
+/* ── Фикс шапки пикера ── */
+.picker-header{
+  padding-top:calc(var(--tg-top) + var(--safe-top) + 6px) !important;
+  padding-bottom:14px !important;
+}
+.picker-search{margin:0 16px 12px !important;width:calc(100% - 32px) !important}
+
+/* ── Общие фиксы инпутов в модалке ── */
+#app.picker-open .content{padding-top:0 !important}
+.modal-body input[type="number"],
+.modal-body input[type="text"],
+.modal-body input[type="date"]{width:100%;box-sizing:border-box}
