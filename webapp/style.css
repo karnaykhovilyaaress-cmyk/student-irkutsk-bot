@@ -579,29 +579,92 @@ textarea.input{resize:vertical;min-height:88px}
 ::-webkit-scrollbar-track{background:transparent}
 
 
+/* ══════════════════════════════════════════════════════════════
+   ФИКС РЕДАКТОРА УВЕДОМЛЕНИЙ И ПИКЕРА
+   ══════════════════════════════════════════════════════════════ */
+
+/* Шапка пикера/редактора на всю ширину, без боковых отступов */
+.picker-header{
+  width:100% !important;
+  box-sizing:border-box !important;
+  padding:calc(var(--tg-top) + var(--safe-top) + 8px) 16px 14px !important;
+  margin:0 !important;
+}
+
+/* Контент пикера тоже на всю ширину */
+#app.picker-open .content{
+  padding:0 16px !important;
+  width:100% !important;
+  box-sizing:border-box !important;
+}
+#app.picker-open{
+  overflow-x:hidden !important;
+}
+
+/* Поля ввода времени */
+.time-input-row{
+  display:flex;
+  align-items:flex-end;
+  gap:10px;
+  margin-top:12px;
+  width:100%;
+}
+.time-field{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:0;
+}
+.time-field label{
+  font-size:11px;
+  font-weight:700;
+  color:var(--text-2);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  padding-left:4px;
+}
+.time-input{
+  width:100% !important;
+  text-align:center;
+  font-family:'Anton',sans-serif;
+  font-style:italic;
+  font-size:26px;
+  letter-spacing:2px;
+  padding:12px 8px;
+  margin-bottom:0 !important;
+  -moz-appearance:textfield;
+  appearance:textfield;
+  box-sizing:border-box;
+}
+.time-input::-webkit-outer-spin-button,
+.time-input::-webkit-inner-spin-button{
+  -webkit-appearance:none;
+  margin:0;
+}
+.time-sep{
+  font-family:'Anton',sans-serif;
+  font-style:italic;
+  font-size:26px;
+  color:var(--text-2);
+  padding-bottom:14px;
+  line-height:1;
+}
+
+/* Быстрые кнопки времени */
+.time-quick-row{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
+.time-quick-row .choice{
+  flex:0 0 auto;
+  padding:8px 14px;
+  font-size:12px;
+}
+
+
 html, body { background: transparent !important; }
 #app { background: transparent !important; }
 #bg-art { z-index: 0 !important; }
-
-/* ── Поля времени в редакторе уведомлений ── */
-.time-input-row{display:flex;align-items:flex-end;gap:10px;margin-top:10px}
-.time-field{flex:1;display:flex;flex-direction:column;gap:6px}
-.time-field label{font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;padding-left:4px}
-.time-input{text-align:center;font-family:'Anton',sans-serif;font-style:italic;font-size:22px;
-  padding:12px 8px;margin-bottom:0;-moz-appearance:textfield;appearance:textfield}
-.time-input::-webkit-outer-spin-button,
-.time-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.time-sep{font-family:'Anton',sans-serif;font-style:italic;font-size:24px;color:var(--text-2);padding-bottom:6px}
-
-/* ── Фикс шапки пикера ── */
-.picker-header{
-  padding-top:calc(var(--tg-top) + var(--safe-top) + 6px) !important;
-  padding-bottom:14px !important;
-}
-.picker-search{margin:0 16px 12px !important;width:calc(100% - 32px) !important}
-
-/* ── Общие фиксы инпутов в модалке ── */
-#app.picker-open .content{padding-top:0 !important}
-.modal-body input[type="number"],
-.modal-body input[type="text"],
-.modal-body input[type="date"]{width:100%;box-sizing:border-box}
