@@ -29,6 +29,7 @@ const state = {
   adminStats:null, adminFeedback:[], adminMonitor:null, adminBusy:false,
   achData:null, chestStatus:null, chestTimer:null,
   avatarGender:'male',
+  schFilterSemester:'',
 };
 
 const IMG_CACHE = {};
@@ -102,6 +103,10 @@ function popIcon(id){
   el.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);animation:pop .6s ease-out;z-index:99999;pointer-events:none';
   document.body.appendChild(el);
   setTimeout(()=>el.remove(), 600);
+}
+function hideKeyboard(){
+  try { document.activeElement?.blur?.(); } catch(e){}
+  try { window.Telegram?.WebApp?.hideKeyboard?.(); } catch(e){}
 }
 
 function toast(text, type='info') {
@@ -497,9 +502,7 @@ function pickerAttachSearch() {
   });
 }
 
-/* ══════════════════════════════════════════════════════════════
-   УВЕДОМЛЕНИЯ — с валидацией
-   ══════════════════════════════════════════════════════════════ */
+/* ═════════ УВЕДОМЛЕНИЯ ═════════ */
 
 function renderNotifyEditor() {
   const cur = state.notifyEditorType;
@@ -549,6 +552,9 @@ function renderNotifyEditor() {
             maxlength="2" value="${mmStr}"
             autocomplete="off" autocorrect="off" spellcheck="false">
         </div>
+      </div>
+      <div class="time-done-row">
+        <button class="time-done-btn" data-action="notify-hide-kb">ГОТОВО</button>
       </div>
       <div class="time-hint" id="notify-hint"></div>
       <div class="time-quick-row">
@@ -744,6 +750,7 @@ async function actionNotifySave() {
 
   try {
     await apiPost('/api/notify-set', {type: state.notifyEditorType, hour: hh, minute: mm});
+    hideKeyboard();
     state.notifyEditor = false;
     document.body.classList.remove('picker-open');
     haptic('success');
@@ -775,12 +782,16 @@ function actionNotifyQuick(h, m) {
   state.notifyEditorHour = h;
   state.notifyEditorMinute = m;
   haptic('light');
+  hideKeyboard();
   if (typeof notifyAttachInputHandlers === 'function') notifyAttachInputHandlers();
 }
+
+function actionNotifyHideKb(){ hideKeyboard(); haptic('light'); }
 
 async function actionNotifyOff() {
   try {
     await apiPost('/api/notify-set', {type: null});
+    hideKeyboard();
     state.notifyEditor = false;
     document.body.classList.remove('picker-open');
     haptic('success'); toast('Уведомления выключены');
@@ -789,13 +800,271 @@ async function actionNotifyOff() {
 }
 
 function actionNotifyBack() {
-  document.activeElement?.blur?.();
+  hideKeyboard();
   state.notifyEditor = false;
   document.body.classList.remove('picker-open');
   render();
 }
 
-/* ══════════════════════════════════════════════════════════════ */
+/* ═════════ СТИПЕНДИЯ ═════════ */
+
+function renderScholarshipBlock() {
+  const s = state.scholarship;
+  if (!s) {
+    return `<div class="card"><div class="skeleton-card" style="margin:0"></div></div>`;
+  }
+  const semesters = s.semesters || [];
+  const activeSem = state.schFilterSemester;
+  const grades = (s.grades || []).filter(g => !activeSem || (g.semester || '') === activeSem);
+
+  const amount = s.amount;
+  const amountStr = (amount != null && amount > 0) ? `${amount}` : '—';
+
+  // Считаем статистику по отфильтрованным оценкам
+  let c5=0,c4=0,c3=0,c2=0,sum=0;
+  for (const g of grades) {
+    if (g.grade===5) c5++; else if (g.grade===4) c4++;
+    else if (g.grade===3) c3++; else if (g.grade===2) c2++;
+    sum += g.grade;
+  }
+  const avg = grades.length ? (sum / grades.length) : 0;
+  const avgStr = grades.length ? avg.toFixed(2) : '—';
+
+  let forecast = '';
+  let forecastCls = 'ok';
+  if (!grades.length) {
+    forecast = 'Добавь оценки, чтобы увидеть прогноз стипендии.';
+    forecastCls = '';
+  } else if (c2 > 0 || c3 > 0) {
+    forecast = `Есть ${c3 ? c3 + ' тройка(и)' : ''}${c3 && c2 ? ' и ' : ''}${c2 ? c2 + ' двойка(и)' : ''} — на академическую не проходишь.`;
+    forecastCls = 'bad';
+  } else if (avg >= 4.5) {
+    forecast = 'Средний ≥ 4.5 — проходишь на академическую и можешь претендовать на повышенную.';
+    forecastCls = 'ok';
+  } else if (avg >= 4.0) {
+    forecast = `Проходишь на академическую. До повышенной не хватает ${(4.5 - avg).toFixed(2)} балла.`;
+    forecastCls = 'warn';
+  } else {
+    forecast = 'Средний ниже 4.0 — на академическую не проходишь.';
+    forecastCls = 'bad';
+  }
+
+  const forecastIcon = forecastCls === 'ok' ? '✓'
+    : forecastCls === 'warn' ? '!' : forecastCls === 'bad' ? '×' : 'i';
+
+  let html = `<div class="sch-hero">
+    <div class="sch-hero-title">СТИПЕНДИЯ</div>
+    <div class="sch-hero-amount">${escapeHtml(amountStr)}<small>₽ / мес</small></div>
+    <div class="sch-hero-sub">Предметов: ${grades.length}${semesters.length ? ` · ${semesters.length} семестр(а)` : ''}</div>
+    <div class="sch-avg-row">
+      <div class="sch-avg-box">
+        <div class="num">${avgStr}</div>
+        <div class="label">Средний балл</div>
+      </div>
+      <div class="sch-avg-box">
+        <div class="num">${c5 + c4}/${grades.length || 0}</div>
+        <div class="label">Хорошо и отлично</div>
+      </div>
+    </div>
+    <div class="sch-counts">
+      <div class="sch-count g5"><div class="n">${c5}</div><div class="g">5</div></div>
+      <div class="sch-count g4"><div class="n">${c4}</div><div class="g">4</div></div>
+      <div class="sch-count g3"><div class="n">${c3}</div><div class="g">3</div></div>
+      <div class="sch-count g2"><div class="n">${c2}</div><div class="g">2</div></div>
+    </div>
+  </div>`;
+
+  html += `<div class="sch-forecast ${forecastCls}">
+    <div class="sch-forecast-icon">${forecastIcon}</div>
+    <div>${escapeHtml(forecast)}</div>
+  </div>`;
+
+  html += `<div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>Мои предметы</span>
+      <span style="font-size:11px;color:var(--text-2);font-weight:600;text-transform:none;letter-spacing:0">+5 XP / +1 Шифт за оценку</span>
+    </div>
+    <div class="actions-row" style="margin-bottom:12px">
+      <button class="btn btn-secondary" data-action="sch-set-amount" style="flex:1">${amount ? 'Изменить сумму' : 'Указать сумму'}</button>
+      <button class="btn" data-action="sch-add-grade" style="flex:1">+ Оценка</button>
+    </div>
+    ${semesters.length ? `<div class="choice-row" style="margin-bottom:6px">
+      <button class="sch-subj-chip ${!activeSem?'selected':''}" data-action="sch-sem" data-value="">Все</button>
+      ${semesters.map(sm => `<button class="sch-subj-chip ${activeSem===sm?'selected':''}" data-action="sch-sem" data-value="${escapeHtml(sm)}">${escapeHtml(sm)}</button>`).join('')}
+    </div>` : ''}
+    ${!grades.length ? `<div class="sch-empty">Пока нет оценок. Нажми «+ Оценка».</div>` :
+      grades.map(g => {
+        const cls = 'g' + g.grade;
+        return `<div class="sch-grade-item">
+          <div class="sch-grade-badge ${cls}">${g.grade}</div>
+          <div class="sch-grade-subj">${escapeHtml(g.subject)}${g.semester ? `<small>${escapeHtml(g.semester)}</small>` : ''}</div>
+          <div class="sch-grade-actions">
+            <button data-action="sch-edit-grade" data-id="${g.id}" title="Изменить">${icon('ic-pencil',16)}</button>
+            <button data-action="sch-del-grade" data-id="${g.id}" title="Удалить">${icon('ic-close',16)}</button>
+          </div>
+        </div>`;
+      }).join('')
+    }
+  </div>`;
+
+  if (grades.length) {
+    html += `<div class="card">
+      <div class="card-title">Очистка</div>
+      <div class="card-subtitle">Удалить оценки из выбранного семестра или все.</div>
+      <div class="actions-row">
+        <button class="btn btn-secondary" data-action="sch-clear" data-sem="${escapeHtml(activeSem||'')}" style="flex:1">${activeSem ? 'Очистить «'+escapeHtml(activeSem)+'»' : 'Очистить всё'}</button>
+      </div>
+    </div>`;
+  }
+
+  return html;
+}
+
+function actionScholarshipSetAmount() {
+  const cur = state.scholarship?.amount || 0;
+  modalOpen({
+    title:'СУММА СТИПЕНДИИ',
+    body: `
+      <div class="label">руб. в месяц</div>
+      <input class="input" id="sch-amount" type="number" min="0" max="100000" value="${cur}">
+      <div class="choice-row">
+        <button class="choice" data-amt="0">Не получаю</button>
+        <button class="choice" data-amt="3000">3000</button>
+        <button class="choice" data-amt="5000">5000</button>
+        <button class="choice" data-amt="7000">7000</button>
+        <button class="choice" data-amt="10000">10000</button>
+      </div>
+    `,
+    actions:[
+      {label:'ОТМЕНА', style:'btn-secondary'},
+      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+        const v = parseInt(document.getElementById('sch-amount')?.value || '0') || 0;
+        try {
+          await apiPost('/api/scholarship-set-amount', {amount: v});
+          hideKeyboard();
+          haptic('success'); toast('Сохранено', 'success');
+          await loadScholarship(); render();
+        } catch (e) { toast(e.message, 'error'); }
+      }}
+    ]
+  });
+  setTimeout(() => {
+    document.querySelectorAll('[data-amt]').forEach(b => b.onclick = () => {
+      const inp = document.getElementById('sch-amount');
+      if (inp) inp.value = b.dataset.amt;
+    });
+  }, 0);
+}
+
+function actionScholarshipAddGrade(editId) {
+  const isEdit = !!editId;
+  let editing = null;
+  if (isEdit) {
+    editing = (state.scholarship?.grades || []).find(x => x.id === editId);
+    if (!editing) return;
+  }
+  let form = {
+    subject: editing?.subject || '',
+    grade: editing?.grade || 5,
+    semester: editing?.semester || (state.schFilterSemester || ''),
+    is_auto: !!editing?.is_auto,
+  };
+  const subs = state.scholarship?.available_subjects || [];
+  const semesters = state.scholarship?.semesters || [];
+
+  const renderBody = () => `
+    <div class="label">ПРЕДМЕТ</div>
+    <input class="input" id="gr-subj" placeholder="Название предмета" value="${escapeHtml(form.subject)}" maxlength="100">
+    ${subs.length ? `<div class="choice-row" style="margin-top:4px;max-height:140px;overflow-y:auto">
+      ${subs.slice(0, 60).map(s => `<button class="choice ${form.subject===s?'active':''}" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}
+    </div>` : ''}
+    <div class="label">ОЦЕНКА</div>
+    <div class="choice-row">${[2,3,4,5].map(g => `<button class="choice ${form.grade===g?'active':''}" data-grade="${g}">${g}</button>`).join('')}</div>
+    <div class="label">СЕМЕСТР (необязательно)</div>
+    <input class="input" id="gr-sem" placeholder="Например: 2024/25 осень" value="${escapeHtml(form.semester)}" maxlength="40">
+    ${semesters.length ? `<div class="choice-row" style="margin-top:0">
+      ${semesters.map(sm => `<button class="choice ${form.semester===sm?'active':''}" data-sem="${escapeHtml(sm)}">${escapeHtml(sm)}</button>`).join('')}
+    </div>` : ''}
+    <label class="switch-row" style="border:none">
+      <input type="checkbox" id="gr-auto" ${form.is_auto?'checked':''}>
+      <span>Автомат</span>
+    </label>
+  `;
+  const attach = () => {
+    const si = document.getElementById('gr-subj');
+    if (si) si.oninput = (e) => form.subject = e.target.value;
+    const smi = document.getElementById('gr-sem');
+    if (smi) smi.oninput = (e) => form.semester = e.target.value;
+    const ai = document.getElementById('gr-auto');
+    if (ai) ai.onchange = (e) => form.is_auto = e.target.checked;
+    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => {
+      form.subject = b.dataset.subj;
+      document.getElementById('gr-subj').value = form.subject;
+      document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+    document.querySelectorAll('[data-grade]').forEach(b => b.onclick = () => {
+      form.grade = parseInt(b.dataset.grade, 10);
+      document.getElementById('modalBody').innerHTML = renderBody();
+      attach();
+    });
+    document.querySelectorAll('[data-sem]').forEach(b => b.onclick = () => {
+      form.semester = b.dataset.sem;
+      document.getElementById('modalBody').innerHTML = renderBody();
+      attach();
+    });
+  };
+  modalOpen({
+    title: isEdit ? 'ИЗМЕНИТЬ ОЦЕНКУ' : 'ДОБАВИТЬ ОЦЕНКУ',
+    body: renderBody(),
+    actions:[
+      {label:'ОТМЕНА', style:'btn-secondary'},
+      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+        const s = (document.getElementById('gr-subj')?.value || '').trim();
+        const sem = (document.getElementById('gr-sem')?.value || '').trim();
+        const isAuto = !!document.getElementById('gr-auto')?.checked;
+        if (!s) { toast('Введи предмет', 'error'); return; }
+        try {
+          if (isEdit) {
+            await apiPost('/api/scholarship-update-grade', {
+              id: editId, subject: s, grade: form.grade, is_auto: isAuto, semester: sem
+            });
+          } else {
+            await apiPost('/api/scholarship-add-grade', {
+              subject: s, grade: form.grade, is_auto: isAuto, semester: sem
+            });
+          }
+          hideKeyboard();
+          haptic('success'); toast(isEdit ? 'Изменено' : 'Сохранено', 'success');
+          await loadScholarship(); render();
+        } catch (e) { toast(e.message, 'error'); }
+      }}
+    ]
+  });
+  attach();
+}
+
+async function actionScholarshipDeleteGrade(id) {
+  modalConfirm('УДАЛИТЬ ОЦЕНКУ?', 'Это действие нельзя отменить.', async () => {
+    try {
+      await apiPost('/api/scholarship-delete-grade', {id});
+      haptic('success'); await loadScholarship(); render();
+    } catch (e) { toast(e.message, 'error'); }
+  }, 'УДАЛИТЬ');
+}
+
+async function actionScholarshipClear(sem) {
+  const label = sem ? `оценки из «${sem}»` : 'все оценки';
+  modalConfirm('ОЧИСТИТЬ?', `Удалим ${label}. Отменить нельзя.`, async () => {
+    try {
+      const body = sem ? {semester: sem} : {};
+      await apiPost('/api/scholarship-clear', body);
+      haptic('success'); await loadScholarship(); render();
+    } catch (e) { toast(e.message, 'error'); }
+  }, 'ОЧИСТИТЬ');
+}
+
+/* ═════════ ЗАДАЧИ / ЗАМЕТКИ ═════════ */
 
 function renderTasks() {
   const tasks = state.tasks;
@@ -1085,6 +1354,58 @@ function levelRewardByLevel(lvl) {
   if (lvl <= 20) return `+600 ${icShift(14)} · +8 ${icNova(14)}`;
   return `+1500 ${icShift(14)} · +25 ${icNova(14)}`;
 }
+
+function renderXpInfoBlock() {
+  const rows = [
+    { label:'Задача добавлена',          xp:5,   shift:1,  nova:0 },
+    { label:'Задача выполнена',          xp:20,  shift:5,  nova:0 },
+    { label:'Заметка сохранена',         xp:3,   shift:1,  nova:0 },
+    { label:'Оценка в стипендии',        xp:5,   shift:1,  nova:0 },
+    { label:'Посещение пары отмечено',   xp:3,   shift:1,  nova:0 },
+    { label:'Вопрос AI-помощнику',       xp:2,   shift:1,  nova:0 },
+    { label:'Задача по фото (OCR)',      xp:5,   shift:2,  nova:0 },
+    { label:'Новый рекорд в игре',       xp:—,   shift:—,  nova:1, custom:'+1 к игре' },
+    { label:'Победа в Морском бою',      xp:50,  shift:'×2',nova:0, custom:'ставка ×2' },
+    { label:'Забрать достижение',        xp:'+',  shift:'+', nova:'+', custom:'из карточки достижения' },
+    { label:'Забрать уровень',           xp:0,   shift:'+', nova:'+', custom:'по уровню' },
+    { label:'Первый обмен',              xp:20,  shift:0,  nova:0 },
+  ];
+  const rowHtml = (r) => `<div class="xp-info-row">
+    <div class="xp-info-label">${escapeHtml(r.label)}</div>
+    <div class="xp-info-rewards">
+      ${typeof r.xp === 'number' && r.xp > 0 ? `<span class="r">+${r.xp} ${icXp(14)}</span>` : ''}
+      ${r.xp === '+' ? `<span class="r">+XP</span>` : ''}
+      ${typeof r.shift === 'number' && r.shift > 0 ? `<span class="r">+${r.shift} ${icShift(14)}</span>` : ''}
+      ${typeof r.shift === 'string' ? `<span class="r">${escapeHtml(r.shift)} ${icShift(14)}</span>` : ''}
+      ${typeof r.nova === 'number' && r.nova > 0 ? `<span class="r">+${r.nova} ${icNova(14)}</span>` : ''}
+      ${r.custom ? `<span class="r" style="color:#7FE9FF">${escapeHtml(r.custom)}</span>` : ''}
+    </div>
+  </div>`;
+  return `<div class="levels-info-card">
+    <div class="levels-info-title">${icon('ic-xp',20)} Как получать XP</div>
+    <div class="levels-info-note">XP растёт за любую активность. Каждый уровень = +500 XP, и за уровень дают Шифт и Нова.</div>
+    <div class="xp-info-list">${rows.map(rowHtml).join('')}</div>
+  </div>
+  <div class="levels-info-card" style="border-color:rgba(255,164,43,.3)">
+    <div class="levels-info-title" style="color:#FFB84A">${icon('ic-gift',20)} Что даёт Шифт и Нова</div>
+    <div class="levels-info-note" style="color:#E6C68A">Шифт — за учёбу и игры. Нова — редкая, за достижения, уровни и обмен.</div>
+    <div class="xp-info-list">
+      <div class="xp-info-row">
+        <div class="xp-info-label">${icShift(16)} Шифт — за задачи, заметки, оценки, посещения, игры и кейсы</div>
+      </div>
+      <div class="xp-info-row">
+        <div class="xp-info-label">${icNova(16)} Нова — за достижения, уровни, рекорды, победы и обмен 100 Шифт → 1 Нова</div>
+      </div>
+      <div class="xp-info-row">
+        <div class="xp-info-label">${icon('ic-gift',16)} Кейсы — открываются за Шифт/Нова, дают всё подряд</div>
+      </div>
+      <div class="xp-info-row">
+        <div class="xp-info-label">${icon('ic-trophy',16)} Топ игроков — по XP, награды за высокие места</div>
+      </div>
+    </div>
+  </div>`;
+}
+
 async function openLevels() {
   const screen = document.getElementById('screen-levels');
   if (!screen) return;
@@ -1105,6 +1426,11 @@ async function openLevels() {
   document.getElementById('levelsXpFill').style.width = pct + '%';
   document.getElementById('levelsXpCur').textContent = lv.inLevel + 'XP';
   document.getElementById('levelsXpNext').textContent = total + 'XP';
+
+  // Вставляем информационный блок перед списком уровней
+  const infoHost = document.getElementById('levelsInfoHost');
+  if (infoHost) infoHost.innerHTML = renderXpInfoBlock();
+
   const claimed = await apiGet('/api/level-rewards').catch(()=>({claimed:[]}));
   const claimedSet = new Set(claimed.claimed || []);
   const list = document.getElementById('levelsList');
@@ -1267,19 +1593,8 @@ function renderProfile() {
     </div>
   </div>`;
 
-  html += `<div class="card"><div class="card-title">Стипендия</div>`;
-  if (state.scholarship) {
-    const s = state.scholarship;
-    html += `<div class="card-subtitle">Текущая: ${s.amount != null ? escapeHtml(s.amount) + ' руб./мес' : 'не указана'}</div>`;
-    html += `<div class="card-subtitle">Оценок: ${s.grades.length}</div>`;
-    if (s.grades.length) html += `<div class="card-subtitle">Средний балл: ${s.avg}</div>`;
-    if (s.forecast) html += `<div class="card-subtitle">${escapeHtml(stripEmoji(s.forecast))}</div>`;
-  }
-  html += `<div class="actions-row">
-    <button class="btn btn-secondary" data-action="sch-set-amount">Сумма</button>
-    <button class="btn btn-secondary" data-action="sch-add-grade">Оценка</button>
-    <button class="btn btn-secondary" data-action="sch-clear">Очистить</button>
-  </div></div>`;
+  html += `<div class="section-title">Стипендия</div>`;
+  html += renderScholarshipBlock();
 
   const notifyOn = !!p?.notify_type;
   const notifyLabel = notifyOn ? `${p.notify_type==='today'?'Сегодня':'Завтра'} в ${String(p.notify_hour).padStart(2,'0')}:${String(p.notify_minute||0).padStart(2,'0')}` : 'выключены';
@@ -1376,6 +1691,7 @@ function patchWalletInProfile(wallet) {
   if (novaEl)  novaEl.textContent  = wallet.nova  ?? wallet.hard ?? 0;
 }
 
+/* ═════════ ИГРЫ ═════════ */
 const Flappy = {
   canvas:null, ctx:null, raf:null, running:false,
   score:0, best:0, top:[],
@@ -2029,7 +2345,7 @@ async function actionFeedbackSend() {
   if (!text) { toast('Пустое сообщение', 'error'); return; }
   try {
     await apiPost('/api/feedback', {text});
-    el.value = ''; haptic('success'); toast('Отправлено', 'success');
+    el.value = ''; hideKeyboard(); haptic('success'); toast('Отправлено', 'success');
   } catch (e) { toast(e.message, 'error'); }
 }
 async function actionTaskDone(id) {
@@ -2117,7 +2433,7 @@ function actionTaskAdd() {
         }
         try {
           await apiPost('/api/task-add', {text, due_date, due_time, priority: form.priority});
-          haptic('success'); toast('Задача добавлена', 'success');
+          hideKeyboard(); haptic('success'); toast('Задача добавлена', 'success');
           await loadTasks(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
@@ -2157,7 +2473,7 @@ function actionTaskEdit(id) {
         if (!text) { toast('Пустой текст', 'error'); return; }
         try {
           await apiPost('/api/task-update', {id, text, priority: form.priority});
-          haptic('success'); toast('Сохранено', 'success');
+          hideKeyboard(); haptic('success'); toast('Сохранено', 'success');
           await loadTasks(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
@@ -2197,7 +2513,7 @@ function actionNoteAdd() {
         if (!s || !t) { toast('Заполни оба поля', 'error'); return; }
         try {
           await apiPost('/api/note-save', {subject: s, text: t});
-          haptic('success'); toast('Заметка сохранена', 'success');
+          hideKeyboard(); haptic('success'); toast('Заметка сохранена', 'success');
           await loadNotes(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
@@ -2224,7 +2540,7 @@ function actionNoteEdit(id) {
         if (!s || !t) { toast('Заполни оба поля', 'error'); return; }
         try {
           await apiPost('/api/note-save', {subject: s, text: t});
-          haptic('success'); toast('Сохранено', 'success');
+          hideKeyboard(); haptic('success'); toast('Сохранено', 'success');
           await loadNotes(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
@@ -2239,90 +2555,6 @@ async function actionNoteDelete(id) {
     } catch (e) { toast(e.message, 'error'); }
   }, 'УДАЛИТЬ');
 }
-function actionScholarshipSetAmount() {
-  let amount = state.scholarship?.amount || 0;
-  modalOpen({
-    title:'СУММА СТИПЕНДИИ',
-    body: `
-      <div class="label">руб. в месяц</div>
-      <input class="input" id="sch-amount" type="number" min="0" max="100000" value="${amount}">
-      <div class="choice-row">
-        <button class="choice" data-amt="0">Не получаю</button>
-        <button class="choice" data-amt="3000">3000</button>
-        <button class="choice" data-amt="5000">5000</button>
-        <button class="choice" data-amt="7000">7000</button>
-      </div>
-    `,
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const v = parseInt(document.getElementById('sch-amount')?.value || '0') || 0;
-        try {
-          await apiPost('/api/scholarship-set-amount', {amount: v});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadScholarship(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  setTimeout(() => {
-    document.querySelectorAll('[data-amt]').forEach(b => b.onclick = () => {
-      const inp = document.getElementById('sch-amount');
-      if (inp) inp.value = b.dataset.amt;
-    });
-  }, 0);
-}
-function actionScholarshipAddGrade() {
-  let form = {subject:'', grade:5};
-  const subs = state.scholarship?.available_subjects || [];
-  const renderBody = () => `
-    <div class="label">ПРЕДМЕТ</div>
-    <input class="input" id="gr-subj" placeholder="Название" value="${escapeHtml(form.subject)}" maxlength="100">
-    ${subs.length ? `<div class="choice-row" style="margin-top:4px;max-height:140px;overflow-y:auto">${subs.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
-    <div class="label">ОЦЕНКА</div>
-    <div class="choice-row">${[2,3,4,5].map(g => `<button class="choice ${form.grade===g?'active':''}" data-grade="${g}">${g}</button>`).join('')}</div>
-  `;
-  const attach = () => {
-    const si = document.getElementById('gr-subj');
-    if (si) si.oninput = (e) => form.subject = e.target.value;
-    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => {
-      form.subject = b.dataset.subj;
-      document.getElementById('gr-subj').value = form.subject;
-      document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-    });
-    document.querySelectorAll('[data-grade]').forEach(b => b.onclick = () => {
-      form.grade = parseInt(b.dataset.grade);
-      document.getElementById('modalBody').innerHTML = renderBody();
-      attach();
-    });
-  };
-  modalOpen({
-    title:'ДОБАВИТЬ ОЦЕНКУ',
-    body: renderBody(),
-    actions:[
-      {label:'ОТМЕНА', style:'btn-secondary'},
-      {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-        const s = (document.getElementById('gr-subj')?.value || '').trim();
-        if (!s) { toast('Введи предмет', 'error'); return; }
-        try {
-          await apiPost('/api/scholarship-add-grade', {subject: s, grade: form.grade});
-          haptic('success'); toast('Сохранено', 'success');
-          await loadScholarship(); render();
-        } catch (e) { toast(e.message, 'error'); }
-      }}
-    ]
-  });
-  attach();
-}
-async function actionScholarshipClear() {
-  modalConfirm('ОЧИСТИТЬ ОЦЕНКИ?', 'Все оценки удалятся.', async () => {
-    try {
-      await apiPost('/api/scholarship-clear');
-      haptic('success'); await loadScholarship(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ОЧИСТИТЬ');
-}
 async function actionAISend() {
   const el = document.getElementById('ai-input');
   const question = (el?.value || '').trim();
@@ -2334,6 +2566,7 @@ async function actionAISend() {
     state.aiPendingPhoto = null;
     state.aiPending = true;
     if (el) el.value = '';
+    hideKeyboard();
     render();
     try {
       const r = await apiPost('/api/ai-photo', {photo, question});
@@ -2348,6 +2581,7 @@ async function actionAISend() {
   state.aiMessages.push({role:'user', text: question});
   state.aiPending = true;
   if (el) el.value = '';
+  hideKeyboard();
   render();
   try {
     const r = await apiPost('/api/ai', {question});
@@ -2417,7 +2651,7 @@ function actionAdminBroadcast() {
     try {
       await apiPost('/api/admin/broadcast', {text});
       if (el) el.value = '';
-      haptic('success'); toast('Рассылка запущена', 'success');
+      hideKeyboard(); haptic('success'); toast('Рассылка запущена', 'success');
     } catch (e) { toast(e.message, 'error'); }
   }, 'ОТПРАВИТЬ');
 }
@@ -2432,7 +2666,7 @@ function actionAdminFbReply(fid) {
         if (!t) { toast('Пусто', 'error'); return; }
         try {
           await apiPost('/api/admin/feedback-reply', {id: fid, text: t});
-          haptic('success'); toast('Отправлено', 'success');
+          hideKeyboard(); haptic('success'); toast('Отправлено', 'success');
           await loadAdminFeedback(); await loadAdminStats(); render();
         } catch (e) { toast(e.message, 'error'); }
       }}
@@ -2476,6 +2710,7 @@ function actionSetName() {
         if (v === currentName) { toast('Это твоё текущее имя', 'info'); return; }
         try {
           await apiPost('/api/set-name', {name: v});
+          hideKeyboard();
           haptic('success');
           popIcon('ic-check');
           toast('Имя изменено', 'success');
@@ -2580,7 +2815,7 @@ function actionExchange() {
         if (amount < 100) { toast('Минимум 100', 'error'); return; }
         try {
           const r = await apiPost('/api/exchange-soft-to-hard', {amount});
-          haptic('success'); popIcon('ic-exchange');
+          hideKeyboard(); haptic('success'); popIcon('ic-exchange');
           toast(`${r.soft_spent} Шифт → ${r.hard_received} Нова`, 'success');
           if (r.wallet) patchWalletInProfile(r.wallet);
         } catch (e) { toast(e.message, 'error'); }
@@ -2735,7 +2970,10 @@ function attachHandlers() {
   document.querySelectorAll('[data-action]').forEach(el => {
     if (el._bound) return;
     el._bound = true;
-    el.addEventListener('click', () => handleAction(el));
+    el.addEventListener('click', (e) => {
+      // Тап по кнопке "ГОТОВО" скрывает клавиатуру, но не удаляет фокус
+      handleAction(el);
+    });
   });
   document.querySelectorAll('[data-att]').forEach(el => {
     if (el._bound) return;
@@ -2767,6 +3005,21 @@ function attachHandlers() {
     if (file) actionAIPhotoSelected(file);
     e.target.value = '';
   });
+  // Тап по фону в редакторе уведомлений скрывает клавиатуру
+  if (state.notifyEditor) {
+    const app = document.getElementById('app');
+    if (app && !app._kbBound) {
+      app._kbBound = true;
+      app.addEventListener('pointerdown', (ev) => {
+        const t = ev.target;
+        if (!t) return;
+        if (t.closest('input, textarea')) return;
+        if (t.closest('[data-action="notify-hide-kb"]')) return;
+        if (t.closest('[data-action="notify-save"]')) return;
+        hideKeyboard();
+      }, true);
+    }
+  }
 }
 
 function handleAction(el) {
@@ -2787,7 +3040,10 @@ function handleAction(el) {
   else if (a === 'note-delete') actionNoteDelete(parseInt(el.dataset.id));
   else if (a === 'sch-set-amount') actionScholarshipSetAmount();
   else if (a === 'sch-add-grade') actionScholarshipAddGrade();
-  else if (a === 'sch-clear') actionScholarshipClear();
+  else if (a === 'sch-edit-grade') actionScholarshipAddGrade(parseInt(el.dataset.id,10));
+  else if (a === 'sch-del-grade') actionScholarshipDeleteGrade(parseInt(el.dataset.id,10));
+  else if (a === 'sch-clear') actionScholarshipClear(el.dataset.sem || '');
+  else if (a === 'sch-sem') { state.schFilterSemester = el.dataset.value || ''; render(); }
   else if (a === 'ai-send') actionAISend();
   else if (a === 'ai-clear') actionAIClear();
   else if (a === 'ai-photo-open') actionAIPhotoOpen();
@@ -2804,6 +3060,7 @@ function handleAction(el) {
   else if (a === 'notify-quick') actionNotifyQuick(parseInt(el.dataset.h,10), parseInt(el.dataset.m,10));
   else if (a === 'notify-save') actionNotifySave();
   else if (a === 'notify-off') actionNotifyOff();
+  else if (a === 'notify-hide-kb') actionNotifyHideKb();
   else if (a === 'notify-before') actionSetNotifyBefore();
   else if (a === 'go-profile') { state.tab = 'profile'; loadTabData('profile'); }
   else if (a === 'week-prev') { state.weekOffset -= 1; state.scheduleViewMode = 'week'; state.scheduleDay = null; loadWeekAndRender(); }
