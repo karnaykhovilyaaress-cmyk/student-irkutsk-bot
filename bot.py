@@ -154,7 +154,7 @@ ACHIEVEMENT_REWARDS = {
     "bs_first_win": {"xp": 100,  "shift": 50,   "nova": 1},
     "bs_5_wins":    {"xp": 300,  "shift": 150,  "nova": 3},
     "bs_10_wins":   {"xp": 800,  "shift": 400,  "nova": 8},
-    "exchange_1":   {"xp": 20,   "shift": 0,    "nova": 1},
+    "exchange_1":   {"xp": 20,   "shift": 0,    "nova": 0},
 }
 CHESTS = {
     "capsule": {"name":"Капсула","cooldown_h":24,"cost_shift":0,"cost_nova":0,"drops":[
@@ -1153,11 +1153,13 @@ def exchange_shift_to_nova(user_id, amount_shift):
     if amount_nova <= 0: return None
     if not wallet_consume(user_id, "shift", amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA): return None
     wallet_add(user_id, nova=amount_nova)
-    achievement_unlock(user_id, "exchange_1")
-    rw = ACHIEVEMENT_REWARDS.get("exchange_1")
-    if rw: wallet_add(user_id, xp=rw["xp"], shift=rw["shift"], nova=rw["nova"])
-    return {"soft_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA, "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
-        "hard_received": amount_nova, "nova_received": amount_nova}
+    newly = achievement_unlock(user_id, "exchange_1")
+    if newly:
+        rw = ACHIEVEMENT_REWARDS.get("exchange_1") or {}
+        wallet_add(user_id, xp=rw.get("xp", 0))
+    return {"soft_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
+            "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
+            "hard_received": amount_nova, "nova_received": amount_nova}
 
 # === GROUPS_ЗДЕСЬ ===
 GROUPS = {
