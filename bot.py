@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging, shutil
+import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging, shutil, io
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from aiohttp import web
@@ -15,6 +15,21 @@ try:
     _FPDF_AVAILABLE = True
 except Exception:
     _FPDF_AVAILABLE = False
+try:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt, Emu
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    from pptx.enum.shapes import MSO_SHAPE
+    _PPTX_AVAILABLE = True
+except Exception as _e:
+    print(f"[PPTX] python-pptx not installed: {_e}")
+    _PPTX_AVAILABLE = False
+try:
+    from PIL import Image
+    _PIL_AVAILABLE = True
+except Exception:
+    _PIL_AVAILABLE = False
 
 def clean_latex(text):
     if not text: return text
@@ -1161,7 +1176,7 @@ def exchange_shift_to_nova(user_id, amount_shift):
             "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
             "hard_received": amount_nova, "nova_received": amount_nova}
 
-# === GROUPS_ЗДЕСЬ ===
+# === GROUPS ===
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -1586,6 +1601,236 @@ def _verify_webapp_init_full(init_data):
 def _verify_webapp_init(init_data):
     u = _verify_webapp_init_full(init_data)
     return u.id if u else None
+
+# ═══════════════════════════════════════════════════════════════
+# PRESENTATIONS
+# ═══════════════════════════════════════════════════════════════
+PRESENT_STYLES = {
+    "academic": {"name": "Академический", "accent": (31, 184, 166), "title_bg": (10, 59, 55),  "text": (10, 14, 15),  "bg": (255, 255, 255)},
+    "creative": {"name": "Креативный",    "accent": (255, 164, 43), "title_bg": (26, 26, 36),  "text": (240, 240, 240),"bg": (26, 26, 36)},
+    "minimal":  {"name": "Минимализм",    "accent": (10, 14, 15),   "title_bg": (10, 14, 15),  "text": (10, 14, 15),  "bg": (250, 250, 250)},
+}
+
+async def _gigachat_json(prompt: str) -> dict:
+    if giga_client is None: raise RuntimeError("GigaChat не настроен")
+    resp = await giga_client.achat(prompt)
+    try: content = resp.choices[0].message.content
+    except AttributeError: content = resp.messages[0].content[0].text if resp.messages else ""
+    content = content or ""
+    m = re.search(r"\{[\s\S]*\}", content)
+    if not m: raise ValueError("GigaChat не вернул JSON: " + content[:200])
+    return json.loads(m.group(0))
+
+async def _generate_slide_plan(topic: str, slides_count: int, extra_context: str = "") -> dict:
+    base = f"""Ты помощник, который составляет структуру презентаций для студентов.
+Составь структуру презентации на тему: «{topic}».
+Всего слайдов: {slides_count}.
+"""
+    if extra_context:
+        base += f"\nДополнительный материал:\n{extra_context[:3500]}\n"
+    base += """
+Верни СТРОГО JSON без пояснений, в формате:
+{
+  "title": "Заголовок титульного слайда",
+  "subtitle": "Подзаголовок",
+  "slides": [
+    {
+      "heading": "Заголовок слайда",
+      "bullets": ["пункт 1", "пункт 2", "пункт 3"],
+      "image_prompt": "короткий промпт на английском для генерации картинки-иллюстрации, стиль digital illustration, flat design, clean"
+    }
+  ]
+}
+Требования:
+- Первый слайд — титульный, в slides его не включай.
+- 3-5 пунктов на слайд, каждый до 90 символов.
+- image_prompt на английском, до 200 символов, без текста на картинке.
+- Ровно """ + str(slides_count - 1) + """ слайдов в массиве.
+- Только JSON, без markdown.
+"""
+    return await _gigachat_json(base)
+
+async def _yandexart_generate(prompt: str, aspect_ratio: str = "16:9") -> bytes:
+    if not YANDEX_VISION_API_KEY or not YANDEX_FOLDER_ID:
+        raise RuntimeError("YandexART не настроен")
+    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/imageGenerationAsync"
+    headers = {"Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
+               "Content-Type": "application/json", "x-folder-id": YANDEX_FOLDER_ID}
+    w, h = (16, 9) if aspect_ratio == "16:9" else (1, 1)
+    body = {"modelUri": f"art://{YANDEX_FOLDER_ID}/yandex-art/latest",
+        "messages": [{"weight": 1, "text": prompt[:500]}],
+        "generationOptions": {"aspectRatio": {"widthRatio": str(w), "heightRatio": str(h)},
+                              "seed": random.randint(1, 10**9)}}
+    timeout = aiohttp.ClientTimeout(total=180)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(url, headers=headers, json=body) as resp:
+            if resp.status != 200:
+                txt = await resp.text()
+                raise RuntimeError(f"YandexART HTTP {resp.status}: {txt[:200]}")
+            data = await resp.json()
+    op_id = data.get("id")
+    if not op_id: raise RuntimeError("YandexART без operation id")
+    for _ in range(60):
+        await asyncio.sleep(3)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(f"https://llm.api.cloud.yandex.net/operations/{op_id}", headers=headers) as r2:
+                if r2.status != 200: continue
+                op = await r2.json()
+        if not op.get("done"): continue
+        if op.get("error"): raise RuntimeError(f"YandexART error: {op['error']}")
+        img_b64 = op.get("response", {}).get("image")
+        if not img_b64: raise RuntimeError("YandexART пусто")
+        return base64.b64decode(img_b64)
+    raise RuntimeError("YandexART timeout")
+
+def _build_pptx(plan: dict, images: dict, style_id: str = "academic") -> bytes:
+    if not _PPTX_AVAILABLE: raise RuntimeError("python-pptx не установлена")
+    style = PRESENT_STYLES.get(style_id, PRESENT_STYLES["academic"])
+    prs = Presentation()
+    prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
+    blank = prs.slide_layouts[6]
+    def rgb(tup): return RGBColor(*tup)
+    def add_rect(slide, x, y, w, h, color):
+        shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
+        shp.fill.solid(); shp.fill.fore_color.rgb = rgb(color)
+        shp.line.fill.background(); shp.shadow.inherit = False
+        return shp
+    def add_text(slide, x, y, w, h, text, size=18, bold=False, color=(10,14,15),
+                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+        tb = slide.shapes.add_textbox(x, y, w, h)
+        tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = anchor
+        p = tf.paragraphs[0]; p.alignment = align
+        run = p.add_run(); run.text = text
+        run.font.size = Pt(size); run.font.bold = bold
+        run.font.color.rgb = rgb(color); run.font.name = "DejaVu Sans"
+        return tb
+
+    s0 = prs.slides.add_slide(blank)
+    add_rect(s0, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
+    add_rect(s0, 0, int(prs.slide_height * 0.62), prs.slide_width, int(prs.slide_height * 0.03), style["accent"])
+    add_text(s0, Inches(1), Inches(2.3), Inches(11.3), Inches(2.0),
+             plan.get("title", "Презентация"), size=44, bold=True, color=(255,255,255))
+    if plan.get("subtitle"):
+        add_text(s0, Inches(1), Inches(4.3), Inches(11.3), Inches(1.0),
+                 plan["subtitle"], size=22, color=style["accent"])
+
+    slides = plan.get("slides", [])
+    for i, sl in enumerate(slides):
+        s = prs.slides.add_slide(blank)
+        add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
+        add_rect(s, 0, 0, prs.slide_width, Inches(0.15), style["accent"])
+        add_text(s, Inches(0.7), Inches(0.5), Inches(12), Inches(1.0),
+                 sl.get("heading", f"Слайд {i+1}"), size=30, bold=True, color=style["text"])
+        add_rect(s, Inches(0.7), Inches(1.5), Inches(2.2), Inches(0.06), style["accent"])
+        img_bytes = images.get(i)
+        if img_bytes and _PIL_AVAILABLE:
+            try:
+                tmp = io.BytesIO(img_bytes); img = Image.open(tmp)
+                box_x, box_y = Inches(7.0), Inches(1.9); box_w, box_h = Inches(5.8), Inches(5.0)
+                img_w, img_h = img.size
+                ratio = min(box_w / img_w, box_h / img_h)
+                new_w, new_h = int(img_w * ratio), int(img_h * ratio)
+                tmp_path = f"/tmp/_slide_{i}.jpg"; img.convert("RGB").save(tmp_path, "JPEG", quality=88)
+                s.shapes.add_picture(tmp_path, box_x + int((box_w - new_w)/2), box_y + int((box_h - new_h)/2),
+                    width=new_w, height=new_h)
+            except Exception as e:
+                logging.warning(f"[PPTX] картинка слайда {i}: {e}")
+        bullets = sl.get("bullets", [])[:6]
+        if bullets:
+            tf = s.shapes.add_textbox(Inches(0.7), Inches(2.1), Inches(6.0), Inches(4.7)).text_frame
+            tf.word_wrap = True
+            for j, b in enumerate(bullets):
+                p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+                p.space_after = Pt(8); run = p.add_run()
+                run.text = "•  " + str(b)
+                run.font.size = Pt(18); run.font.color.rgb = rgb(style["text"]); run.font.name = "DejaVu Sans"
+
+    sN = prs.slides.add_slide(blank)
+    add_rect(sN, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
+    add_text(sN, Inches(1), Inches(3.0), Inches(11.3), Inches(1.5),
+             "Спасибо за внимание!", size=40, bold=True, color=(255,255,255), align=PP_ALIGN.CENTER)
+
+    buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
+
+
+async def generate_presentation(user_id: int, topic: str, slides_count: int = 8,
+                                style_id: str = "academic", photo_b64: str = None) -> bytes:
+    if not _PPTX_AVAILABLE: raise RuntimeError("python-pptx не установлена. Добавь в requirements.txt")
+    if giga_client is None: raise RuntimeError("GigaChat не настроен")
+    status_msg = None
+    try: status_msg = await bot.send_message(user_id, "Составляю структуру презентации...")
+    except Exception: pass
+
+    extra_context = ""
+    if photo_b64:
+        try:
+            b64 = photo_b64.split(",", 1)[1] if "," in photo_b64 else photo_b64
+            ocr_url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
+            ocr_headers = {"Authorization": f"Api-Key {YANDEX_VISION_API_KEY}", "Content-Type": "application/json"}
+            ocr_body = {"mimeType": "image/jpeg", "languageCodes": ["ru", "en"], "model": "page", "content": b64}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(ocr_url, headers=ocr_headers, json=ocr_body,
+                                        timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    if resp.status == 200:
+                        ocr_res = await resp.json()
+                        try: extra_context = ocr_res["result"]["textAnnotation"]["fullText"] or ""
+                        except (KeyError, TypeError): extra_context = ""
+        except Exception as e:
+            logging.warning(f"[PRESENT] OCR: {e}")
+
+    plan = await _generate_slide_plan(topic, slides_count, extra_context)
+    slides = plan.get("slides", []); total = len(slides)
+    images = {}
+    for i, sl in enumerate(slides):
+        prompt = (sl.get("image_prompt") or sl.get("heading") or topic).strip()
+        try:
+            if status_msg:
+                try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
+                    text=f"Генерирую картинку {i+1}/{total}...")
+                except Exception: pass
+            images[i] = await _yandexart_generate(prompt, aspect_ratio="16:9")
+        except Exception as e:
+            logging.warning(f"[PRESENT] YandexART слайд {i}: {e}")
+            images[i] = None
+
+    if status_msg:
+        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id, text="Собираю PPTX...")
+        except Exception: pass
+    pptx_bytes = _build_pptx(plan, images, style_id)
+    if status_msg:
+        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id, text="Готово, отправляю файл...")
+        except Exception: pass
+    return pptx_bytes
+
+
+async def api_present(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    topic = (body.get("topic") or "").strip()
+    if not topic and not body.get("photo"):
+        return web.json_response({"error": "empty_topic", "message": "Введи тему или прикрепи фото"}, status=400)
+    if len(topic) > 300: topic = topic[:300]
+    try: slides_count = int(body.get("slides", 8))
+    except: slides_count = 8
+    slides_count = max(4, min(15, slides_count))
+    style_id = (body.get("style") or "academic").strip()
+    if style_id not in PRESENT_STYLES: style_id = "academic"
+    photo = body.get("photo") or None
+    try:
+        pptx_bytes = await generate_presentation(user_id, topic or "Презентация по фото", slides_count, style_id, photo)
+    except Exception as e:
+        logging.exception("[PRESENT]")
+        return web.json_response({"error": "present_failed", "message": str(e)}, status=500)
+    date_str = _now_irkutsk().strftime("%Y-%m-%d_%H-%M")
+    try:
+        doc = BufferedInputFile(pptx_bytes, filename=f"presentation_{date_str}.pptx")
+        await bot.send_document(user_id, doc, caption="Твоя презентация готова.")
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
 
 async def api_schedule(request):
     init_data = request.query.get("initData", "")
@@ -2188,7 +2433,7 @@ async def api_ai(request):
     if len(question) > 2000: question = question[:2000]
     ai_save_message(user_id, 'user', question, has_photo=0)
     try:
-        prompt = ("Ты — студенческий помощник. Ответь на вопрос студента.\n\n"
+        prompt = ("Ты студенческий помощник. Ответь на вопрос студента.\n\n"
             "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
             "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
             "- Структурируй текст простыми списками.\n- Пиши без воды.\n\n"
@@ -2249,7 +2494,7 @@ async def api_ai_photo(request):
     if not question: question = "Разберись, что это, и помоги студенту."
     if len(question) > 2000: question = question[:2000]
     try:
-        prompt = ("Ты — студенческий помощник. Пользователь прислал фото, с которого распознан текст. "
+        prompt = ("Ты студенческий помощник. Пользователь прислал фото, с которого распознан текст. "
             "Выполни задачу студента.\n\n"
             "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
             "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
@@ -2923,6 +3168,7 @@ async def start_webapp():
     app.router.add_post("/api/ai/clear-history", api_ai_clear_history)
     app.router.add_post("/api/ai", api_ai)
     app.router.add_post("/api/ai-photo", api_ai_photo)
+    app.router.add_post("/api/present", api_present)
     app.router.add_post("/api/feedback", api_feedback)
     app.router.add_get("/api/feedback/my", api_feedback_my)
     app.router.add_post("/api/export", api_export)
@@ -2940,39 +3186,29 @@ async def start_webapp():
     app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
     app.router.add_get("/api/admin/monitor", api_admin_monitor)
     if webapp_dir:
-        NO_CACHE = {
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0"
-        }
+        NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate","Pragma": "no-cache","Expires": "0"}
         async def index_handler(request):
             p = os.path.join(webapp_dir, "index.html")
-            if os.path.isfile(p):
-                return web.FileResponse(p, headers=NO_CACHE)
+            if os.path.isfile(p): return web.FileResponse(p, headers=NO_CACHE)
             return web.Response(text="not found", status=404)
         async def style_handler(request):
             p = os.path.join(webapp_dir, "style.css")
-            if os.path.isfile(p):
-                return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "text/css"})
+            if os.path.isfile(p): return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "text/css"})
             return web.Response(status=404)
         async def appjs_handler(request):
             p = os.path.join(webapp_dir, "app.js")
-            if os.path.isfile(p):
-                return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
+            if os.path.isfile(p): return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
             return web.Response(status=404)
         async def chestjs_handler(request):
             p = os.path.join(webapp_dir, "chest.js")
-            if os.path.isfile(p):
-                return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
+            if os.path.isfile(p): return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
             return web.Response(status=404)
         async def asset_handler(request):
             name = request.match_info.get("name", "")
             safe_name = os.path.basename(name)
-            if not safe_name or safe_name.startswith("."):
-                return web.Response(status=404)
+            if not safe_name or safe_name.startswith("."): return web.Response(status=404)
             p = os.path.join(webapp_dir, "assets", safe_name)
-            if os.path.isfile(p):
-                return web.FileResponse(p, headers=NO_CACHE)
+            if os.path.isfile(p): return web.FileResponse(p, headers=NO_CACHE)
             return web.Response(status=404)
         async def favicon_handler(request): return web.Response(status=204)
         app.router.add_get("/", index_handler)
@@ -2990,7 +3226,6 @@ async def start_webapp():
     logging.info(f"[WEB] на 0.0.0.0:{port}")
 
 # ===================== КОМАНДЫ БОТА =====================
-
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     _ensure_user(message.from_user.id)
@@ -2999,14 +3234,14 @@ async def cmd_start(message: Message):
     if not WEBAPP_URL:
         await message.answer("Приложение ещё не настроено."); return
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]])
-    await message.answer("Привет! Открой приложение.", reply_markup=kb)
+    await message.answer("Привет. Открой приложение.", reply_markup=kb)
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer(f"⛔ Только для админа.\nТвой ID: {message.from_user.id}"); return
+        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}"); return
     await message.answer(
-        "🛠 АДМИН-КОМАНДЫ:\n"
+        "АДМИН-КОМАНДЫ:\n"
         "/backup — прислать users.db\n"
         "/restore — восстановить базу (отправь .db с подписью)\n"
         "/whereami — где лежит база и твой ID\n"
@@ -3017,62 +3252,58 @@ async def cmd_whereami(message: Message):
     db_abs = os.path.abspath(DB_PATH)
     exists = os.path.isfile(db_abs)
     size = os.path.getsize(db_abs) if exists else 0
-    text = (f"🆔 Твой ID: {message.from_user.id}\n"
-            f"👤 ADMIN_ID: {ADMIN_ID}\n"
-            f"📁 cwd: {os.getcwd()}\n"
-            f"📁 DB_PATH: {DB_PATH}\n"
-            f"📁 abs: {db_abs}\n"
-            f"✅ exists: {exists}\n"
-            f"📦 size: {size} B ({size // 1024} КБ)")
+    text = (f"Твой ID: {message.from_user.id}\n"
+            f"ADMIN_ID: {ADMIN_ID}\n"
+            f"cwd: {os.getcwd()}\n"
+            f"DB_PATH: {DB_PATH}\n"
+            f"abs: {db_abs}\n"
+            f"exists: {exists}\n"
+            f"size: {size} B ({size // 1024} КБ)")
     await message.answer(text)
 
 @dp.message(Command("backup"))
 async def cmd_backup(message: Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer(f"⛔ Только для админа.\nТвой ID: {message.from_user.id}\nНужен: {ADMIN_ID}")
+        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}\nНужен: {ADMIN_ID}")
         return
     try:
         db_abs = os.path.abspath(DB_PATH)
-        logging.info(f"[BACKUP] запрос от {message.from_user.id}, db={db_abs}")
         if not os.path.isfile(db_abs):
-            await message.answer(f"❌ Файл базы не найден:\n{db_abs}"); return
+            await message.answer(f"Файл базы не найден:\n{db_abs}"); return
         size_kb = os.path.getsize(db_abs) // 1024
         total = get_total_users()
         fname = f"users_backup_{_now_irkutsk().strftime('%Y%m%d_%H%M')}.db"
         doc = FSInputFile(db_abs, filename=fname)
-        await message.answer_document(doc, caption=f"✅ Резервная копия\nПользователей: {total}\nРазмер: {size_kb} КБ\nПуть: {db_abs}")
+        await message.answer_document(doc, caption=f"Резервная копия\nПользователей: {total}\nРазмер: {size_kb} КБ\nПуть: {db_abs}")
     except Exception as e:
         logging.exception("[BACKUP]")
-        await message.answer(f"❌ Ошибка бэкапа: {e}")
+        await message.answer(f"Ошибка бэкапа: {e}")
 
 @dp.message(Command("restore"))
 async def cmd_restore(message: Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer(f"⛔ Только для админа.\nТвой ID: {message.from_user.id}")
+        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}")
         return
     if not message.document:
-        await message.answer("📎 Пришли .db ФАЙЛ с подписью /restore (в одном сообщении)."); return
+        await message.answer("Пришли .db файл с подписью /restore (в одном сообщении)."); return
     fname = (message.document.file_name or "").lower()
     if not fname.endswith(".db"):
-        await message.answer("❌ Нужен файл с расширением .db"); return
+        await message.answer("Нужен файл с расширением .db"); return
     try:
         db_abs = os.path.abspath(DB_PATH)
-        logging.info(f"[RESTORE] запрос от {message.from_user.id}, target={db_abs}")
         if os.path.isfile(db_abs):
             bak = db_abs + ".before_restore_" + _now_irkutsk().strftime('%Y%m%d_%H%M%S')
             shutil.copy2(db_abs, bak)
-            logging.info(f"[RESTORE] старая база сохранена как {bak}")
         os.makedirs(os.path.dirname(db_abs) or ".", exist_ok=True)
         file = await bot.get_file(message.document.file_id)
         await bot.download_file(file.file_path, db_abs)
         init_db()
-        await message.answer(f"✅ База восстановлена.\nВсего пользователей: {get_total_users()}\nФайл: {db_abs}")
+        await message.answer(f"База восстановлена.\nВсего пользователей: {get_total_users()}\nФайл: {db_abs}")
     except Exception as e:
         logging.exception("[RESTORE]")
-        await message.answer(f"❌ Ошибка восстановления: {e}")
+        await message.answer(f"Ошибка восстановления: {e}")
 
-# ===================== РАССЫЛКИ И ВОРКЕРЫ =====================
-
+# ===================== ВОРКЕРЫ =====================
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
         today = _now_irkutsk()
