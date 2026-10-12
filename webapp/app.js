@@ -709,6 +709,7 @@ async function actionNotifyOff() {
 }
 function actionNotifyBack() { hideKeyboard(); state.notifyEditor = false; document.body.classList.remove('picker-open'); render(); }
 
+
 /* Стипендия */
 function renderScholarshipBlock() {
   const s = state.scholarship;
@@ -979,19 +980,30 @@ function renderAI() {
   html += `<div class="section-title" style="margin-top:16px">Презентация</div>
     <div class="card">
       <div class="card-title">Собрать PPTX</div>
-      <div class="card-subtitle">Введи тему (можно прикрепить фото конспекта выше) и выбери параметры. Файл придёт в чат бота через 1-3 минуты.</div>
-      <textarea class="input" id="present-topic" placeholder="Тема презентации (например: История Иркутска)" rows="2"></textarea>
+      <div class="card-subtitle">Бот сам раскроет тему максимально подробно и красиво оформит слайды. Файл придёт в чат бота через 1–3 минуты.</div>
+      <div class="label">ТЕМА *</div>
+      <textarea class="input" id="present-topic" placeholder="Например: История Иркутска" rows="2"></textarea>
+      <div class="label">ТВОЯ ИНФОРМАЦИЯ (необязательно)</div>
+      <div class="card-subtitle" style="margin-top:0">Бот обязательно использует эти факты в презентации.</div>
+      <textarea class="input" id="present-info" placeholder="Например: Иркутск основан в 1661 году, население 617 тысяч человек…" rows="4"></textarea>
+      <div class="label">ПОЖЕЛАНИЯ К СТИЛЮ / СОДЕРЖАНИЮ (необязательно)</div>
+      <textarea class="input" id="present-wishes" placeholder="Например: сделать упор на архитектуру, добавить слайд с флорой и фауной, стиль — тёмный минимализм" rows="2"></textarea>
       <div class="label">Сколько слайдов</div>
       <div class="choice-row" id="present-slides">
-        <button class="choice" data-slides="5">5</button>
-        <button class="choice active" data-slides="8">8</button>
-        <button class="choice" data-slides="12">12</button>
+        <button class="choice" data-slides="6">6</button>
+        <button class="choice active" data-slides="10">10</button>
+        <button class="choice" data-slides="14">14</button>
+        <button class="choice" data-slides="18">18</button>
       </div>
-      <div class="label">Стиль</div>
+      <div class="label">Стиль оформления</div>
       <div class="choice-row" id="present-style">
-        <button class="choice active" data-style="academic">Академический</button>
+        <button class="choice active" data-style="random">Случайный</button>
+        <button class="choice" data-style="academic">Академический</button>
         <button class="choice" data-style="creative">Креативный</button>
         <button class="choice" data-style="minimal">Минимализм</button>
+        <button class="choice" data-style="dark">Тёмный</button>
+        <button class="choice" data-style="magazine">Журнальный</button>
+        <button class="choice" data-style="neon">Неон</button>
       </div>
       <button class="btn" data-action="present-build" style="width:100%;margin-top:10px">Собрать PPTX</button>
     </div>`;
@@ -1441,6 +1453,7 @@ function patchWalletInProfile(wallet) {
   if (shiftEl) shiftEl.textContent = wallet.shift ?? wallet.soft ?? 0;
   if (novaEl)  novaEl.textContent  = wallet.nova  ?? wallet.hard ?? 0;
 }
+
 
 /* Игры: Flappy */
 const Flappy = {
@@ -2363,24 +2376,23 @@ function actionAttHelp() {
 
 /* Present */
 function actionPresentBuild() {
-  const topicEl = document.getElementById('present-topic');
-  const topic = (topicEl?.value || '').trim();
-  const photo = state.aiPendingPhoto || null;
-  if (!topic && !photo) { toast('Введи тему или прикрепи фото', 'error'); return; }
+  const topic = (document.getElementById('present-topic')?.value || '').trim();
+  const info = (document.getElementById('present-info')?.value || '').trim();
+  const wishes = (document.getElementById('present-wishes')?.value || '').trim();
+  if (!topic) { toast('Введи тему презентации', 'error'); return; }
   const slidesEl = document.querySelector('#present-slides .choice.active');
-  const slides = slidesEl ? parseInt(slidesEl.dataset.slides, 10) : 8;
+  const slides = slidesEl ? parseInt(slidesEl.dataset.slides, 10) : 10;
   const styleEl = document.querySelector('#present-style .choice.active');
-  const style = styleEl ? styleEl.dataset.style : 'academic';
+  const style = styleEl ? styleEl.dataset.style : 'random';
   hideKeyboard();
   modalConfirm('СОБРАТЬ ПРЕЗЕНТАЦИЮ?',
-    `Слайдов: ${slides}. Это займёт 1-3 минуты. Файл придёт в чат бота.`,
+    `Тема: ${topic}\nСлайдов: ${slides}\nСтиль: ${style === 'random' ? 'случайный' : style}.\nФайл придёт в чат бота через 1–3 минуты.`,
     async () => {
       try {
         toast('Запускаю генерацию...', 'info');
-        await apiPost('/api/present', {topic, slides, style, photo});
+        await apiPost('/api/present', {topic, slides, style, info, wishes});
         haptic('success');
         toast('Готово, PPTX отправлен в чат', 'success');
-        state.aiPendingPhoto = null;
         render();
       } catch (e) {
         haptic('error');
