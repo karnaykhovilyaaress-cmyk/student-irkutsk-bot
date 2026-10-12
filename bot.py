@@ -1050,6 +1050,7 @@ def get_export_data(user_id):
         "attendance": att}
 
 
+# ===================== МОРСКОЙ БОЙ =====================
 def _bs_now(): return datetime.now(timezone.utc).isoformat()
 def _bs_new_game_id(): return secrets.token_hex(8)
 
@@ -1176,7 +1177,9 @@ def exchange_shift_to_nova(user_id, amount_shift):
             "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
             "hard_received": amount_nova, "nova_received": amount_nova}
 
-# === GROUPS (полный список групп ИРНИТУ) ===
+# ═══════════════════════════════════════════════════════════════
+# GROUPS (список групп ИРНИТУ)
+# ═══════════════════════════════════════════════════════════════
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -1588,7 +1591,6 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
             if row: return row[0]
         return ""
 
-
 def _verify_webapp_init_full(init_data):
     if not init_data: return None
     try:
@@ -1602,14 +1604,75 @@ def _verify_webapp_init(init_data):
     u = _verify_webapp_init_full(init_data)
     return u.id if u else None
 
+
 # ═══════════════════════════════════════════════════════════════
-# PRESENTATIONS
+# PRESENTATIONS (без картинок, с SVG-декором и плашками-подсказками)
 # ═══════════════════════════════════════════════════════════════
+
 PRESENT_STYLES = {
-    "academic": {"name": "Академический", "accent": (31, 184, 166), "title_bg": (10, 59, 55),  "text": (10, 14, 15),  "bg": (255, 255, 255)},
-    "creative": {"name": "Креативный",    "accent": (255, 164, 43), "title_bg": (26, 26, 36),  "text": (240, 240, 240),"bg": (26, 26, 36)},
-    "minimal":  {"name": "Минимализм",    "accent": (10, 14, 15),   "title_bg": (10, 14, 15),  "text": (10, 14, 15),  "bg": (250, 250, 250)},
+    "academic": {
+        "name": "Академический",
+        "bg": (255, 255, 255), "title_bg": (10, 59, 55),
+        "accent": (31, 184, 166), "accent2": (127, 233, 255),
+        "text": (10, 14, 15), "text_soft": (90, 102, 105),
+        "title_text": (255, 255, 255),
+        "layout": "image_right", "shape_style": "circle",
+    },
+    "creative": {
+        "name": "Креативный",
+        "bg": (26, 26, 36), "title_bg": (26, 26, 36),
+        "accent": (255, 164, 43), "accent2": (255, 90, 90),
+        "text": (245, 245, 245), "text_soft": (170, 170, 180),
+        "title_text": (255, 255, 255),
+        "layout": "image_left", "shape_style": "star",
+    },
+    "minimal": {
+        "name": "Минимализм",
+        "bg": (255, 255, 255), "title_bg": (250, 250, 250),
+        "accent": (10, 14, 15), "accent2": (120, 120, 120),
+        "text": (10, 14, 15), "text_soft": (120, 120, 120),
+        "title_text": (10, 14, 15),
+        "layout": "image_right", "shape_style": "square",
+    },
+    "dark": {
+        "name": "Тёмный",
+        "bg": (18, 23, 24), "title_bg": (10, 14, 15),
+        "accent": (127, 233, 255), "accent2": (62, 230, 210),
+        "text": (235, 240, 240), "text_soft": (140, 150, 155),
+        "title_text": (255, 255, 255),
+        "layout": "image_full", "shape_style": "hexagon",
+    },
+    "magazine": {
+        "name": "Журнальный",
+        "bg": (252, 250, 245), "title_bg": (245, 240, 230),
+        "accent": (226, 58, 58), "accent2": (255, 164, 43),
+        "text": (30, 20, 20), "text_soft": (110, 90, 90),
+        "title_text": (30, 20, 20),
+        "layout": "image_left", "shape_style": "rounded",
+    },
+    "neon": {
+        "name": "Неон",
+        "bg": (20, 12, 35), "title_bg": (12, 8, 25),
+        "accent": (255, 60, 180), "accent2": (127, 233, 255),
+        "text": (240, 240, 255), "text_soft": (160, 140, 200),
+        "title_text": (255, 255, 255),
+        "layout": "image_right", "shape_style": "diamond",
+    },
 }
+
+_SHAPE_MAP = {
+    "circle":  MSO_SHAPE.OVAL,
+    "star":    MSO_SHAPE.STAR_5_POINT,
+    "square":  MSO_SHAPE.RECTANGLE,
+    "hexagon": MSO_SHAPE.HEXAGON,
+    "rounded": MSO_SHAPE.ROUNDED_RECTANGLE,
+    "diamond": MSO_SHAPE.DIAMOND,
+}
+
+def _pick_random_style(exclude: str = None) -> str:
+    keys = [k for k in PRESENT_STYLES.keys() if k != exclude]
+    return random.choice(keys)
+
 
 async def _gigachat_json(prompt: str) -> dict:
     if giga_client is None: raise RuntimeError("GigaChat не настроен")
@@ -1621,184 +1684,236 @@ async def _gigachat_json(prompt: str) -> dict:
     if not m: raise ValueError("GigaChat не вернул JSON: " + content[:200])
     return json.loads(m.group(0))
 
-async def _generate_slide_plan(topic: str, slides_count: int, extra_context: str = "") -> dict:
-    base = f"""Ты помощник, который составляет структуру презентаций для студентов.
-Составь структуру презентации на тему: «{topic}».
+
+async def _generate_slide_plan(topic: str, slides_count: int,
+                               extra_context: str = "", user_wishes: str = "") -> dict:
+    """Составляет подробный план презентации. Без картинок — только текстовые подсказки."""
+    base = f"""Ты опытный методист и профессиональный дизайнер презентаций.
+Сделай содержательную, логичную презентацию на тему: «{topic}».
 Всего слайдов: {slides_count}.
 """
     if extra_context:
-        base += f"\nДополнительный материал:\n{extra_context[:3500]}\n"
+        base += f"\nИнформация от пользователя (обязательно используй эти факты):\n{extra_context[:4000]}\n"
+    if user_wishes:
+        base += f"\nПожелания пользователя к стилю/содержанию:\n{user_wishes[:1500]}\n"
+
     base += """
-Верни СТРОГО JSON без пояснений, в формате:
+Верни СТРОГО JSON без markdown-обёрток, в формате:
 {
-  "title": "Заголовок титульного слайда",
-  "subtitle": "Подзаголовок",
+  "title": "Заголовок титульного слайда (до 80 символов)",
+  "subtitle": "Подзаголовок на титульный слайд (1 строка, до 140 символов)",
   "slides": [
     {
-      "heading": "Заголовок слайда",
-      "bullets": ["пункт 1", "пункт 2", "пункт 3"],
-      "image_prompt": "короткий промпт на английском для генерации картинки-иллюстрации, стиль digital illustration, flat design, clean"
+      "heading": "Заголовок слайда (до 60 символов)",
+      "bullets": [
+        "Пункт 1 — развёрнутый, 110-180 символов, с фактом/цифрой/примером",
+        "Пункт 2 — тоже развёрнутый",
+        "Пункт 3 — тоже развёрнутый",
+        "Пункт 4 — тоже развёрнутый"
+      ],
+      "image_hint": "Короткое описание картинки/схемы, которую нужно вставить на этот слайд (до 120 символов).",
+      "notes": "Текст для докладчика: 2-3 полных предложения о том, что сказать на этом слайде."
     }
   ]
 }
-Требования:
-- Первый слайд — титульный, в slides его не включай.
-- 3-5 пунктов на слайд, каждый до 90 символов.
-- image_prompt на английском, до 200 символов, без текста на картинке.
+
+ТРЕБОВАНИЯ:
+- Первый слайд — титульный, в slides его НЕ включай.
 - Ровно """ + str(slides_count - 1) + """ слайдов в массиве.
-- Только JSON, без markdown.
+- Каждый слайд: 4-6 пунктов, каждый пункт 110-180 символов, максимум конкретики (цифры, даты, имена, примеры, причины, следствия).
+- Информация должна РАСКРЫВАТЬ тему, а не быть водой. Никаких "это важно", "данная тема актуальна" — только конкретные факты.
+- НЕ дублируй содержание между слайдами. Каждый слайд — новый аспект темы.
+- Структура: введение/история → ключевые аспекты → примеры → итоги/выводы.
+- image_hint — ВСЕГДА заполняй, это подсказка для вставки иллюстрации.
+- notes — 2-3 полных предложения, живой язык, как будто рассказываешь вслух.
+- Только JSON, без пояснений.
 """
     return await _gigachat_json(base)
 
-async def _yandexart_generate(prompt: str, aspect_ratio: str = "16:9") -> bytes:
-    if not YANDEX_VISION_API_KEY or not YANDEX_FOLDER_ID:
-        raise RuntimeError("YandexART не настроен")
-    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/imageGenerationAsync"
-    headers = {"Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
-               "Content-Type": "application/json", "x-folder-id": YANDEX_FOLDER_ID}
-    w, h = (16, 9) if aspect_ratio == "16:9" else (1, 1)
-    body = {"modelUri": "art://b1g2l7l34crnee0poj5m/yandex-art-2.0/latest",
-        "messages": [{"weight": 1, "text": prompt[:500]}],
-        "generationOptions": {"aspectRatio": {"widthRatio": str(w), "heightRatio": str(h)},
-                              "seed": random.randint(1, 10**9)}}
-    timeout = aiohttp.ClientTimeout(total=180)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(url, headers=headers, json=body) as resp:
-            if resp.status != 200:
-                txt = await resp.text()
-                raise RuntimeError(f"YandexART HTTP {resp.status}: {txt[:200]}")
-            data = await resp.json()
-    op_id = data.get("id")
-    if not op_id: raise RuntimeError("YandexART без operation id")
-    for _ in range(60):
-        await asyncio.sleep(3)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(f"https://llm.api.cloud.yandex.net/operations/{op_id}", headers=headers) as r2:
-                if r2.status != 200: continue
-                op = await r2.json()
-        if not op.get("done"): continue
-        if op.get("error"): raise RuntimeError(f"YandexART error: {op['error']}")
-        img_b64 = op.get("response", {}).get("image")
-        if not img_b64: raise RuntimeError("YandexART пусто")
-        return base64.b64decode(img_b64)
-    raise RuntimeError("YandexART timeout")
 
-def _build_pptx(plan: dict, images: dict, style_id: str = "academic") -> bytes:
+def _add_shape(slide, shape_style, x, y, w, h, color):
+    """Рисует декоративную фигуру (SVG-подобный декор средствами pptx)."""
+    shape_type = _SHAPE_MAP.get(shape_style, MSO_SHAPE.OVAL)
+    shp = slide.shapes.add_shape(shape_type, x, y, w, h)
+    shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
+    shp.line.fill.background(); shp.shadow.inherit = False
+    return shp
+
+
+def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
+    """Собирает PPTX с декором, плашками-подсказками и заметками докладчика."""
     if not _PPTX_AVAILABLE: raise RuntimeError("python-pptx не установлена")
     style = PRESENT_STYLES.get(style_id, PRESENT_STYLES["academic"])
     prs = Presentation()
     prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     blank = prs.slide_layouts[6]
-    def rgb(tup): return RGBColor(*tup)
-    def add_rect(slide, x, y, w, h, color):
+    LAYOUT = style.get("layout", "image_right")
+    SHAPE = style.get("shape_style", "circle")
+
+    def rgb(t): return RGBColor(*t)
+
+    def add_rect(slide, x, y, w, h, color, line=False):
         shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
         shp.fill.solid(); shp.fill.fore_color.rgb = rgb(color)
-        shp.line.fill.background(); shp.shadow.inherit = False
+        if not line: shp.line.fill.background()
+        shp.shadow.inherit = False
         return shp
-    def add_text(slide, x, y, w, h, text, size=18, bold=False, color=(10,14,15),
-                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+
+    def add_text(slide, x, y, w, h, text, size=18, bold=False, color=None,
+                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False):
+        c = color if color else style["text"]
         tb = slide.shapes.add_textbox(x, y, w, h)
         tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = anchor
         p = tf.paragraphs[0]; p.alignment = align
         run = p.add_run(); run.text = text
-        run.font.size = Pt(size); run.font.bold = bold
-        run.font.color.rgb = rgb(color); run.font.name = "DejaVu Sans"
+        run.font.size = Pt(size); run.font.bold = bold; run.font.italic = italic
+        run.font.color.rgb = rgb(c); run.font.name = "DejaVu Sans"
         return tb
+
+    def add_bullets(slide, x, y, w, h, bullets, size=15):
+        if not bullets: return
+        tf = slide.shapes.add_textbox(x, y, w, h).text_frame
+        tf.word_wrap = True
+        for j, b in enumerate(bullets[:6]):
+            p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+            p.space_after = Pt(10)
+            run = p.add_run()
+            run.text = "•  " + str(b)
+            run.font.size = Pt(size)
+            run.font.color.rgb = rgb(style["text"])
+            run.font.name = "DejaVu Sans"
+
+    def add_image_placeholder(slide, x, y, w, h, hint):
+        box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
+        box.fill.solid(); box.fill.fore_color.rgb = rgb(style["accent2"])
+        box.line.color.rgb = rgb(style["accent"]); box.line.width = Pt(2)
+        box.shadow.inherit = False
+        tf = box.text_frame; tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+        r1 = p.add_run(); r1.text = "МЕСТО ДЛЯ КАРТИНКИ"
+        r1.font.size = Pt(14); r1.font.bold = True
+        r1.font.color.rgb = rgb(style["text"])
+        p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
+        r2 = p2.add_run(); r2.text = hint or "Иллюстрация к слайду"
+        r2.font.size = Pt(12); r2.font.italic = True
+        r2.font.color.rgb = rgb(style["text"])
+
+    def add_footer(slide, idx, total, topic_label):
+        add_text(slide, Inches(0.6), Inches(7.05), Inches(8.0), Inches(0.4),
+                 topic_label, size=9, color=style["text_soft"])
+        add_text(slide, Inches(11.3), Inches(7.05), Inches(1.5), Inches(0.4),
+                 f"{idx} / {total}", size=10, bold=True,
+                 color=style["accent"], align=PP_ALIGN.RIGHT)
 
     s0 = prs.slides.add_slide(blank)
     add_rect(s0, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
-    add_rect(s0, 0, int(prs.slide_height * 0.62), prs.slide_width, int(prs.slide_height * 0.03), style["accent"])
-    add_text(s0, Inches(1), Inches(2.3), Inches(11.3), Inches(2.0),
-             plan.get("title", "Презентация"), size=44, bold=True, color=(255,255,255))
+    _add_shape(s0, SHAPE, Inches(-1.0), Inches(-1.0), Inches(3.5), Inches(3.5),
+               style["accent"] if style_id != "minimal" else style["accent2"])
+    _add_shape(s0, SHAPE, Inches(11.5), Inches(5.5), Inches(3.0), Inches(3.0),
+               style["accent2"])
+    _add_shape(s0, SHAPE, Inches(10.5), Inches(-0.8), Inches(1.8), Inches(1.8),
+               style["accent"])
+    add_rect(s0, Inches(1), Inches(2.0), Inches(2.5), Inches(0.1), style["accent"])
+    add_text(s0, Inches(1), Inches(2.4), Inches(11.3), Inches(2.2),
+             plan.get("title", "Презентация"), size=50, bold=True,
+             color=style["title_text"])
     if plan.get("subtitle"):
-        add_text(s0, Inches(1), Inches(4.3), Inches(11.3), Inches(1.0),
-                 plan["subtitle"], size=22, color=style["accent"])
+        add_text(s0, Inches(1), Inches(4.8), Inches(11.3), Inches(1.2),
+                 plan["subtitle"], size=22,
+                 color=style["accent"] if style_id != "minimal" else style["text_soft"])
+    add_text(s0, Inches(1), Inches(6.6), Inches(11.3), Inches(0.5),
+             "STUDENT IRK  ·  ПРЕЗЕНТАЦИЯ", size=11, bold=True,
+             color=style["text_soft"])
 
     slides = plan.get("slides", [])
+    total = len(slides)
+    topic_label = (plan.get("title") or "")[:60]
+
     for i, sl in enumerate(slides):
         s = prs.slides.add_slide(blank)
         add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
-        add_rect(s, 0, 0, prs.slide_width, Inches(0.15), style["accent"])
-        add_text(s, Inches(0.7), Inches(0.5), Inches(12), Inches(1.0),
-                 sl.get("heading", f"Слайд {i+1}"), size=30, bold=True, color=style["text"])
-        add_rect(s, Inches(0.7), Inches(1.5), Inches(2.2), Inches(0.06), style["accent"])
-        img_bytes = images.get(i)
-        if img_bytes and _PIL_AVAILABLE:
-            try:
-                tmp = io.BytesIO(img_bytes); img = Image.open(tmp)
-                box_x, box_y = Inches(7.0), Inches(1.9); box_w, box_h = Inches(5.8), Inches(5.0)
-                img_w, img_h = img.size
-                ratio = min(box_w / img_w, box_h / img_h)
-                new_w, new_h = int(img_w * ratio), int(img_h * ratio)
-                tmp_path = f"/tmp/_slide_{i}.jpg"; img.convert("RGB").save(tmp_path, "JPEG", quality=88)
-                s.shapes.add_picture(tmp_path, box_x + int((box_w - new_w)/2), box_y + int((box_h - new_h)/2),
-                    width=new_w, height=new_h)
-            except Exception as e:
-                logging.warning(f"[PPTX] картинка слайда {i}: {e}")
-        bullets = sl.get("bullets", [])[:6]
-        if bullets:
-            tf = s.shapes.add_textbox(Inches(0.7), Inches(2.1), Inches(6.0), Inches(4.7)).text_frame
-            tf.word_wrap = True
-            for j, b in enumerate(bullets):
-                p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
-                p.space_after = Pt(8); run = p.add_run()
-                run.text = "•  " + str(b)
-                run.font.size = Pt(18); run.font.color.rgb = rgb(style["text"]); run.font.name = "DejaVu Sans"
+        add_rect(s, 0, 0, prs.slide_width, Inches(0.12), style["accent"])
+        add_rect(s, Inches(0.6), Inches(0.6), Inches(0.14), Inches(1.0), style["accent"])
+        add_text(s, Inches(0.95), Inches(0.55), Inches(11.8), Inches(1.1),
+                 sl.get("heading", f"Слайд {i+1}"), size=30, bold=True,
+                 color=style["accent"] if style_id in ("dark", "neon") else style["text"])
+        add_rect(s, Inches(0.6), Inches(1.7), Inches(12.1), Inches(0.03), style["accent2"])
+
+        bullets = sl.get("bullets", [])
+        hint = sl.get("image_hint", "")
+
+        if LAYOUT == "image_right":
+            add_bullets(s, Inches(0.6), Inches(2.1), Inches(7.0), Inches(4.7), bullets, size=15)
+            add_image_placeholder(s, Inches(8.0), Inches(2.1), Inches(4.8), Inches(4.4), hint)
+            _add_shape(s, SHAPE, Inches(12.3), Inches(6.4), Inches(1.2), Inches(1.2),
+                       style["accent"] if style_id != "minimal" else style["accent2"])
+        elif LAYOUT == "image_left":
+            add_image_placeholder(s, Inches(0.6), Inches(2.1), Inches(4.8), Inches(4.4), hint)
+            add_bullets(s, Inches(5.8), Inches(2.1), Inches(7.0), Inches(4.7), bullets, size=15)
+            _add_shape(s, SHAPE, Inches(11.5), Inches(6.6), Inches(1.2), Inches(1.2),
+                       style["accent2"])
+        else:
+            add_bullets(s, Inches(0.6), Inches(2.1), Inches(6.8), Inches(4.7), bullets, size=15)
+            add_image_placeholder(s, Inches(7.7), Inches(2.1), Inches(5.1), Inches(4.4), hint)
+            _add_shape(s, SHAPE, Inches(-0.4), Inches(6.6), Inches(1.2), Inches(1.2),
+                       style["accent"])
+
+        notes = sl.get("notes")
+        if notes:
+            try: s.notes_slide.notes_text_frame.text = str(notes)
+            except Exception: pass
+
+        add_footer(s, i + 1, total, topic_label)
 
     sN = prs.slides.add_slide(blank)
     add_rect(sN, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
-    add_text(sN, Inches(1), Inches(3.0), Inches(11.3), Inches(1.5),
-             "Спасибо за внимание!", size=40, bold=True, color=(255,255,255), align=PP_ALIGN.CENTER)
+    _add_shape(sN, SHAPE, Inches(-1.2), Inches(-1.2), Inches(3.5), Inches(3.5), style["accent"])
+    _add_shape(sN, SHAPE, Inches(11.0), Inches(5.2), Inches(3.5), Inches(3.5), style["accent2"])
+    add_rect(sN, int(prs.slide_width * 0.35), Inches(3.55), int(prs.slide_width * 0.3),
+             Inches(0.08), style["accent"])
+    add_text(sN, Inches(1), Inches(2.9), Inches(11.3), Inches(1.5),
+             "Спасибо за внимание!", size=44, bold=True,
+             color=style["title_text"], align=PP_ALIGN.CENTER)
+    add_text(sN, Inches(1), Inches(4.6), Inches(11.3), Inches(0.6),
+             "Вопросы?", size=20, italic=True,
+             color=style["accent"], align=PP_ALIGN.CENTER)
 
     buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
 
 
-async def generate_presentation(user_id: int, topic: str, slides_count: int = 8,
-                                style_id: str = "academic", photo_b64: str = None) -> bytes:
-    if not _PPTX_AVAILABLE: raise RuntimeError("python-pptx не установлена. Добавь в requirements.txt")
-    if giga_client is None: raise RuntimeError("GigaChat не настроен")
+async def generate_presentation(user_id: int, topic: str, slides_count: int = 10,
+                                style_id: str = "random",
+                                user_info: str = "", user_wishes: str = "") -> bytes:
+    if not _PPTX_AVAILABLE:
+        raise RuntimeError("python-pptx не установлена. Добавь в requirements.txt")
+    if giga_client is None:
+        raise RuntimeError("GigaChat не настроен")
+
+    if not style_id or style_id == "random":
+        style_id = _pick_random_style()
+    if style_id not in PRESENT_STYLES:
+        style_id = "academic"
+    style_name = PRESENT_STYLES[style_id]["name"]
+
     status_msg = None
-    try: status_msg = await bot.send_message(user_id, "Составляю структуру презентации...")
+    try:
+        status_msg = await bot.send_message(
+            user_id, f"Собираю презентацию «{topic}»\nСтиль: {style_name}\nСоставляю структуру...")
     except Exception: pass
 
-    extra_context = ""
-    if photo_b64:
-        try:
-            b64 = photo_b64.split(",", 1)[1] if "," in photo_b64 else photo_b64
-            ocr_url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
-            ocr_headers = {"Authorization": f"Api-Key {YANDEX_VISION_API_KEY}", "Content-Type": "application/json"}
-            ocr_body = {"mimeType": "image/jpeg", "languageCodes": ["ru", "en"], "model": "page", "content": b64}
-            async with aiohttp.ClientSession() as session:
-                async with session.post(ocr_url, headers=ocr_headers, json=ocr_body,
-                                        timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                    if resp.status == 200:
-                        ocr_res = await resp.json()
-                        try: extra_context = ocr_res["result"]["textAnnotation"]["fullText"] or ""
-                        except (KeyError, TypeError): extra_context = ""
-        except Exception as e:
-            logging.warning(f"[PRESENT] OCR: {e}")
-
-    plan = await _generate_slide_plan(topic, slides_count, extra_context)
-    slides = plan.get("slides", []); total = len(slides)
-    images = {}
-    for i, sl in enumerate(slides):
-        prompt = (sl.get("image_prompt") or sl.get("heading") or topic).strip()
-        try:
-            if status_msg:
-                try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
-                    text=f"Генерирую картинку {i+1}/{total}...")
-                except Exception: pass
-            images[i] = await _yandexart_generate(prompt, aspect_ratio="16:9")
-        except Exception as e:
-            logging.warning(f"[PRESENT] YandexART слайд {i}: {e}")
-            images[i] = None
+    plan = await _generate_slide_plan(topic, slides_count, user_info, user_wishes)
 
     if status_msg:
-        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id, text="Собираю PPTX...")
+        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
+            text=f"Стиль: {style_name}\nСобираю PPTX...")
         except Exception: pass
-    pptx_bytes = _build_pptx(plan, images, style_id)
+
+    pptx_bytes = _build_pptx(plan, style_id)
+
     if status_msg:
-        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id, text="Готово, отправляю файл...")
+        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
+            text="Готово, отправляю файл...")
         except Exception: pass
     return pptx_bytes
 
@@ -1809,17 +1924,21 @@ async def api_present(request):
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     topic = (body.get("topic") or "").strip()
-    if not topic and not body.get("photo"):
-        return web.json_response({"error": "empty_topic", "message": "Введи тему или прикрепи фото"}, status=400)
+    user_info = (body.get("info") or "").strip()
+    user_wishes = (body.get("wishes") or "").strip()
+    if not topic:
+        return web.json_response({"error": "empty_topic",
+                                  "message": "Введи тему презентации"}, status=400)
     if len(topic) > 300: topic = topic[:300]
-    try: slides_count = int(body.get("slides", 8))
-    except: slides_count = 8
-    slides_count = max(4, min(15, slides_count))
-    style_id = (body.get("style") or "academic").strip()
-    if style_id not in PRESENT_STYLES: style_id = "academic"
-    photo = body.get("photo") or None
+    if len(user_info) > 5000: user_info = user_info[:5000]
+    if len(user_wishes) > 2000: user_wishes = user_wishes[:2000]
+    try: slides_count = int(body.get("slides", 10))
+    except: slides_count = 10
+    slides_count = max(5, min(20, slides_count))
+    style_id = (body.get("style") or "random").strip()
     try:
-        pptx_bytes = await generate_presentation(user_id, topic or "Презентация по фото", slides_count, style_id, photo)
+        pptx_bytes = await generate_presentation(
+            user_id, topic, slides_count, style_id, user_info, user_wishes)
     except Exception as e:
         logging.exception("[PRESENT]")
         return web.json_response({"error": "present_failed", "message": str(e)}, status=500)
@@ -1832,6 +1951,9 @@ async def api_present(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+# ═══════════════════════════════════════════════════════════════
+# WEB API
+# ═══════════════════════════════════════════════════════════════
 async def api_schedule(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -1990,7 +2112,6 @@ async def api_exchange(request):
     return web.json_response({"ok": True, "soft_spent": result["soft_spent"],
         "hard_received": result["hard_received"], "shift_spent": result["shift_spent"],
         "nova_received": result["nova_received"], "wallet": wallet_get(user_id)})
-
 
 async def api_chest_status(request):
     init_data = request.query.get("initData", "")
@@ -2893,6 +3014,7 @@ async def api_bs_finish_bot(request):
     return web.json_response({"ok": True, "reward": reward, "loss": loss, "wallet": wallet_get(user_id)})
 
 
+# ===================== PDF =====================
 def _find_or_download_pdf_font():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -3306,6 +3428,7 @@ async def cmd_restore(message: Message):
         logging.exception("[RESTORE]")
         await message.answer(f"Ошибка восстановления: {e}")
 
+
 # ===================== ВОРКЕРЫ =====================
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
@@ -3470,4 +3593,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
 
