@@ -1176,7 +1176,7 @@ def exchange_shift_to_nova(user_id, amount_shift):
             "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
             "hard_received": amount_nova, "nova_received": amount_nova}
 
-# === GROUPS ===
+# === GROUPS (полный список групп ИРНИТУ) ===
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -1657,7 +1657,7 @@ async def _yandexart_generate(prompt: str, aspect_ratio: str = "16:9") -> bytes:
     headers = {"Authorization": f"Api-Key {YANDEX_VISION_API_KEY}",
                "Content-Type": "application/json", "x-folder-id": YANDEX_FOLDER_ID}
     w, h = (16, 9) if aspect_ratio == "16:9" else (1, 1)
-    body = {"modelUri": f"art://{YANDEX_FOLDER_ID}/yandex-art/latest",
+    body = {"modelUri": "art://b1g2l7l34crnee0poj5m/yandex-art-2.0/latest",
         "messages": [{"weight": 1, "text": prompt[:500]}],
         "generationOptions": {"aspectRatio": {"widthRatio": str(w), "heightRatio": str(h)},
                               "seed": random.randint(1, 10**9)}}
@@ -1990,6 +1990,7 @@ async def api_exchange(request):
     return web.json_response({"ok": True, "soft_spent": result["soft_spent"],
         "hard_received": result["hard_received"], "shift_spent": result["shift_spent"],
         "nova_received": result["nova_received"], "wallet": wallet_get(user_id)})
+
 
 async def api_chest_status(request):
     init_data = request.query.get("initData", "")
@@ -2891,6 +2892,7 @@ async def api_bs_finish_bot(request):
     check_and_award_achievements(user_id)
     return web.json_response({"ok": True, "reward": reward, "loss": loss, "wallet": wallet_get(user_id)})
 
+
 def _find_or_download_pdf_font():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -3225,6 +3227,7 @@ async def start_webapp():
     site = web.TCPSite(runner, "0.0.0.0", port); await site.start()
     logging.info(f"[WEB] на 0.0.0.0:{port}")
 
+
 # ===================== КОМАНДЫ БОТА =====================
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
@@ -3467,3 +3470,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
