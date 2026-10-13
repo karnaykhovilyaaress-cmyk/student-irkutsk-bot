@@ -28,6 +28,10 @@ const state = {
   aiMessages:[], aiPending:false, aiPendingPhoto:null,
   adminStats:null, adminFeedback:[], adminMonitor:null,
   schFilterSemester:'',
+  // Презентация
+  presentForm:{ topic:'', info:'', wishes:'', slides:10, style:'random',
+                author:'', group:'', teacher:'', year:'' },
+  presentBuilding:false,
 };
 
 function icon(id, size=16, cls='') {
@@ -644,7 +648,6 @@ async function actionNotifyOff() {
 }
 function actionNotifyBack() { hideKeyboard(); state.notifyEditor = false; document.body.classList.remove('picker-open'); render(); }
 
-
 /* Стипендия */
 function renderScholarshipBlock() {
   const s = state.scholarship;
@@ -852,6 +855,7 @@ function renderNotes() {
   return html;
 }
 
+
 function renderAI() {
   let html = '';
   if (!state.aiMessages.length) {
@@ -900,37 +904,90 @@ function renderAI() {
     <input type="file" id="ai-photo-input" accept="image/*" style="display:none">
   </div>`;
 
-  html += `<div class="section-title" style="margin-top:16px">Презентация</div>
-    <div class="card">
-      <div class="card-title">Собрать PPTX</div>
-      <div class="card-subtitle">Бот раскроет тему максимально подробно и красиво оформит слайды. Файл придёт в чат бота через 1–2 минуты.</div>
-      <div class="label">ТЕМА *</div>
-      <textarea class="input" id="present-topic" placeholder="Например: История Иркутска" rows="2"></textarea>
-      <div class="label">ТВОЯ ИНФОРМАЦИЯ (необязательно)</div>
-      <div class="card-subtitle" style="margin-top:0">Бот обязательно использует эти факты в презентации.</div>
-      <textarea class="input" id="present-info" placeholder="Например: Иркутск основан в 1661 году, население 617 тысяч человек…" rows="4"></textarea>
-      <div class="label">ПОЖЕЛАНИЯ К СТИЛЮ / СОДЕРЖАНИЮ (необязательно)</div>
-      <textarea class="input" id="present-wishes" placeholder="Например: сделать упор на архитектуру, добавить слайд с флорой и фауной" rows="2"></textarea>
-      <div class="label">Сколько слайдов</div>
-      <div class="choice-row" id="present-slides">
-        <button class="choice" data-slides="6">6</button>
-        <button class="choice active" data-slides="10">10</button>
-        <button class="choice" data-slides="14">14</button>
-        <button class="choice" data-slides="18">18</button>
-      </div>
-      <div class="label">Стиль оформления</div>
-      <div class="choice-row" id="present-style">
-        <button class="choice active" data-style="random">Случайный</button>
-        <button class="choice" data-style="academic">Академический</button>
-        <button class="choice" data-style="creative">Креативный</button>
-        <button class="choice" data-style="minimal">Минимализм</button>
-        <button class="choice" data-style="dark">Тёмный</button>
-        <button class="choice" data-style="magazine">Журнальный</button>
-        <button class="choice" data-style="neon">Неон</button>
-      </div>
-      <button class="btn" data-action="present-build" style="width:100%;margin-top:10px">Собрать PPTX</button>
-    </div>`;
+  html += renderPresentationForm();
   return html;
+}
+
+/* Презентация */
+function renderPresentationForm() {
+  const f = state.presentForm;
+  const slidesOpts = [6, 10, 14, 18];
+  const styleOpts = [
+    ['random','Случайный'],
+    ['academic','Академический'],
+    ['creative','Креативный'],
+    ['minimal','Минимализм'],
+    ['dark','Тёмный'],
+    ['magazine','Журнальный'],
+    ['neon','Неон'],
+  ];
+  const groupName = state.profile?.group || '';
+  return `<div class="section-title" style="margin-top:16px">Презентация</div>
+  <div class="card">
+    <div class="card-title">Собрать PPTX</div>
+    <div class="card-subtitle">Бот раскроет тему и оформит слайды. Файл придёт в чат бота через 1–3 минуты.</div>
+    <div class="label">ТЕМА *</div>
+    <textarea class="input" id="present-topic" placeholder="Например: История Иркутска" rows="2">${escapeHtml(f.topic)}</textarea>
+    <div class="label">ТВОЯ ИНФОРМАЦИЯ (необязательно)</div>
+    <div class="card-subtitle" style="margin-top:0">Бот обязательно использует эти факты.</div>
+    <textarea class="input" id="present-info" placeholder="Иркутск основан в 1661 году, население 617 тыс. …" rows="3">${escapeHtml(f.info)}</textarea>
+    <div class="label">ПОЖЕЛАНИЯ К СОДЕРЖАНИЮ (необязательно)</div>
+    <textarea class="input" id="present-wishes" placeholder="Сделать упор на архитектуру, добавить слайд с флорой" rows="2">${escapeHtml(f.wishes)}</textarea>
+
+    <div class="label">ДАННЫЕ СТУДЕНТА (для титульного)</div>
+    <input class="input" id="present-author" placeholder="ФИО (Иванов И.И.)" value="${escapeHtml(f.author)}" maxlength="120">
+    <input class="input" id="present-group" placeholder="Группа (например, ИС-23-1)" value="${escapeHtml(f.group || groupName)}" maxlength="40">
+    <input class="input" id="present-teacher" placeholder="Преподаватель (Петров П.П.)" value="${escapeHtml(f.teacher)}" maxlength="120">
+    <input class="input" id="present-year" placeholder="Год (2025)" value="${escapeHtml(f.year)}" maxlength="10">
+
+    <div class="label">Сколько слайдов (содержательных)</div>
+    <div class="choice-row" id="present-slides">
+      ${slidesOpts.map(n => `<button class="choice ${f.slides===n?'active':''}" data-slides="${n}">${n}</button>`).join('')}
+    </div>
+    <div class="label">Стиль оформления</div>
+    <div class="choice-row" id="present-style">
+      ${styleOpts.map(([k,l]) => `<button class="choice ${f.style===k?'active':''}" data-style="${k}">${l}</button>`).join('')}
+    </div>
+    <button class="btn" data-action="present-build" style="width:100%;margin-top:10px" ${state.presentBuilding?'disabled':''}>
+      ${state.presentBuilding ? 'Генерация…' : 'Собрать PPTX'}
+    </button>
+  </div>`;
+}
+
+function actionPresentBuild() {
+  const topic = (document.getElementById('present-topic')?.value || '').trim();
+  const info = (document.getElementById('present-info')?.value || '').trim();
+  const wishes = (document.getElementById('present-wishes')?.value || '').trim();
+  const author = (document.getElementById('present-author')?.value || '').trim();
+  const group = (document.getElementById('present-group')?.value || '').trim();
+  const teacher = (document.getElementById('present-teacher')?.value || '').trim();
+  const year = (document.getElementById('present-year')?.value || '').trim();
+  if (!topic) { toast('Введи тему презентации', 'error'); return; }
+  const slidesEl = document.querySelector('#present-slides .choice.active');
+  const slides = slidesEl ? parseInt(slidesEl.dataset.slides, 10) : 10;
+  const styleEl = document.querySelector('#present-style .choice.active');
+  const style = styleEl ? styleEl.dataset.style : 'random';
+  state.presentForm = { topic, info, wishes, slides, style, author, group, teacher, year };
+  hideKeyboard();
+  modalConfirm('СОБРАТЬ ПРЕЗЕНТАЦИЮ?',
+    `Тема: ${topic}\nСлайдов: ${slides}\nСтиль: ${style === 'random' ? 'случайный' : style}.\nФайл придёт в чат бота через 1–3 минуты.`,
+    async () => {
+      try {
+        state.presentBuilding = true;
+        toast('Запускаю генерацию...', 'info');
+        render();
+        await apiPost('/api/present', { topic, slides, style, info, wishes, author, group, teacher, year });
+        haptic('success');
+        toast('Готово, PPTX отправлен в чат', 'success');
+        state.presentBuilding = false;
+        render();
+      } catch (e) {
+        haptic('error');
+        toast(e.message || 'Ошибка генерации', 'error');
+        state.presentBuilding = false;
+        render();
+      }
+    }, 'СОБРАТЬ');
 }
 
 function renderAdmin() {
@@ -1030,8 +1087,6 @@ async function loadTodayAndRender() {
   await loadSchedule(); render();
 }
 
-
-/* Профиль (без ника, без валют) */
 function renderProfile() {
   const p = state.profile;
 
@@ -1100,7 +1155,6 @@ function renderProfile() {
   return html;
 }
 
-/* Actions */
 function actionChooseGroup() { loadGroups(true).then(() => { if (!state.groups || !Object.keys(state.groups).length) { toast('Не удалось загрузить', 'error'); return; } state.pickerMode = 'institute'; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = ''; render(); }); }
 function actionPickerBack() {
   if (state.pickerMode === 'group') { state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = ''; }
@@ -1273,10 +1327,8 @@ async function actionAICopy(idx) {
   if (!m || !m.text) return;
   try {
     await navigator.clipboard.writeText(m.text);
-    haptic('success');
-    toast('Скопировано', 'success');
+    haptic('success'); toast('Скопировано', 'success');
   } catch (e) {
-    // fallback
     const ta = document.createElement('textarea');
     ta.value = m.text;
     ta.style.position = 'fixed'; ta.style.left = '-9999px';
@@ -1367,33 +1419,6 @@ function actionAttHelp() {
   `, actions:[{label:'ПОНЯТНО', style:'btn'}]});
 }
 
-/* Present */
-function actionPresentBuild() {
-  const topic = (document.getElementById('present-topic')?.value || '').trim();
-  const info = (document.getElementById('present-info')?.value || '').trim();
-  const wishes = (document.getElementById('present-wishes')?.value || '').trim();
-  if (!topic) { toast('Введи тему презентации', 'error'); return; }
-  const slidesEl = document.querySelector('#present-slides .choice.active');
-  const slides = slidesEl ? parseInt(slidesEl.dataset.slides, 10) : 10;
-  const styleEl = document.querySelector('#present-style .choice.active');
-  const style = styleEl ? styleEl.dataset.style : 'random';
-  hideKeyboard();
-  modalConfirm('СОБРАТЬ ПРЕЗЕНТАЦИЮ?',
-    `Тема: ${topic}\nСлайдов: ${slides}\nСтиль: ${style === 'random' ? 'случайный' : style}.\nФайл придёт в чат бота через 1–2 минуты.`,
-    async () => {
-      try {
-        toast('Запускаю генерацию...', 'info');
-        await apiPost('/api/present', {topic, slides, style, info, wishes});
-        haptic('success');
-        toast('Готово, PPTX отправлен в чат', 'success');
-        render();
-      } catch (e) {
-        haptic('error');
-        toast(e.message || 'Ошибка генерации', 'error');
-      }
-    }, 'СОБРАТЬ');
-}
-
 function attachHandlers() {
   document.querySelectorAll('[data-action]').forEach(el => {
     if (el._bound) return;
@@ -1427,13 +1452,35 @@ function attachHandlers() {
     if (file) actionAIPhotoSelected(file);
     e.target.value = '';
   });
+  // Презентация: слайды
   const slidesBox = document.getElementById('present-slides');
   if (slidesBox) slidesBox.querySelectorAll('.choice').forEach(b => {
-    b.onclick = () => { slidesBox.querySelectorAll('.choice').forEach(x=>x.classList.remove('active')); b.classList.add('active'); haptic('light'); };
+    b.onclick = () => {
+      slidesBox.querySelectorAll('.choice').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      state.presentForm.slides = parseInt(b.dataset.slides, 10);
+      haptic('light');
+    };
   });
   const styleBox = document.getElementById('present-style');
   if (styleBox) styleBox.querySelectorAll('.choice').forEach(b => {
-    b.onclick = () => { styleBox.querySelectorAll('.choice').forEach(x=>x.classList.remove('active')); b.classList.add('active'); haptic('light'); };
+    b.onclick = () => {
+      styleBox.querySelectorAll('.choice').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      state.presentForm.style = b.dataset.style;
+      haptic('light');
+    };
+  });
+  // Live-сохранение полей презентации
+  ['present-topic','present-info','present-wishes','present-author','present-group','present-teacher','present-year'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el._boundSave) return;
+    el._boundSave = true;
+    el.addEventListener('input', (e) => {
+      const key = id.replace('present-','');
+      const map = {topic:'topic', info:'info', wishes:'wishes', author:'author', group:'group', teacher:'teacher', year:'year'};
+      if (map[key]) state.presentForm[map[key]] = e.target.value;
+    });
   });
 }
 
