@@ -28,7 +28,6 @@ const state = {
   aiMessages:[], aiPending:false, aiPendingPhoto:null,
   adminStats:null, adminFeedback:[], adminMonitor:null,
   schFilterSemester:'',
-  // Презентация
   presentForm:{ topic:'', info:'', wishes:'', slides:10, style:'random',
                 author:'', group:'', teacher:'', year:'' },
   presentBuilding:false,
@@ -922,17 +921,29 @@ function renderPresentationForm() {
     ['neon','Неон'],
   ];
   const groupName = state.profile?.group || '';
+  const materialLen = (f.info || '').length;
+  const materialOk = materialLen >= 40;
   return `<div class="section-title" style="margin-top:16px">Презентация</div>
   <div class="card">
     <div class="card-title">Собрать PPTX</div>
-    <div class="card-subtitle">Бот раскроет тему и оформит слайды. Файл придёт в чат бота через 1–3 минуты.</div>
+    <div class="card-subtitle">
+      Бот <b>оформит только твой текст</b> в слайды. ИИ не добавляет факты, цифры, имена и источники —
+      всё содержание берётся из блока «МАТЕРИАЛ».
+    </div>
+
     <div class="label">ТЕМА *</div>
     <textarea class="input" id="present-topic" placeholder="Например: История Иркутска" rows="2">${escapeHtml(f.topic)}</textarea>
-    <div class="label">ТВОЯ ИНФОРМАЦИЯ (необязательно)</div>
-    <div class="card-subtitle" style="margin-top:0">Бот обязательно использует эти факты.</div>
-    <textarea class="input" id="present-info" placeholder="Иркутск основан в 1661 году, население 617 тыс. …" rows="3">${escapeHtml(f.info)}</textarea>
-    <div class="label">ПОЖЕЛАНИЯ К СОДЕРЖАНИЮ (необязательно)</div>
-    <textarea class="input" id="present-wishes" placeholder="Сделать упор на архитектуру, добавить слайд с флорой" rows="2">${escapeHtml(f.wishes)}</textarea>
+
+    <div class="label">МАТЕРИАЛ * — обязательно</div>
+    <div class="card-subtitle" style="margin-top:0;color:${materialOk?'var(--text-2)':'var(--red)'}">
+      Вставь конспект, текст параграфа, свои тезисы (минимум 40 символов).<br>
+      Из этого текста будут сделаны слайды. Если чего-то нет в тексте — в презентацию не попадёт.
+      <br>Символов: ${materialLen}${materialOk?'':' — пока мало'}
+    </div>
+    <textarea class="input" id="present-info" placeholder="Вставь сюда текст по теме — конспект, реферат, тезисы…" rows="10" style="min-height:200px">${escapeHtml(f.info)}</textarea>
+
+    <div class="label">ПОЖЕЛАНИЯ К СТРУКТУРЕ (необязательно)</div>
+    <textarea class="input" id="present-wishes" placeholder="Например: сделать акцент на практической части, объединить разделы 3 и 4" rows="2">${escapeHtml(f.wishes)}</textarea>
 
     <div class="label">ДАННЫЕ СТУДЕНТА (для титульного)</div>
     <input class="input" id="present-author" placeholder="ФИО (Иванов И.И.)" value="${escapeHtml(f.author)}" maxlength="120">
@@ -940,7 +951,8 @@ function renderPresentationForm() {
     <input class="input" id="present-teacher" placeholder="Преподаватель (Петров П.П.)" value="${escapeHtml(f.teacher)}" maxlength="120">
     <input class="input" id="present-year" placeholder="Год (2025)" value="${escapeHtml(f.year)}" maxlength="10">
 
-    <div class="label">Сколько слайдов (содержательных)</div>
+    <div class="label">Сколько слайдов (максимум)</div>
+    <div class="card-subtitle" style="margin-top:0">Бот сделает столько, сколько позволяет материал. Это — верхняя граница.</div>
     <div class="choice-row" id="present-slides">
       ${slidesOpts.map(n => `<button class="choice ${f.slides===n?'active':''}" data-slides="${n}">${n}</button>`).join('')}
     </div>
@@ -948,8 +960,9 @@ function renderPresentationForm() {
     <div class="choice-row" id="present-style">
       ${styleOpts.map(([k,l]) => `<button class="choice ${f.style===k?'active':''}" data-style="${k}">${l}</button>`).join('')}
     </div>
-    <button class="btn" data-action="present-build" style="width:100%;margin-top:10px" ${state.presentBuilding?'disabled':''}>
-      ${state.presentBuilding ? 'Генерация…' : 'Собрать PPTX'}
+    <button class="btn" data-action="present-build" style="width:100%;margin-top:10px"
+      ${state.presentBuilding?'disabled':''}>
+      ${state.presentBuilding ? 'Генерация…' : (materialOk ? 'Собрать PPTX' : 'Нужен материал (мин. 40 символов)')}
     </button>
   </div>`;
 }
@@ -962,15 +975,22 @@ function actionPresentBuild() {
   const group = (document.getElementById('present-group')?.value || '').trim();
   const teacher = (document.getElementById('present-teacher')?.value || '').trim();
   const year = (document.getElementById('present-year')?.value || '').trim();
+
   if (!topic) { toast('Введи тему презентации', 'error'); return; }
+  if (info.length < 40) {
+    toast('Вставь материал по теме (минимум 40 символов)', 'error');
+    return;
+  }
+
   const slidesEl = document.querySelector('#present-slides .choice.active');
   const slides = slidesEl ? parseInt(slidesEl.dataset.slides, 10) : 10;
   const styleEl = document.querySelector('#present-style .choice.active');
   const style = styleEl ? styleEl.dataset.style : 'random';
+
   state.presentForm = { topic, info, wishes, slides, style, author, group, teacher, year };
   hideKeyboard();
   modalConfirm('СОБРАТЬ ПРЕЗЕНТАЦИЮ?',
-    `Тема: ${topic}\nСлайдов: ${slides}\nСтиль: ${style === 'random' ? 'случайный' : style}.\nФайл придёт в чат бота через 1–3 минуты.`,
+    `Тема: ${topic}\nМатериал: ${info.length} символов\nМакс. слайдов: ${slides}\nСтиль: ${style === 'random' ? 'случайный' : style}.\n\nБот оформит ТОЛЬКО твой текст. Файл придёт в чат бота через 1–3 минуты.`,
     async () => {
       try {
         state.presentBuilding = true;
@@ -1452,7 +1472,6 @@ function attachHandlers() {
     if (file) actionAIPhotoSelected(file);
     e.target.value = '';
   });
-  // Презентация: слайды
   const slidesBox = document.getElementById('present-slides');
   if (slidesBox) slidesBox.querySelectorAll('.choice').forEach(b => {
     b.onclick = () => {
@@ -1471,7 +1490,6 @@ function attachHandlers() {
       haptic('light');
     };
   });
-  // Live-сохранение полей презентации
   ['present-topic','present-info','present-wishes','present-author','present-group','present-teacher','present-year'].forEach(id => {
     const el = document.getElementById(id);
     if (!el || el._boundSave) return;
@@ -1480,6 +1498,23 @@ function attachHandlers() {
       const key = id.replace('present-','');
       const map = {topic:'topic', info:'info', wishes:'wishes', author:'author', group:'group', teacher:'teacher', year:'year'};
       if (map[key]) state.presentForm[map[key]] = e.target.value;
+      if (id === 'present-info') {
+        const card = e.target.closest('.card');
+        const hint = card?.querySelectorAll('.card-subtitle')[1];
+        if (hint) {
+          const n = e.target.value.length;
+          const ok = n >= 40;
+          hint.innerHTML = `Вставь конспект, текст параграфа, свои тезисы (минимум 40 символов).<br>
+            Из этого текста будут сделаны слайды. Если чего-то нет в тексте — в презентацию не попадёт.
+            <br>Символов: ${n}${ok ? '' : ' — пока мало'}`;
+          hint.style.color = ok ? '' : 'var(--red)';
+        }
+        const btn = document.querySelector('[data-action="present-build"]');
+        if (btn && !state.presentBuilding) {
+          const ok = e.target.value.length >= 40;
+          btn.textContent = ok ? 'Собрать PPTX' : 'Нужен материал (мин. 40 символов)';
+        }
+      }
     });
   });
 }
