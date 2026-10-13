@@ -99,11 +99,7 @@ ADMIN_ID = 6014557174
 ADMIN_USERNAME = "ilyaech"
 BOT_USERNAME = "@student_irk38_bot"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
-ADMIN_BONUS_SHIFT = 1000000
-ADMIN_BONUS_NOVA = 10000
-EXCHANGE_RATE_SHIFT_TO_NOVA = 100
-BS_BET_OPTIONS = [10, 50, 100, 500]
-BS_TURN_TIMEOUT_SEC = 120
+CACHE_TTL_HOURS = 2
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!"); sys.exit(1)
 bot = Bot(token=TOKEN)
@@ -118,8 +114,6 @@ if GIGACHAT_CREDENTIALS:
     except Exception as e:
         logging.error(f"GigaChat ошибка: {e}")
 DB_PATH = os.getenv("DB_PATH", "users.db")
-CACHE_TTL_HOURS = 2
-PRIORITY_LABELS = {1: "низкий", 2: "средний", 3: "высокий"}
 DAILY_QUOTES = [
     "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
     "Сессия сдаётся не за неделю, а за семестр.",
@@ -142,91 +136,6 @@ DAILY_QUOTES = [
     "Не сдал — не конец. Сдал — не финиш.",
     "Дисциплина — это не про силу воли, а про систему.",
 ]
-GAMES = {"flappy": {"name": "До пары успеть", "desc": "Пролетай между парами, лови бонусы"}}
-ACHIEVEMENTS = {
-    "first_day":    {"name": "Первый день",      "icon": "ic-ach-first_day",    "desc": "Зашёл в бота"},
-    "week_visit":   {"name": "Неделя в боте",    "icon": "ic-ach-week_visit",   "desc": "7 дней подряд"},
-    "first_note":   {"name": "Первый конспект",  "icon": "ic-ach-first_note",   "desc": "Добавил первую заметку"},
-    "first_task":   {"name": "Сделал дело",      "icon": "ic-ach-first_task",   "desc": "Первая выполненная задача"},
-    "prod_50":      {"name": "Продуктивный",     "icon": "ic-ach-prod_50",      "desc": "50 выполненных задач"},
-    "excellent":    {"name": "Отличник",         "icon": "ic-ach-excellent",    "desc": "Средний балл 5.0"},
-    "flappy_30":    {"name": "Снайпер",          "icon": "ic-ach-flappy_30",    "desc": "30 очков в Flappy"},
-    "legend_30":    {"name": "Легенда",          "icon": "ic-ach-legend_30",    "desc": "30 уровень"},
-    "bs_first_win": {"name": "Морской волк",     "icon": "ic-ach-bs_first_win", "desc": "Первая победа в бою"},
-    "bs_5_wins":    {"name": "Адмирал",          "icon": "ic-ach-bs_5_wins",    "desc": "5 побед в бою"},
-    "bs_10_wins":   {"name": "Легенда флота",    "icon": "ic-ach-bs_10_wins",   "desc": "10 побед в бою"},
-    "exchange_1":   {"name": "Обменник",         "icon": "ic-ach-exchange_1",   "desc": "Первый обмен"},
-}
-ACHIEVEMENT_REWARDS = {
-    "first_day":    {"xp": 10,   "shift": 5,    "nova": 0},
-    "first_note":   {"xp": 20,   "shift": 10,   "nova": 0},
-    "first_task":   {"xp": 30,   "shift": 15,   "nova": 0},
-    "flappy_30":    {"xp": 50,   "shift": 30,   "nova": 1},
-    "week_visit":   {"xp": 100,  "shift": 50,   "nova": 1},
-    "prod_50":      {"xp": 200,  "shift": 100,  "nova": 2},
-    "excellent":    {"xp": 300,  "shift": 150,  "nova": 3},
-    "legend_30":    {"xp": 1000, "shift": 500,  "nova": 10},
-    "bs_first_win": {"xp": 100,  "shift": 50,   "nova": 1},
-    "bs_5_wins":    {"xp": 300,  "shift": 150,  "nova": 3},
-    "bs_10_wins":   {"xp": 800,  "shift": 400,  "nova": 8},
-    "exchange_1":   {"xp": 20,   "shift": 0,    "nova": 0},
-}
-CHESTS = {
-    "capsule": {"name":"Капсула","cooldown_h":24,"cost_shift":0,"cost_nova":0,"drops":[
-        {"type":"shift","min":10,"max":40,"chance":0.55},
-        {"type":"xp","min":50,"max":150,"chance":0.30},
-        {"type":"nova","min":1,"max":1,"chance":0.10},
-        {"type":"shift","min":100,"max":100,"chance":0.05}]},
-    "relic": {"name":"Реликт","cooldown_h":0,"cost_shift":50,"cost_nova":0,"drops":[
-        {"type":"shift","min":60,"max":150,"chance":0.50},
-        {"type":"xp","min":200,"max":500,"chance":0.30},
-        {"type":"nova","min":1,"max":3,"chance":0.18},
-        {"type":"nova","min":10,"max":10,"chance":0.02}]},
-    "artifact": {"name":"Артефакт","cooldown_h":0,"cost_shift":0,"cost_nova":15,"drops":[
-        {"type":"shift","min":500,"max":500,"chance":0.30},
-        {"type":"xp","min":1000,"max":1000,"chance":0.30},
-        {"type":"nova","min":5,"max":15,"chance":0.35},
-        {"type":"nova","min":50,"max":50,"chance":0.05}]},
-    "core": {"name":"Ядро","cooldown_h":0,"cost_shift":0,"cost_nova":80,"drops":[
-        {"type":"shift","min":2000,"max":2000,"chance":0.25},
-        {"type":"xp","min":5000,"max":5000,"chance":0.25},
-        {"type":"nova","min":30,"max":60,"chance":0.40},
-        {"type":"nova","min":200,"max":200,"chance":0.10}]},
-}
-LEVEL_REWARDS = {}
-for _lvl in range(1, 31):
-    if _lvl <= 5: LEVEL_REWARDS[_lvl] = {"shift":100,"nova":1,"xp":0}
-    elif _lvl <= 10: LEVEL_REWARDS[_lvl] = {"shift":250,"nova":3,"xp":0}
-    elif _lvl <= 20: LEVEL_REWARDS[_lvl] = {"shift":600,"nova":8,"xp":0}
-    else: LEVEL_REWARDS[_lvl] = {"shift":1500,"nova":25,"xp":0}
-
-def calc_level(xp):
-    lvl = 1; left = int(xp or 0)
-    while lvl <= 30:
-        need = lvl * 500
-        if left < need: return lvl, left, need
-        left -= need; lvl += 1
-    return 30, left, 500
-
-def level_title(lvl):
-    if lvl <= 5: return "Первокурсник"
-    if lvl <= 10: return "Второкурсник"
-    if lvl <= 15: return "Третьекурсник"
-    if lvl <= 20: return "Старшекурсник"
-    if lvl <= 25: return "Магистрант"
-    if lvl <= 29: return "Аспирант"
-    return "Легенда ИРНИТУ"
-
-def roll_chest_drop(chest_id):
-    chest = CHESTS.get(chest_id)
-    if not chest: return None
-    r = random.random(); acc = 0.0
-    for drop in chest["drops"]:
-        acc += drop["chance"]
-        if r <= acc:
-            return {"type": drop["type"], "amount": random.randint(drop["min"], drop["max"])}
-    last = chest["drops"][-1]
-    return {"type": last["type"], "amount": random.randint(last["min"], last["max"])}
 
 def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
 def _monday_of_week(d): return d - timedelta(days=d.weekday())
@@ -241,8 +150,7 @@ def init_db():
         "ALTER TABLE users ADD COLUMN last_notified_at TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN notify_before_min INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN username TEXT DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN avatar_gender TEXT DEFAULT 'male'"]:
+        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL"]:
         try: conn.execute(a)
         except: pass
     conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
@@ -270,353 +178,17 @@ def init_db():
         text TEXT, has_photo INTEGER DEFAULT 0, created_at TEXT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, date TEXT,
         time TEXT, subject TEXT, status TEXT, updated_at TEXT, UNIQUE(user_id, date, time, subject))""")
-    try:
-        cur = conn.execute("PRAGMA table_info(game_scores)"); cols = [r[1] for r in cur.fetchall()]
-        if cols and "game_id" not in cols:
-            conn.execute("ALTER TABLE game_scores RENAME TO game_scores_old")
-            conn.execute("""CREATE TABLE game_scores (user_id INTEGER, game_id TEXT, best_score INTEGER DEFAULT 0,
-                plays_count INTEGER DEFAULT 0, updated_at TEXT, PRIMARY KEY (user_id, game_id))""")
-            try:
-                conn.execute("""INSERT OR IGNORE INTO game_scores (user_id, game_id, best_score, plays_count, updated_at)
-                    SELECT user_id, 'flappy', best_score, plays_count, updated_at FROM game_scores_old""")
-            except: pass
-            conn.execute("DROP TABLE game_scores_old")
-    except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS game_scores (user_id INTEGER, game_id TEXT, best_score INTEGER DEFAULT 0,
-        plays_count INTEGER DEFAULT 0, updated_at TEXT, PRIMARY KEY (user_id, game_id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS wallet (user_id INTEGER PRIMARY KEY, xp INTEGER DEFAULT 0,
-        shift INTEGER DEFAULT 0, nova INTEGER DEFAULT 0, custom_name TEXT DEFAULT NULL, avatar_idx INTEGER DEFAULT 0,
-        free_name_changes INTEGER DEFAULT 0, capsule_opened_at TEXT DEFAULT NULL, created_at TEXT, updated_at TEXT)""")
-    for a in ["ALTER TABLE wallet ADD COLUMN shift INTEGER DEFAULT 0","ALTER TABLE wallet ADD COLUMN nova INTEGER DEFAULT 0",
-        "ALTER TABLE wallet ADD COLUMN custom_name TEXT DEFAULT NULL","ALTER TABLE wallet ADD COLUMN avatar_idx INTEGER DEFAULT 0",
-        "ALTER TABLE wallet ADD COLUMN free_name_changes INTEGER DEFAULT 0","ALTER TABLE wallet ADD COLUMN capsule_opened_at TEXT DEFAULT NULL",
-        "ALTER TABLE wallet ADD COLUMN created_at TEXT"]:
-        try: conn.execute(a)
-        except: pass
-    try:
-        cur = conn.execute("PRAGMA table_info(wallet)"); cols = [r[1] for r in cur.fetchall()]
-        if "soft" in cols: conn.execute("UPDATE wallet SET shift = COALESCE(shift,0) + COALESCE(soft,0)")
-        if "hard" in cols: conn.execute("UPDATE wallet SET nova = COALESCE(nova,0) + COALESCE(hard,0)")
-    except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS achievements (user_id INTEGER, ach_id TEXT, unlocked_at TEXT, PRIMARY KEY (user_id, ach_id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS user_stats (user_id INTEGER PRIMARY KEY, tasks_done INTEGER DEFAULT 0,
-        notes_added INTEGER DEFAULT 0, first_seen TEXT, last_seen TEXT, streak INTEGER DEFAULT 0)""")
-    for a in ["ALTER TABLE user_stats ADD COLUMN tasks_done INTEGER DEFAULT 0","ALTER TABLE user_stats ADD COLUMN notes_added INTEGER DEFAULT 0",
-        "ALTER TABLE user_stats ADD COLUMN first_seen TEXT","ALTER TABLE user_stats ADD COLUMN last_seen TEXT",
-        "ALTER TABLE user_stats ADD COLUMN streak INTEGER DEFAULT 0"]:
-        try: conn.execute(a)
-        except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS bs_games (game_id TEXT PRIMARY KEY, code TEXT, p1_id INTEGER, p2_id INTEGER,
-        bet INTEGER DEFAULT 0, status TEXT DEFAULT 'waiting', turn INTEGER DEFAULT 0, p1_ships TEXT DEFAULT NULL,
-        p2_ships TEXT DEFAULT NULL, p1_ready INTEGER DEFAULT 0, p2_ready INTEGER DEFAULT 0, p1_shots TEXT DEFAULT '[]',
-        p2_shots TEXT DEFAULT '[]', winner INTEGER DEFAULT 0, surrender_by INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)""")
-    try:
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_code ON bs_games(code)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_status ON bs_games(status)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_p1 ON bs_games(p1_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_bs_p2 ON bs_games(p2_id)")
-    except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS bs_meta (key TEXT PRIMARY KEY, value TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_claims (user_id INTEGER, ach_id TEXT, claimed_at TEXT, PRIMARY KEY (user_id, ach_id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS achievement_rewards (user_id INTEGER, ach_id TEXT, xp INTEGER DEFAULT 0,
-        shift INTEGER DEFAULT 0, nova INTEGER DEFAULT 0, granted_at TEXT, PRIMARY KEY (user_id, ach_id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS level_rewards (user_id INTEGER, level INTEGER, claimed_at TEXT, PRIMARY KEY (user_id, level))""")
     conn.commit(); conn.close()
-
 
 def _ensure_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute("INSERT OR IGNORE INTO wallet (user_id, created_at, updated_at) VALUES (?, ?, ?)", (user_id, now, now))
-    if user_id == ADMIN_ID:
-        conn.execute("""UPDATE wallet SET shift = MAX(COALESCE(shift,0), ?), nova = MAX(COALESCE(nova,0), ?),
-            updated_at = ? WHERE user_id = ?""", (ADMIN_BONUS_SHIFT, ADMIN_BONUS_NOVA, now, user_id))
-    conn.execute("INSERT OR IGNORE INTO user_stats (user_id, first_seen, last_seen) VALUES (?, ?, ?)", (user_id, now, now))
     conn.commit(); conn.close()
 
 def _update_user_meta(user_id, username, first_name):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (username, first_name, user_id))
     conn.commit(); conn.close()
-
-def wallet_get(user_id):
-    _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("""SELECT xp, shift, nova, custom_name, avatar_idx, free_name_changes, capsule_opened_at
-        FROM wallet WHERE user_id=?""", (user_id,)).fetchone()
-    conn.close()
-    if not row:
-        xp = shift = nova = 0; custom_name = None; avatar_idx = 0; free_name_changes = 0; capsule_opened_at = None
-    else:
-        xp, shift, nova, custom_name, avatar_idx, free_name_changes, capsule_opened_at = row
-        xp = xp or 0; shift = shift or 0; nova = nova or 0; avatar_idx = avatar_idx or 0; free_name_changes = free_name_changes or 0
-    if user_id == ADMIN_ID:
-        if shift < ADMIN_BONUS_SHIFT or nova < ADMIN_BONUS_NOVA:
-            conn = sqlite3.connect(DB_PATH)
-            conn.execute("UPDATE wallet SET shift = MAX(shift, ?), nova = MAX(nova, ?) WHERE user_id = ?",
-                (ADMIN_BONUS_SHIFT, ADMIN_BONUS_NOVA, user_id))
-            conn.commit(); conn.close()
-            shift = max(shift, ADMIN_BONUS_SHIFT); nova = max(nova, ADMIN_BONUS_NOVA)
-    lvl, in_lvl, to_next = calc_level(xp)
-    return {"xp": xp, "shift": shift, "nova": nova, "soft": shift, "hard": nova,
-        "custom_name": custom_name, "avatar_idx": avatar_idx, "free_name_changes": free_name_changes,
-        "capsule_opened_at": capsule_opened_at, "chest_opened_at": capsule_opened_at,
-        "level": lvl, "level_title": level_title(lvl), "xp_in_level": in_lvl, "xp_to_next": to_next}
-
-def wallet_add(user_id, xp=0, shift=0, nova=0):
-    _ensure_user(user_id)
-    now = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET xp = xp + ?, shift = shift + ?, nova = nova + ?, updated_at = ? WHERE user_id = ?",
-        (int(xp), int(shift), int(nova), now, user_id))
-    conn.commit(); conn.close()
-
-def wallet_set_name(user_id, name):
-    _ensure_user(user_id); name = (name or "").strip()
-    if not name: name = None
-    if name and len(name) > 24: name = name[:24]
-    now = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET custom_name=?, updated_at=? WHERE user_id=?", (name, now, user_id))
-    conn.commit(); conn.close()
-
-def wallet_set_avatar(user_id, idx):
-    _ensure_user(user_id); idx = max(0, min(int(idx), 11))
-    now = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET avatar_idx=?, updated_at=? WHERE user_id=?", (idx, now, user_id))
-    conn.commit(); conn.close()
-
-def wallet_consume(user_id, currency, amount):
-    if currency not in ("shift", "nova"): return False
-    _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(f"SELECT {currency} FROM wallet WHERE user_id=?", (user_id,)).fetchone()
-    if not row or (row[0] or 0) < amount:
-        conn.close(); return False
-    conn.execute(f"UPDATE wallet SET {currency} = {currency} - ? WHERE user_id=?", (amount, user_id))
-    conn.commit(); conn.close()
-    return True
-
-def wallet_use_free_name(user_id):
-    _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT free_name_changes FROM wallet WHERE user_id=?", (user_id,)).fetchone()
-    if not row or (row[0] or 0) <= 0:
-        conn.close(); return False
-    conn.execute("UPDATE wallet SET free_name_changes = free_name_changes - 1 WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-    return True
-
-def wallet_add_free_name(user_id):
-    _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE wallet SET free_name_changes = free_name_changes + 1 WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-
-def wallet_leaderboard(limit=10):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""SELECT w.user_id, w.xp, COALESCE(w.custom_name, u.first_name, ''), COALESCE(u.username, '')
-        FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.xp > 0 ORDER BY w.xp DESC LIMIT ?""", (limit,)).fetchall()
-    conn.close()
-    return rows
-
-def stats_update_streak(user_id):
-    _ensure_user(user_id)
-    now = _now_irkutsk(); today_str = now.strftime("%Y-%m-%d")
-    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT last_seen, streak FROM user_stats WHERE user_id=?", (user_id,)).fetchone()
-    if not row:
-        conn.execute("INSERT OR REPLACE INTO user_stats (user_id, last_seen, streak, first_seen) VALUES (?, ?, 1, ?)",
-            (user_id, today_str, now.isoformat()))
-        conn.commit(); conn.close(); return 1
-    last_seen, streak = row; streak = streak or 0
-    if last_seen == today_str:
-        conn.close(); return streak
-    streak = streak + 1 if last_seen == yesterday_str else 1
-    conn.execute("UPDATE user_stats SET last_seen=?, streak=? WHERE user_id=?", (today_str, streak, user_id))
-    conn.commit(); conn.close()
-    return streak
-
-def stats_inc(user_id, field, by=1):
-    _ensure_user(user_id)
-    if field not in ("tasks_done", "notes_added"): return
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(f"UPDATE user_stats SET {field} = COALESCE({field}, 0) + ? WHERE user_id=?", (int(by), user_id))
-    conn.commit(); conn.close()
-
-def stats_get(user_id):
-    _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT tasks_done, notes_added, first_seen, last_seen, streak FROM user_stats WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    if not row: return {"tasks_done":0,"notes_added":0,"first_seen":None,"last_seen":None,"streak":0}
-    return {"tasks_done": row[0] or 0, "notes_added": row[1] or 0, "first_seen": row[2], "last_seen": row[3], "streak": row[4] or 0}
-
-def achievements_get(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT ach_id, unlocked_at FROM achievements WHERE user_id=?", (user_id,)).fetchall()
-    conn.close()
-    return {r[0]: r[1] for r in rows}
-
-def achievement_unlock(user_id, ach_id):
-    if ach_id not in ACHIEVEMENTS: return False
-    conn = sqlite3.connect(DB_PATH)
-    if conn.execute("SELECT 1 FROM achievements WHERE user_id=? AND ach_id=?", (user_id, ach_id)).fetchone():
-        conn.close(); return False
-    conn.execute("INSERT INTO achievements (user_id, ach_id, unlocked_at) VALUES (?, ?, ?)",
-        (user_id, ach_id, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-    return True
-
-def bs_count_wins(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT COUNT(*) FROM bs_games WHERE winner=? AND status='finished'", (user_id,)).fetchone()
-    conn.close()
-    return row[0] if row else 0
-
-def check_and_award_achievements(user_id):
-    newly = []
-    wallet = wallet_get(user_id); stats = stats_get(user_id)
-    def _unlock(aid):
-        if not achievement_unlock(user_id, aid): return False
-        newly.append(aid); return True
-    _unlock("first_day")
-    if stats["streak"] >= 7: _unlock("week_visit")
-    if stats["notes_added"] >= 1: _unlock("first_note")
-    if stats["tasks_done"] >= 1: _unlock("first_task")
-    if stats["tasks_done"] >= 50: _unlock("prod_50")
-    if wallet["level"] >= 30: _unlock("legend_30")
-    try:
-        grades = get_grades(user_id)
-        if grades and len(grades) >= 3:
-            avg = sum(g[2] for g in grades) / len(grades)
-            if avg >= 5.0: _unlock("excellent")
-    except: pass
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT game_id, best_score FROM game_scores WHERE user_id=?", (user_id,)).fetchall()
-    conn.close()
-    best = {r[0]: r[1] for r in rows}
-    if best.get("flappy", 0) >= 30: _unlock("flappy_30")
-    try:
-        wins = bs_count_wins(user_id)
-        if wins >= 1: _unlock("bs_first_win")
-        if wins >= 5: _unlock("bs_5_wins")
-        if wins >= 10: _unlock("bs_10_wins")
-    except: pass
-    conn = sqlite3.connect(DB_PATH)
-    unlocked_rows = conn.execute("SELECT ach_id FROM achievements WHERE user_id=?", (user_id,)).fetchall()
-    for (aid,) in unlocked_rows:
-        rw = ACHIEVEMENT_REWARDS.get(aid)
-        if not rw: continue
-        if conn.execute("SELECT 1 FROM achievement_rewards WHERE user_id=? AND ach_id=?", (user_id, aid)).fetchone(): continue
-        conn.execute("INSERT INTO achievement_rewards (user_id, ach_id, xp, shift, nova, granted_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, aid, rw["xp"], rw["shift"], rw["nova"], datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-    return newly
-
-def chest_status(user_id, chest_id="capsule"):
-    chest = CHESTS.get(chest_id)
-    if not chest: return {"can_open": False, "next_at": None, "last_opened": None}
-    cooldown_h = chest.get("cooldown_h", 0)
-    if cooldown_h <= 0: return {"can_open": True, "next_at": None, "last_opened": None}
-    wallet = wallet_get(user_id); last = wallet.get("capsule_opened_at")
-    can_open = True; next_at_iso = None
-    if last:
-        try:
-            last_dt = datetime.fromisoformat(last)
-            if last_dt.tzinfo is None: last_dt = last_dt.replace(tzinfo=timezone.utc)
-            elapsed = datetime.now(timezone.utc) - last_dt
-            if elapsed < timedelta(hours=cooldown_h):
-                can_open = False; next_at_iso = (last_dt + timedelta(hours=cooldown_h)).isoformat()
-        except: pass
-    return {"can_open": can_open, "next_at": next_at_iso, "last_opened": last}
-
-def chest_open(user_id, chest_id):
-    chest = CHESTS.get(chest_id)
-    if not chest: return None, "bad_chest"
-    st = chest_status(user_id, chest_id)
-    if not st["can_open"]: return None, "already_opened"
-    cost_shift = chest.get("cost_shift", 0); cost_nova = chest.get("cost_nova", 0)
-    wallet = wallet_get(user_id)
-    if cost_shift > 0 and (wallet.get("shift") or 0) < cost_shift: return None, "not_enough_shift"
-    if cost_nova > 0 and (wallet.get("nova") or 0) < cost_nova: return None, "not_enough_nova"
-    if cost_shift > 0 and not wallet_consume(user_id, "shift", cost_shift): return None, "not_enough_shift"
-    if cost_nova > 0 and not wallet_consume(user_id, "nova", cost_nova): return None, "not_enough_nova"
-    reward = roll_chest_drop(chest_id)
-    if not reward: return None, "roll_failed"
-    if reward["type"] == "shift":
-        wallet_add(user_id, shift=reward["amount"]); label = f"+{reward['amount']} Шифт"
-    elif reward["type"] == "nova":
-        wallet_add(user_id, nova=reward["amount"]); label = f"+{reward['amount']} Нова"
-    elif reward["type"] == "xp":
-        wallet_add(user_id, xp=reward["amount"]); label = f"+{reward['amount']} XP"
-    else: label = "Пусто"
-    if chest.get("cooldown_h", 0) > 0:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("UPDATE wallet SET capsule_opened_at=? WHERE user_id=?",
-            (datetime.now(timezone.utc).isoformat(), user_id))
-        conn.commit(); conn.close()
-    return {"type": reward["type"], "amount": reward["amount"], "label": label, "chest": chest_id}, None
-
-def level_rewards_claimed(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT level FROM level_rewards WHERE user_id=?", (user_id,)).fetchall()
-    conn.close()
-    return sorted([r[0] for r in rows])
-
-def level_reward_claim(user_id, lvl):
-    wallet = wallet_get(user_id)
-    if lvl < 1 or lvl > 30: return None, "bad_level"
-    if lvl > wallet["level"]: return None, "locked"
-    conn = sqlite3.connect(DB_PATH)
-    if conn.execute("SELECT 1 FROM level_rewards WHERE user_id=? AND level=?", (user_id, lvl)).fetchone():
-        conn.close(); return None, "already"
-    rw = LEVEL_REWARDS.get(lvl) or {"shift": 0, "nova": 0, "xp": 0}
-    wallet_add(user_id, shift=rw.get("shift", 0), nova=rw.get("nova", 0), xp=rw.get("xp", 0))
-    conn.execute("INSERT INTO level_rewards (user_id, level, claimed_at) VALUES (?, ?, ?)",
-        (user_id, lvl, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-    return rw, None
-
-def game_get_scores(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT game_id, best_score, plays_count FROM game_scores WHERE user_id=?", (user_id,)).fetchall()
-    conn.close()
-    result = {gid: {"best": b or 0, "plays": p or 0} for gid, b, p in rows}
-    for gid in GAMES:
-        if gid not in result: result[gid] = {"best": 0, "plays": 0}
-    return result
-
-def game_save_score(user_id, game_id, score):
-    if game_id not in GAMES: return None
-    score = max(0, min(int(score), 99999))
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT best_score, plays_count FROM game_scores WHERE user_id=? AND game_id=?", (user_id, game_id)).fetchone()
-    now = datetime.now(timezone.utc).isoformat()
-    if row:
-        old_best = row[0] or 0; plays = (row[1] or 0) + 1; new_best = max(old_best, score)
-        conn.execute("UPDATE game_scores SET best_score=?, plays_count=?, updated_at=? WHERE user_id=? AND game_id=?",
-            (new_best, plays, now, user_id, game_id))
-        is_record = score > old_best
-    else:
-        new_best = score; plays = 1
-        conn.execute("INSERT INTO game_scores (user_id, game_id, best_score, plays_count, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, game_id, score, 1, now))
-        is_record = score > 0
-    conn.commit(); conn.close()
-    return {"best": new_best, "is_record": is_record, "plays": plays}
-
-def game_leaderboard(game_id, limit=10):
-    if game_id not in GAMES: return []
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""SELECT g.user_id, g.best_score, COALESCE(u.first_name, ''), COALESCE(u.username, ''), COALESCE(w.custom_name, '')
-        FROM game_scores g LEFT JOIN users u ON u.user_id = g.user_id LEFT JOIN wallet w ON w.user_id = g.user_id
-        WHERE g.game_id = ? AND g.best_score > 0 ORDER BY g.best_score DESC LIMIT ?""", (game_id, limit)).fetchall()
-    conn.close()
-    return [(uid, score, custom_name or first_name or '', username) for uid, score, first_name, username, custom_name in rows]
 
 def user_exists(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -728,19 +300,6 @@ def get_user_subgroup(user_id):
     conn.close()
     return row[0] if row and row[0] else 0
 
-def set_user_avatar_gender(user_id, gender):
-    _ensure_user(user_id)
-    if gender not in ("male", "female"): gender = "male"
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET avatar_gender=? WHERE user_id=?", (gender, user_id))
-    conn.commit(); conn.close()
-
-def get_user_avatar_gender(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT avatar_gender FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return (row[0] if row and row[0] else "male")
-
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
     conn = sqlite3.connect(DB_PATH)
@@ -808,8 +367,6 @@ def get_all_user_ids():
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r[0] for r in rows]
-
-def is_vip(user_id): return True
 
 def get_cached_schedule(group_id, week_start):
     conn = sqlite3.connect(DB_PATH)
@@ -1049,133 +606,6 @@ def get_export_data(user_id):
         "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
         "attendance": att}
 
-
-# ===================== МОРСКОЙ БОЙ =====================
-def _bs_now(): return datetime.now(timezone.utc).isoformat()
-def _bs_new_game_id(): return secrets.token_hex(8)
-
-def _bs_new_code():
-    for _ in range(50):
-        code = f"{random.randint(100000, 999999)}"
-        conn = sqlite3.connect(DB_PATH)
-        row = conn.execute("SELECT 1 FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing')", (code,)).fetchone()
-        conn.close()
-        if not row: return code
-    return f"{random.randint(100000, 999999)}"
-
-def _bs_validate_ships(ships):
-    if not ships or not isinstance(ships, list): return False
-    required = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]
-    if sorted([s.get("size") for s in ships], reverse=True) != required: return False
-    occupied = set()
-    for s in ships:
-        cells = s.get("cells", [])
-        if len(cells) != s.get("size"): return False
-        xs = [c[0] for c in cells]; ys = [c[1] for c in cells]
-        if min(xs) < 0 or max(xs) > 9 or min(ys) < 0 or max(ys) > 9: return False
-        if len(set(xs)) > 1 and len(set(ys)) > 1: return False
-        sc = sorted(cells, key=lambda c: (c[1], c[0]))
-        for i in range(1, len(sc)):
-            if abs(sc[i-1][0] - sc[i][0]) + abs(sc[i-1][1] - sc[i][1]) != 1: return False
-        for x, y in cells:
-            if (x, y) in occupied: return False
-            occupied.add((x, y))
-    return True
-
-def _bs_check_win(ships, shots):
-    if not ships: return False
-    all_cells = {(c[0], c[1]) for s in ships for c in s["cells"]}
-    hit_cells = {(sh.get("x"), sh.get("y")) for sh in shots}
-    return all_cells.issubset(hit_cells)
-
-def _bs_get_game(game_id):
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT * FROM bs_games WHERE game_id=?", (game_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-def _bs_get_game_by_code(code):
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT * FROM bs_games WHERE code=? AND status IN ('waiting','placing','playing') ORDER BY created_at DESC LIMIT 1", (code,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-def _bs_update_game(game_id, **fields):
-    if not fields: return
-    fields["updated_at"] = _bs_now()
-    keys = ", ".join(f"{k}=?" for k in fields.keys())
-    values = list(fields.values()) + [game_id]
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(f"UPDATE bs_games SET {keys} WHERE game_id=?", values)
-    conn.commit(); conn.close()
-
-def _bs_delete_game(game_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM bs_games WHERE game_id=?", (game_id,))
-    conn.commit(); conn.close()
-
-def _bs_player_side(game, user_id):
-    if game["p1_id"] == user_id: return 1
-    if game["p2_id"] == user_id: return 2
-    return 0
-
-def _bs_user_in_active_game(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT game_id FROM bs_games WHERE (p1_id=? OR p2_id=?) AND status IN ('waiting','placing','playing') LIMIT 1", (user_id, user_id)).fetchone()
-    conn.close()
-    return row[0] if row else None
-
-def _bs_get_user_name(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT COALESCE(custom_name, first_name, username, 'Игрок') FROM wallet w LEFT JOIN users u ON u.user_id = w.user_id WHERE w.user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return row[0] if row and row[0] else f"Игрок-{str(user_id)[-4:]}"
-
-def _bs_finish_game(game_id, winner_id, surrender_by=0):
-    game = _bs_get_game(game_id)
-    if not game or game["status"] == "finished": return
-    bet = game["bet"] or 0
-    if winner_id == 0:
-        if game["p1_id"]: wallet_add(game["p1_id"], shift=bet)
-        if game["p2_id"]: wallet_add(game["p2_id"], shift=bet)
-        _bs_update_game(game_id, status="finished", winner=0, surrender_by=surrender_by)
-        return
-    wallet_add(winner_id, shift=bet * 2, xp=50)
-    _bs_update_game(game_id, status="finished", winner=winner_id, surrender_by=surrender_by)
-
-def _bs_cancel_any_waiting(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT game_id, bet FROM bs_games WHERE p1_id=? AND status='waiting' AND (p2_id IS NULL OR p2_id=0)", (user_id,)).fetchall()
-    conn.close()
-    for game_id, bet in rows:
-        wallet_add(user_id, shift=bet or 0)
-        _bs_delete_game(game_id)
-
-def _bs_cleanup_stale_games():
-    threshold = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT game_id, p1_id, p2_id, bet FROM bs_games WHERE status IN ('waiting','placing','playing') AND created_at < ?", (threshold,)).fetchall()
-    conn.close()
-    for game_id, p1_id, p2_id, bet in rows:
-        if p1_id: wallet_add(p1_id, shift=bet or 0)
-        if p2_id: wallet_add(p2_id, shift=bet or 0)
-        _bs_delete_game(game_id)
-
-def exchange_shift_to_nova(user_id, amount_shift):
-    try: amount_shift = int(amount_shift)
-    except: return None
-    if amount_shift <= 0: return None
-    amount_nova = amount_shift // EXCHANGE_RATE_SHIFT_TO_NOVA
-    if amount_nova <= 0: return None
-    if not wallet_consume(user_id, "shift", amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA): return None
-    wallet_add(user_id, nova=amount_nova)
-    newly = achievement_unlock(user_id, "exchange_1")
-    if newly:
-        rw = ACHIEVEMENT_REWARDS.get("exchange_1") or {}
-        wallet_add(user_id, xp=rw.get("xp", 0))
-    return {"soft_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
-            "shift_spent": amount_nova * EXCHANGE_RATE_SHIFT_TO_NOVA,
-            "hard_received": amount_nova, "nova_received": amount_nova}
 
 # ═══════════════════════════════════════════════════════════════
 # GROUPS (список групп ИРНИТУ)
@@ -1605,68 +1035,66 @@ def _verify_webapp_init(init_data):
     return u.id if u else None
 
 
+
 # ═══════════════════════════════════════════════════════════════
-# PRESENTATIONS (без картинок, с SVG-декором и плашками-подсказками)
+# PRESENTATIONS (новый редизайн, без картинок)
 # ═══════════════════════════════════════════════════════════════
 
 PRESENT_STYLES = {
     "academic": {
         "name": "Академический",
-        "bg": (255, 255, 255), "title_bg": (10, 59, 55),
-        "accent": (31, 184, 166), "accent2": (127, 233, 255),
-        "text": (10, 14, 15), "text_soft": (90, 102, 105),
+        "bg": (255, 255, 255), "title_bg": (14, 90, 82),
+        "accent": (31, 184, 166), "accent2": (196, 240, 235),
+        "text": (15, 25, 28), "text_soft": (110, 125, 128),
         "title_text": (255, 255, 255),
-        "layout": "image_right", "shape_style": "circle",
+        "layout": "image_right", "shape_style": "rect_thin",
+        "heading_case": "upper",
     },
     "creative": {
         "name": "Креативный",
-        "bg": (26, 26, 36), "title_bg": (26, 26, 36),
-        "accent": (255, 164, 43), "accent2": (255, 90, 90),
-        "text": (245, 245, 245), "text_soft": (170, 170, 180),
+        "bg": (245, 242, 235), "title_bg": (26, 26, 36),
+        "accent": (255, 138, 30), "accent2": (255, 90, 90),
+        "text": (26, 20, 15), "text_soft": (140, 120, 100),
         "title_text": (255, 255, 255),
-        "layout": "image_left", "shape_style": "star",
+        "layout": "image_left", "shape_style": "circle_big",
+        "heading_case": "normal",
     },
     "minimal": {
         "name": "Минимализм",
         "bg": (255, 255, 255), "title_bg": (250, 250, 250),
-        "accent": (10, 14, 15), "accent2": (120, 120, 120),
-        "text": (10, 14, 15), "text_soft": (120, 120, 120),
-        "title_text": (10, 14, 15),
-        "layout": "image_right", "shape_style": "square",
+        "accent": (20, 20, 20), "accent2": (220, 220, 220),
+        "text": (15, 15, 15), "text_soft": (130, 130, 130),
+        "title_text": (20, 20, 20),
+        "layout": "image_right", "shape_style": "line_only",
+        "heading_case": "upper",
     },
     "dark": {
         "name": "Тёмный",
-        "bg": (18, 23, 24), "title_bg": (10, 14, 15),
+        "bg": (16, 22, 26), "title_bg": (10, 14, 18),
         "accent": (127, 233, 255), "accent2": (62, 230, 210),
-        "text": (235, 240, 240), "text_soft": (140, 150, 155),
+        "text": (235, 240, 245), "text_soft": (140, 155, 160),
         "title_text": (255, 255, 255),
-        "layout": "image_full", "shape_style": "hexagon",
+        "layout": "image_full", "shape_style": "glow_line",
+        "heading_case": "normal",
     },
     "magazine": {
         "name": "Журнальный",
-        "bg": (252, 250, 245), "title_bg": (245, 240, 230),
-        "accent": (226, 58, 58), "accent2": (255, 164, 43),
-        "text": (30, 20, 20), "text_soft": (110, 90, 90),
-        "title_text": (30, 20, 20),
-        "layout": "image_left", "shape_style": "rounded",
+        "bg": (252, 248, 240), "title_bg": (235, 220, 195),
+        "accent": (200, 30, 40), "accent2": (255, 164, 43),
+        "text": (25, 15, 15), "text_soft": (130, 100, 90),
+        "title_text": (25, 15, 15),
+        "layout": "image_left", "shape_style": "big_number",
+        "heading_case": "upper",
     },
     "neon": {
         "name": "Неон",
-        "bg": (20, 12, 35), "title_bg": (12, 8, 25),
+        "bg": (18, 10, 30), "title_bg": (10, 6, 22),
         "accent": (255, 60, 180), "accent2": (127, 233, 255),
-        "text": (240, 240, 255), "text_soft": (160, 140, 200),
+        "text": (240, 240, 255), "text_soft": (170, 150, 220),
         "title_text": (255, 255, 255),
-        "layout": "image_right", "shape_style": "diamond",
+        "layout": "image_right", "shape_style": "neon_line",
+        "heading_case": "normal",
     },
-}
-
-_SHAPE_MAP = {
-    "circle":  MSO_SHAPE.OVAL,
-    "star":    MSO_SHAPE.STAR_5_POINT,
-    "square":  MSO_SHAPE.RECTANGLE,
-    "hexagon": MSO_SHAPE.HEXAGON,
-    "rounded": MSO_SHAPE.ROUNDED_RECTANGLE,
-    "diamond": MSO_SHAPE.DIAMOND,
 }
 
 def _pick_random_style(exclude: str = None) -> str:
@@ -1687,7 +1115,6 @@ async def _gigachat_json(prompt: str) -> dict:
 
 async def _generate_slide_plan(topic: str, slides_count: int,
                                extra_context: str = "", user_wishes: str = "") -> dict:
-    """Составляет подробный план презентации. Без картинок — только текстовые подсказки."""
     base = f"""Ты опытный методист и профессиональный дизайнер презентаций.
 Сделай содержательную, логичную презентацию на тему: «{topic}».
 Всего слайдов: {slides_count}.
@@ -1700,19 +1127,19 @@ async def _generate_slide_plan(topic: str, slides_count: int,
     base += """
 Верни СТРОГО JSON без markdown-обёрток, в формате:
 {
-  "title": "Заголовок титульного слайда (до 80 символов)",
-  "subtitle": "Подзаголовок на титульный слайд (1 строка, до 140 символов)",
+  "title": "Заголовок титульного слайда (до 70 символов, БЕЗ кавычек)",
+  "subtitle": "Подзаголовок (1 строка, до 130 символов)",
   "slides": [
     {
-      "heading": "Заголовок слайда (до 60 символов)",
+      "heading": "Короткий заголовок слайда (до 45 символов, БЕЗ кавычек)",
       "bullets": [
-        "Пункт 1 — развёрнутый, 110-180 символов, с фактом/цифрой/примером",
+        "Пункт 1 — развёрнутый, 110-170 символов, с конкретным фактом/цифрой/примером",
         "Пункт 2 — тоже развёрнутый",
         "Пункт 3 — тоже развёрнутый",
         "Пункт 4 — тоже развёрнутый"
       ],
-      "image_hint": "Короткое описание картинки/схемы, которую нужно вставить на этот слайд (до 120 символов).",
-      "notes": "Текст для докладчика: 2-3 полных предложения о том, что сказать на этом слайде."
+      "image_hint": "Короткое описание картинки/схемы для вставки (до 90 символов)",
+      "notes": "Текст для докладчика: 2-3 полных предложения."
     }
   ]
 }
@@ -1720,162 +1147,198 @@ async def _generate_slide_plan(topic: str, slides_count: int,
 ТРЕБОВАНИЯ:
 - Первый слайд — титульный, в slides его НЕ включай.
 - Ровно """ + str(slides_count - 1) + """ слайдов в массиве.
-- Каждый слайд: 4-6 пунктов, каждый пункт 110-180 символов, максимум конкретики (цифры, даты, имена, примеры, причины, следствия).
-- Информация должна РАСКРЫВАТЬ тему, а не быть водой. Никаких "это важно", "данная тема актуальна" — только конкретные факты.
+- Каждый слайд: 4-5 пунктов, каждый пункт 110-170 символов, максимум конкретики (цифры, даты, имена, примеры).
+- Раскрывай тему по существу, без воды. НЕ используй формулировки "это важно", "данная тема актуальна".
 - НЕ дублируй содержание между слайдами. Каждый слайд — новый аспект темы.
 - Структура: введение/история → ключевые аспекты → примеры → итоги/выводы.
-- image_hint — ВСЕГДА заполняй, это подсказка для вставки иллюстрации.
-- notes — 2-3 полных предложения, живой язык, как будто рассказываешь вслух.
 - Только JSON, без пояснений.
 """
     return await _gigachat_json(base)
 
 
-def _add_shape(slide, shape_style, x, y, w, h, color):
-    """Рисует декоративную фигуру (SVG-подобный декор средствами pptx)."""
-    shape_type = _SHAPE_MAP.get(shape_style, MSO_SHAPE.OVAL)
-    shp = slide.shapes.add_shape(shape_type, x, y, w, h)
+def _add_rect(slide, x, y, w, h, color, line=False):
+    shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
+    shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
+    if not line: shp.line.fill.background()
+    shp.shadow.inherit = False
+    return shp
+
+
+def _add_oval(slide, x, y, w, h, color):
+    shp = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, w, h)
     shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
     shp.line.fill.background(); shp.shadow.inherit = False
     return shp
 
 
 def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
-    """Собирает PPTX с декором, плашками-подсказками и заметками докладчика."""
     if not _PPTX_AVAILABLE: raise RuntimeError("python-pptx не установлена")
     style = PRESENT_STYLES.get(style_id, PRESENT_STYLES["academic"])
     prs = Presentation()
     prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     blank = prs.slide_layouts[6]
     LAYOUT = style.get("layout", "image_right")
-    SHAPE = style.get("shape_style", "circle")
+    SHAPE = style.get("shape_style", "rect_thin")
+    CASE = style.get("heading_case", "normal")
 
     def rgb(t): return RGBColor(*t)
 
-    def add_rect(slide, x, y, w, h, color, line=False):
-        shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
-        shp.fill.solid(); shp.fill.fore_color.rgb = rgb(color)
-        if not line: shp.line.fill.background()
-        shp.shadow.inherit = False
-        return shp
-
     def add_text(slide, x, y, w, h, text, size=18, bold=False, color=None,
-                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False):
+                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False,
+                 spacing=None):
         c = color if color else style["text"]
         tb = slide.shapes.add_textbox(x, y, w, h)
         tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = anchor
         p = tf.paragraphs[0]; p.alignment = align
+        if spacing is not None:
+            try: p.line_spacing = spacing
+            except Exception: pass
         run = p.add_run(); run.text = text
         run.font.size = Pt(size); run.font.bold = bold; run.font.italic = italic
         run.font.color.rgb = rgb(c); run.font.name = "DejaVu Sans"
         return tb
 
-    def add_bullets(slide, x, y, w, h, bullets, size=15):
+    def add_bullets(slide, x, y, w, h, bullets, size=14):
         if not bullets: return
         tf = slide.shapes.add_textbox(x, y, w, h).text_frame
         tf.word_wrap = True
         for j, b in enumerate(bullets[:6]):
             p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
-            p.space_after = Pt(10)
+            p.space_after = Pt(12)
+            try: p.line_spacing = 1.15
+            except Exception: pass
             run = p.add_run()
-            run.text = "•  " + str(b)
+            run.text = "▪  " + str(b)
             run.font.size = Pt(size)
             run.font.color.rgb = rgb(style["text"])
             run.font.name = "DejaVu Sans"
 
     def add_image_placeholder(slide, x, y, w, h, hint):
-        box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
-        box.fill.solid(); box.fill.fore_color.rgb = rgb(style["accent2"])
-        box.line.color.rgb = rgb(style["accent"]); box.line.width = Pt(2)
-        box.shadow.inherit = False
-        tf = box.text_frame; tf.word_wrap = True
+        frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
+        frame.fill.solid(); frame.fill.fore_color.rgb = rgb(style["accent2"])
+        frame.line.color.rgb = rgb(style["accent"]); frame.line.width = Pt(1.5)
+        frame.shadow.inherit = False
+        try: frame.adjustments[0] = 0.06
+        except Exception: pass
+        inner_x = x + Inches(0.25); inner_y = y + Inches(0.25)
+        inner_w = w - Inches(0.5); inner_h = h - Inches(0.5)
+        inner = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, inner_x, inner_y, inner_w, inner_h)
+        inner.fill.solid()
+        try:
+            inner_c = tuple(int(v*0.97 + 255*0.03) for v in style["accent2"])
+            inner.fill.fore_color.rgb = rgb(inner_c)
+        except Exception:
+            inner.fill.fore_color.rgb = rgb(style["bg"])
+        inner.line.fill.background(); inner.shadow.inherit = False
+        tf = inner.text_frame; tf.word_wrap = True
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-        r1 = p.add_run(); r1.text = "МЕСТО ДЛЯ КАРТИНКИ"
-        r1.font.size = Pt(14); r1.font.bold = True
-        r1.font.color.rgb = rgb(style["text"])
+        r1 = p.add_run(); r1.text = "🖼"
+        r1.font.size = Pt(44); r1.font.bold = True
+        r1.font.color.rgb = rgb(style["accent"])
         p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
-        r2 = p2.add_run(); r2.text = hint or "Иллюстрация к слайду"
-        r2.font.size = Pt(12); r2.font.italic = True
+        p2.space_before = Pt(8)
+        r2 = p2.add_run(); r2.text = "ВСТАВЬ СЮДА"
+        r2.font.size = Pt(13); r2.font.bold = True
         r2.font.color.rgb = rgb(style["text"])
+        p3 = tf.add_paragraph(); p3.alignment = PP_ALIGN.CENTER
+        r3 = p3.add_run(); r3.text = hint or "Иллюстрация к слайду"
+        r3.font.size = Pt(11); r3.font.italic = True
+        r3.font.color.rgb = rgb(style["text_soft"])
 
-    def add_footer(slide, idx, total, topic_label):
-        add_text(slide, Inches(0.6), Inches(7.05), Inches(8.0), Inches(0.4),
-                 topic_label, size=9, color=style["text_soft"])
-        add_text(slide, Inches(11.3), Inches(7.05), Inches(1.5), Inches(0.4),
-                 f"{idx} / {total}", size=10, bold=True,
-                 color=style["accent"], align=PP_ALIGN.RIGHT)
+    def _decor(slide, kind):
+        W = prs.slide_width; H = prs.slide_height
+        if kind == "rect_thin":
+            _add_rect(slide, 0, 0, Inches(0.25), H, style["accent"])
+            _add_rect(slide, 0, 0, W, Inches(0.08), style["accent"])
+        elif kind == "circle_big":
+            _add_oval(slide, Inches(-1.2), Inches(-1.2), Inches(3.5), Inches(3.5), style["accent"])
+            _add_oval(slide, Inches(12.3), Inches(6.5), Inches(2.2), Inches(2.2), style["accent2"])
+        elif kind == "line_only":
+            _add_rect(slide, Inches(0.6), Inches(0.5), Inches(0.05), Inches(1.2), style["accent"])
+        elif kind == "glow_line":
+            _add_rect(slide, 0, Inches(1.65), W, Inches(0.02), style["accent"])
+            _add_oval(slide, Inches(12.3), Inches(-0.8), Inches(2.2), Inches(2.2), style["accent2"])
+        elif kind == "big_number":
+            _add_rect(slide, Inches(0.6), 0, Inches(0.4), H, style["accent"])
+        elif kind == "neon_line":
+            _add_rect(slide, 0, 0, W, Inches(0.05), style["accent"])
+            _add_rect(slide, 0, Inches(1.7), W, Inches(0.03), style["accent2"])
 
+    # ══════════ ТИТУЛЬНЫЙ СЛАЙД ══════════
     s0 = prs.slides.add_slide(blank)
-    add_rect(s0, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
-    _add_shape(s0, SHAPE, Inches(-1.0), Inches(-1.0), Inches(3.5), Inches(3.5),
-               style["accent"] if style_id != "minimal" else style["accent2"])
-    _add_shape(s0, SHAPE, Inches(11.5), Inches(5.5), Inches(3.0), Inches(3.0),
-               style["accent2"])
-    _add_shape(s0, SHAPE, Inches(10.5), Inches(-0.8), Inches(1.8), Inches(1.8),
-               style["accent"])
-    add_rect(s0, Inches(1), Inches(2.0), Inches(2.5), Inches(0.1), style["accent"])
-    add_text(s0, Inches(1), Inches(2.4), Inches(11.3), Inches(2.2),
-             plan.get("title", "Презентация"), size=50, bold=True,
-             color=style["title_text"])
+    _add_rect(s0, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
+    _add_rect(s0, 0, 0, Inches(4.5), prs.slide_height, style["accent"])
+    _add_oval(s0, Inches(11.0), Inches(5.0), Inches(3.5), Inches(3.5), style["accent2"])
+    _add_oval(s0, Inches(10.0), Inches(6.0), Inches(1.5), Inches(1.5), style["accent"])
+    add_text(s0, Inches(5.2), Inches(2.0), Inches(7.5), Inches(3.0),
+             plan.get("title", "Презентация"), size=40, bold=True,
+             color=style["title_text"],
+             align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP)
     if plan.get("subtitle"):
-        add_text(s0, Inches(1), Inches(4.8), Inches(11.3), Inches(1.2),
-                 plan["subtitle"], size=22,
-                 color=style["accent"] if style_id != "minimal" else style["text_soft"])
-    add_text(s0, Inches(1), Inches(6.6), Inches(11.3), Inches(0.5),
-             "STUDENT IRK  ·  ПРЕЗЕНТАЦИЯ", size=11, bold=True,
-             color=style["text_soft"])
+        add_text(s0, Inches(5.2), Inches(4.9), Inches(7.5), Inches(1.2),
+                 plan["subtitle"], size=16,
+                 color=style["accent2"], align=PP_ALIGN.LEFT)
+    add_text(s0, Inches(0.6), Inches(6.6), Inches(3.5), Inches(0.6),
+             "STUDENT IRK", size=14, bold=True,
+             color=style["title_text"], align=PP_ALIGN.LEFT)
 
     slides = plan.get("slides", [])
     total = len(slides)
     topic_label = (plan.get("title") or "")[:60]
 
+    # ══════════ КОНТЕНТНЫЕ СЛАЙДЫ ══════════
     for i, sl in enumerate(slides):
         s = prs.slides.add_slide(blank)
-        add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
-        add_rect(s, 0, 0, prs.slide_width, Inches(0.12), style["accent"])
-        add_rect(s, Inches(0.6), Inches(0.6), Inches(0.14), Inches(1.0), style["accent"])
-        add_text(s, Inches(0.95), Inches(0.55), Inches(11.8), Inches(1.1),
-                 sl.get("heading", f"Слайд {i+1}"), size=30, bold=True,
-                 color=style["accent"] if style_id in ("dark", "neon") else style["text"])
-        add_rect(s, Inches(0.6), Inches(1.7), Inches(12.1), Inches(0.03), style["accent2"])
+        _add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
+        _decor(s, SHAPE)
+
+        heading = sl.get("heading", f"Слайд {i+1}")
+        if CASE == "upper":
+            heading = heading.upper()
+        add_text(s, Inches(1.05), Inches(0.55), Inches(11.0), Inches(1.0),
+                 heading, size=28, bold=True,
+                 color=style["accent"] if SHAPE in ("glow_line", "neon_line") else style["text"])
+        _add_rect(s, Inches(1.05), Inches(1.55), Inches(2.0), Inches(0.05), style["accent"])
+
+        add_text(s, Inches(11.8), Inches(0.55), Inches(1.2), Inches(0.6),
+                 f"{i+1:02d}/{total:02d}", size=13, bold=True,
+                 color=style["accent"], align=PP_ALIGN.RIGHT)
 
         bullets = sl.get("bullets", [])
         hint = sl.get("image_hint", "")
 
         if LAYOUT == "image_right":
-            add_bullets(s, Inches(0.6), Inches(2.1), Inches(7.0), Inches(4.7), bullets, size=15)
-            add_image_placeholder(s, Inches(8.0), Inches(2.1), Inches(4.8), Inches(4.4), hint)
-            _add_shape(s, SHAPE, Inches(12.3), Inches(6.4), Inches(1.2), Inches(1.2),
-                       style["accent"] if style_id != "minimal" else style["accent2"])
+            add_bullets(s, Inches(1.05), Inches(2.05), Inches(6.6), Inches(4.7), bullets, size=13)
+            add_image_placeholder(s, Inches(7.9), Inches(2.05), Inches(4.85), Inches(4.5), hint)
         elif LAYOUT == "image_left":
-            add_image_placeholder(s, Inches(0.6), Inches(2.1), Inches(4.8), Inches(4.4), hint)
-            add_bullets(s, Inches(5.8), Inches(2.1), Inches(7.0), Inches(4.7), bullets, size=15)
-            _add_shape(s, SHAPE, Inches(11.5), Inches(6.6), Inches(1.2), Inches(1.2),
-                       style["accent2"])
+            add_image_placeholder(s, Inches(0.9), Inches(2.05), Inches(4.6), Inches(4.5), hint)
+            add_bullets(s, Inches(5.9), Inches(2.05), Inches(6.9), Inches(4.7), bullets, size=13)
         else:
-            add_bullets(s, Inches(0.6), Inches(2.1), Inches(6.8), Inches(4.7), bullets, size=15)
-            add_image_placeholder(s, Inches(7.7), Inches(2.1), Inches(5.1), Inches(4.4), hint)
-            _add_shape(s, SHAPE, Inches(-0.4), Inches(6.6), Inches(1.2), Inches(1.2),
-                       style["accent"])
+            add_bullets(s, Inches(1.05), Inches(2.05), Inches(6.5), Inches(4.7), bullets, size=13)
+            add_image_placeholder(s, Inches(7.8), Inches(2.05), Inches(4.95), Inches(4.5), hint)
+
+        add_text(s, Inches(1.05), Inches(7.0), Inches(8.0), Inches(0.4),
+                 topic_label, size=9, color=style["text_soft"])
+        add_text(s, Inches(11.8), Inches(7.0), Inches(1.2), Inches(0.4),
+                 f"стр. {i+1}/{total}", size=9, bold=True,
+                 color=style["text_soft"], align=PP_ALIGN.RIGHT)
 
         notes = sl.get("notes")
         if notes:
             try: s.notes_slide.notes_text_frame.text = str(notes)
             except Exception: pass
 
-        add_footer(s, i + 1, total, topic_label)
-
+    # ══════════ ФИНАЛЬНЫЙ СЛАЙД ══════════
     sN = prs.slides.add_slide(blank)
-    add_rect(sN, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
-    _add_shape(sN, SHAPE, Inches(-1.2), Inches(-1.2), Inches(3.5), Inches(3.5), style["accent"])
-    _add_shape(sN, SHAPE, Inches(11.0), Inches(5.2), Inches(3.5), Inches(3.5), style["accent2"])
-    add_rect(sN, int(prs.slide_width * 0.35), Inches(3.55), int(prs.slide_width * 0.3),
-             Inches(0.08), style["accent"])
-    add_text(sN, Inches(1), Inches(2.9), Inches(11.3), Inches(1.5),
-             "Спасибо за внимание!", size=44, bold=True,
+    _add_rect(sN, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
+    _add_rect(sN, 0, 0, prs.slide_width, Inches(0.15), style["accent"])
+    _add_oval(sN, Inches(-1.2), Inches(4.8), Inches(3.5), Inches(3.5), style["accent"])
+    _add_oval(sN, Inches(11.0), Inches(-1.0), Inches(3.0), Inches(3.0), style["accent2"])
+    add_text(sN, Inches(1), Inches(3.0), Inches(11.3), Inches(1.5),
+             "СПАСИБО ЗА ВНИМАНИЕ", size=42, bold=True,
              color=style["title_text"], align=PP_ALIGN.CENTER)
-    add_text(sN, Inches(1), Inches(4.6), Inches(11.3), Inches(0.6),
+    add_text(sN, Inches(1), Inches(4.4), Inches(11.3), Inches(0.6),
              "Вопросы?", size=20, italic=True,
              color=style["accent"], align=PP_ALIGN.CENTER)
 
@@ -1886,7 +1349,7 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
                                 style_id: str = "random",
                                 user_info: str = "", user_wishes: str = "") -> bytes:
     if not _PPTX_AVAILABLE:
-        raise RuntimeError("python-pptx не установлена. Добавь в requirements.txt")
+        raise RuntimeError("python-pptx не установлена")
     if giga_client is None:
         raise RuntimeError("GigaChat не настроен")
 
@@ -1899,7 +1362,7 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
     status_msg = None
     try:
         status_msg = await bot.send_message(
-            user_id, f"Собираю презентацию «{topic}»\nСтиль: {style_name}\nСоставляю структуру...")
+            user_id, f"Собираю презентацию «{topic}»\nСтиль: {style_name}")
     except Exception: pass
 
     plan = await _generate_slide_plan(topic, slides_count, user_info, user_wishes)
@@ -2018,20 +1481,15 @@ async def api_me(request):
     if not user_obj: return web.json_response({"error": "unauthorized"}, status=401)
     user_id = user_obj.id
     _ensure_user(user_id); _update_user_meta(user_id, user_obj.username, user_obj.first_name)
-    streak = stats_update_streak(user_id); check_and_award_achievements(user_id)
     saved = get_user_group(user_id); active, done = count_user_tasks(user_id)
     notes = get_user_notes(user_id); amount = get_scholarship_amount(user_id)
     grades = get_grades(user_id); daily = daily_is_subscribed(user_id)
     notif_settings = get_notify_settings(user_id)
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
-    att_stats = attendance_stats(user_id); wallet = wallet_get(user_id); ach = achievements_get(user_id)
-    if wallet["custom_name"]: display_name = wallet["custom_name"]
-    else:
-        full = " ".join(p for p in [user_obj.first_name or "", user_obj.last_name or ""] if p).strip()
-        display_name = full or "PLAYER"
-    player_tag = f"PLAYER-{str(user_id)[-6:].upper()}"
+    att_stats = attendance_stats(user_id)
+    full = " ".join(p for p in [user_obj.first_name or "", user_obj.last_name or ""] if p).strip()
+    display_name = full or "Студент"
     return web.json_response({"user_id": user_id, "is_admin": user_id == ADMIN_ID,
-        "avatar_gender": get_user_avatar_gender(user_id),
         "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id), "tasks_active": active, "tasks_done": done,
         "notes_count": len(notes), "scholarship_amount": amount, "grades_count": len(grades),
@@ -2044,191 +1502,7 @@ async def api_me(request):
         "attendance_sick": att_stats["sick"], "attendance_excused": att_stats["excused"],
         "attendance_total": sum(att_stats.values()), "username": user_obj.username,
         "first_name": user_obj.first_name, "last_name": user_obj.last_name,
-        "display_name": display_name, "player_tag": player_tag, "wallet": wallet,
-        "streak": streak, "achievements": ach, "chat_unread": 0})
-
-async def api_wallet(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    _ensure_user(user_id); check_and_award_achievements(user_id)
-    return web.json_response({"wallet": wallet_get(user_id)})
-
-async def api_set_name(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    name = (body.get("name") or "").strip()
-    if len(name) > 24: name = name[:24]
-    wallet_before = wallet_get(user_id); used_free = False
-    if wallet_before["custom_name"]:
-        if wallet_before["free_name_changes"] > 0:
-            wallet_use_free_name(user_id); used_free = True
-        else:
-            if not wallet_consume(user_id, "nova", 5):
-                return web.json_response({"error": "need_hard", "message": "Нужно 5 Нова"}, status=400)
-    wallet_set_name(user_id, name)
-    return web.json_response({"ok": True, "wallet": wallet_get(user_id), "used_free": used_free})
-
-async def api_set_avatar(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try: idx = int(body.get("idx", 0))
-    except: return web.json_response({"error": "bad_idx"}, status=400)
-    idx = max(0, min(idx, 11))
-    wallet_set_avatar(user_id, idx)
-    return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
-
-async def api_set_avatar_gender(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    gender = (body.get("gender") or "male").strip().lower()
-    if gender not in ("male", "female"): gender = "male"
-    set_user_avatar_gender(user_id, gender)
-    return web.json_response({"ok": True, "avatar_gender": gender})
-
-async def api_exchange(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try: amount = int(body.get("amount", 0))
-    except: return web.json_response({"error": "bad_amount"}, status=400)
-    if amount <= 0: return web.json_response({"error": "bad_amount"}, status=400)
-    amount = (amount // EXCHANGE_RATE_SHIFT_TO_NOVA) * EXCHANGE_RATE_SHIFT_TO_NOVA
-    if amount <= 0:
-        return web.json_response({"error": "too_small", "message": f"Минимум {EXCHANGE_RATE_SHIFT_TO_NOVA} Шифт"}, status=400)
-    w = wallet_get(user_id)
-    if (w.get("shift") or 0) < amount:
-        return web.json_response({"error": "not_enough_soft", "message": "Недостаточно Шифт"}, status=400)
-    result = exchange_shift_to_nova(user_id, amount)
-    if not result: return web.json_response({"error": "exchange_failed"}, status=500)
-    check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "soft_spent": result["soft_spent"],
-        "hard_received": result["hard_received"], "shift_spent": result["shift_spent"],
-        "nova_received": result["nova_received"], "wallet": wallet_get(user_id)})
-
-async def api_chest_status(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    chest_id = request.query.get("chest_id", "capsule")
-    return web.json_response(chest_status(user_id, chest_id))
-
-async def api_chest_open(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    chest_id = (body.get("type") or body.get("chest") or "capsule").strip()
-    if chest_id not in CHESTS: chest_id = "capsule"
-    reward, err = chest_open(user_id, chest_id)
-    if err:
-        msg = {"already_opened": "Кейс уже открыт", "not_enough_shift": "Недостаточно Шифт",
-               "not_enough_nova": "Недостаточно Нова", "bad_chest": "Неизвестный кейс",
-               "roll_failed": "Ошибка"}.get(err, "Ошибка")
-        return web.json_response({"error": err, "message": msg}, status=400)
-    check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "reward": reward, "wallet": wallet_get(user_id)})
-
-async def api_achievements(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    _ensure_user(user_id); check_and_award_achievements(user_id)
-    unlocked = achievements_get(user_id)
-    conn = sqlite3.connect(DB_PATH)
-    rewards = conn.execute("SELECT ach_id, xp, shift, nova FROM achievement_rewards WHERE user_id=?", (user_id,)).fetchall()
-    claimed = conn.execute("SELECT ach_id FROM achievement_claims WHERE user_id=?", (user_id,)).fetchall()
-    conn.close()
-    reward_map = {r[0]: {"xp": r[1], "shift": r[2], "nova": r[3], "soft": r[2], "hard": r[3]} for r in rewards}
-    claimed_set = {c[0] for c in claimed}
-    items = []
-    for aid, meta in ACHIEVEMENTS.items():
-        is_unlocked = aid in unlocked
-        rw_raw = reward_map.get(aid) or ACHIEVEMENT_REWARDS.get(aid, {"xp":0,"shift":0,"nova":0})
-        rw = {"xp": rw_raw.get("xp", 0), "shift": rw_raw.get("shift", rw_raw.get("soft", 0)),
-              "nova": rw_raw.get("nova", rw_raw.get("hard", 0)),
-              "soft": rw_raw.get("shift", rw_raw.get("soft", 0)),
-              "hard": rw_raw.get("nova", rw_raw.get("hard", 0))}
-        items.append({"id": aid, "name": meta["name"], "icon": meta.get("icon", ""),
-            "desc": meta["desc"], "unlocked": is_unlocked, "unlocked_at": unlocked.get(aid),
-            "reward": rw, "claimed": aid in claimed_set,
-            "can_claim": is_unlocked and aid in reward_map and aid not in claimed_set})
-    total_reward = {"xp": 0, "shift": 0, "nova": 0, "soft": 0, "hard": 0}
-    for it in items:
-        if it["can_claim"]:
-            total_reward["xp"] += it["reward"]["xp"]
-            total_reward["shift"] += it["reward"]["shift"]
-            total_reward["nova"] += it["reward"]["nova"]
-    total_reward["soft"] = total_reward["shift"]
-    total_reward["hard"] = total_reward["nova"]
-    return web.json_response({"items": items, "total": len(ACHIEVEMENTS),
-        "got": len(unlocked), "can_claim_count": sum(1 for x in items if x["can_claim"]),
-        "total_reward": total_reward})
-
-async def api_achievement_claim(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    ach_id = (body.get("ach_id") or "").strip()
-    if not ach_id or ach_id not in ACHIEVEMENTS:
-        return web.json_response({"error": "bad_id"}, status=400)
-    conn = sqlite3.connect(DB_PATH)
-    has = conn.execute("SELECT xp, shift, nova FROM achievement_rewards WHERE user_id=? AND ach_id=?",
-        (user_id, ach_id)).fetchone()
-    claimed = conn.execute("SELECT 1 FROM achievement_claims WHERE user_id=? AND ach_id=?",
-        (user_id, ach_id)).fetchone()
-    conn.close()
-    if not has or claimed: return web.json_response({"error": "already_claimed"}, status=400)
-    xp, shift, nova = has
-    wallet_add(user_id, xp=xp, shift=shift, nova=nova)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT OR IGNORE INTO achievement_claims (user_id, ach_id, claimed_at) VALUES (?, ?, ?)",
-        (user_id, ach_id, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-    check_and_award_achievements(user_id)
-    return web.json_response({"ok": True,
-        "reward": {"xp": xp, "shift": shift, "nova": nova, "soft": shift, "hard": nova},
-        "wallet": wallet_get(user_id)})
-
-async def api_level_rewards(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    return web.json_response({"claimed": level_rewards_claimed(user_id)})
-
-async def api_level_reward_claim(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try: lvl = int(body.get("level", 0))
-    except: return web.json_response({"error": "bad_level"}, status=400)
-    rw, err = level_reward_claim(user_id, lvl)
-    if err: return web.json_response({"error": err}, status=400)
-    return web.json_response({"ok": True, "reward": rw, "wallet": wallet_get(user_id)})
-
-async def api_wallet_leaderboard(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    rows = wallet_leaderboard(10)
-    items = []
-    for i, (uid, xp, custom_name, username) in enumerate(rows):
-        lvl, _, _ = calc_level(xp or 0)
-        if custom_name: display = custom_name
-        elif username: display = "@" + username
-        else: display = f"PLAYER-{str(uid)[-6:].upper()}"
-        items.append({"rank": i + 1, "user_id": uid, "xp": xp or 0, "level": lvl,
-            "display": display, "is_me": uid == user_id})
-    return web.json_response({"items": items})
+        "display_name": display_name})
 
 async def api_groups(request): return web.json_response({"groups": GROUPS})
 
@@ -2297,8 +1571,7 @@ async def api_task_add(request):
     priority = int(body.get("priority", 2))
     if priority not in (1, 2, 3): priority = 2
     tid = add_task(user_id, text, due_date, priority, due_time)
-    wallet_add(user_id, xp=5, shift=1); check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "id": tid, "wallet": wallet_get(user_id)})
+    return web.json_response({"ok": True, "id": tid})
 
 async def api_task_update(request):
     try: body = await request.json()
@@ -2310,10 +1583,8 @@ async def api_task_update(request):
     row = get_task(tid, user_id)
     if not row: return web.json_response({"error": "not_found"}, status=404)
     if body.get("done") is True:
-        mark_task_done(tid, user_id); stats_inc(user_id, "tasks_done", 1)
-        wallet_add(user_id, xp=20, shift=5)
-        new_ach = check_and_award_achievements(user_id)
-        return web.json_response({"ok": True, "done": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
+        mark_task_done(tid, user_id)
+        return web.json_response({"ok": True, "done": True})
     text = body.get("text"); due_date = body.get("due_date"); due_time = body.get("due_time")
     priority = body.get("priority"); reset_due = body.get("reset_due", False)
     if priority is not None:
@@ -2358,10 +1629,8 @@ async def api_note_save(request):
     if not subject or not text: return web.json_response({"error": "empty"}, status=400)
     if len(subject) > 100: subject = subject[:100]
     if len(text) > 500: text = text[:500]
-    add_or_update_note(user_id, subject, text); stats_inc(user_id, "notes_added", 1)
-    wallet_add(user_id, xp=3, shift=1)
-    new_ach = check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
+    add_or_update_note(user_id, subject, text)
+    return web.json_response({"ok": True})
 
 async def api_note_delete(request):
     try: body = await request.json()
@@ -2481,9 +1750,8 @@ async def api_scholarship_add_grade(request):
         return web.json_response({"error": "invalid"}, status=400)
     if len(subject) > 100: subject = subject[:100]
     if semester and len(semester) > 40: semester = semester[:40]
-    upsert_grade(user_id, subject, grade, is_auto, semester); wallet_add(user_id, xp=5, shift=1)
-    new_ach = check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "wallet": wallet_get(user_id), "new_achievements": new_ach})
+    upsert_grade(user_id, subject, grade, is_auto, semester)
+    return web.json_response({"ok": True})
 
 async def api_scholarship_update_grade(request):
     try: body = await request.json()
@@ -2540,9 +1808,7 @@ async def api_attendance_set(request):
         return web.json_response({"error": "bad_status"}, status=400)
     if len(subject) > 200: subject = subject[:200]
     attendance_set(user_id, date, time_, subject, status)
-    if status == "was":
-        wallet_add(user_id, xp=3, shift=1); check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "status": status, "wallet": wallet_get(user_id)})
+    return web.json_response({"ok": True, "status": status})
 
 async def api_ai(request):
     try: body = await request.json()
@@ -2567,7 +1833,6 @@ async def api_ai(request):
         answer = clean_latex(answer); answer = clean_markdown(answer)
         if len(answer) > 4000: answer = answer[:4000] + "\n... (обрезано)"
         ai_save_message(user_id, 'assistant', answer, has_photo=0)
-        wallet_add(user_id, xp=2, shift=1)
         return web.json_response({"answer": answer})
     except Exception as e:
         logging.exception("[AI-WEB]")
@@ -2629,7 +1894,6 @@ async def api_ai_photo(request):
         answer = clean_latex(answer); answer = clean_markdown(answer)
         if len(answer) > 4000: answer = answer[:4000] + "\n... (обрезано)"
         ai_save_message(user_id, 'assistant', answer, has_photo=0)
-        wallet_add(user_id, xp=5, shift=2)
         return web.json_response({"answer": answer})
     except Exception as e:
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
@@ -2675,346 +1939,9 @@ async def api_feedback(request):
         logging.error(f"[FEEDBACK-WEB] {e}")
     return web.json_response({"ok": True, "id": fid})
 
-async def api_game_info(request):
-    init_data = request.query.get("initData", "")
-    user_obj = _verify_webapp_init_full(init_data)
-    if not user_obj: return web.json_response({"error": "unauthorized"}, status=401)
-    user_id = user_obj.id
-    _ensure_user(user_id); _update_user_meta(user_id, user_obj.username, user_obj.first_name)
-    scores = game_get_scores(user_id)
-    tops = {}
-    for gid in GAMES:
-        rows = game_leaderboard(gid, 5); items = []
-        for i, (uid, score, display_name, username) in enumerate(rows):
-            if display_name and username: display = f"{display_name} (@{username})"
-            elif display_name: display = display_name
-            elif username: display = "@" + username
-            else: display = f"PLAYER-{str(uid)[-6:].upper()}"
-            items.append({"rank": i + 1, "user_id": uid, "score": score, "display": display, "is_me": uid == user_id})
-        tops[gid] = items
-    games_out = []
-    for gid, meta in GAMES.items():
-        s = scores.get(gid, {"best": 0, "plays": 0})
-        games_out.append({"id": gid, "name": meta["name"], "desc": meta["desc"], "best": s["best"], "plays": s["plays"]})
-    return web.json_response({"games": games_out, "scores": scores, "tops": tops})
-
-async def api_game_submit(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_obj = _verify_webapp_init_full(body.get("initData", ""))
-    if not user_obj: return web.json_response({"error": "unauthorized"}, status=401)
-    user_id = user_obj.id
-    _ensure_user(user_id); _update_user_meta(user_id, user_obj.username, user_obj.first_name)
-    game_id = (body.get("game_id") or "flappy").strip()
-    if game_id not in GAMES: return web.json_response({"error": "bad_game"}, status=400)
-    try: score = int(body.get("score", 0))
-    except: score = 0
-    try: bonus_shift = int(body.get("bonus_shift", 0))
-    except: bonus_shift = 0
-    bonus_shift = max(0, min(bonus_shift, 200))
-    result = game_save_score(user_id, game_id, score)
-    soft_reward = max(1, score // 2) + bonus_shift
-    xp_reward = max(1, score * 2)
-    hard_reward = 0
-    if result["is_record"] and score > 0: hard_reward += 1
-    wallet_add(user_id, xp=xp_reward, shift=soft_reward, nova=hard_reward)
-    rows = game_leaderboard(game_id, 1)
-    if rows and rows[0][0] == user_id and score > 0: wallet_add(user_id, nova=5)
-    check_and_award_achievements(user_id)
-    wallet = wallet_get(user_id)
-    lb_rows = game_leaderboard(game_id, 10); items = []
-    for i, (uid, s, display_name, username) in enumerate(lb_rows):
-        if display_name and username: display = f"{display_name} (@{username})"
-        elif display_name: display = display_name
-        elif username: display = "@" + username
-        else: display = f"PLAYER-{str(uid)[-6:].upper()}"
-        items.append({"rank": i + 1, "user_id": uid, "score": s, "display": display, "is_me": uid == user_id})
-    return web.json_response({"ok": True, "best": result["best"], "is_record": result["is_record"],
-        "plays": result["plays"], "soft_reward": soft_reward, "xp_reward": xp_reward,
-        "hard_reward": hard_reward, "wallet": wallet, "top": items})
-
-def _bs_make_result_for(game, user_id):
-    winner = game.get("winner") or 0; bet = game.get("bet") or 0
-    if winner == 0: return {"outcome": "draw", "reward": 0, "loss": 0, "wallet": wallet_get(user_id)}
-    if winner == user_id: return {"outcome": "win", "reward": bet, "loss": 0, "wallet": wallet_get(user_id)}
-    return {"outcome": "lose", "reward": 0, "loss": bet, "wallet": wallet_get(user_id)}
-
-async def api_bs_create(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try: bet = int(body.get("bet", 0))
-    except: bet = 0
-    if bet not in BS_BET_OPTIONS: return web.json_response({"error": "bad_bet"}, status=400)
-    _ensure_user(user_id); _bs_cleanup_stale_games(); _bs_cancel_any_waiting(user_id)
-    active = _bs_user_in_active_game(user_id)
-    if active: return web.json_response({"error": "already_in_game", "game_id": active}, status=400)
-    w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
-    if not wallet_consume(user_id, "shift", bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-    game_id = _bs_new_game_id(); code = _bs_new_code()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""INSERT INTO bs_games (game_id, code, p1_id, p2_id, bet, status, turn,
-        p1_ships, p2_ships, p1_ready, p2_ready, p1_shots, p2_shots, winner, created_at, updated_at)
-        VALUES (?, ?, ?, NULL, ?, 'waiting', 1, NULL, NULL, 0, 0, '[]', '[]', 0, ?, ?)""",
-        (game_id, code, user_id, bet, _bs_now(), _bs_now()))
-    conn.commit(); conn.close()
-    return web.json_response({"ok": True, "status": "waiting", "game_id": game_id,
-        "code": code, "bet": bet, "wallet": wallet_get(user_id)})
-
-async def api_bs_join(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    code = (body.get("code") or "").strip()
-    if not code or len(code) != 6 or not code.isdigit():
-        return web.json_response({"error": "bad_code"}, status=400)
-    _ensure_user(user_id); _bs_cleanup_stale_games()
-    active = _bs_user_in_active_game(user_id)
-    if active: return web.json_response({"error": "already_in_game"}, status=400)
-    game = _bs_get_game_by_code(code)
-    if not game: return web.json_response({"error": "not_found"}, status=404)
-    if game["p1_id"] == user_id: return web.json_response({"error": "self_join"}, status=400)
-    if game["status"] != "waiting": return web.json_response({"error": "not_waiting"}, status=400)
-    bet = game["bet"] or 0
-    w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
-    if not wallet_consume(user_id, "shift", bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-    _bs_update_game(game["game_id"], p2_id=user_id, status="placing", turn=1)
-    return web.json_response({"ok": True, "game_id": game["game_id"],
-        "opponent_name": _bs_get_user_name(game["p1_id"]), "bet": bet, "side": 2,
-        "wallet": wallet_get(user_id)})
-
-async def api_bs_find(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try: bet = int(body.get("bet", 0))
-    except: bet = 0
-    if bet not in BS_BET_OPTIONS: return web.json_response({"error": "bad_bet"}, status=400)
-    _ensure_user(user_id); _bs_cleanup_stale_games(); _bs_cancel_any_waiting(user_id)
-    active = _bs_user_in_active_game(user_id)
-    if active: return web.json_response({"error": "already_in_game"}, status=400)
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT game_id, p1_id FROM bs_games WHERE status='waiting' AND bet=? AND p1_id != ? ORDER BY created_at ASC LIMIT 1",
-        (bet, user_id)).fetchone()
-    conn.close()
-    if row:
-        game_id, p1_id = row
-        w = wallet_get(user_id)
-        if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
-        if not wallet_consume(user_id, "shift", bet):
-            return web.json_response({"error": "consume_failed"}, status=500)
-        _bs_update_game(game_id, p2_id=user_id, status="placing", turn=1)
-        return web.json_response({"ok": True, "status": "matched", "game_id": game_id,
-            "opponent_name": _bs_get_user_name(p1_id), "bet": bet, "side": 2,
-            "wallet": wallet_get(user_id)})
-    w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
-    if not wallet_consume(user_id, "shift", bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-    game_id = _bs_new_game_id(); code = _bs_new_code()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""INSERT INTO bs_games (game_id, code, p1_id, p2_id, bet, status, turn,
-        p1_ships, p2_ships, p1_ready, p2_ready, p1_shots, p2_shots, winner, created_at, updated_at)
-        VALUES (?, ?, ?, NULL, ?, 'waiting', 1, NULL, NULL, 0, 0, '[]', '[]', 0, ?, ?)""",
-        (game_id, code, user_id, bet, _bs_now(), _bs_now()))
-    conn.commit(); conn.close()
-    return web.json_response({"ok": True, "status": "queued", "game_id": game_id,
-        "code": code, "bet": bet, "wallet": wallet_get(user_id)})
-
-async def api_bs_ready(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    game_id = (body.get("game_id") or "").strip(); ships = body.get("ships") or []
-    if not game_id: return web.json_response({"error": "no_game"}, status=400)
-    if not _bs_validate_ships(ships): return web.json_response({"error": "bad_ships"}, status=400)
-    game = _bs_get_game(game_id)
-    if not game: return web.json_response({"error": "not_found"}, status=404)
-    side = _bs_player_side(game, user_id)
-    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
-    ships_json = json.dumps(ships, ensure_ascii=False)
-    if side == 1: _bs_update_game(game_id, p1_ships=ships_json, p1_ready=1)
-    else: _bs_update_game(game_id, p2_ships=ships_json, p2_ready=1)
-    game = _bs_get_game(game_id)
-    if game["p1_ready"] and game["p2_ready"] and game["status"] == "placing":
-        first = random.choice([1, 2])
-        _bs_update_game(game_id, status="playing", turn=first)
-    game = _bs_get_game(game_id)
-    return web.json_response({"ok": True,
-        "status": "playing" if game["status"] == "playing" else "waiting",
-        "your_turn": (game["turn"] == side) if game["status"] == "playing" else False})
-
-async def api_bs_state(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    game_id = request.query.get("game_id", "")
-    if not game_id: return web.json_response({"error": "no_game"}, status=400)
-    game = _bs_get_game(game_id)
-    if not game: return web.json_response({"error": "not_found"}, status=404)
-    side = _bs_player_side(game, user_id)
-    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
-    if game["status"] == "finished":
-        return web.json_response({"status": "finished", "result": _bs_make_result_for(game, user_id)})
-    my_shots = json.loads(game["p1_shots"] if side == 1 else game["p2_shots"])
-    enemy_shots_raw = json.loads(game["p2_shots"] if side == 1 else game["p1_shots"])
-    enemy_ships_json = game["p2_ships"] if side == 1 else game["p1_ships"]
-    enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
-    my_ships_json = game["p1_ships"] if side == 1 else game["p2_ships"]
-    my_ships = json.loads(my_ships_json) if my_ships_json else []
-    my_shots_out = []
-    for sh in my_shots:
-        x = sh.get("x"); y = sh.get("y"); result = "miss"
-        for s in enemy_ships:
-            if any(c[0] == x and c[1] == y for c in s["cells"]):
-                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in my_shots) for c in s["cells"])
-                result = "sunk" if sunk else "hit"
-                break
-        my_shots_out.append({"x": x, "y": y, "result": result})
-    enemy_shots_out = []
-    for sh in enemy_shots_raw:
-        x = sh.get("x"); y = sh.get("y"); result = "miss"
-        for s in my_ships:
-            if any(c[0] == x and c[1] == y for c in s["cells"]):
-                sunk = all(any(sh2.get("x") == c[0] and sh2.get("y") == c[1] for sh2 in enemy_shots_raw) for c in s["cells"])
-                result = "sunk" if sunk else "hit"
-                break
-        enemy_shots_out.append({"x": x, "y": y, "result": result})
-    opponent = game["p2_id"] if side == 1 else game["p1_id"]
-    opponent_name = _bs_get_user_name(opponent) if opponent else ""
-    log = [{"type": "miss", "text": f"Враг: ({sh.get('x',0)+1},{sh.get('y',0)+1})"} for sh in enemy_shots_raw[-3:]]
-    return web.json_response({"status": "playing" if game["status"] == "playing" else game["status"],
-        "your_turn": game["turn"] == side, "my_ships": my_ships, "my_shots": my_shots_out,
-        "enemy_shots": enemy_shots_out, "enemy_ships": enemy_ships if game["status"] == "finished" else None,
-        "opponent_name": opponent_name, "log": log})
-
-async def api_bs_fire(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    game_id = (body.get("game_id") or "").strip()
-    try:
-        x = int(body.get("x")); y = int(body.get("y"))
-    except: return web.json_response({"error": "bad_coords"}, status=400)
-    if x < 0 or x > 9 or y < 0 or y > 9: return web.json_response({"error": "bad_coords"}, status=400)
-    game = _bs_get_game(game_id)
-    if not game: return web.json_response({"error": "not_found"}, status=404)
-    side = _bs_player_side(game, user_id)
-    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
-    if game["status"] != "playing": return web.json_response({"error": "not_playing"}, status=400)
-    if game["turn"] != side: return web.json_response({"error": "not_your_turn"}, status=400)
-    if side == 1:
-        my_shots = json.loads(game["p1_shots"]); enemy_ships_json = game["p2_ships"]
-    else:
-        my_shots = json.loads(game["p2_shots"]); enemy_ships_json = game["p1_ships"]
-    enemy_ships = json.loads(enemy_ships_json) if enemy_ships_json else []
-    if any(sh.get("x") == x and sh.get("y") == y for sh in my_shots):
-        return web.json_response({"error": "already_fired"}, status=400)
-    hit_ship = None
-    for s in enemy_ships:
-        if any(c[0] == x and c[1] == y for c in s["cells"]): hit_ship = s; break
-    if hit_ship is None:
-        my_shots.append({"x": x, "y": y})
-        turn_after = 2 if side == 1 else 1
-        result_type = "miss"; sunk_cells = None
-    else:
-        my_shots.append({"x": x, "y": y})
-        sunk = all(any(sh.get("x") == c[0] and sh.get("y") == c[1] for sh in my_shots) for c in hit_ship["cells"])
-        if sunk: result_type = "sunk"; sunk_cells = [[c[0], c[1]] for c in hit_ship["cells"]]
-        else: result_type = "hit"; sunk_cells = None
-        turn_after = side
-    if side == 1: _bs_update_game(game_id, p1_shots=json.dumps(my_shots), turn=turn_after)
-    else: _bs_update_game(game_id, p2_shots=json.dumps(my_shots), turn=turn_after)
-    winner = 0
-    if _bs_check_win(enemy_ships, my_shots): winner = user_id
-    if winner:
-        _bs_finish_game(game_id, winner)
-        game = _bs_get_game(game_id)
-        check_and_award_achievements(winner)
-        return web.json_response({"ok": True, "result": result_type, "sunk_ship": sunk_cells,
-            "your_turn": False, "status": "finished", "result_data": _bs_make_result_for(game, user_id)})
-    game = _bs_get_game(game_id)
-    return web.json_response({"ok": True, "result": result_type, "sunk_ship": sunk_cells,
-        "your_turn": game["turn"] == side, "status": "playing"})
-
-async def api_bs_surrender(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    game_id = (body.get("game_id") or "").strip()
-    game = _bs_get_game(game_id)
-    if not game: return web.json_response({"error": "not_found"}, status=404)
-    side = _bs_player_side(game, user_id)
-    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
-    if game["status"] == "finished": return web.json_response({"error": "already_finished"}, status=400)
-    opponent = game["p2_id"] if side == 1 else game["p1_id"]
-    _bs_finish_game(game_id, opponent, surrender_by=user_id)
-    game = _bs_get_game(game_id)
-    return web.json_response({"ok": True, "result": _bs_make_result_for(game, user_id)})
-
-async def api_bs_cancel(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    game_id = (body.get("game_id") or "").strip()
-    game = _bs_get_game(game_id)
-    if not game: return web.json_response({"ok": True})
-    side = _bs_player_side(game, user_id)
-    if side == 0: return web.json_response({"error": "not_in_game"}, status=403)
-    if game["status"] in ("waiting", "placing"):
-        bet = game["bet"] or 0
-        if game["p1_id"]: wallet_add(game["p1_id"], shift=bet)
-        if game["p2_id"]: wallet_add(game["p2_id"], shift=bet)
-        _bs_delete_game(game_id)
-        return web.json_response({"ok": True, "wallet": wallet_get(user_id)})
-    return web.json_response({"error": "cant_cancel"}, status=400)
-
-async def api_bs_bot_start(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    try: bet = int(body.get("bet", 0))
-    except: bet = 0
-    if bet not in BS_BET_OPTIONS: return web.json_response({"error": "bad_bet"}, status=400)
-    _ensure_user(user_id)
-    w = wallet_get(user_id)
-    if (w.get("shift") or 0) < bet: return web.json_response({"error": "not_enough_soft"}, status=400)
-    if not wallet_consume(user_id, "shift", bet):
-        return web.json_response({"error": "consume_failed"}, status=500)
-    return web.json_response({"ok": True, "bet": bet, "wallet": wallet_get(user_id)})
-
-async def api_bs_finish_bot(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
-    user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    outcome = (body.get("outcome") or "").strip()
-    try: bet = int(body.get("bet", 0))
-    except: bet = 0
-    if outcome not in ("win", "lose", "draw"): return web.json_response({"error": "bad_outcome"}, status=400)
-    if bet not in BS_BET_OPTIONS: bet = 0
-    _ensure_user(user_id)
-    reward = 0; loss = 0
-    if outcome == "win": wallet_add(user_id, shift=bet * 2, xp=30); reward = bet
-    elif outcome == "lose": loss = bet
-    elif outcome == "draw": wallet_add(user_id, shift=bet)
-    check_and_award_achievements(user_id)
-    return web.json_response({"ok": True, "reward": reward, "loss": loss, "wallet": wallet_get(user_id)})
-
-
-# ===================== PDF =====================
+# ═══════════════════════════════════════════════════════════════
+# PDF ЭКСПОРТ
+# ═══════════════════════════════════════════════════════════════
 def _find_or_download_pdf_font():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -3163,6 +2090,9 @@ async def api_export(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+# ═══════════════════════════════════════════════════════════════
+# АДМИН-API
+# ═══════════════════════════════════════════════════════════════
 def _admin_only(init_data):
     user_id = _verify_webapp_init(init_data)
     if not user_id or user_id != ADMIN_ID: return None
@@ -3171,7 +2101,7 @@ def _admin_only(init_data):
 async def api_admin_stats(request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
-    return web.json_response({"total_users": get_total_users(), "vip_count": 0,
+    return web.json_response({"total_users": get_total_users(),
         "pending_feedback": len(get_pending_feedback())})
 
 async def api_admin_feedback_list(request):
@@ -3236,7 +2166,9 @@ async def api_admin_monitor(request):
     except Exception as e:
         return web.json_response({"status": 0, "ok": False, "error": str(e)})
 
-
+# ═══════════════════════════════════════════════════════════════
+# ЗАПУСК WEBAPP
+# ═══════════════════════════════════════════════════════════════
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3249,11 +2181,6 @@ async def start_webapp():
     app.router.add_get("/api/schedule", api_schedule)
     app.router.add_get("/api/week", api_week)
     app.router.add_get("/api/me", api_me)
-    app.router.add_get("/api/wallet", api_wallet)
-    app.router.add_post("/api/set-name", api_set_name)
-    app.router.add_post("/api/set-avatar", api_set_avatar)
-    app.router.add_post("/api/set-avatar-gender", api_set_avatar_gender)
-    app.router.add_post("/api/exchange-soft-to-hard", api_exchange)
     app.router.add_get("/api/groups", api_groups)
     app.router.add_post("/api/set-group", api_set_group)
     app.router.add_post("/api/set-subgroup", api_set_subgroup)
@@ -3276,18 +2203,6 @@ async def start_webapp():
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
     app.router.add_post("/api/attendance-set", api_attendance_set)
-    app.router.add_get("/api/game/info", api_game_info)
-    app.router.add_post("/api/game/submit", api_game_submit)
-    app.router.add_post("/api/bs/create", api_bs_create)
-    app.router.add_post("/api/bs/join", api_bs_join)
-    app.router.add_post("/api/bs/find", api_bs_find)
-    app.router.add_post("/api/bs/ready", api_bs_ready)
-    app.router.add_get("/api/bs/state", api_bs_state)
-    app.router.add_post("/api/bs/fire", api_bs_fire)
-    app.router.add_post("/api/bs/surrender", api_bs_surrender)
-    app.router.add_post("/api/bs/cancel", api_bs_cancel)
-    app.router.add_post("/api/bs/bot-start", api_bs_bot_start)
-    app.router.add_post("/api/bs/finish-bot", api_bs_finish_bot)
     app.router.add_get("/api/ai/history", api_ai_history)
     app.router.add_post("/api/ai/clear-history", api_ai_clear_history)
     app.router.add_post("/api/ai", api_ai)
@@ -3296,13 +2211,6 @@ async def start_webapp():
     app.router.add_post("/api/feedback", api_feedback)
     app.router.add_get("/api/feedback/my", api_feedback_my)
     app.router.add_post("/api/export", api_export)
-    app.router.add_get("/api/chest/status", api_chest_status)
-    app.router.add_post("/api/chest/open", api_chest_open)
-    app.router.add_get("/api/achievements", api_achievements)
-    app.router.add_post("/api/achievement-claim", api_achievement_claim)
-    app.router.add_get("/api/level-rewards", api_level_rewards)
-    app.router.add_post("/api/level-reward-claim", api_level_reward_claim)
-    app.router.add_get("/api/wallet/leaderboard", api_wallet_leaderboard)
     app.router.add_get("/api/admin/stats", api_admin_stats)
     app.router.add_get("/api/admin/feedback-list", api_admin_feedback_list)
     app.router.add_post("/api/admin/feedback-reply", api_admin_feedback_reply)
@@ -3323,10 +2231,6 @@ async def start_webapp():
             p = os.path.join(webapp_dir, "app.js")
             if os.path.isfile(p): return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
             return web.Response(status=404)
-        async def chestjs_handler(request):
-            p = os.path.join(webapp_dir, "chest.js")
-            if os.path.isfile(p): return web.FileResponse(p, headers={**NO_CACHE, "Content-Type": "application/javascript"})
-            return web.Response(status=404)
         async def asset_handler(request):
             name = request.match_info.get("name", "")
             safe_name = os.path.basename(name)
@@ -3339,7 +2243,6 @@ async def start_webapp():
         app.router.add_get("/index.html", index_handler)
         app.router.add_get("/style.css", style_handler)
         app.router.add_get("/app.js", appjs_handler)
-        app.router.add_get("/chest.js", chestjs_handler)
         app.router.add_get("/assets/{name}", asset_handler)
         app.router.add_get("/favicon.ico", favicon_handler)
     else:
@@ -3349,8 +2252,9 @@ async def start_webapp():
     site = web.TCPSite(runner, "0.0.0.0", port); await site.start()
     logging.info(f"[WEB] на 0.0.0.0:{port}")
 
-
-# ===================== КОМАНДЫ БОТА =====================
+# ═══════════════════════════════════════════════════════════════
+# КОМАНДЫ БОТА
+# ═══════════════════════════════════════════════════════════════
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     _ensure_user(message.from_user.id)
@@ -3428,8 +2332,9 @@ async def cmd_restore(message: Message):
         logging.exception("[RESTORE]")
         await message.answer(f"Ошибка восстановления: {e}")
 
-
-# ===================== ВОРКЕРЫ =====================
+# ═══════════════════════════════════════════════════════════════
+# ВОРКЕРЫ
+# ═══════════════════════════════════════════════════════════════
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
         today = _now_irkutsk()
@@ -3570,12 +2475,6 @@ async def change_worker():
         except: logging.exception("[CHANGE]")
         await asyncio.sleep(1800)
 
-async def bs_cleanup_worker():
-    while True:
-        try: _bs_cleanup_stale_games()
-        except: pass
-        await asyncio.sleep(600)
-
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
         stream=sys.stdout, force=True)
@@ -3588,11 +2487,12 @@ async def main():
     asyncio.create_task(notification_worker())
     asyncio.create_task(lesson_reminder_worker())
     asyncio.create_task(change_worker())
-    asyncio.create_task(bs_cleanup_worker())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
 
 
 
