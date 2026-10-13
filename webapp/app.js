@@ -202,27 +202,6 @@ function render() {
   if (state.tab === 'schedule' && !state.loading) attachSwipe();
 }
 
-function renderUserBar() {
-  const u = state.user;
-  const p = state.profile;
-  const displayName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Студент';
-  const metaParts = [];
-  if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · ${p.subgroup}` : ''));
-  if (u.username) metaParts.push('@' + u.username);
-  return `<div class="user-bar" data-action="go-profile">
-    <div class="user-bar-avatar">
-      <span>${escapeHtml((u.first_name||'С').slice(0,1).toUpperCase())}</span>
-    </div>
-    <div class="user-bar-info">
-      <div class="user-bar-name">${escapeHtml(displayName)}</div>
-      <div class="user-bar-meta">${escapeHtml(metaParts.join(' · ')||'профиль не заполнен')}</div>
-    </div>
-    <div class="user-bar-badges">
-      <div class="user-badge">${icon('ic-task',16)} <span>${p?.tasks_active ?? 0}</span></div>
-    </div>
-  </div>`;
-}
-
 function renderLesson(les) {
   const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
   const details = [];
@@ -273,7 +252,7 @@ function renderDayCard(day, label) {
 function renderSchedule() {
   const s = state.schedule;
   if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
-    return renderUserBar() + `<div class="card">
+    return `<div class="card">
       <div class="card-title">Как начать</div>
       <div class="card-subtitle">1. Открой профиль и нажми «Выбрать группу»</div>
       <div class="card-subtitle">2. Укажи институт, курс и группу</div>
@@ -281,7 +260,7 @@ function renderSchedule() {
       <div class="actions-row"><button class="btn" data-action="go-profile">Выбрать группу</button></div>
     </div>`;
   }
-  let html = renderUserBar() + renderDaySwitch();
+  let html = renderDaySwitch();
   html += `<div class="swipe-wrap"><div class="swipe-pane" id="swipePane">`;
   if (state.scheduleViewMode === 'week' && state.weekDays) html += renderWeekView();
   else if (state.scheduleDay === 'tomorrow') html += renderTomorrowBlock();
@@ -881,7 +860,8 @@ function renderAI() {
       <div class="card-subtitle">Задай вопрос или прикрепи фото с задачей.</div>
     </div>`;
   } else {
-    for (const m of state.aiMessages) {
+    for (let i = 0; i < state.aiMessages.length; i++) {
+      const m = state.aiMessages[i];
       const txt = m.text || '';
       if (m.role === 'user') {
         if (m.photo) {
@@ -893,7 +873,12 @@ function renderAI() {
           html += `<div class="card" style="background:var(--cyan);color:#0A0E0F"><div style="font-weight:600">${escapeHtml(txt)}</div></div>`;
         }
       } else {
-        html += `<div class="card"><div style="white-space:pre-wrap">${escapeHtml(txt)}</div></div>`;
+        html += `<div class="card ai-msg" data-ai-idx="${i}">
+          <div style="white-space:pre-wrap">${escapeHtml(txt)}</div>
+          <div class="actions-row" style="margin-top:8px">
+            <button class="btn btn-secondary" data-action="ai-copy" data-ai-idx="${i}">${icon('ic-copy',14)} Копировать</button>
+          </div>
+        </div>`;
       }
     }
   }
@@ -1046,27 +1031,11 @@ async function loadTodayAndRender() {
 }
 
 
-
-/* Профиль (упрощённый) */
+/* Профиль (без ника, без валют) */
 function renderProfile() {
   const p = state.profile;
-  const u = state.user;
-  const displayName = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Студент';
-  const metaParts = [];
-  if (p?.group) metaParts.push(p.group + (p.subgroup ? ` · подгр. ${p.subgroup}` : ''));
-  if (u.username) metaParts.push('@' + u.username);
 
-  let html = `<div class="profile-hero">
-    <div class="profile-hero-avatar">
-      <span>${escapeHtml((u.first_name||'С').slice(0,1).toUpperCase())}</span>
-    </div>
-    <div class="profile-hero-name">
-      <span class="profile-hero-name-text">${escapeHtml(displayName)}</span>
-    </div>
-    <div class="profile-hero-meta">${escapeHtml(metaParts.join(' · ')||'профиль не заполнен')}</div>
-  </div>`;
-
-  html += `<div class="section-title">Учёба</div>`;
+  let html = `<div class="section-title">Учёба</div>`;
   html += `<div class="card">
     <div class="card-title">Моя группа</div>
     <div class="card-subtitle">${p?.group ? escapeHtml(p.group) : 'не выбрана'}</div>
@@ -1299,6 +1268,24 @@ async function actionAISend() {
   catch (e) { state.aiMessages.push({role:'assistant', text: 'Ошибка: ' + e.message}); haptic('error'); }
   finally { state.aiPending = false; render(); }
 }
+async function actionAICopy(idx) {
+  const m = state.aiMessages[idx];
+  if (!m || !m.text) return;
+  try {
+    await navigator.clipboard.writeText(m.text);
+    haptic('success');
+    toast('Скопировано', 'success');
+  } catch (e) {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = m.text;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('Скопировано', 'success'); }
+    catch (_) { toast('Не удалось скопировать', 'error'); }
+    ta.remove();
+  }
+}
 function actionAIClear() { modalConfirm('ОЧИСТИТЬ ЧАТ?', 'История удалится.', async () => { state.aiMessages = []; state.aiPendingPhoto = null; try { await apiPost('/api/ai/clear-history'); } catch(e){} render(); }, 'ОЧИСТИТЬ'); }
 function actionAIPhotoOpen() { const input = document.getElementById('ai-photo-input'); if (input) input.click(); }
 function actionAIPhotoRemove() { state.aiPendingPhoto = null; render(); }
@@ -1475,6 +1462,7 @@ function handleAction(el) {
   else if (a === 'ai-clear') actionAIClear();
   else if (a === 'ai-photo-open') actionAIPhotoOpen();
   else if (a === 'ai-photo-remove') actionAIPhotoRemove();
+  else if (a === 'ai-copy') actionAICopy(parseInt(el.dataset.aiIdx,10));
   else if (a === 'present-build') actionPresentBuild();
   else if (a === 'choose-group') actionChooseGroup();
   else if (a === 'forget-group') actionForgetGroup();
