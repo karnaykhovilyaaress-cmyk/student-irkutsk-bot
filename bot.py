@@ -25,11 +25,6 @@ try:
 except Exception as _e:
     print(f"[PPTX] python-pptx not installed: {_e}")
     _PPTX_AVAILABLE = False
-try:
-    from PIL import Image
-    _PIL_AVAILABLE = True
-except Exception:
-    _PIL_AVAILABLE = False
 
 def clean_latex(text):
     if not text: return text
@@ -1035,9 +1030,8 @@ def _verify_webapp_init(init_data):
     return u.id if u else None
 
 
-
 # ═══════════════════════════════════════════════════════════════
-# PRESENTATIONS (новый редизайн, без картинок)
+# PRESENTATIONS — v2 (5 типов слайдов, без нумерации, надёжный JSON)
 # ═══════════════════════════════════════════════════════════════
 
 PRESENT_STYLES = {
@@ -1097,9 +1091,47 @@ PRESENT_STYLES = {
     },
 }
 
-def _pick_random_style(exclude: str = None) -> str:
-    keys = [k for k in PRESENT_STYLES.keys() if k != exclude]
-    return random.choice(keys)
+_last_used_style = {"id": None}
+
+def _pick_random_style() -> str:
+    keys = list(PRESENT_STYLES.keys())
+    # исключаем последний использованный, чтобы не повторялся
+    if _last_used_style["id"] and len(keys) > 1:
+        keys = [k for k in keys if k != _last_used_style["id"]]
+    chosen = random.choice(keys)
+    _last_used_style["id"] = chosen
+    return chosen
+
+
+def _extract_json(text: str) -> dict:
+    """Устойчивый парсер JSON: убирает markdown-обёртки, находит первую { ... }."""
+    if not text: raise ValueError("Пустой ответ")
+    s = text.strip()
+    # Убираем markdown-обёртки
+    s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s*```\s*$", "", s)
+    # Находим внешний JSON
+    start = s.find("{")
+    end = s.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("В ответе нет JSON: " + s[:200])
+    raw = s[start:end+1]
+    # Пробуем как есть
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    # Мягкая чистка: убираем trailing commas, заменяем "умные" кавычки
+    fixed = raw
+    fixed = fixed.replace("\u201c", '"').replace("\u201d", '"')
+    fixed = fixed.replace("\u2018", "'").replace("\u2019", "'")
+    fixed = re.sub(r",\s*([}\]])", r"\1", fixed)  # trailing commas
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError as e:
+        # Последний шанс: достаём отдельные поля регулярками
+        logging.warning(f"[JSON] не удалось распарсить: {e}; raw[:300]={raw[:300]}")
+        raise ValueError(f"GigaChat вернул невалидный JSON: {e}")
 
 
 async def _gigachat_json(prompt: str) -> dict:
@@ -1107,65 +1139,95 @@ async def _gigachat_json(prompt: str) -> dict:
     resp = await giga_client.achat(prompt)
     try: content = resp.choices[0].message.content
     except AttributeError: content = resp.messages[0].content[0].text if resp.messages else ""
-    content = content or ""
-    m = re.search(r"\{[\s\S]*\}", content)
-    if not m: raise ValueError("GigaChat не вернул JSON: " + content[:200])
-    return json.loads(m.group(0))
+    return _extract_json(content or "")
 
 
 async def _generate_slide_plan(topic: str, slides_count: int,
                                extra_context: str = "", user_wishes: str = "") -> dict:
-    base = f"""Ты опытный методист и профессиональный дизайнер презентаций.
-Сделай содержательную, логичную презентацию на тему: «{topic}».
-Всего слайдов: {slides_count}.
+    base = f"""Ты — опытный методист и дизайнер учебных презентаций.
+Сделай СОДЕРЖАТЕЛЬНУЮ презентацию на тему: «{topic}».
+Количество слайдов (не считая титульный): {slides_count}.
 """
     if extra_context:
-        base += f"\nИнформация от пользователя (обязательно используй эти факты):\n{extra_context[:4000]}\n"
+        base += f"\nФакты от пользователя (обязательно используй их):\n{extra_context[:4000]}\n"
     if user_wishes:
-        base += f"\nПожелания пользователя к стилю/содержанию:\n{user_wishes[:1500]}\n"
+        base += f"\nПожелания пользователя:\n{user_wishes[:1500]}\n"
 
     base += """
-Верни СТРОГО JSON без markdown-обёрток, в формате:
+Верни СТРОГО JSON (без markdown-обёрток). Формат:
 {
-  "title": "Заголовок титульного слайда (до 70 символов, БЕЗ кавычек)",
-  "subtitle": "Подзаголовок (1 строка, до 130 символов)",
+  "title": "Заголовок титульного (до 70 символов, без кавычек)",
+  "subtitle": "Подзаголовок (до 130 символов)",
   "slides": [
     {
-      "heading": "Короткий заголовок слайда (до 45 символов, БЕЗ кавычек)",
-      "bullets": [
-        "Пункт 1 — развёрнутый, 110-170 символов, с конкретным фактом/цифрой/примером",
-        "Пункт 2 — тоже развёрнутый",
-        "Пункт 3 — тоже развёрнутый",
-        "Пункт 4 — тоже развёрнутый"
-      ],
-      "image_hint": "Короткое описание картинки/схемы для вставки (до 90 символов)",
-      "notes": "Текст для докладчика: 2-3 полных предложения."
+      "type": "bullets",
+      "heading": "Заголовок слайда (до 50 символов)",
+      "bullets": ["пункт 1 — развёрнутый, 140-200 символов, с цифрой/датой/примером", "пункт 2", "пункт 3", "пункт 4", "пункт 5"],
+      "image_hint": "Описание картинки (до 90 символов)",
+      "notes": "2-3 предложения для докладчика"
     }
   ]
 }
 
+ТИПЫ СЛАЙДОВ (выбирай по СМЫСЛУ, а не подряд):
+- "bullets" — универсальный список + картинка. Для общего материала.
+- "flow" — цепочка этапов/причин/следствий. Для процессов, истории, эволюции.
+  Используй поля: "steps": [{"label":"Короткая метка (1-3 слова)","text":"Пояснение до 90 символов"}] — 3-4 шага.
+  Пример темы: "Как развивалась наука" → шаги: Античность → Средневековье → Новое время.
+- "compare" — сравнение двух вещей. Для "до/после", "плюсы/минусы", "А vs Б".
+  Используй поля: "left_title": "...", "right_title": "...", "left_items": ["пункт", "пункт", "пункт"], "right_items": ["пункт", "пункт", "пункт"].
+- "numbers" — 3-4 ключевые цифры/факта. Для статистики, дат, важных показателей.
+  Используй поля: "facts": [{"number":"617 000","label":"жителей Иркутска"}, {...}, {...}].
+- "cards" — 3 карточки-идеи. Для 3 главных мыслей, компонентов, принципов.
+  Используй поля: "cards": [{"icon":"1","title":"Заголовок","text":"Пояснение до 100 символов"}, {...}, {...}].
+
 ТРЕБОВАНИЯ:
-- Первый слайд — титульный, в slides его НЕ включай.
-- Ровно """ + str(slides_count - 1) + """ слайдов в массиве.
-- Каждый слайд: 4-5 пунктов, каждый пункт 110-170 символов, максимум конкретики (цифры, даты, имена, примеры).
-- Раскрывай тему по существу, без воды. НЕ используй формулировки "это важно", "данная тема актуальна".
-- НЕ дублируй содержание между слайдами. Каждый слайд — новый аспект темы.
-- Структура: введение/история → ключевые аспекты → примеры → итоги/выводы.
-- Только JSON, без пояснений.
+- Первый слайд — титульный, в "slides" его НЕ включай.
+- Ровно """ + str(slides_count) + """ слайдов в "slides".
+- РАСПРЕДЕЛЯЙ типы: примерно 40% bullets, 20% flow, 20% compare, 10% numbers, 10% cards. Варьируй.
+- В bullets — 5 пунктов по 140-200 символов с конкретными фактами (цифры, даты, имена, примеры).
+- В flow — 3-4 шага, каждый с короткой меткой и пояснением.
+- В compare — 3 пункта слева и 3 справа.
+- В numbers — 3 факта с крупной цифрой и подписью.
+- В cards — 3 карточки с заголовком и текстом.
+- Каждый слайд раскрывает НОВЫЙ аспект. Не повторяйся.
+- Пиши плотно, без воды: "это важно", "данная тема актуальна" — запрещено.
+- Все поля обязательные, кроме тех что не подходят к типу.
+- Только JSON. Без пояснений до и после.
 """
     return await _gigachat_json(base)
 
 
-def _add_rect(slide, x, y, w, h, color, line=False):
+# ─── Утилиты рисования ───
+def _add_rect(slide, x, y, w, h, color):
     shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
     shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
-    if not line: shp.line.fill.background()
-    shp.shadow.inherit = False
+    shp.line.fill.background(); shp.shadow.inherit = False
     return shp
 
 
 def _add_oval(slide, x, y, w, h, color):
     shp = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, w, h)
+    shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
+    shp.line.fill.background(); shp.shadow.inherit = False
+    return shp
+
+
+def _add_round_rect(slide, x, y, w, h, color, line_color=None):
+    shp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
+    shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
+    if line_color:
+        shp.line.color.rgb = RGBColor(*line_color); shp.line.width = Pt(1.25)
+    else:
+        shp.line.fill.background()
+    shp.shadow.inherit = False
+    try: shp.adjustments[0] = 0.08
+    except Exception: pass
+    return shp
+
+
+def _add_arrow(slide, x, y, w, h, color):
+    shp = slide.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW, x, y, w, h)
     shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
     shp.line.fill.background(); shp.shadow.inherit = False
     return shp
@@ -1183,7 +1245,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
 
     def rgb(t): return RGBColor(*t)
 
-    def add_text(slide, x, y, w, h, text, size=18, bold=False, color=None,
+    def add_text(slide, x, y, w, h, text, size=16, bold=False, color=None,
                  align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False,
                  spacing=None):
         c = color if color else style["text"]
@@ -1198,148 +1260,209 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         run.font.color.rgb = rgb(c); run.font.name = "DejaVu Sans"
         return tb
 
-    def add_bullets(slide, x, y, w, h, bullets, size=14):
+    def add_bullets(slide, x, y, w, h, bullets, size=13):
         if not bullets: return
         tf = slide.shapes.add_textbox(x, y, w, h).text_frame
         tf.word_wrap = True
         for j, b in enumerate(bullets[:6]):
             p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
-            p.space_after = Pt(12)
+            p.space_after = Pt(11)
             try: p.line_spacing = 1.15
             except Exception: pass
             run = p.add_run()
-            run.text = "▪  " + str(b)
+            run.text = "•  " + str(b)
             run.font.size = Pt(size)
             run.font.color.rgb = rgb(style["text"])
             run.font.name = "DejaVu Sans"
 
     def add_image_placeholder(slide, x, y, w, h, hint):
-        frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
-        frame.fill.solid(); frame.fill.fore_color.rgb = rgb(style["accent2"])
-        frame.line.color.rgb = rgb(style["accent"]); frame.line.width = Pt(1.5)
-        frame.shadow.inherit = False
-        try: frame.adjustments[0] = 0.06
-        except Exception: pass
-        inner_x = x + Inches(0.25); inner_y = y + Inches(0.25)
-        inner_w = w - Inches(0.5); inner_h = h - Inches(0.5)
-        inner = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, inner_x, inner_y, inner_w, inner_h)
-        inner.fill.solid()
-        try:
-            inner_c = tuple(int(v*0.97 + 255*0.03) for v in style["accent2"])
-            inner.fill.fore_color.rgb = rgb(inner_c)
-        except Exception:
-            inner.fill.fore_color.rgb = rgb(style["bg"])
-        inner.line.fill.background(); inner.shadow.inherit = False
-        tf = inner.text_frame; tf.word_wrap = True
+        _add_round_rect(slide, x, y, w, h, style["accent2"], style["accent"])
+        ix = x + Inches(0.2); iy = y + Inches(0.2)
+        iw = w - Inches(0.4); ih = h - Inches(0.4)
+        _add_round_rect(slide, ix, iy, iw, ih, style["bg"])
+        tf = slide.shapes.add_textbox(ix, iy, iw, ih).text_frame
+        tf.word_wrap = True
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-        r1 = p.add_run(); r1.text = "🖼"
-        r1.font.size = Pt(44); r1.font.bold = True
-        r1.font.color.rgb = rgb(style["accent"])
+        r = p.add_run(); r.text = "МЕСТО ДЛЯ ИЛЛЮСТРАЦИИ"
+        r.font.size = Pt(12); r.font.bold = True; r.font.color.rgb = rgb(style["accent"])
         p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
-        p2.space_before = Pt(8)
-        r2 = p2.add_run(); r2.text = "ВСТАВЬ СЮДА"
-        r2.font.size = Pt(13); r2.font.bold = True
-        r2.font.color.rgb = rgb(style["text"])
-        p3 = tf.add_paragraph(); p3.alignment = PP_ALIGN.CENTER
-        r3 = p3.add_run(); r3.text = hint or "Иллюстрация к слайду"
-        r3.font.size = Pt(11); r3.font.italic = True
-        r3.font.color.rgb = rgb(style["text_soft"])
+        r2 = p2.add_run(); r2.text = hint or "Схема или изображение"
+        r2.font.size = Pt(11); r2.font.italic = True; r2.font.color.rgb = rgb(style["text_soft"])
 
-    def _decor(slide, kind):
+    def _decor(slide):
         W = prs.slide_width; H = prs.slide_height
-        if kind == "rect_thin":
-            _add_rect(slide, 0, 0, Inches(0.25), H, style["accent"])
-            _add_rect(slide, 0, 0, W, Inches(0.08), style["accent"])
-        elif kind == "circle_big":
-            _add_oval(slide, Inches(-1.2), Inches(-1.2), Inches(3.5), Inches(3.5), style["accent"])
-            _add_oval(slide, Inches(12.3), Inches(6.5), Inches(2.2), Inches(2.2), style["accent2"])
-        elif kind == "line_only":
-            _add_rect(slide, Inches(0.6), Inches(0.5), Inches(0.05), Inches(1.2), style["accent"])
-        elif kind == "glow_line":
-            _add_rect(slide, 0, Inches(1.65), W, Inches(0.02), style["accent"])
-            _add_oval(slide, Inches(12.3), Inches(-0.8), Inches(2.2), Inches(2.2), style["accent2"])
-        elif kind == "big_number":
-            _add_rect(slide, Inches(0.6), 0, Inches(0.4), H, style["accent"])
-        elif kind == "neon_line":
+        if SHAPE == "rect_thin":
+            _add_rect(slide, 0, 0, Inches(0.22), H, style["accent"])
+            _add_rect(slide, 0, 0, W, Inches(0.07), style["accent"])
+        elif SHAPE == "circle_big":
+            _add_oval(slide, Inches(-1.0), Inches(-1.0), Inches(3.0), Inches(3.0), style["accent"])
+            _add_oval(slide, Inches(12.5), Inches(6.7), Inches(2.0), Inches(2.0), style["accent2"])
+        elif SHAPE == "line_only":
+            _add_rect(slide, Inches(0.6), Inches(0.5), Inches(0.05), Inches(1.0), style["accent"])
+        elif SHAPE == "glow_line":
+            _add_rect(slide, 0, Inches(1.55), W, Inches(0.02), style["accent"])
+            _add_oval(slide, Inches(12.5), Inches(-0.7), Inches(2.0), Inches(2.0), style["accent2"])
+        elif SHAPE == "big_number":
+            _add_rect(slide, Inches(0.6), 0, Inches(0.35), H, style["accent"])
+        elif SHAPE == "neon_line":
             _add_rect(slide, 0, 0, W, Inches(0.05), style["accent"])
-            _add_rect(slide, 0, Inches(1.7), W, Inches(0.03), style["accent2"])
+            _add_rect(slide, 0, Inches(1.6), W, Inches(0.03), style["accent2"])
 
-    # ══════════ ТИТУЛЬНЫЙ СЛАЙД ══════════
+    def _header(slide, heading):
+        text = heading.upper() if CASE == "upper" else heading
+        add_text(slide, Inches(1.0), Inches(0.55), Inches(12.0), Inches(0.95),
+                 text, size=26, bold=True,
+                 color=style["accent"] if SHAPE in ("glow_line", "neon_line") else style["text"])
+        _add_rect(slide, Inches(1.0), Inches(1.55), Inches(1.8), Inches(0.05), style["accent"])
+
+    # ═════════ ТИТУЛЬНЫЙ ═════════
     s0 = prs.slides.add_slide(blank)
     _add_rect(s0, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
-    _add_rect(s0, 0, 0, Inches(4.5), prs.slide_height, style["accent"])
-    _add_oval(s0, Inches(11.0), Inches(5.0), Inches(3.5), Inches(3.5), style["accent2"])
-    _add_oval(s0, Inches(10.0), Inches(6.0), Inches(1.5), Inches(1.5), style["accent"])
-    add_text(s0, Inches(5.2), Inches(2.0), Inches(7.5), Inches(3.0),
+    _add_rect(s0, 0, 0, Inches(4.7), prs.slide_height, style["accent"])
+    _add_oval(s0, Inches(11.2), Inches(5.2), Inches(3.2), Inches(3.2), style["accent2"])
+    _add_oval(s0, Inches(10.3), Inches(6.1), Inches(1.4), Inches(1.4), style["accent"])
+    add_text(s0, Inches(5.4), Inches(2.1), Inches(7.4), Inches(2.6),
              plan.get("title", "Презентация"), size=40, bold=True,
-             color=style["title_text"],
-             align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP)
-    if plan.get("subtitle"):
-        add_text(s0, Inches(5.2), Inches(4.9), Inches(7.5), Inches(1.2),
-                 plan["subtitle"], size=16,
-                 color=style["accent2"], align=PP_ALIGN.LEFT)
-    add_text(s0, Inches(0.6), Inches(6.6), Inches(3.5), Inches(0.6),
-             "STUDENT IRK", size=14, bold=True,
              color=style["title_text"], align=PP_ALIGN.LEFT)
+    if plan.get("subtitle"):
+        add_text(s0, Inches(5.4), Inches(4.85), Inches(7.4), Inches(1.1),
+                 plan["subtitle"], size=15, color=style["accent2"])
 
     slides = plan.get("slides", [])
-    total = len(slides)
-    topic_label = (plan.get("title") or "")[:60]
 
-    # ══════════ КОНТЕНТНЫЕ СЛАЙДЫ ══════════
-    for i, sl in enumerate(slides):
+    # ═════════ КОНТЕНТНЫЕ ═════════
+    for idx, sl in enumerate(slides):
         s = prs.slides.add_slide(blank)
         _add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
-        _decor(s, SHAPE)
+        _decor(s)
+        _header(s, sl.get("heading", "Слайд"))
 
-        heading = sl.get("heading", f"Слайд {i+1}")
-        if CASE == "upper":
-            heading = heading.upper()
-        add_text(s, Inches(1.05), Inches(0.55), Inches(11.0), Inches(1.0),
-                 heading, size=28, bold=True,
-                 color=style["accent"] if SHAPE in ("glow_line", "neon_line") else style["text"])
-        _add_rect(s, Inches(1.05), Inches(1.55), Inches(2.0), Inches(0.05), style["accent"])
-
-        add_text(s, Inches(11.8), Inches(0.55), Inches(1.2), Inches(0.6),
-                 f"{i+1:02d}/{total:02d}", size=13, bold=True,
-                 color=style["accent"], align=PP_ALIGN.RIGHT)
-
-        bullets = sl.get("bullets", [])
-        hint = sl.get("image_hint", "")
-
-        if LAYOUT == "image_right":
-            add_bullets(s, Inches(1.05), Inches(2.05), Inches(6.6), Inches(4.7), bullets, size=13)
-            add_image_placeholder(s, Inches(7.9), Inches(2.05), Inches(4.85), Inches(4.5), hint)
-        elif LAYOUT == "image_left":
-            add_image_placeholder(s, Inches(0.9), Inches(2.05), Inches(4.6), Inches(4.5), hint)
-            add_bullets(s, Inches(5.9), Inches(2.05), Inches(6.9), Inches(4.7), bullets, size=13)
-        else:
-            add_bullets(s, Inches(1.05), Inches(2.05), Inches(6.5), Inches(4.7), bullets, size=13)
-            add_image_placeholder(s, Inches(7.8), Inches(2.05), Inches(4.95), Inches(4.5), hint)
-
-        add_text(s, Inches(1.05), Inches(7.0), Inches(8.0), Inches(0.4),
-                 topic_label, size=9, color=style["text_soft"])
-        add_text(s, Inches(11.8), Inches(7.0), Inches(1.2), Inches(0.4),
-                 f"стр. {i+1}/{total}", size=9, bold=True,
-                 color=style["text_soft"], align=PP_ALIGN.RIGHT)
-
+        stype = (sl.get("type") or "bullets").lower()
         notes = sl.get("notes")
         if notes:
             try: s.notes_slide.notes_text_frame.text = str(notes)
             except Exception: pass
 
-    # ══════════ ФИНАЛЬНЫЙ СЛАЙД ══════════
+        # ─── bullets ───
+        if stype == "bullets":
+            bullets = sl.get("bullets", [])
+            hint = sl.get("image_hint", "")
+            if LAYOUT == "image_right":
+                add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9), bullets, size=13)
+                add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5), hint)
+            elif LAYOUT == "image_left":
+                add_image_placeholder(s, Inches(0.9), Inches(2.0), Inches(4.6), Inches(4.5), hint)
+                add_bullets(s, Inches(5.9), Inches(2.0), Inches(6.9), Inches(4.9), bullets, size=13)
+            else:
+                add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.5), Inches(4.9), bullets, size=13)
+                add_image_placeholder(s, Inches(7.8), Inches(2.0), Inches(4.95), Inches(4.5), hint)
+
+        # ─── flow ───
+        elif stype == "flow":
+            steps = sl.get("steps", [])[:4]
+            n = len(steps) if steps else 1
+            total_w = Inches(12.0)
+            gap = Inches(0.55)
+            box_w = int((total_w - gap * (n - 1)) / n) if n > 1 else total_w
+            box_h = Inches(2.6)
+            y0 = Inches(2.7)
+            x0 = Inches(0.7)
+            for i, stp in enumerate(steps):
+                bx = x0 + i * (box_w + gap)
+                _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"], style["accent"])
+                add_text(s, bx + Inches(0.15), y0 + Inches(0.25), box_w - Inches(0.3), Inches(0.7),
+                         stp.get("label", f"Шаг {i+1}"), size=16, bold=True,
+                         color=style["accent"], align=PP_ALIGN.CENTER)
+                add_text(s, bx + Inches(0.15), y0 + Inches(1.0), box_w - Inches(0.3), Inches(1.5),
+                         stp.get("text", ""), size=11, color=style["text"],
+                         align=PP_ALIGN.CENTER, spacing=1.1)
+                if i < n - 1:
+                    _add_arrow(s, bx + box_w + Inches(0.06), y0 + box_h / 2 - Inches(0.22),
+                               gap - Inches(0.12), Inches(0.44), style["accent"])
+
+        # ─── compare ───
+        elif stype == "compare":
+            lt = sl.get("left_title", "A"); rt = sl.get("right_title", "B")
+            li = sl.get("left_items", [])[:4]; ri = sl.get("right_items", [])[:4]
+            col_w = Inches(5.7); col_h = Inches(4.5)
+            y0 = Inches(2.1)
+            # left
+            _add_round_rect(s, Inches(0.75), y0, col_w, col_h, style["accent2"])
+            add_text(s, Inches(0.9), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
+                     lt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
+            add_bullets(s, Inches(0.95), y0 + Inches(0.95), col_w - Inches(0.4), col_h - Inches(1.1), li, size=11)
+            # right
+            _add_round_rect(s, Inches(6.85), y0, col_w, col_h, style["bg"], style["accent"])
+            add_text(s, Inches(7.0), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
+                     rt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
+            add_bullets(s, Inches(7.05), y0 + Inches(0.95), col_w - Inches(0.4), col_h - Inches(1.1), ri, size=11)
+
+        # ─── numbers ───
+        elif stype == "numbers":
+            facts = sl.get("facts", [])[:4]
+            n = len(facts) if facts else 1
+            gap = Inches(0.4)
+            box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
+            y0 = Inches(2.6)
+            box_h = Inches(3.4)
+            x0 = Inches(0.7)
+            for i, f in enumerate(facts):
+                bx = x0 + i * (box_w + gap)
+                _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"])
+                add_text(s, bx + Inches(0.1), y0 + Inches(0.4), box_w - Inches(0.2), Inches(1.6),
+                         f.get("number", "—"), size=40, bold=True,
+                         color=style["accent"], align=PP_ALIGN.CENTER)
+                add_text(s, bx + Inches(0.15), y0 + Inches(2.1), box_w - Inches(0.3), Inches(1.1),
+                         f.get("label", ""), size=12, color=style["text"],
+                         align=PP_ALIGN.CENTER, spacing=1.1)
+
+        # ─── cards ───
+        elif stype == "cards":
+            cards = sl.get("cards", [])[:4]
+            n = len(cards) if cards else 1
+            gap = Inches(0.4)
+            box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
+            y0 = Inches(2.5)
+            box_h = Inches(3.6)
+            x0 = Inches(0.7)
+            for i, c in enumerate(cards):
+                bx = x0 + i * (box_w + gap)
+                _add_round_rect(s, bx, y0, box_w, box_h, style["bg"], style["accent"])
+                # «Иконка» — круг с номером или символом
+                icon_size = Inches(0.9)
+                icon_x = bx + (box_w - icon_size) / 2
+                icon_y = y0 + Inches(0.35)
+                _add_oval(s, icon_x, icon_y, icon_size, icon_size, style["accent"])
+                add_text(s, icon_x, icon_y, icon_size, icon_size,
+                         str(c.get("icon", str(i+1))), size=22, bold=True,
+                         color=style["title_text"], align=PP_ALIGN.CENTER,
+                         anchor=MSO_ANCHOR.MIDDLE)
+                add_text(s, bx + Inches(0.15), y0 + Inches(1.5), box_w - Inches(0.3), Inches(0.8),
+                         c.get("title", ""), size=14, bold=True, color=style["text"],
+                         align=PP_ALIGN.CENTER)
+                add_text(s, bx + Inches(0.15), y0 + Inches(2.25), box_w - Inches(0.3), Inches(1.2),
+                         c.get("text", ""), size=10, color=style["text_soft"],
+                         align=PP_ALIGN.CENTER, spacing=1.1)
+
+        # ─── fallback: если пришёл неизвестный тип, рисуем bullets ───
+        else:
+            add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9),
+                        sl.get("bullets", []), size=13)
+            add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5),
+                                  sl.get("image_hint", ""))
+
+    # ═════════ ФИНАЛЬНЫЙ ═════════
     sN = prs.slides.add_slide(blank)
     _add_rect(sN, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
     _add_rect(sN, 0, 0, prs.slide_width, Inches(0.15), style["accent"])
-    _add_oval(sN, Inches(-1.2), Inches(4.8), Inches(3.5), Inches(3.5), style["accent"])
-    _add_oval(sN, Inches(11.0), Inches(-1.0), Inches(3.0), Inches(3.0), style["accent2"])
+    _add_oval(sN, Inches(-1.0), Inches(4.9), Inches(3.0), Inches(3.0), style["accent"])
+    _add_oval(sN, Inches(11.2), Inches(-0.9), Inches(2.6), Inches(2.6), style["accent2"])
     add_text(sN, Inches(1), Inches(3.0), Inches(11.3), Inches(1.5),
-             "СПАСИБО ЗА ВНИМАНИЕ", size=42, bold=True,
+             "СПАСИБО ЗА ВНИМАНИЕ", size=38, bold=True,
              color=style["title_text"], align=PP_ALIGN.CENTER)
-    add_text(sN, Inches(1), Inches(4.4), Inches(11.3), Inches(0.6),
-             "Вопросы?", size=20, italic=True,
+    add_text(sN, Inches(1), Inches(4.5), Inches(11.3), Inches(0.6),
+             "Вопросы?", size=18, italic=True,
              color=style["accent"], align=PP_ALIGN.CENTER)
 
     buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
@@ -1365,11 +1488,17 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
             user_id, f"Собираю презентацию «{topic}»\nСтиль: {style_name}")
     except Exception: pass
 
+    # показываем ход генерации
+    if status_msg:
+        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
+            text=f"Стиль: {style_name}\nСоставляю структуру...")
+        except Exception: pass
+
     plan = await _generate_slide_plan(topic, slides_count, user_info, user_wishes)
 
     if status_msg:
         try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
-            text=f"Стиль: {style_name}\nСобираю PPTX...")
+            text=f"Стиль: {style_name}\nРисую слайды...")
         except Exception: pass
 
     pptx_bytes = _build_pptx(plan, style_id)
@@ -1408,7 +1537,7 @@ async def api_present(request):
     date_str = _now_irkutsk().strftime("%Y-%m-%d_%H-%M")
     try:
         doc = BufferedInputFile(pptx_bytes, filename=f"presentation_{date_str}.pptx")
-        await bot.send_document(user_id, doc, caption="Твоя презентация готова.")
+        await bot.send_document(user_id, doc, caption="Твоя презентация готова. Скачай её и открой в PowerPoint / WPS / Google Slides.")
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -1487,8 +1616,6 @@ async def api_me(request):
     notif_settings = get_notify_settings(user_id)
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     att_stats = attendance_stats(user_id)
-    full = " ".join(p for p in [user_obj.first_name or "", user_obj.last_name or ""] if p).strip()
-    display_name = full or "Студент"
     return web.json_response({"user_id": user_id, "is_admin": user_id == ADMIN_ID,
         "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id), "tasks_active": active, "tasks_done": done,
@@ -1501,8 +1628,7 @@ async def api_me(request):
         "attendance_was": att_stats["was"], "attendance_missed": att_stats["missed"],
         "attendance_sick": att_stats["sick"], "attendance_excused": att_stats["excused"],
         "attendance_total": sum(att_stats.values()), "username": user_obj.username,
-        "first_name": user_obj.first_name, "last_name": user_obj.last_name,
-        "display_name": display_name})
+        "first_name": user_obj.first_name, "last_name": user_obj.last_name})
 
 async def api_groups(request): return web.json_response({"groups": GROUPS})
 
@@ -2491,9 +2617,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
-
-
