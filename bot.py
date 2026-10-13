@@ -136,9 +136,17 @@ giga_client = None
 if GIGACHAT_CREDENTIALS:
     try:
         from gigachat import GigaChat
-        giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS,
-            base_url="https://api.giga.chat/v1", scope="GIGACHAT_API_PERS",
-            model="GigaChat-2-Max", timeout=600)
+        giga_client = GigaChat(
+            credentials=GIGACHAT_CREDENTIALS,
+            base_url="https://api.giga.chat/v1",
+            scope="GIGACHAT_API_PERS",
+            model="GigaChat-2-Max",
+            timeout=600,
+            # botxost проксирует HTTPS с самоподписанным корнем,
+            # иначе получаем: [SSL: CERTIFICATE_VERIFY_FAILED].
+            # Отключено ТОЛЬКО для GigaChat — для Telegram и OCR SSL остаётся включён.
+            verify_ssl_certs=False,
+        )
     except Exception as e:
         logging.error(f"GigaChat ошибка: {e}")
 
@@ -1280,8 +1288,8 @@ def _validate_plan(plan: dict, topic: str) -> list:
     if not (plan.get("title") or "").strip():
         errors.append("Нет заголовка")
     slides = plan.get("slides") or []
-    if len(slides) < 3:
-        errors.append("Меньше 3 слайдов")
+    if len(slides) < 2:
+        errors.append("Меньше 2 слайдов")
     for i, s in enumerate(slides, 2):
         h = (s.get("heading") or "").strip()
         if not h: errors.append(f"Слайд {i}: нет заголовка")
@@ -1289,13 +1297,13 @@ def _validate_plan(plan: dict, topic: str) -> list:
         t = s.get("type", "bullets")
         if t == "bullets":
             bl = s.get("bullets") or []
-            if len(bl) < 3: errors.append(f"Слайд {i}: <3 пунктов")
+            if len(bl) < 2: errors.append(f"Слайд {i}: <2 пунктов")
             for b in bl:
-                if len(b) > 280: errors.append(f"Слайд {i}: пункт >280 символов")
+                if len(b) > 400: errors.append(f"Слайд {i}: пункт >400 символов")
         elif t == "flow" and len(s.get("steps") or []) < 2:
             errors.append(f"Слайд {i}: <2 шагов")
         elif t == "compare":
-            if len(s.get("left_items") or []) < 2 or len(s.get("right_items") or []) < 2:
+            if len(s.get("left_items") or []) < 1 or len(s.get("right_items") or []) < 1:
                 errors.append(f"Слайд {i}: compare неполный")
         elif t == "chart":
             if not s.get("categories") or not s.get("values"):
@@ -1306,63 +1314,81 @@ def _validate_plan(plan: dict, topic: str) -> list:
 async def _generate_slide_plan(topic: str, slides_count: int,
                                extra_context: str = "", user_wishes: str = "",
                                meta: dict = None) -> dict:
-    base = f"""Ты — опытный методист и дизайнер учебных презентаций для студентов вузов.
-Сделай СОДЕРЖАТЕЛЬНУЮ академическую презентацию на тему: «{topic}».
-Количество содержательных слайдов (без титула, содержания, источников и финала): {slides_count}.
+    """Строит план презентации СТРОГО из материала пользователя.
+
+    ИИ НЕ добавляет собственных фактов, цифр, имён, дат и источников.
+    Если данных мало — вернёт сколько хватает, остальное оставит пустым.
+    """
+    if not extra_context or len(extra_context.strip()) < 40:
+        raise ValueError(
+            "Материал пуст или слишком короткий. "
+            "Вставь текст/конспект по теме (минимум 40 символов) — я оформлю его в презентацию."
+        )
+
+    base = f"""Ты — оформитель учебных презентаций. Твоя задача — СТРУКТУРИРОВАТЬ материал пользователя, а НЕ дополнять его.
+
+ТЕМА (только для заголовка): «{topic}»
+ЖЕЛАЕМОЕ ЧИСЛО СОДЕРЖАТЕЛЬНЫХ СЛАЙДОВ: {slides_count}
+
+═══ ГЛАВНОЕ ПРАВИЛО ═══
+Ты ОБЯЗАН использовать ТОЛЬКО факты, цифры, даты, имена, определения и цитаты из блока «МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ» ниже.
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО:
+  • Придумывать цифры, проценты, даты, статистику.
+  • Придумывать имена людей, названия организаций, стран, городов.
+  • Придумывать названия книг, статей, ГОСТов, ссылки, DOI, ISBN.
+  • Добавлять общеизвестные факты, которых нет в материале (даже если они «правда»).
+  • Формулировать выводы, которых нет в материале явно или по смыслу.
+
+Если какого-то пункта нет в материале — оставь поле пустым или используй меньше пунктов.
+Лучше 3 слайда с точным материалом, чем 10 с выдуманным.
+
+═══ МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ ═══
+{extra_context[:12000]}
+═══ КОНЕЦ МАТЕРИАЛА ═══
 """
-    if meta:
-        base += f"\nДанные студента: {json.dumps(meta, ensure_ascii=False)}\n"
-    if extra_context:
-        base += f"\nФакты от пользователя (обязательно используй):\n{extra_context[:4000]}\n"
     if user_wishes:
-        base += f"\nПожелания пользователя:\n{user_wishes[:1500]}\n"
+        base += f"\nПожелания пользователя по структуре/акцентам:\n{user_wishes[:1500]}\n"
 
     base += """
-Верни СТРОГО JSON (без markdown-обёрток). Формат:
+Верни СТРОГО JSON (без markdown-обёрток):
 {
   "title": "Заголовок титульного (до 70 символов)",
   "subtitle": "Подзаголовок (до 130 символов)",
-  "outline": ["Введение", "Основные понятия", "Практика", "Выводы"],
+  "outline": ["Раздел 1", "Раздел 2", "..."],
   "slides": [
     {
       "type": "bullets|flow|compare|numbers|cards|chart",
       "heading": "Заголовок слайда (до 50 символов)",
-      "bullets": ["пункт 1 — развёрнутый, 140-200 символов, с цифрой/датой/примером", "..."],
-      "image_hint": "Что показать на иллюстрации (до 90 символов)",
-      "notes": "2-3 предложения для докладчика",
-      "steps": [{"label":"Метка","text":"Пояснение"}],
+      "bullets": ["пункт из материала", "..."],
+      "image_hint": "Что показать (по желанию)",
+      "notes": "Заметка докладчику (только по материалу)",
+      "steps": [{"label":"Метка","text":"Пояснение из материала"}],
       "left_title": "A", "right_title": "B",
-      "left_items": ["..."], "right_items": ["..."],
-      "facts": [{"number":"617 000","label":"жителей"}],
-      "cards": [{"icon":"1","title":"Заголовок","text":"Пояснение"}],
+      "left_items": ["из материала"], "right_items": ["из материала"],
+      "facts": [{"number":"только из материала","label":"из материала"}],
+      "cards": [{"icon":"1","title":"Заголовок","text":"из материала"}],
       "chart_type": "bar|pie|line",
-      "categories": ["2019","2020","2021"],
-      "values": [10, 25, 40],
-      "unit": "тыс. чел."
+      "categories": ["из материала"],
+      "values": [числа только из материала],
+      "unit": "единица из материала"
     }
   ],
   "sources": [
-    {"title": "Название книги/статьи", "author": "Автор", "year": "2023", "publisher": "Изд-во"}
+    {"title": "ТОЛЬКО если источник явно указан в материале", "author": "...", "year": "...", "publisher": "..."}
   ]
 }
 
-ТИПЫ СЛАЙДОВ (выбирай по СМЫСЛУ, не подряд):
-- "bullets" — список + картинка. 40% слайдов.
-- "flow" — 3-4 шага/этапа процесса (поле "steps"). 20%.
-- "compare" — сравнение A vs B (поля left_*, right_*). 15%.
-- "numbers" — 3-4 ключевые цифры (поле "facts"). 10%.
-- "cards" — 3 карточки-идеи (поле "cards"). 10%.
-- "chart" — диаграмма (bar/pie/line, categories + values + unit). 5%.
-
-ТРЕБОВАНИЯ:
-- Первый слайд титульный — в "slides" его НЕ включай.
-- Ровно """ + str(slides_count) + """ слайдов в "slides".
-- Каждый слайд раскрывает НОВЫЙ аспект. Без повторов.
-- Пиши плотно, без воды. Запрещено: "это важно", "данная тема актуальна".
-- "sources": 5-8 источников. ТОЛЬКО реальные книги/статьи/ГОСТы, в которых ты уверен.
-  Если не уверен — НЕ включай. Лучше 3 реальных, чем 8 выдуманных.
-- Все поля обязательные, кроме тех что не подходят к типу.
-- Только JSON. Без пояснений до и после.
+ТРЕБОВАНИЯ К СТРУКТУРЕ:
+- Количество слайдов — ровно столько, сколько позволяет материал. Если материала мало — меньше. МАКСИМУМ = """ + str(slides_count) + """.
+- Первый содержательный слайд — обзор/введение (из материала).
+- Последний — вывод (только если вывод есть в материале явно).
+- Распределяй типы: bullets (40%), flow (20%), compare (15%), numbers (10%), cards (10%), chart (5%) — но ТОЛЬКО если материал это позволяет. Иначе — bullets.
+- bullets: 3-5 пунктов, каждый — фраза из материала (не переписывай красиво, сохраняй суть).
+- numbers: только если в материале есть минимум 3 числовых факта.
+- chart: только если в материале есть явные категории + значения.
+- sources: только источники, ЯВНО упомянутые в материале (например, «по данным Росстата 2023», «учебник Иванова»). Если источников нет — верни пустой массив [].
+- Никаких «это важно», «данная тема актуальна», «в современном мире» — если этого нет в материале.
+- Только JSON. Без пояснений.
 """
     return await _gigachat_json(base)
 
@@ -1518,7 +1544,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     if plan.get("subtitle"):
         add_text(s0, Inches(5.4), Inches(4.85), Inches(7.4), Inches(1.1),
                  plan["subtitle"], size=15, color=style["accent2"])
-    # Мета студента на титуле
     meta_line = []
     if plan.get("author"): meta_line.append(str(plan["author"]))
     if plan.get("group"): meta_line.append(f"группа {plan['group']}")
@@ -1714,6 +1739,11 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
         raise RuntimeError("python-pptx не установлена")
     if giga_client is None:
         raise RuntimeError("GigaChat не настроен")
+    if not user_info or len(user_info.strip()) < 40:
+        raise ValueError(
+            "Материал пуст или слишком короткий. "
+            "Вставь текст/конспект по теме (минимум 40 символов) — я оформлю его в презентацию."
+        )
 
     if not style_id or style_id == "random":
         style_id = _pick_random_style()
@@ -1736,7 +1766,7 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
         except Exception:
             pass
 
-    await _edit(f"Стиль: {style_name}\nСоставляю структуру...")
+    await _edit(f"Стиль: {style_name}\nСоставляю структуру из твоего материала...")
 
     last_err = None
     plan = None
@@ -1744,19 +1774,27 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
         try:
             extra = user_info
             if attempt == 1 and last_err:
-                extra += f"\n\nПРЕДЫДУЩАЯ ОШИБКА, ИСПРАВЬ: {last_err}"
+                extra += f"\n\nПРЕДЫДУЩАЯ ОШИБКА, ИСПРАВЬ (только структуру, факты не трогай): {last_err}"
             plan = await _generate_slide_plan(topic, slides_count, extra, user_wishes, meta)
             errors = _validate_plan(plan, topic)
             if len(errors) <= 1:
                 break
             last_err = "; ".join(errors[:3])
             logging.warning(f"[PLAN] попытка {attempt+1}: {last_err}")
+        except ValueError:
+            raise
         except asyncio.TimeoutError:
-            last_err = "Таймаут GigaChat"
+            last_err = "Таймаут GigaChat (попробуй ещё раз или сократи материал)"
         except Exception as e:
             last_err = str(e)
     if plan is None:
         raise RuntimeError(f"Не удалось составить план: {last_err}")
+
+    if meta:
+        plan.setdefault("author", meta.get("author"))
+        plan.setdefault("group", meta.get("group"))
+        plan.setdefault("teacher", meta.get("teacher"))
+        plan.setdefault("year", meta.get("year"))
 
     await _edit(f"Стиль: {style_name}\nРисую слайды...")
     pptx_bytes = await asyncio.to_thread(_build_pptx, plan, style_id)
@@ -1779,12 +1817,18 @@ async def api_present(request):
     if not topic:
         return web.json_response({"error": "empty_topic",
                                   "message": "Введи тему презентации"}, status=400)
+    if len(user_info) < 40:
+        return web.json_response({
+            "error": "empty_material",
+            "message": "Вставь материал по теме (минимум 40 символов). "
+                       "Презентация собирается ТОЛЬКО из твоего текста — ИИ не добавляет факты."
+        }, status=400)
     if len(topic) > 300: topic = topic[:300]
-    if len(user_info) > 5000: user_info = user_info[:5000]
+    if len(user_info) > 20000: user_info = user_info[:20000]
     if len(user_wishes) > 2000: user_wishes = user_wishes[:2000]
     try: slides_count = int(body.get("slides", 10))
     except: slides_count = 10
-    slides_count = max(5, min(20, slides_count))
+    slides_count = max(3, min(20, slides_count))
     style_id = (body.get("style") or "random").strip()
 
     meta = {
@@ -1798,6 +1842,8 @@ async def api_present(request):
     try:
         pptx_bytes = await generate_presentation(
             user_id, topic, slides_count, style_id, user_info, user_wishes, meta)
+    except ValueError as e:
+        return web.json_response({"error": "empty_material", "message": str(e)}, status=400)
     except Exception as e:
         logging.exception("[PRESENT]")
         return web.json_response({"error": "present_failed", "message": str(e)}, status=500)
@@ -2833,7 +2879,6 @@ async def cmd_restore(message: Message):
         try:
             db_abs = os.path.abspath(DB_PATH)
 
-            # 1. Бэкап текущей (с WAL/SHM)
             if os.path.isfile(db_abs):
                 bak = db_abs + ".before_restore_" + _now_irkutsk().strftime('%Y%m%d_%H%M%S')
                 shutil.copy2(db_abs, bak)
@@ -2842,29 +2887,24 @@ async def cmd_restore(message: Message):
                         try: shutil.copy2(db_abs + ext, bak + ext)
                         except: pass
 
-            # 2. Скачать во временный файл
             os.makedirs(os.path.dirname(db_abs) or ".", exist_ok=True)
             tmp_new = db_abs + ".incoming"
             file = await bot.get_file(message.document.file_id)
             await bot.download_file(file.file_path, tmp_new)
 
-            # 3. Проверка целостности + наличия таблицы users
             ok, err = _check_db_integrity(tmp_new)
             if not ok:
                 try: os.remove(tmp_new)
                 except: pass
                 await message.answer(f"Файл не прошёл проверку: {err}"); return
 
-            # 4. Удалить WAL/SHM старой базы ДО замены
             for ext in ("-wal", "-shm"):
                 if os.path.isfile(db_abs + ext):
                     try: os.remove(db_abs + ext)
                     except: pass
 
-            # 5. Атомарная замена
             os.replace(tmp_new, db_abs)
 
-            # 6. Переинициализация
             init_db()
             await message.answer(
                 f"База восстановлена.\n"
@@ -3028,7 +3068,7 @@ async def change_worker():
 
 
 async def cleanup_cache_worker():
-    """Раз в сутки чистит старый кэш расписания и старые снапшоты."""
+    """Раз в сутки чистит старый кэш расписания."""
     while True:
         try:
             await asyncio.sleep(3600)
@@ -3062,7 +3102,6 @@ async def autobackup_worker():
                 try:
                     _make_db_snapshot(dst_path)
                     logging.info(f"[AUTOBACKUP] {dst_path}")
-                    # Ротация
                     cutoff = now - timedelta(days=14)
                     for f in os.listdir(backup_dir):
                         if not f.startswith("auto_"): continue
