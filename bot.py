@@ -11,6 +11,11 @@ from aiogram.types import (Message, InlineKeyboardMarkup, InlineKeyboardButton,
     CallbackQuery, FSInputFile, WebAppInfo, BufferedInputFile)
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 try:
+    from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
+except Exception:
+    class TelegramForbiddenError(Exception): pass
+    class TelegramBadRequest(Exception): pass
+try:
     from fpdf import FPDF
     _FPDF_AVAILABLE = True
 except Exception:
@@ -25,6 +30,15 @@ try:
 except Exception as _e:
     print(f"[PPTX] python-pptx not installed: {_e}")
     _PPTX_AVAILABLE = False
+
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    _MATPLOTLIB_AVAILABLE = True
+except Exception:
+    _MATPLOTLIB_AVAILABLE = False
+
 
 def clean_latex(text):
     if not text: return text
@@ -63,6 +77,23 @@ def clean_latex(text):
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
+
+def render_latex_png(latex: str, dpi: int = 220) -> bytes | None:
+    if not _MATPLOTLIB_AVAILABLE or not latex: return None
+    try:
+        fig = plt.figure(figsize=(0.01, 0.01))
+        fig.text(0, 0, f"${latex}$", fontsize=16)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
+                    transparent=True, pad_inches=0.06)
+        plt.close(fig)
+        data = buf.getvalue()
+        return data if len(data) > 200 else None
+    except Exception as e:
+        logging.debug(f"[LATEX] {latex!r}: {e}")
+        return None
+
+
 def clean_markdown(text):
     if not text: return text
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
@@ -86,15 +117,17 @@ def clean_markdown(text):
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
+
 TOKEN = os.getenv("BOT_TOKEN", "")
 GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_KEY", "")
 YANDEX_VISION_API_KEY = os.getenv("YANDEX_VISION_API_KEY", "")
 YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
-ADMIN_ID = 6014557174
-ADMIN_USERNAME = "ilyaech"
-BOT_USERNAME = "@student_irk38_bot"
+ADMIN_ID = int(os.getenv("ADMIN_ID", "6014557174"))
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "ilyaech")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "@student_irk38_bot")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
-CACHE_TTL_HOURS = 2
+CACHE_TTL_HOURS = int(os.getenv("CACHE_TTL_HOURS", "2"))
+DB_PATH = os.getenv("DB_PATH", "users.db")
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!"); sys.exit(1)
 bot = Bot(token=TOKEN)
@@ -105,10 +138,28 @@ if GIGACHAT_CREDENTIALS:
         from gigachat import GigaChat
         giga_client = GigaChat(credentials=GIGACHAT_CREDENTIALS,
             base_url="https://api.giga.chat/v1", scope="GIGACHAT_API_PERS",
-            verify_ssl_certs=False, model="GigaChat-2-Max", timeout=600)
+            model="GigaChat-2-Max", timeout=600)
     except Exception as e:
         logging.error(f"GigaChat ошибка: {e}")
-DB_PATH = os.getenv("DB_PATH", "users.db")
+
+
+def _connect():
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    try:
+        mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        if not mode or mode[0] != "wal":
+            logging.warning(f"[SQLITE] WAL недоступен, режим: {mode}")
+    except Exception as e:
+        logging.warning(f"[SQLITE] PRAGMA WAL: {e}")
+    try:
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=30000")
+    except Exception:
+        pass
+    return conn
+
+
 DAILY_QUOTES = [
     "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
     "Сессия сдаётся не за неделю, а за семестр.",
@@ -135,8 +186,9 @@ DAILY_QUOTES = [
 def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
 def _monday_of_week(d): return d - timedelta(days=d.weekday())
 
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("""CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, group_id TEXT, group_name TEXT,
         notify_hour INTEGER DEFAULT -1, notify_minute INTEGER DEFAULT 0, notify_changes INTEGER DEFAULT 0, subgroup INTEGER DEFAULT 0)""")
     for a in ["ALTER TABLE users ADD COLUMN notify_changes INTEGER DEFAULT 0",
@@ -175,59 +227,63 @@ def init_db():
         time TEXT, subject TEXT, status TEXT, updated_at TEXT, UNIQUE(user_id, date, time, subject))""")
     conn.commit(); conn.close()
 
+
 def _ensure_user(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit(); conn.close()
 
 def _update_user_meta(user_id, username, first_name):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (username, first_name, user_id))
     conn.commit(); conn.close()
 
 def user_exists(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row is not None
 
+
 def daily_subscribe(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("INSERT OR IGNORE INTO daily_subscribers (user_id, subscribed_at) VALUES (?, ?)",
         (user_id, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 def daily_unsubscribe(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
 
 def daily_is_subscribed(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT 1 FROM daily_subscribers WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row is not None
 
 def daily_get_all_subscribers():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
+
 def set_scholarship_amount(user_id, amount):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("INSERT OR REPLACE INTO scholarship (user_id, current_amount, updated_at) VALUES (?, ?, ?)",
         (user_id, amount, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 def get_scholarship_amount(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row else None
 
+
 def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?) AND COALESCE(semester,'')=COALESCE(?,'')",
         (user_id, subject, semester)).fetchone()
     if row:
@@ -239,82 +295,86 @@ def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
     conn.commit(); conn.close()
 
 def get_grades(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') FROM grades WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
 
+_ALLOWED_GRADE_COLS = {"subject", "grade", "is_auto", "semester"}
+
 def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None, semester=None):
-    conn = sqlite3.connect(DB_PATH); fields = []; values = []
-    if subject is not None: fields.append("subject=?"); values.append(subject)
-    if grade is not None: fields.append("grade=?"); values.append(grade)
-    if is_auto is not None: fields.append("is_auto=?"); values.append(int(bool(is_auto)))
-    if semester is not None: fields.append("semester=?"); values.append(semester)
+    conn = _connect(); fields = []; values = []
+    for name, val in (("subject", subject), ("grade", grade),
+                      ("is_auto", None if is_auto is None else int(bool(is_auto))),
+                      ("semester", semester)):
+        if val is not None and name in _ALLOWED_GRADE_COLS:
+            fields.append(f"{name}=?"); values.append(val)
     if not fields: conn.close(); return
     values.extend([grade_id, user_id])
     conn.execute(f"UPDATE grades SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
 def delete_grade(grade_id, user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
     conn.commit(); conn.close()
 
 def clear_grades(user_id, semester=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     if semester: conn.execute("DELETE FROM grades WHERE user_id=? AND COALESCE(semester,'')=?", (user_id, semester))
     else: conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
 
+
 def save_user_group(user_id, group_id, group_name):
     _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE users SET group_id=?, group_name=? WHERE user_id=?", (group_id, group_name, user_id))
     conn.commit(); conn.close()
 
 def get_user_group(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT group_id, group_name FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row if row and row[0] else None
 
 def delete_user_group(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
 
 def set_user_subgroup(user_id, subgroup):
     _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE users SET subgroup=? WHERE user_id=?", (subgroup, user_id))
     conn.commit(); conn.close()
 
 def get_user_subgroup(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT subgroup FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return row[0] if row and row[0] else 0
 
 def set_notify_changes(user_id, enabled):
     _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?", (1 if enabled else 0, user_id))
     conn.commit(); conn.close()
 
 def get_notify_changes(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return bool(row and row[0])
 
 def set_notify_settings(user_id, ntype, hour, minute):
     _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?", (ntype, hour, minute, user_id))
     conn.commit(); conn.close()
 
 def get_notify_settings(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     if row and row[0]:
@@ -323,48 +383,49 @@ def get_notify_settings(user_id):
 
 def set_notify_before_min(user_id, minutes):
     _ensure_user(user_id)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE users SET notify_before_min=? WHERE user_id=?", (int(minutes), user_id))
     conn.commit(); conn.close()
 
 def get_notify_before_min(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT notify_before_min FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return int(row[0]) if row and row[0] is not None else 0
 
 def get_users_for_notification():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute FROM users WHERE notify_type IS NOT NULL AND notify_type != '' AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
 
 def get_users_for_change_tracking():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT user_id, group_id, subgroup FROM users WHERE notify_changes=1 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
 
 def get_users_for_lesson_reminder():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT user_id, group_id, subgroup, notify_before_min FROM users WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
     conn.close()
     return rows
 
 def get_total_users():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     conn.close()
     return n
 
 def get_all_user_ids():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
+
 def get_cached_schedule(group_id, week_start):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT html, cached_at FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
     conn.close()
     if not row: return None
@@ -375,19 +436,19 @@ def get_cached_schedule(group_id, week_start):
     return None
 
 def save_cached_schedule(group_id, week_start, html):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
         (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 def save_snapshot(group_id, week_start, snapshot_str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("INSERT OR REPLACE INTO schedule_snapshots (group_id, week_start, snapshot, updated_at) VALUES (?, ?, ?, ?)",
         (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 def get_snapshot(group_id, week_start):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
     conn.close()
     return row[0] if row else None
@@ -400,8 +461,9 @@ def make_snapshot_str(days):
             parts.append(f"{day_key}|{les.get('time','')}|{les.get('subject','')}|{les.get('type','')}|{les.get('teacher','')}|{les.get('auditorium','')}|{les.get('subgroup','')}")
     return "\n".join(sorted(parts))
 
+
 def save_feedback(user_id, username, text, admin_msg_id=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
         (user_id, username, text, datetime.now(timezone.utc).isoformat(), admin_msg_id))
     fid = cur.lastrowid
@@ -409,52 +471,56 @@ def save_feedback(user_id, username, text, admin_msg_id=None):
     return fid
 
 def update_feedback_admin_msg(feedback_id, admin_msg_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE feedback SET admin_msg_id=? WHERE id=?", (admin_msg_id, feedback_id))
     conn.commit(); conn.close()
 
 def get_pending_feedback():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT id, user_id, username, text, created_at, COALESCE(status,'new') FROM feedback WHERE COALESCE(status,'new') IN ('new', 'postponed') ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC").fetchall()
     conn.close()
     return rows
 
 def set_feedback_status(feedback_id, status):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
     conn.commit(); conn.close()
 
 def mark_feedback_answered(feedback_id, reply_text=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE feedback SET status='answered', answered_at=?, admin_reply=? WHERE id=?",
         (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
     conn.commit(); conn.close()
 
 def get_feedback_by_id(feedback_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?", (feedback_id,)).fetchone()
     conn.close()
     return row
 
 def get_user_feedback(user_id, limit=30):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT id, text, COALESCE(status,'new'), created_at, answered_at, admin_reply FROM feedback WHERE user_id=? ORDER BY id DESC LIMIT ?",
         (user_id, limit)).fetchall()
     conn.close()
     return rows
 
+
 def add_task(user_id, text, due_date=None, priority=2, due_time=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     cur = conn.execute("INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time) VALUES (?, ?, ?, 0, ?, ?, ?)",
         (user_id, text, due_date, datetime.now(timezone.utc).isoformat(), priority, due_time))
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
 
+_ALLOWED_TASK_COLS = {"text", "due_date", "priority", "due_time", "done", "done_at"}
+
 def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_time=None, reset_due=False):
-    conn = sqlite3.connect(DB_PATH); fields = []; values = []
+    conn = _connect(); fields = []; values = []
     if text is not None: fields.append("text=?"); values.append(text)
-    if reset_due: fields.append("due_date=NULL"); fields.append("due_time=NULL")
+    if reset_due:
+        fields.append("due_date=NULL"); fields.append("due_time=NULL")
     else:
         if due_date is not None: fields.append("due_date=?"); values.append(due_date)
         if due_time is not None: fields.append("due_time=?"); values.append(due_time)
@@ -465,14 +531,14 @@ def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_t
     conn.commit(); conn.close()
 
 def get_task(task_id, user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE id=? AND user_id=?",
         (task_id, user_id)).fetchone()
     conn.close()
     return row
 
 def get_user_tasks(user_id, only_active=True):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     if only_active:
         rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time FROM tasks WHERE user_id=? AND done=0", (user_id,)).fetchall()
     else:
@@ -481,7 +547,7 @@ def get_user_tasks(user_id, only_active=True):
     return rows
 
 def get_done_tasks(user_id, days=7):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? ORDER BY done_at DESC",
         (user_id, threshold)).fetchall()
@@ -489,29 +555,30 @@ def get_done_tasks(user_id, days=7):
     return rows
 
 def mark_task_done(task_id, user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
         (datetime.now(timezone.utc).isoformat(), task_id, user_id))
     conn.commit(); conn.close()
 
 def delete_task(task_id, user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
     conn.commit(); conn.close()
 
 def clear_done_tasks(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
     conn.commit(); conn.close()
 
 def count_user_tasks(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return (row[0] or 0, row[1] or 0)
 
+
 def add_or_update_note(user_id, subject, text):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)", (user_id, subject)).fetchone()
     if row:
         conn.execute("UPDATE notes SET text=?, created_at=? WHERE id=?",
@@ -522,19 +589,20 @@ def add_or_update_note(user_id, subject, text):
     conn.commit(); conn.close()
 
 def get_user_notes(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
     conn.close()
     return rows
 
 def delete_note_by_id(note_id, user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
     conn.commit(); conn.close()
 
+
 def attendance_set(user_id, date, time, subject, status):
     if status not in ("", "was", "missed", "sick", "excused"): return False
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     if status:
         conn.execute("INSERT INTO attendance (user_id, date, time, subject, status, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, date, time, subject) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at",
             (user_id, date, time, subject, status, datetime.now(timezone.utc).isoformat()))
@@ -545,7 +613,7 @@ def attendance_set(user_id, date, time, subject, status):
 
 def attendance_get_map(user_id, dates):
     if not dates: return {}
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     placeholders = ",".join("?" * len(dates))
     rows = conn.execute(f"SELECT date, time, subject, status FROM attendance WHERE user_id=? AND date IN ({placeholders})",
         (user_id, *dates)).fetchall()
@@ -553,7 +621,7 @@ def attendance_get_map(user_id, dates):
     return {(d, t, s): st for d, t, s, st in rows}
 
 def attendance_stats(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status", (user_id,)).fetchall()
     conn.close()
     result = {"was": 0, "missed": 0, "sick": 0, "excused": 0}
@@ -561,23 +629,25 @@ def attendance_stats(user_id):
         if status in result: result[status] = count
     return result
 
+
 def ai_get_history(user_id, limit=30):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
     conn.close()
     rows.reverse()
     return rows
 
 def ai_save_message(user_id, role, text, has_photo=0):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
         (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
     conn.commit(); conn.close()
 
 def ai_clear_history(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
     conn.commit(); conn.close()
+
 
 def get_export_data(user_id):
     saved = get_user_group(user_id)
@@ -587,7 +657,7 @@ def get_export_data(user_id):
     amount = get_scholarship_amount(user_id)
     feedback = get_user_feedback(user_id, limit=100)
     att = attendance_stats(user_id)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     username = meta[0] if meta else None; first_name = meta[1] if meta else None
@@ -939,6 +1009,7 @@ LESSON_TIMES = {"8:15":"9:45","8:30":"10:00","10:00":"11:30","10:10":"11:40",
     "15:30":"17:00","15:45":"17:15","17:10":"18:40","17:25":"18:55",
     "18:50":"20:20","19:05":"20:35"}
 
+
 def _filter_lessons_by_subgroup(lessons, subgroup):
     if not subgroup: return lessons
     result = []
@@ -946,6 +1017,7 @@ def _filter_lessons_by_subgroup(lessons, subgroup):
         if not les["subgroup"]: result.append(les)
         elif str(subgroup) == str(les["subgroup"]): result.append(les)
     return result
+
 
 def parse_schedule(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -993,6 +1065,7 @@ def parse_schedule(html):
         days.append({"date": date_str, "name": day_name, "lessons": lessons})
     return week_parity, days
 
+
 async def fetch_week_html(group_id, target_monday, use_cache=True):
     week_start_str = target_monday.strftime("%Y-%m-%d")
     if use_cache:
@@ -1010,11 +1083,12 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
     except Exception as e:
         logging.error(f"[WEEK] Ошибка: {e}")
         if use_cache:
-            conn = sqlite3.connect(DB_PATH)
+            conn = _connect()
             row = conn.execute("SELECT html FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start_str)).fetchone()
             conn.close()
             if row: return row[0]
         return ""
+
 
 def _verify_webapp_init_full(init_data):
     if not init_data: return None
@@ -1031,9 +1105,52 @@ def _verify_webapp_init(init_data):
 
 
 # ═══════════════════════════════════════════════════════════════
-# PRESENTATIONS — v2 (5 типов слайдов, без нумерации, надёжный JSON)
+# BACKUP / RESTORE
 # ═══════════════════════════════════════════════════════════════
+_restore_lock = asyncio.Lock()
 
+
+def _db_schema_version() -> str:
+    try:
+        conn = _connect()
+        cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        cols_grades = [r[1] for r in conn.execute("PRAGMA table_info(grades)").fetchall()]
+        conn.close()
+        return f"users:{len(cols_users)} | grades:{len(cols_grades)}"
+    except Exception:
+        return "unknown"
+
+
+def _make_db_snapshot(dst_path: str) -> None:
+    """Атомарный снимок SQLite с учётом WAL через Backup API."""
+    src = sqlite3.connect(DB_PATH, timeout=30)
+    dst = sqlite3.connect(dst_path)
+    try:
+        with dst:
+            src.backup(dst)
+    finally:
+        dst.close(); src.close()
+
+
+def _check_db_integrity(path: str) -> tuple[bool, str]:
+    try:
+        c = sqlite3.connect(path)
+        ok = c.execute("PRAGMA integrity_check").fetchone()[0]
+        if ok != "ok":
+            c.close(); return False, f"integrity: {ok}"
+        has_users = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+        c.close()
+        if not has_users:
+            return False, "нет таблицы users"
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+# ═══════════════════════════════════════════════════════════════
+# PRESENTATIONS
+# ═══════════════════════════════════════════════════════════════
 PRESENT_STYLES = {
     "academic": {
         "name": "Академический",
@@ -1066,7 +1183,7 @@ PRESENT_STYLES = {
         "name": "Тёмный",
         "bg": (16, 22, 26), "title_bg": (10, 14, 18),
         "accent": (127, 233, 255), "accent2": (62, 230, 210),
-        "text": (235, 240, 245), "text_soft": (140, 155, 160),
+        "text": (235, 240, 245), "text_soft": (180, 195, 200),
         "title_text": (255, 255, 255),
         "layout": "image_full", "shape_style": "glow_line",
         "heading_case": "normal",
@@ -1084,7 +1201,7 @@ PRESENT_STYLES = {
         "name": "Неон",
         "bg": (18, 10, 30), "title_bg": (10, 6, 22),
         "accent": (255, 60, 180), "accent2": (127, 233, 255),
-        "text": (240, 240, 255), "text_soft": (170, 150, 220),
+        "text": (240, 240, 255), "text_soft": (200, 180, 240),
         "title_text": (255, 255, 255),
         "layout": "image_right", "shape_style": "neon_line",
         "heading_case": "normal",
@@ -1093,9 +1210,9 @@ PRESENT_STYLES = {
 
 _last_used_style = {"id": None}
 
+
 def _pick_random_style() -> str:
     keys = list(PRESENT_STYLES.keys())
-    # исключаем последний использованный, чтобы не повторялся
     if _last_used_style["id"] and len(keys) > 1:
         keys = [k for k in keys if k != _last_used_style["id"]]
     chosen = random.choice(keys)
@@ -1103,115 +1220,165 @@ def _pick_random_style() -> str:
     return chosen
 
 
+def _rel_luminance(rgb):
+    def c(v):
+        v /= 255
+        return v/12.92 if v <= 0.03928 else ((v+0.055)/1.055)**2.4
+    r, g, b = map(c, rgb[:3])
+    return 0.2126*r + 0.7152*g + 0.0722*b
+
+def _contrast_ratio(c1, c2):
+    l1, l2 = _rel_luminance(c1), _rel_luminance(c2)
+    hi, lo = max(l1, l2), min(l1, l2)
+    return (hi + 0.05) / (lo + 0.05)
+
+def _pick_readable(fg, bg):
+    if _contrast_ratio(fg, bg) >= 4.5: return fg
+    return (255, 255, 255) if _rel_luminance(bg) < 0.5 else (15, 15, 15)
+
+
 def _extract_json(text: str) -> dict:
-    """Устойчивый парсер JSON: убирает markdown-обёртки, находит первую { ... }."""
     if not text: raise ValueError("Пустой ответ")
-    s = text.strip()
-    # Убираем markdown-обёртки
-    s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
     s = re.sub(r"\s*```\s*$", "", s)
-    # Находим внешний JSON
     start = s.find("{")
-    end = s.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("В ответе нет JSON: " + s[:200])
+    if start == -1: raise ValueError("В ответе нет JSON: " + s[:200])
+    depth, in_str, esc, end = 0, False, False, -1
+    for i in range(start, len(s)):
+        c = s[i]
+        if in_str:
+            if esc: esc = False
+            elif c == "\\": esc = True
+            elif c == '"': in_str = False
+        else:
+            if c == '"': in_str = True
+            elif c == "{": depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0: end = i; break
+    if end == -1: raise ValueError("Незакрытый JSON")
     raw = s[start:end+1]
-    # Пробуем как есть
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-    # Мягкая чистка: убираем trailing commas, заменяем "умные" кавычки
-    fixed = raw
-    fixed = fixed.replace("\u201c", '"').replace("\u201d", '"')
-    fixed = fixed.replace("\u2018", "'").replace("\u2019", "'")
-    fixed = re.sub(r",\s*([}\]])", r"\1", fixed)  # trailing commas
-    try:
-        return json.loads(fixed)
-    except json.JSONDecodeError as e:
-        # Последний шанс: достаём отдельные поля регулярками
-        logging.warning(f"[JSON] не удалось распарсить: {e}; raw[:300]={raw[:300]}")
-        raise ValueError(f"GigaChat вернул невалидный JSON: {e}")
+    for candidate in (raw,
+                      re.sub(r",\s*([}\]])", r"\1",
+                             raw.replace("\u201c", '"').replace("\u201d", '"')
+                                .replace("\u2018", "'").replace("\u2019", "'"))):
+        try: return json.loads(candidate)
+        except json.JSONDecodeError: continue
+    raise ValueError("Невалидный JSON: " + raw[:300])
 
 
 async def _gigachat_json(prompt: str) -> dict:
     if giga_client is None: raise RuntimeError("GigaChat не настроен")
-    resp = await giga_client.achat(prompt)
+    resp = await asyncio.wait_for(giga_client.achat(prompt), timeout=180)
     try: content = resp.choices[0].message.content
     except AttributeError: content = resp.messages[0].content[0].text if resp.messages else ""
     return _extract_json(content or "")
 
 
+def _validate_plan(plan: dict, topic: str) -> list:
+    errors = []
+    if not (plan.get("title") or "").strip():
+        errors.append("Нет заголовка")
+    slides = plan.get("slides") or []
+    if len(slides) < 3:
+        errors.append("Меньше 3 слайдов")
+    for i, s in enumerate(slides, 2):
+        h = (s.get("heading") or "").strip()
+        if not h: errors.append(f"Слайд {i}: нет заголовка")
+        if len(h) > 70: errors.append(f"Слайд {i}: длинный заголовок ({len(h)})")
+        t = s.get("type", "bullets")
+        if t == "bullets":
+            bl = s.get("bullets") or []
+            if len(bl) < 3: errors.append(f"Слайд {i}: <3 пунктов")
+            for b in bl:
+                if len(b) > 280: errors.append(f"Слайд {i}: пункт >280 символов")
+        elif t == "flow" and len(s.get("steps") or []) < 2:
+            errors.append(f"Слайд {i}: <2 шагов")
+        elif t == "compare":
+            if len(s.get("left_items") or []) < 2 or len(s.get("right_items") or []) < 2:
+                errors.append(f"Слайд {i}: compare неполный")
+        elif t == "chart":
+            if not s.get("categories") or not s.get("values"):
+                errors.append(f"Слайд {i}: chart без данных")
+    return errors
+
+
 async def _generate_slide_plan(topic: str, slides_count: int,
-                               extra_context: str = "", user_wishes: str = "") -> dict:
-    base = f"""Ты — опытный методист и дизайнер учебных презентаций.
-Сделай СОДЕРЖАТЕЛЬНУЮ презентацию на тему: «{topic}».
-Количество слайдов (не считая титульный): {slides_count}.
+                               extra_context: str = "", user_wishes: str = "",
+                               meta: dict = None) -> dict:
+    base = f"""Ты — опытный методист и дизайнер учебных презентаций для студентов вузов.
+Сделай СОДЕРЖАТЕЛЬНУЮ академическую презентацию на тему: «{topic}».
+Количество содержательных слайдов (без титула, содержания, источников и финала): {slides_count}.
 """
+    if meta:
+        base += f"\nДанные студента: {json.dumps(meta, ensure_ascii=False)}\n"
     if extra_context:
-        base += f"\nФакты от пользователя (обязательно используй их):\n{extra_context[:4000]}\n"
+        base += f"\nФакты от пользователя (обязательно используй):\n{extra_context[:4000]}\n"
     if user_wishes:
         base += f"\nПожелания пользователя:\n{user_wishes[:1500]}\n"
 
     base += """
 Верни СТРОГО JSON (без markdown-обёрток). Формат:
 {
-  "title": "Заголовок титульного (до 70 символов, без кавычек)",
+  "title": "Заголовок титульного (до 70 символов)",
   "subtitle": "Подзаголовок (до 130 символов)",
+  "outline": ["Введение", "Основные понятия", "Практика", "Выводы"],
   "slides": [
     {
-      "type": "bullets",
+      "type": "bullets|flow|compare|numbers|cards|chart",
       "heading": "Заголовок слайда (до 50 символов)",
-      "bullets": ["пункт 1 — развёрнутый, 140-200 символов, с цифрой/датой/примером", "пункт 2", "пункт 3", "пункт 4", "пункт 5"],
-      "image_hint": "Описание картинки (до 90 символов)",
-      "notes": "2-3 предложения для докладчика"
+      "bullets": ["пункт 1 — развёрнутый, 140-200 символов, с цифрой/датой/примером", "..."],
+      "image_hint": "Что показать на иллюстрации (до 90 символов)",
+      "notes": "2-3 предложения для докладчика",
+      "steps": [{"label":"Метка","text":"Пояснение"}],
+      "left_title": "A", "right_title": "B",
+      "left_items": ["..."], "right_items": ["..."],
+      "facts": [{"number":"617 000","label":"жителей"}],
+      "cards": [{"icon":"1","title":"Заголовок","text":"Пояснение"}],
+      "chart_type": "bar|pie|line",
+      "categories": ["2019","2020","2021"],
+      "values": [10, 25, 40],
+      "unit": "тыс. чел."
     }
+  ],
+  "sources": [
+    {"title": "Название книги/статьи", "author": "Автор", "year": "2023", "publisher": "Изд-во"}
   ]
 }
 
-ТИПЫ СЛАЙДОВ (выбирай по СМЫСЛУ, а не подряд):
-- "bullets" — универсальный список + картинка. Для общего материала.
-- "flow" — цепочка этапов/причин/следствий. Для процессов, истории, эволюции.
-  Используй поля: "steps": [{"label":"Короткая метка (1-3 слова)","text":"Пояснение до 90 символов"}] — 3-4 шага.
-  Пример темы: "Как развивалась наука" → шаги: Античность → Средневековье → Новое время.
-- "compare" — сравнение двух вещей. Для "до/после", "плюсы/минусы", "А vs Б".
-  Используй поля: "left_title": "...", "right_title": "...", "left_items": ["пункт", "пункт", "пункт"], "right_items": ["пункт", "пункт", "пункт"].
-- "numbers" — 3-4 ключевые цифры/факта. Для статистики, дат, важных показателей.
-  Используй поля: "facts": [{"number":"617 000","label":"жителей Иркутска"}, {...}, {...}].
-- "cards" — 3 карточки-идеи. Для 3 главных мыслей, компонентов, принципов.
-  Используй поля: "cards": [{"icon":"1","title":"Заголовок","text":"Пояснение до 100 символов"}, {...}, {...}].
+ТИПЫ СЛАЙДОВ (выбирай по СМЫСЛУ, не подряд):
+- "bullets" — список + картинка. 40% слайдов.
+- "flow" — 3-4 шага/этапа процесса (поле "steps"). 20%.
+- "compare" — сравнение A vs B (поля left_*, right_*). 15%.
+- "numbers" — 3-4 ключевые цифры (поле "facts"). 10%.
+- "cards" — 3 карточки-идеи (поле "cards"). 10%.
+- "chart" — диаграмма (bar/pie/line, categories + values + unit). 5%.
 
 ТРЕБОВАНИЯ:
-- Первый слайд — титульный, в "slides" его НЕ включай.
+- Первый слайд титульный — в "slides" его НЕ включай.
 - Ровно """ + str(slides_count) + """ слайдов в "slides".
-- РАСПРЕДЕЛЯЙ типы: примерно 40% bullets, 20% flow, 20% compare, 10% numbers, 10% cards. Варьируй.
-- В bullets — 5 пунктов по 140-200 символов с конкретными фактами (цифры, даты, имена, примеры).
-- В flow — 3-4 шага, каждый с короткой меткой и пояснением.
-- В compare — 3 пункта слева и 3 справа.
-- В numbers — 3 факта с крупной цифрой и подписью.
-- В cards — 3 карточки с заголовком и текстом.
-- Каждый слайд раскрывает НОВЫЙ аспект. Не повторяйся.
-- Пиши плотно, без воды: "это важно", "данная тема актуальна" — запрещено.
+- Каждый слайд раскрывает НОВЫЙ аспект. Без повторов.
+- Пиши плотно, без воды. Запрещено: "это важно", "данная тема актуальна".
+- "sources": 5-8 источников. ТОЛЬКО реальные книги/статьи/ГОСТы, в которых ты уверен.
+  Если не уверен — НЕ включай. Лучше 3 реальных, чем 8 выдуманных.
 - Все поля обязательные, кроме тех что не подходят к типу.
 - Только JSON. Без пояснений до и после.
 """
     return await _gigachat_json(base)
 
 
-# ─── Утилиты рисования ───
+# ─── Утилиты рисования PPTX ───
 def _add_rect(slide, x, y, w, h, color):
     shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
     shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
     shp.line.fill.background(); shp.shadow.inherit = False
     return shp
 
-
 def _add_oval(slide, x, y, w, h, color):
     shp = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, w, h)
     shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
     shp.line.fill.background(); shp.shadow.inherit = False
     return shp
-
 
 def _add_round_rect(slide, x, y, w, h, color, line_color=None):
     shp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
@@ -1225,12 +1392,28 @@ def _add_round_rect(slide, x, y, w, h, color, line_color=None):
     except Exception: pass
     return shp
 
-
 def _add_arrow(slide, x, y, w, h, color):
     shp = slide.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW, x, y, w, h)
     shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
     shp.line.fill.background(); shp.shadow.inherit = False
     return shp
+
+def _add_bar_chart(slide, x, y, w, h, categories, values, unit="", title=""):
+    try:
+        from pptx.chart.data import CategoryChartData
+        from pptx.enum.chart import XL_CHART_TYPE
+        cd = CategoryChartData()
+        cd.categories = categories
+        cd.add_series(unit or "Значение", values)
+        gf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, w, h, cd)
+        chart = gf.chart
+        chart.has_legend = False
+        chart.has_title = bool(title)
+        if title: chart.chart_title.text_frame.text = title
+        return chart
+    except Exception as e:
+        logging.warning(f"[CHART] {e}")
+        return None
 
 
 def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
@@ -1248,14 +1431,15 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     def add_text(slide, x, y, w, h, text, size=16, bold=False, color=None,
                  align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False,
                  spacing=None):
-        c = color if color else style["text"]
+        base = color if color else style["text"]
+        c = _pick_readable(base, style["bg"])
         tb = slide.shapes.add_textbox(x, y, w, h)
         tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = anchor
         p = tf.paragraphs[0]; p.alignment = align
         if spacing is not None:
             try: p.line_spacing = spacing
             except Exception: pass
-        run = p.add_run(); run.text = text
+        run = p.add_run(); run.text = str(text)
         run.font.size = Pt(size); run.font.bold = bold; run.font.italic = italic
         run.font.color.rgb = rgb(c); run.font.name = "DejaVu Sans"
         return tb
@@ -1272,7 +1456,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             run = p.add_run()
             run.text = "•  " + str(b)
             run.font.size = Pt(size)
-            run.font.color.rgb = rgb(style["text"])
+            run.font.color.rgb = rgb(_pick_readable(style["text"], style["bg"]))
             run.font.name = "DejaVu Sans"
 
     def add_image_placeholder(slide, x, y, w, h, hint):
@@ -1284,11 +1468,17 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         tf.word_wrap = True
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-        r = p.add_run(); r.text = "МЕСТО ДЛЯ ИЛЛЮСТРАЦИИ"
-        r.font.size = Pt(12); r.font.bold = True; r.font.color.rgb = rgb(style["accent"])
+        r = p.add_run(); r.text = "СХЕМА / ИЛЛЮСТРАЦИЯ"
+        r.font.size = Pt(12); r.font.bold = True
+        r.font.color.rgb = rgb(_pick_readable(style["accent"], style["bg"]))
         p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
-        r2 = p2.add_run(); r2.text = hint or "Схема или изображение"
-        r2.font.size = Pt(11); r2.font.italic = True; r2.font.color.rgb = rgb(style["text_soft"])
+        r2 = p2.add_run(); r2.text = hint or "Визуальное пояснение материала"
+        r2.font.size = Pt(11); r2.font.italic = True
+        r2.font.color.rgb = rgb(_pick_readable(style["text_soft"], style["bg"]))
+
+    def _add_page_number(slide, n: int):
+        add_text(slide, Inches(12.3), Inches(7.0), Inches(0.8), Inches(0.4),
+                 str(n), size=11, color=style["text_soft"], align=PP_ALIGN.RIGHT)
 
     def _decor(slide):
         W = prs.slide_width; H = prs.slide_height
@@ -1328,8 +1518,30 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     if plan.get("subtitle"):
         add_text(s0, Inches(5.4), Inches(4.85), Inches(7.4), Inches(1.1),
                  plan["subtitle"], size=15, color=style["accent2"])
+    # Мета студента на титуле
+    meta_line = []
+    if plan.get("author"): meta_line.append(str(plan["author"]))
+    if plan.get("group"): meta_line.append(f"группа {plan['group']}")
+    if plan.get("teacher"): meta_line.append(f"преподаватель: {plan['teacher']}")
+    if plan.get("year"): meta_line.append(str(plan["year"]))
+    if meta_line:
+        add_text(s0, Inches(5.4), Inches(6.1), Inches(7.4), Inches(0.9),
+                 " · ".join(meta_line), size=12,
+                 color=style["accent2"], align=PP_ALIGN.LEFT)
 
     slides = plan.get("slides", [])
+    page_num = 2
+
+    # ═════════ СОДЕРЖАНИЕ ═════════
+    outline = plan.get("outline") or []
+    if outline and len(outline) >= 2:
+        so = prs.slides.add_slide(blank)
+        _add_rect(so, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
+        _decor(so)
+        _header(so, "Содержание")
+        bullets = [f"{i+1}. {x}" for i, x in enumerate(outline[:8])]
+        add_bullets(so, Inches(1.5), Inches(2.3), Inches(10.5), Inches(4.5), bullets, size=16)
+        _add_page_number(so, page_num); page_num += 1
 
     # ═════════ КОНТЕНТНЫЕ ═════════
     for idx, sl in enumerate(slides):
@@ -1344,7 +1556,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             try: s.notes_slide.notes_text_frame.text = str(notes)
             except Exception: pass
 
-        # ─── bullets ───
         if stype == "bullets":
             bullets = sl.get("bullets", [])
             hint = sl.get("image_hint", "")
@@ -1358,7 +1569,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                 add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.5), Inches(4.9), bullets, size=13)
                 add_image_placeholder(s, Inches(7.8), Inches(2.0), Inches(4.95), Inches(4.5), hint)
 
-        # ─── flow ───
         elif stype == "flow":
             steps = sl.get("steps", [])[:4]
             n = len(steps) if steps else 1
@@ -1366,8 +1576,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             gap = Inches(0.55)
             box_w = int((total_w - gap * (n - 1)) / n) if n > 1 else total_w
             box_h = Inches(2.6)
-            y0 = Inches(2.7)
-            x0 = Inches(0.7)
+            y0 = Inches(2.7); x0 = Inches(0.7)
             for i, stp in enumerate(steps):
                 bx = x0 + i * (box_w + gap)
                 _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"], style["accent"])
@@ -1381,32 +1590,26 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                     _add_arrow(s, bx + box_w + Inches(0.06), y0 + box_h / 2 - Inches(0.22),
                                gap - Inches(0.12), Inches(0.44), style["accent"])
 
-        # ─── compare ───
         elif stype == "compare":
             lt = sl.get("left_title", "A"); rt = sl.get("right_title", "B")
             li = sl.get("left_items", [])[:4]; ri = sl.get("right_items", [])[:4]
             col_w = Inches(5.7); col_h = Inches(4.5)
             y0 = Inches(2.1)
-            # left
             _add_round_rect(s, Inches(0.75), y0, col_w, col_h, style["accent2"])
             add_text(s, Inches(0.9), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
                      lt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
             add_bullets(s, Inches(0.95), y0 + Inches(0.95), col_w - Inches(0.4), col_h - Inches(1.1), li, size=11)
-            # right
             _add_round_rect(s, Inches(6.85), y0, col_w, col_h, style["bg"], style["accent"])
             add_text(s, Inches(7.0), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
                      rt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
             add_bullets(s, Inches(7.05), y0 + Inches(0.95), col_w - Inches(0.4), col_h - Inches(1.1), ri, size=11)
 
-        # ─── numbers ───
         elif stype == "numbers":
             facts = sl.get("facts", [])[:4]
             n = len(facts) if facts else 1
             gap = Inches(0.4)
             box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
-            y0 = Inches(2.6)
-            box_h = Inches(3.4)
-            x0 = Inches(0.7)
+            y0 = Inches(2.6); box_h = Inches(3.4); x0 = Inches(0.7)
             for i, f in enumerate(facts):
                 bx = x0 + i * (box_w + gap)
                 _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"])
@@ -1417,19 +1620,15 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                          f.get("label", ""), size=12, color=style["text"],
                          align=PP_ALIGN.CENTER, spacing=1.1)
 
-        # ─── cards ───
         elif stype == "cards":
             cards = sl.get("cards", [])[:4]
             n = len(cards) if cards else 1
             gap = Inches(0.4)
             box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
-            y0 = Inches(2.5)
-            box_h = Inches(3.6)
-            x0 = Inches(0.7)
+            y0 = Inches(2.5); box_h = Inches(3.6); x0 = Inches(0.7)
             for i, c in enumerate(cards):
                 bx = x0 + i * (box_w + gap)
                 _add_round_rect(s, bx, y0, box_w, box_h, style["bg"], style["accent"])
-                # «Иконка» — круг с номером или символом
                 icon_size = Inches(0.9)
                 icon_x = bx + (box_w - icon_size) / 2
                 icon_y = y0 + Inches(0.35)
@@ -1445,12 +1644,50 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                          c.get("text", ""), size=10, color=style["text_soft"],
                          align=PP_ALIGN.CENTER, spacing=1.1)
 
-        # ─── fallback: если пришёл неизвестный тип, рисуем bullets ───
+        elif stype == "chart":
+            cats = sl.get("categories") or []
+            vals = sl.get("values") or []
+            unit = sl.get("unit", "")
+            chart_title = sl.get("chart_title", "")
+            try:
+                vals = [float(v) for v in vals]
+            except Exception:
+                vals = []
+            if cats and vals and len(cats) == len(vals):
+                _add_bar_chart(s, Inches(1.0), Inches(2.0), Inches(11.3), Inches(4.7),
+                               cats, vals, unit, chart_title)
+            else:
+                add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9),
+                            sl.get("bullets", []), size=13)
+                add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5),
+                                      sl.get("image_hint", ""))
+
         else:
             add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9),
                         sl.get("bullets", []), size=13)
             add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5),
                                   sl.get("image_hint", ""))
+
+        _add_page_number(s, page_num); page_num += 1
+
+    # ═════════ ИСТОЧНИКИ ═════════
+    sources = plan.get("sources") or []
+    if sources:
+        ss = prs.slides.add_slide(blank)
+        _add_rect(ss, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
+        _decor(ss)
+        _header(ss, "Источники")
+        lines = []
+        for i, src in enumerate(sources[:10], 1):
+            parts = []
+            if src.get("author"): parts.append(str(src["author"]))
+            if src.get("title"): parts.append(f"«{src['title']}»")
+            if src.get("publisher"): parts.append(str(src["publisher"]))
+            if src.get("year"): parts.append(str(src["year"]))
+            line = f"{i}. " + ". ".join(parts)
+            lines.append(line)
+        add_bullets(ss, Inches(1.0), Inches(2.2), Inches(11.3), Inches(4.6), lines, size=12)
+        _add_page_number(ss, page_num); page_num += 1
 
     # ═════════ ФИНАЛЬНЫЙ ═════════
     sN = prs.slides.add_slide(blank)
@@ -1464,13 +1701,15 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     add_text(sN, Inches(1), Inches(4.5), Inches(11.3), Inches(0.6),
              "Вопросы?", size=18, italic=True,
              color=style["accent"], align=PP_ALIGN.CENTER)
+    _add_page_number(sN, page_num)
 
     buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
 
 
 async def generate_presentation(user_id: int, topic: str, slides_count: int = 10,
                                 style_id: str = "random",
-                                user_info: str = "", user_wishes: str = "") -> bytes:
+                                user_info: str = "", user_wishes: str = "",
+                                meta: dict = None) -> bytes:
     if not _PPTX_AVAILABLE:
         raise RuntimeError("python-pptx не установлена")
     if giga_client is None:
@@ -1486,30 +1725,49 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
     try:
         status_msg = await bot.send_message(
             user_id, f"Собираю презентацию «{topic}»\nСтиль: {style_name}")
-    except Exception: pass
+    except Exception:
+        pass
 
-    # показываем ход генерации
-    if status_msg:
-        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
-            text=f"Стиль: {style_name}\nСоставляю структуру...")
-        except Exception: pass
+    async def _edit(text):
+        if not status_msg: return
+        try:
+            await bot.edit_message_text(chat_id=user_id,
+                message_id=status_msg.message_id, text=text)
+        except Exception:
+            pass
 
-    plan = await _generate_slide_plan(topic, slides_count, user_info, user_wishes)
+    await _edit(f"Стиль: {style_name}\nСоставляю структуру...")
 
-    if status_msg:
-        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
-            text=f"Стиль: {style_name}\nРисую слайды...")
-        except Exception: pass
+    last_err = None
+    plan = None
+    for attempt in range(2):
+        try:
+            extra = user_info
+            if attempt == 1 and last_err:
+                extra += f"\n\nПРЕДЫДУЩАЯ ОШИБКА, ИСПРАВЬ: {last_err}"
+            plan = await _generate_slide_plan(topic, slides_count, extra, user_wishes, meta)
+            errors = _validate_plan(plan, topic)
+            if len(errors) <= 1:
+                break
+            last_err = "; ".join(errors[:3])
+            logging.warning(f"[PLAN] попытка {attempt+1}: {last_err}")
+        except asyncio.TimeoutError:
+            last_err = "Таймаут GigaChat"
+        except Exception as e:
+            last_err = str(e)
+    if plan is None:
+        raise RuntimeError(f"Не удалось составить план: {last_err}")
 
-    pptx_bytes = _build_pptx(plan, style_id)
+    await _edit(f"Стиль: {style_name}\nРисую слайды...")
+    pptx_bytes = await asyncio.to_thread(_build_pptx, plan, style_id)
 
-    if status_msg:
-        try: await bot.edit_message_text(chat_id=user_id, message_id=status_msg.message_id,
-            text="Готово, отправляю файл...")
-        except Exception: pass
+    await _edit("Готово, отправляю файл...")
     return pptx_bytes
 
 
+# ═══════════════════════════════════════════════════════════════
+# WEB API
+# ═══════════════════════════════════════════════════════════════
 async def api_present(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1528,24 +1786,34 @@ async def api_present(request):
     except: slides_count = 10
     slides_count = max(5, min(20, slides_count))
     style_id = (body.get("style") or "random").strip()
+
+    meta = {
+        "author": (body.get("author") or "").strip()[:120] or None,
+        "group": (body.get("group") or "").strip()[:40] or None,
+        "teacher": (body.get("teacher") or "").strip()[:120] or None,
+        "year": (body.get("year") or "").strip()[:10] or None,
+    }
+    meta = {k: v for k, v in meta.items() if v} or None
+
     try:
         pptx_bytes = await generate_presentation(
-            user_id, topic, slides_count, style_id, user_info, user_wishes)
+            user_id, topic, slides_count, style_id, user_info, user_wishes, meta)
     except Exception as e:
         logging.exception("[PRESENT]")
         return web.json_response({"error": "present_failed", "message": str(e)}, status=500)
+
     date_str = _now_irkutsk().strftime("%Y-%m-%d_%H-%M")
     try:
         doc = BufferedInputFile(pptx_bytes, filename=f"presentation_{date_str}.pptx")
         await bot.send_document(user_id, doc, caption="Твоя презентация готова. Скачай её и открой в PowerPoint / WPS / Google Slides.")
         return web.json_response({"ok": True})
+    except TelegramForbiddenError:
+        return web.json_response({"error": "bot_blocked",
+            "message": "Разблокируй бота в Telegram, чтобы получать файлы"}, status=403)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
 
-# ═══════════════════════════════════════════════════════════════
-# WEB API
-# ═══════════════════════════════════════════════════════════════
 async def api_schedule(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -1562,7 +1830,7 @@ async def api_schedule(request):
     day = next((d for d in days if d["date"] == today_str), None)
     if day is None:
         return web.json_response({"date": today_str, "dayName": "", "group": group_name, "subgroup": subgroup, "lessons": []})
-    filtered = _filter_lessons_by_subgroup(day["lessons"], subgroup)
+    filtered = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
     att_map = attendance_get_map(user_id, [day["date"]])
     lessons_out = []
     for les in filtered:
@@ -1573,6 +1841,7 @@ async def api_schedule(request):
             "attendance": att_map.get(key, "")})
     return web.json_response({"date": day["date"], "dayName": day["name"], "group": group_name,
         "subgroup": subgroup, "lessons": lessons_out})
+
 
 async def api_week(request):
     init_data = request.query.get("initData", "")
@@ -1593,7 +1862,7 @@ async def api_week(request):
     att_map = attendance_get_map(user_id, dates_list)
     days_out = []
     for d in days:
-        filtered = _filter_lessons_by_subgroup(d["lessons"], subgroup)
+        filtered = _filter_lessons_by_subgroup(d.get("lessons", []), subgroup)
         lessons_out = []
         for les in filtered:
             key = (d["date"], les["time"], les["subject"])
@@ -1603,6 +1872,7 @@ async def api_week(request):
                 "attendance": att_map.get(key, "")})
         days_out.append({"date": d["date"], "name": d["name"], "lessons": lessons_out})
     return web.json_response({"group": group_name, "subgroup": subgroup, "days": days_out})
+
 
 async def api_me(request):
     init_data = request.query.get("initData", "")
@@ -1630,7 +1900,9 @@ async def api_me(request):
         "attendance_total": sum(att_stats.values()), "username": user_obj.username,
         "first_name": user_obj.first_name, "last_name": user_obj.last_name})
 
+
 async def api_groups(request): return web.json_response({"groups": GROUPS})
+
 
 async def api_set_group(request):
     try: body = await request.json()
@@ -1644,6 +1916,7 @@ async def api_set_group(request):
     save_user_group(user_id, group_id, group_name); set_user_subgroup(user_id, subgroup)
     return web.json_response({"ok": True})
 
+
 async def api_set_subgroup(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1652,6 +1925,7 @@ async def api_set_subgroup(request):
     subgroup = int(body.get("subgroup", 0))
     set_user_subgroup(user_id, subgroup)
     return web.json_response({"ok": True})
+
 
 def _task_to_dict(row):
     tid, text, due_date, done, created_at, priority, due_time = row
@@ -1666,6 +1940,7 @@ def _task_to_dict(row):
     if p not in (1, 2, 3): p = 2
     return {"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
         "priority": p, "done": bool(done), "overdue": overdue}
+
 
 async def api_tasks(request):
     init_data = request.query.get("initData", "")
@@ -1685,6 +1960,7 @@ async def api_tasks(request):
     active, done_count = count_user_tasks(user_id)
     return web.json_response({"tasks": tasks, "active": active, "done": done_count})
 
+
 async def api_task_add(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1698,6 +1974,7 @@ async def api_task_add(request):
     if priority not in (1, 2, 3): priority = 2
     tid = add_task(user_id, text, due_date, priority, due_time)
     return web.json_response({"ok": True, "id": tid})
+
 
 async def api_task_update(request):
     try: body = await request.json()
@@ -1721,6 +1998,7 @@ async def api_task_update(request):
         due_time=due_time if due_time is not None else None, reset_due=reset_due)
     return web.json_response({"ok": True})
 
+
 async def api_task_delete(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1731,6 +2009,7 @@ async def api_task_delete(request):
     delete_task(tid, user_id)
     return web.json_response({"ok": True})
 
+
 async def api_task_clear(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1739,12 +2018,14 @@ async def api_task_clear(request):
     clear_done_tasks(user_id)
     return web.json_response({"ok": True})
 
+
 async def api_notes(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     rows = get_user_notes(user_id)
     return web.json_response({"notes": [{"id": nid, "subject": subj, "text": txt} for nid, subj, txt in rows]})
+
 
 async def api_note_save(request):
     try: body = await request.json()
@@ -1758,6 +2039,7 @@ async def api_note_save(request):
     add_or_update_note(user_id, subject, text)
     return web.json_response({"ok": True})
 
+
 async def api_note_delete(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1767,6 +2049,7 @@ async def api_note_delete(request):
     if not nid: return web.json_response({"error": "no_id"}, status=400)
     delete_note_by_id(nid, user_id)
     return web.json_response({"ok": True})
+
 
 async def api_notify_set(request):
     try: body = await request.json()
@@ -1791,6 +2074,7 @@ async def api_notify_set(request):
     set_notify_settings(user_id, ntype, hour, minute)
     return web.json_response({"ok": True, "type": ntype, "hour": hour, "minute": minute})
 
+
 async def api_notify_set_before(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1802,11 +2086,13 @@ async def api_notify_set_before(request):
     set_notify_before_min(user_id, minutes)
     return web.json_response({"ok": True, "minutes": minutes})
 
+
 async def api_quote(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     return web.json_response({"quote": random.choice(DAILY_QUOTES), "subscribed": daily_is_subscribed(user_id)})
+
 
 async def api_quote_subscribe(request):
     try: body = await request.json()
@@ -1817,6 +2103,7 @@ async def api_quote_subscribe(request):
     if sub: daily_subscribe(user_id)
     else: daily_unsubscribe(user_id)
     return web.json_response({"ok": True, "subscribed": sub})
+
 
 async def api_scholarship(request):
     init_data = request.query.get("initData", "")
@@ -1844,7 +2131,7 @@ async def api_scholarship(request):
             if html:
                 _, days = parse_schedule(html); subjects = set()
                 for d in days:
-                    for les in d["lessons"]:
+                    for les in d.get("lessons", []):
                         s = (les.get("subject") or "").strip()
                         if s: subjects.add(s)
                 available_subjects = sorted(subjects)
@@ -1855,6 +2142,7 @@ async def api_scholarship(request):
         "count_auto": count_auto, "forecast": forecast,
         "available_subjects": available_subjects, "semesters": semesters})
 
+
 async def api_scholarship_set_amount(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1864,6 +2152,7 @@ async def api_scholarship_set_amount(request):
     if amount < 0 or amount > 100000: return web.json_response({"error": "invalid"}, status=400)
     set_scholarship_amount(user_id, amount)
     return web.json_response({"ok": True})
+
 
 async def api_scholarship_add_grade(request):
     try: body = await request.json()
@@ -1878,6 +2167,7 @@ async def api_scholarship_add_grade(request):
     if semester and len(semester) > 40: semester = semester[:40]
     upsert_grade(user_id, subject, grade, is_auto, semester)
     return web.json_response({"ok": True})
+
 
 async def api_scholarship_update_grade(request):
     try: body = await request.json()
@@ -1901,6 +2191,7 @@ async def api_scholarship_update_grade(request):
     update_grade_by_id(gid, user_id, subject if subject else None, grade, is_auto, semester)
     return web.json_response({"ok": True})
 
+
 async def api_scholarship_delete_grade(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1911,6 +2202,7 @@ async def api_scholarship_delete_grade(request):
     delete_grade(gid, user_id)
     return web.json_response({"ok": True})
 
+
 async def api_scholarship_clear(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1920,6 +2212,7 @@ async def api_scholarship_clear(request):
     if semester is not None: semester = (semester or "").strip() or None
     clear_grades(user_id, semester)
     return web.json_response({"ok": True})
+
 
 async def api_attendance_set(request):
     try: body = await request.json()
@@ -1935,6 +2228,7 @@ async def api_attendance_set(request):
     if len(subject) > 200: subject = subject[:200]
     attendance_set(user_id, date, time_, subject, status)
     return web.json_response({"ok": True, "status": status})
+
 
 async def api_ai(request):
     try: body = await request.json()
@@ -1952,7 +2246,7 @@ async def api_ai(request):
             "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
             "- Структурируй текст простыми списками.\n- Пиши без воды.\n\n"
             f"Вопрос: {question}")
-        response = await giga_client.achat(prompt)
+        response = await asyncio.wait_for(giga_client.achat(prompt), timeout=120)
         try: answer = response.choices[0].message.content
         except AttributeError:
             answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
@@ -1964,6 +2258,7 @@ async def api_ai(request):
         logging.exception("[AI-WEB]")
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
+
 async def api_ai_photo(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -1974,7 +2269,7 @@ async def api_ai_photo(request):
     if giga_client is None: return web.json_response({"error": "ai_unavailable"}, status=503)
     photo_data = (body.get("photo") or "").strip(); question = (body.get("question") or "").strip()
     if not photo_data: return web.json_response({"error": "no_photo"}, status=400)
-    b64 = photo_data.split(",", 1)[1] if "," in photo_data else photo_data
+    b64 = photo_data.split(",", 1)[-1]
     try: img_bytes = base64.b64decode(b64)
     except: return web.json_response({"error": "bad_photo"}, status=400)
     if len(img_bytes) > 8 * 1024 * 1024:
@@ -2013,7 +2308,7 @@ async def api_ai_photo(request):
             "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
             "- Структурируй текст простыми списками.\n- Пиши без воды.\n\n"
             f"Распознанный текст с фото:\n{recognized_text}\n\nЗадача студента: {question}")
-        response = await giga_client.achat(prompt)
+        response = await asyncio.wait_for(giga_client.achat(prompt), timeout=120)
         try: answer = response.choices[0].message.content
         except AttributeError:
             answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
@@ -2024,6 +2319,7 @@ async def api_ai_photo(request):
     except Exception as e:
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
 
+
 async def api_ai_history(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -2031,6 +2327,7 @@ async def api_ai_history(request):
     rows = ai_get_history(user_id, limit=30)
     items = [{"id": r[0], "role": r[1], "text": r[2], "has_photo": bool(r[3])} for r in rows]
     return web.json_response({"items": items})
+
 
 async def api_ai_clear_history(request):
     try: body = await request.json()
@@ -2040,6 +2337,7 @@ async def api_ai_clear_history(request):
     ai_clear_history(user_id)
     return web.json_response({"ok": True})
 
+
 async def api_feedback_my(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -2048,6 +2346,7 @@ async def api_feedback_my(request):
     items = [{"id": r[0], "text": r[1], "status": r[2], "created_at": r[3],
         "answered_at": r[4], "admin_reply": r[5]} for r in rows]
     return web.json_response({"items": items})
+
 
 async def api_feedback(request):
     try: body = await request.json()
@@ -2064,6 +2363,7 @@ async def api_feedback(request):
     except Exception as e:
         logging.error(f"[FEEDBACK-WEB] {e}")
     return web.json_response({"ok": True, "id": fid})
+
 
 # ═══════════════════════════════════════════════════════════════
 # PDF ЭКСПОРТ
@@ -2104,11 +2404,13 @@ def _find_or_download_pdf_font():
         logging.warning(f"[PDF FONT] {e}")
     return None
 
+
 def _pdf_short(text, limit=120):
     if not text: return ""
     s = str(text).replace("\r", "").strip()
     if len(s) > limit: s = s[:limit - 1] + "…"
     return s
+
 
 def generate_user_pdf(user_id):
     if not _FPDF_AVAILABLE: raise RuntimeError("fpdf2 не установлена")
@@ -2200,6 +2502,7 @@ def generate_user_pdf(user_id):
     if isinstance(out, str): out = out.encode("latin-1")
     return bytes(out)
 
+
 async def api_export(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2213,8 +2516,11 @@ async def api_export(request):
         doc = BufferedInputFile(pdf_bytes, filename=f"student_irk_{date_str}.pdf")
         await bot.send_document(user_id, doc, caption="Твой отчёт Student IRK.")
         return web.json_response({"ok": True})
+    except TelegramForbiddenError:
+        return web.json_response({"error": "bot_blocked"}, status=403)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+
 
 # ═══════════════════════════════════════════════════════════════
 # АДМИН-API
@@ -2224,11 +2530,13 @@ def _admin_only(init_data):
     if not user_id or user_id != ADMIN_ID: return None
     return user_id
 
+
 async def api_admin_stats(request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
     return web.json_response({"total_users": get_total_users(),
         "pending_feedback": len(get_pending_feedback())})
+
 
 async def api_admin_feedback_list(request):
     init_data = request.query.get("initData", "")
@@ -2237,6 +2545,7 @@ async def api_admin_feedback_list(request):
     return web.json_response({"items": [{"id": fid, "user_id": uid, "username": uname,
         "text": text, "created": created, "status": status}
         for fid, uid, uname, text, created, status in rows]})
+
 
 async def api_admin_feedback_reply(request):
     try: body = await request.json()
@@ -2254,6 +2563,7 @@ async def api_admin_feedback_reply(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+
 async def api_admin_feedback_postpone(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2262,6 +2572,7 @@ async def api_admin_feedback_postpone(request):
     if not fid: return web.json_response({"error": "no_id"}, status=400)
     set_feedback_status(fid, "postponed")
     return web.json_response({"ok": True})
+
 
 async def api_admin_broadcast(request):
     try: body = await request.json()
@@ -2280,6 +2591,7 @@ async def api_admin_broadcast(request):
     asyncio.create_task(_run())
     return web.json_response({"ok": True, "started": True})
 
+
 async def api_admin_monitor(request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
@@ -2291,6 +2603,7 @@ async def api_admin_monitor(request):
                 return web.json_response({"status": response.status, "ok": response.status == 200})
     except Exception as e:
         return web.json_response({"status": 0, "ok": False, "error": str(e)})
+
 
 # ═══════════════════════════════════════════════════════════════
 # ЗАПУСК WEBAPP
@@ -2378,6 +2691,7 @@ async def start_webapp():
     site = web.TCPSite(runner, "0.0.0.0", port); await site.start()
     logging.info(f"[WEB] на 0.0.0.0:{port}")
 
+
 # ═══════════════════════════════════════════════════════════════
 # КОМАНДЫ БОТА
 # ═══════════════════════════════════════════════════════════════
@@ -2391,30 +2705,38 @@ async def cmd_start(message: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]])
     await message.answer("Привет. Открой приложение.", reply_markup=kb)
 
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}"); return
     await message.answer(
         "АДМИН-КОМАНДЫ:\n"
-        "/backup — прислать users.db\n"
-        "/restore — восстановить базу (отправь .db с подписью)\n"
-        "/whereami — где лежит база и твой ID\n"
+        "/backup — снимок users.db (SQLite Backup API)\n"
+        "/backup_all — полный zip (БД + шрифты + webapp)\n"
+        "/restore — восстановить users.db (отправь .db с подписью)\n"
+        "/whereami — где база и твой ID\n"
         "/admin — эта справка")
+
 
 @dp.message(Command("whereami"))
 async def cmd_whereami(message: Message):
     db_abs = os.path.abspath(DB_PATH)
     exists = os.path.isfile(db_abs)
     size = os.path.getsize(db_abs) if exists else 0
+    wal_exists = os.path.isfile(db_abs + "-wal")
+    shm_exists = os.path.isfile(db_abs + "-shm")
     text = (f"Твой ID: {message.from_user.id}\n"
             f"ADMIN_ID: {ADMIN_ID}\n"
             f"cwd: {os.getcwd()}\n"
             f"DB_PATH: {DB_PATH}\n"
             f"abs: {db_abs}\n"
             f"exists: {exists}\n"
-            f"size: {size} B ({size // 1024} КБ)")
+            f"size: {size} B ({size // 1024} КБ)\n"
+            f"WAL: {'да' if wal_exists else 'нет'} | SHM: {'да' if shm_exists else 'нет'}\n"
+            f"schema: {_db_schema_version()}")
     await message.answer(text)
+
 
 @dp.message(Command("backup"))
 async def cmd_backup(message: Message):
@@ -2425,14 +2747,76 @@ async def cmd_backup(message: Message):
         db_abs = os.path.abspath(DB_PATH)
         if not os.path.isfile(db_abs):
             await message.answer(f"Файл базы не найден:\n{db_abs}"); return
-        size_kb = os.path.getsize(db_abs) // 1024
+
+        ts = _now_irkutsk().strftime('%Y%m%d_%H%M%S')
+        tmp_path = db_abs + f".snapshot_{ts}"
+        _make_db_snapshot(tmp_path)
+
+        size_kb = os.path.getsize(tmp_path) // 1024
         total = get_total_users()
         fname = f"users_backup_{_now_irkutsk().strftime('%Y%m%d_%H%M')}.db"
-        doc = FSInputFile(db_abs, filename=fname)
-        await message.answer_document(doc, caption=f"Резервная копия\nПользователей: {total}\nРазмер: {size_kb} КБ\nПуть: {db_abs}")
+        doc = FSInputFile(tmp_path, filename=fname)
+        await message.answer_document(
+            doc,
+            caption=(f"Резервная копия\n"
+                     f"Пользователей: {total}\n"
+                     f"Размер: {size_kb} КБ\n"
+                     f"WAL-checkpoint: OK\n"
+                     f"Схема: {_db_schema_version()}")
+        )
+        try: os.remove(tmp_path)
+        except: pass
     except Exception as e:
         logging.exception("[BACKUP]")
         await message.answer(f"Ошибка бэкапа: {e}")
+
+
+@dp.message(Command("backup_all"))
+async def cmd_backup_all(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    try:
+        import zipfile
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        ts = _now_irkutsk().strftime('%Y%m%d_%H%M%S')
+        zip_path = os.path.join(base_dir, f"student_irk_backup_{ts}.zip")
+
+        db_abs = os.path.abspath(DB_PATH)
+        db_snap = db_abs + f".snap_tmp_{ts}"
+        _make_db_snapshot(db_snap)
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(db_snap, "users.db")
+            fonts_dir = os.path.join(base_dir, "fonts")
+            if os.path.isdir(fonts_dir):
+                for f in os.listdir(fonts_dir):
+                    fp = os.path.join(fonts_dir, f)
+                    if os.path.isfile(fp):
+                        z.write(fp, f"fonts/{f}")
+            webapp_dir = os.path.join(base_dir, "webapp")
+            if os.path.isdir(webapp_dir):
+                for root, _, files in os.walk(webapp_dir):
+                    for f in files:
+                        p = os.path.join(root, f)
+                        rel = os.path.relpath(p, base_dir)
+                        z.write(p, rel)
+            z.writestr("README.txt",
+                f"Student IRK backup\nДата: {ts} (Иркутск)\nПользователей: {get_total_users()}\nСхема: {_db_schema_version()}\n")
+
+        try: os.remove(db_snap)
+        except: pass
+
+        size_mb = os.path.getsize(zip_path) / 1024 / 1024
+        await message.answer_document(
+            FSInputFile(zip_path, filename=os.path.basename(zip_path)),
+            caption=f"Полный бэкап\nРазмер: {size_mb:.2f} МБ"
+        )
+        try: os.remove(zip_path)
+        except: pass
+    except Exception as e:
+        logging.exception("[BACKUP_ALL]")
+        await message.answer(f"Ошибка: {e}")
+
 
 @dp.message(Command("restore"))
 async def cmd_restore(message: Message):
@@ -2444,19 +2828,54 @@ async def cmd_restore(message: Message):
     fname = (message.document.file_name or "").lower()
     if not fname.endswith(".db"):
         await message.answer("Нужен файл с расширением .db"); return
-    try:
-        db_abs = os.path.abspath(DB_PATH)
-        if os.path.isfile(db_abs):
-            bak = db_abs + ".before_restore_" + _now_irkutsk().strftime('%Y%m%d_%H%M%S')
-            shutil.copy2(db_abs, bak)
-        os.makedirs(os.path.dirname(db_abs) or ".", exist_ok=True)
-        file = await bot.get_file(message.document.file_id)
-        await bot.download_file(file.file_path, db_abs)
-        init_db()
-        await message.answer(f"База восстановлена.\nВсего пользователей: {get_total_users()}\nФайл: {db_abs}")
-    except Exception as e:
-        logging.exception("[RESTORE]")
-        await message.answer(f"Ошибка восстановления: {e}")
+
+    async with _restore_lock:
+        try:
+            db_abs = os.path.abspath(DB_PATH)
+
+            # 1. Бэкап текущей (с WAL/SHM)
+            if os.path.isfile(db_abs):
+                bak = db_abs + ".before_restore_" + _now_irkutsk().strftime('%Y%m%d_%H%M%S')
+                shutil.copy2(db_abs, bak)
+                for ext in ("-wal", "-shm"):
+                    if os.path.isfile(db_abs + ext):
+                        try: shutil.copy2(db_abs + ext, bak + ext)
+                        except: pass
+
+            # 2. Скачать во временный файл
+            os.makedirs(os.path.dirname(db_abs) or ".", exist_ok=True)
+            tmp_new = db_abs + ".incoming"
+            file = await bot.get_file(message.document.file_id)
+            await bot.download_file(file.file_path, tmp_new)
+
+            # 3. Проверка целостности + наличия таблицы users
+            ok, err = _check_db_integrity(tmp_new)
+            if not ok:
+                try: os.remove(tmp_new)
+                except: pass
+                await message.answer(f"Файл не прошёл проверку: {err}"); return
+
+            # 4. Удалить WAL/SHM старой базы ДО замены
+            for ext in ("-wal", "-shm"):
+                if os.path.isfile(db_abs + ext):
+                    try: os.remove(db_abs + ext)
+                    except: pass
+
+            # 5. Атомарная замена
+            os.replace(tmp_new, db_abs)
+
+            # 6. Переинициализация
+            init_db()
+            await message.answer(
+                f"База восстановлена.\n"
+                f"Всего пользователей: {get_total_users()}\n"
+                f"Схема: {_db_schema_version()}\n"
+                f"Файл: {db_abs}"
+            )
+        except Exception as e:
+            logging.exception("[RESTORE]")
+            await message.answer(f"Ошибка восстановления: {e}")
+
 
 # ═══════════════════════════════════════════════════════════════
 # ВОРКЕРЫ
@@ -2492,6 +2911,7 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         await bot.send_message(user_id, "\n".join(lines), parse_mode=None)
     except Exception as e: logging.error(f"[NOTIFY] user={user_id}: {e}")
 
+
 async def send_lesson_reminder(user_id, les, before_min):
     try:
         subject = les.get("subject", "Пара"); time_str = les.get("time", "")
@@ -2504,6 +2924,7 @@ async def send_lesson_reminder(user_id, les, before_min):
         await bot.send_message(user_id, text, parse_mode=None)
     except Exception as e: logging.error(f"[REMIND] user={user_id}: {e}")
 
+
 async def send_daily_quotes():
     subs = daily_get_all_subscribers()
     if not subs: return
@@ -2513,6 +2934,7 @@ async def send_daily_quotes():
         try: await bot.send_message(uid, text, parse_mode=None)
         except: pass
         await asyncio.sleep(0.05)
+
 
 async def notification_worker():
     last_quote_date = None
@@ -2528,6 +2950,7 @@ async def notification_worker():
                 await send_daily_quotes()
         except: logging.exception("[NOTIFY]")
         await asyncio.sleep(60 - datetime.now().second)
+
 
 async def lesson_reminder_worker():
     sent_keys = set()
@@ -2566,6 +2989,7 @@ async def lesson_reminder_worker():
         except: logging.exception("[REMIND]")
         await asyncio.sleep(60)
 
+
 async def check_schedule_changes():
     users = get_users_for_change_tracking()
     if not users: return
@@ -2594,6 +3018,7 @@ async def check_schedule_changes():
                     except: pass
         except: pass
 
+
 async def change_worker():
     await asyncio.sleep(180)
     while True:
@@ -2601,10 +3026,67 @@ async def change_worker():
         except: logging.exception("[CHANGE]")
         await asyncio.sleep(1800)
 
+
+async def cleanup_cache_worker():
+    """Раз в сутки чистит старый кэш расписания и старые снапшоты."""
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            now = _now_irkutsk()
+            if now.hour == 4:
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+                conn = _connect()
+                conn.execute("DELETE FROM schedule_cache WHERE cached_at < ?", (cutoff,))
+                conn.commit(); conn.close()
+                logging.info("[CLEANUP] старый кэш расписания удалён")
+        except Exception:
+            logging.exception("[CLEANUP]")
+
+
+async def autobackup_worker():
+    """Раз в сутки в 04:00 по Иркутску — снимок в ./backups/.
+    Ротация: удаляем бэкапы старше 14 дней."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    backup_dir = os.path.join(base_dir, "backups")
+    try: os.makedirs(backup_dir, exist_ok=True)
+    except: pass
+    last_date = None
+    while True:
+        try:
+            now = _now_irkutsk()
+            today = now.strftime("%Y-%m-%d")
+            if now.hour == 4 and now.minute < 5 and last_date != today:
+                last_date = today
+                db_abs = os.path.abspath(DB_PATH)
+                dst_path = os.path.join(backup_dir, f"auto_{now.strftime('%Y%m%d_%H%M')}.db")
+                try:
+                    _make_db_snapshot(dst_path)
+                    logging.info(f"[AUTOBACKUP] {dst_path}")
+                    # Ротация
+                    cutoff = now - timedelta(days=14)
+                    for f in os.listdir(backup_dir):
+                        if not f.startswith("auto_"): continue
+                        p = os.path.join(backup_dir, f)
+                        try:
+                            mt = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc) + timedelta(hours=8)
+                            if mt < cutoff: os.remove(p)
+                        except Exception: pass
+                except Exception as e:
+                    logging.error(f"[AUTOBACKUP] {e}")
+        except Exception:
+            logging.exception("[AUTOBACKUP]")
+        await asyncio.sleep(60)
+
+
+# ═══════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
         stream=sys.stdout, force=True)
     init_db()
+    if not WEBAPP_URL:
+        logging.warning("[MAIN] WEBAPP_URL не задан — кнопка приложения в /start не появится")
     await bot.delete_webhook(drop_pending_updates=True)
     try:
         if _FPDF_AVAILABLE: await asyncio.to_thread(_find_or_download_pdf_font)
@@ -2613,7 +3095,10 @@ async def main():
     asyncio.create_task(notification_worker())
     asyncio.create_task(lesson_reminder_worker())
     asyncio.create_task(change_worker())
+    asyncio.create_task(cleanup_cache_worker())
+    asyncio.create_task(autobackup_worker())
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
