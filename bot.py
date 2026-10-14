@@ -1,3 +1,4 @@
+
 from dotenv import load_dotenv
 load_dotenv()
 import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging, shutil, io
@@ -120,9 +121,6 @@ WEATHER_LAT = float(os.getenv("WEATHER_LAT", "52.2864"))
 WEATHER_LON = float(os.getenv("WEATHER_LON", "104.2807"))
 WEATHER_CITY = os.getenv("WEATHER_CITY", "Иркутск")
 AI_CACHE_TTL_DAYS = int(os.getenv("AI_CACHE_TTL_DAYS", "7"))
-SEMESTER_SPRING_START = os.getenv("SEMESTER_SPRING_START", "02-01")
-SEMESTER_FALL_START   = os.getenv("SEMESTER_FALL_START",   "09-01")
-PARSER_TOP_GROUPS = int(os.getenv("PARSER_TOP_GROUPS", "20"))
 
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!"); sys.exit(1)
@@ -270,21 +268,6 @@ def init_db():
             status TEXT, updated_at TEXT,
             UNIQUE(user_id, date, time, subject))""")
 
-        # ── lessons_cache: автопарсинг в БД ──
-        conn.execute("""CREATE TABLE IF NOT EXISTS lessons_cache (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_id TEXT, group_name TEXT,
-            week_start TEXT, date TEXT, day_name TEXT,
-            time TEXT, time_end TEXT,
-            subject TEXT, type TEXT, teacher TEXT,
-            auditorium TEXT, subgroup TEXT,
-            updated_at TEXT
-        )""")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons_cache(date)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_teacher ON lessons_cache(teacher)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_group_week ON lessons_cache(group_id, week_start)")
-
-        # ── ai_cache: кэш ответов ИИ ──
         conn.execute("""CREATE TABLE IF NOT EXISTS ai_cache (
             prompt_hash TEXT PRIMARY KEY,
             question TEXT, answer TEXT,
@@ -292,13 +275,11 @@ def init_db():
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_cache_created ON ai_cache(created_at)")
 
-        # ── weather_cache ──
         conn.execute("""CREATE TABLE IF NOT EXISTS weather_cache (
             cache_key TEXT PRIMARY KEY,
             payload TEXT, updated_at TEXT
         )""")
 
-        # ── debts_log ──
         conn.execute("""CREATE TABLE IF NOT EXISTS debts_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             task_id INTEGER, user_id INTEGER,
@@ -1283,111 +1264,6 @@ def weather_line(w) -> str:
         parts.append(f"ветер {wind} м/с")
     parts.append(w.get("desc") or "")
     return " · ".join(p for p in parts if p)
-
-
-# ═══════════════════════════════════════════════════════════════
-# АВТОПАРСИНГ РАСПИСАНИЯ В БД
-# ═══════════════════════════════════════════════════════════════
-def _group_name_by_id(group_id: str) -> str:
-    for inst, groups in GROUPS.items():
-        for g in groups:
-            if g["id"] == str(group_id):
-                return g["name"]
-    return str(group_id)
-
-
-def get_top_groups(limit: int = 20):
-    conn = _connect()
-    try:
-        rows = conn.execute("""
-            SELECT group_id, COUNT(*) as cnt FROM users
-            WHERE group_id IS NOT NULL AND group_id != ''
-            GROUP BY group_id ORDER BY cnt DESC LIMIT ?
-        """, (limit,)).fetchall()
-        return [(r[0], _group_name_by_id(r[0])) for r in rows]
-    finally:
-        conn.close()
-
-
-def save_lessons_to_cache(group_id, group_name, week_start, days):
-    conn = _connect()
-    try:
-        conn.execute(
-            "DELETE FROM lessons_cache WHERE group_id=? AND week_start=?",
-            (str(group_id), str(week_start))
-        )
-        now = datetime.now(timezone.utc).isoformat()
-        for d in days:
-            day_key = d.get("date", "")
-            day_name = d.get("name", "")
-            for les in d.get("lessons", []):
-                conn.execute("""
-                    INSERT INTO lessons_cache
-                    (group_id, group_name, week_start, date, day_name,
-                     time, time_end, subject, type, teacher, auditorium, subgroup, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    str(group_id), group_name, str(week_start), day_key, day_name,
-                    les.get("time", ""), LESSON_TIMES.get(les.get("time", ""), ""),
-                    les.get("subject", ""), les.get("type", ""), les.get("teacher", ""),
-                    les.get("auditorium", ""), les.get("subgroup", ""), now
-                ))
-        conn.commit()
-        return True
-    except Exception as e:
-        logging.warning(f"[LESSONS_CACHE] {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def find_teacher_lessons(teacher_query: str, date_from: str = None, date_to: str = None,
-                         group_filter: str = None):
-    conn = _connect()
-    try:
-        clauses = ["LOWER(teacher) LIKE ?"]
-        q = f"%{teacher_query.strip().lower()}%"
-        params = [q]
-        if date_from:
-            clauses.append("date >= ?"); params.append(date_from)
-        if date_to:
-            clauses.append("date <= ?"); params.append(date_to)
-        if group_filter:
-            clauses.append("group_id = ?"); params.append(str(group_filter))
-        sql = (f"SELECT date, day_name, time, time_end, subject, type, teacher, "
-               f"auditorium, group_name, subgroup FROM lessons_cache "
-               f"WHERE {' AND '.join(clauses)} "
-               f"ORDER BY substr(date,7,4)||substr(date,4,2)||substr(date,1,2), time")
-        rows = conn.execute(sql, params).fetchall()
-        return rows
-    finally:
-        conn.close()
-
-
-def lessons_cache_stats():
-    conn = _connect()
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*), COUNT(DISTINCT group_id), MAX(updated_at) FROM lessons_cache"
-        ).fetchone()
-        return {"rows": row[0] or 0, "groups": row[1] or 0, "last_update": row[2]}
-    finally:
-        conn.close()
-
-
-def lessons_cache_cleanup(days: int = 14):
-    conn = _connect()
-    try:
-        cutoff_dt = _now_irkutsk() - timedelta(days=days)
-        cutoff = cutoff_dt.strftime("%d.%m.%Y")
-        cutoff_key = cutoff[6:] + cutoff[3:5] + cutoff[:2]
-        conn.execute(
-            "DELETE FROM lessons_cache WHERE substr(date,7,4)||substr(date,4,2)||substr(date,1,2) < ?",
-            (cutoff_key,)
-        )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -3480,20 +3356,6 @@ async def api_export_ics(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def api_find_teacher(request):
-    init_data = request.query.get("initData", "")
-    user_id = _verify_webapp_init(init_data)
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    q = (request.query.get("q") or "").strip()
-    if len(q) < 3:
-        return web.json_response({"error": "short", "message": "Введи минимум 3 символа"}, status=400)
-    rows = find_teacher_lessons(q)
-    items = [{"date": r[0], "day_name": r[1], "time": r[2], "time_end": r[3],
-              "subject": r[4], "type": r[5], "teacher": r[6],
-              "auditorium": r[7], "group": r[8], "subgroup": r[9]} for r in rows[:50]]
-    return web.json_response({"items": items, "count": len(items)})
-
-
 async def api_ai(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -3505,7 +3367,6 @@ async def api_ai(request):
     if len(question) > 2000: question = question[:2000]
     ai_save_message(user_id, 'user', question, has_photo=0)
 
-    # Кэш
     cached = ai_cache_get(question)
     if cached:
         ai_save_message(user_id, 'assistant', cached, has_photo=0)
@@ -3680,7 +3541,7 @@ def _find_or_download_pdf_font():
 def _pdf_short(text, limit=120):
     if not text: return ""
     s = str(text).replace("\r", "").strip()
-    if len(s) > limit: s = s[:limit - 1] + "…"
+    if len(s) > limit: s = s[:limit - 1] + "..."
     return s
 
 
@@ -3812,12 +3673,10 @@ async def api_admin_stats(request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
     cache_stats = ai_cache_stats()
-    lc_stats = lessons_cache_stats()
     return web.json_response({
         "total_users": get_total_users(),
         "pending_feedback": len(get_pending_feedback()),
         "ai_cache": cache_stats,
-        "lessons_cache": lc_stats,
     })
 
 
@@ -3899,36 +3758,7 @@ async def api_admin_clear_ai_cache(request):
 # ═══════════════════════════════════════════════════════════════
 # ФОНОВЫЕ ВОРКЕРЫ
 # ═══════════════════════════════════════════════════════════════
-async def parser_worker():
-    """Каждые 30 минут парсит расписание топ-N групп в lessons_cache."""
-    await asyncio.sleep(30)
-    while True:
-        try:
-            groups = get_top_groups(PARSER_TOP_GROUPS)
-            if groups:
-                now = _now_irkutsk()
-                monday = _monday_of_week(now)
-                next_monday = monday + timedelta(days=7)
-                logging.info(f"[PARSER] обновляю {len(groups)} групп")
-                for gid, gname in groups:
-                    for monday_dt in (monday, next_monday):
-                        try:
-                            html = await fetch_week_html(gid, monday_dt, use_cache=True)
-                            if not html: continue
-                            _, days = parse_schedule(html)
-                            week_start_str = monday_dt.strftime("%Y-%m-%d")
-                            save_lessons_to_cache(gid, gname, week_start_str, days)
-                        except Exception as e:
-                            logging.warning(f"[PARSER] {gid}: {e}")
-                        await asyncio.sleep(0.5)
-            lessons_cache_cleanup(days=14)
-        except Exception:
-            logging.exception("[PARSER]")
-        await asyncio.sleep(1800)
-
-
 async def debts_worker():
-    """Раз в сутки переносит просроченные #долг на завтра и уведомляет."""
     await asyncio.sleep(60)
     last_date = None
     while True:
@@ -3951,12 +3781,12 @@ async def debts_worker():
                 for uid, items in moved_by_user.items():
                     n = len(items)
                     word = "долг" if n == 1 else ("долга" if n in (2, 3, 4) else "долгов")
-                    lines = [f"⚠️ {n} {word} перенесено на завтра ({tomorrow_str}):", ""]
+                    lines = [f"{n} {word} перенесено на завтра ({tomorrow_str}):", ""]
                     for t in items[:10]:
-                        lines.append(f"• {t}")
+                        lines.append(f"- {t}")
                     if n > 10: lines.append(f"... и ещё {n-10}")
                     lines.append("")
-                    lines.append("Разберись, пока не превратилось в хвост 😉")
+                    lines.append("Разберись, пока не превратилось в хвост.")
                     try:
                         await bot.send_message(uid, "\n".join(lines), parse_mode=None)
                     except Exception:
@@ -3967,7 +3797,6 @@ async def debts_worker():
 
 
 async def weather_warmup_worker():
-    """Раз в час обновляет погоду (прогрев кэша)."""
     while True:
         try:
             await fetch_weather(force=True)
@@ -4017,7 +3846,6 @@ async def start_webapp():
     app.router.add_get("/api/attendance/semester", api_attendance_semester)
     app.router.add_get("/api/weather", api_weather)
     app.router.add_post("/api/export_ics", api_export_ics)
-    app.router.add_get("/api/find_teacher", api_find_teacher)
     app.router.add_get("/api/ai/history", api_ai_history)
     app.router.add_post("/api/ai/clear-history", api_ai_clear_history)
     app.router.add_post("/api/ai", api_ai)
@@ -4094,7 +3922,7 @@ async def cmd_admin(message: Message):
         "/restore — восстановить users.db (отправь .db с подписью)\n"
         "/whereami — где база и твой ID\n"
         "/dbcheck — проверка схемы БД (колонки, пользователи)\n"
-        "/cache — статистика кэша ИИ и расписания\n"
+        "/cache — статистика кэша ИИ\n"
         "/admin — эта справка")
 
 
@@ -4159,7 +3987,7 @@ async def cmd_dbcheck(message: Message):
         if missing_users:
             lines.append("")
             lines.append(f"[!] В users НЕТ колонок: {sorted(missing_users)}")
-            lines.append("→ Запусти бота один раз, init_db() добавит их.")
+            lines.append("Запусти бота один раз, init_db() добавит их.")
         else:
             lines.append("")
             lines.append("[OK] users содержит все нужные колонки")
@@ -4179,17 +4007,11 @@ async def cmd_cache(message: Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("Только для админа."); return
     ai = ai_cache_stats()
-    lc = lessons_cache_stats()
     lines = [
-        "КЭШ:",
+        "КЭШ ИИ:",
         "",
-        f"AI-ответы: {ai['size']} записей",
-        f"AI-попаданий: {ai['hits']}",
-        "",
-        f"Расписание (lessons_cache):",
-        f"  строк: {lc['rows']}",
-        f"  групп: {lc['groups']}",
-        f"  обновлено: {lc['last_update'] or '—'}",
+        f"Записей: {ai['size']}",
+        f"Попаданий: {ai['hits']}",
     ]
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Очистить кэш ИИ", callback_data="admin_clear_ai")],
@@ -4358,7 +4180,6 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         label = "Сегодня" if ntype == "today" else "Завтра"
         header = f"{label}, {target_str}"
 
-        # погода (только для "сегодня")
         w_line = ""
         if ntype == "today":
             try:
@@ -4526,7 +4347,6 @@ async def cleanup_cache_worker():
                     conn.commit()
                 finally:
                     conn.close()
-                # чистим кэш ИИ старше TTL
                 try:
                     conn = _connect()
                     try:
@@ -4588,16 +4408,14 @@ async def main():
         if _FPDF_AVAILABLE: await asyncio.to_thread(_find_or_download_pdf_font)
     except: pass
 
-    # Фоновые сервисы
     asyncio.create_task(start_webapp())
     asyncio.create_task(notification_worker())
     asyncio.create_task(lesson_reminder_worker())
     asyncio.create_task(change_worker())
     asyncio.create_task(cleanup_cache_worker())
     asyncio.create_task(autobackup_worker())
-    asyncio.create_task(parser_worker())            # автопарсинг расписания в БД
-    asyncio.create_task(debts_worker())             # автоперенос #долг
-    asyncio.create_task(weather_warmup_worker())    # прогрев кэша погоды
+    asyncio.create_task(debts_worker())
+    asyncio.create_task(weather_warmup_worker())
 
     await dp.start_polling(bot)
 
