@@ -9,6 +9,23 @@ try { tg.enableClosingConfirmation?.(); } catch(e){}
 const tgUser = tg.initDataUnsafe?.user || { first_name:'Гость', last_name:'', username:'', id:0 };
 const INIT_DATA = tg.initData || '';
 
+/* ─── Тёмная тема по системной настройке ─── */
+function applyColorScheme() {
+  const scheme = tg.colorScheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', scheme === 'dark' ? 'dark' : 'light');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', scheme === 'dark' ? '#0F1418' : '#3EE6D2');
+}
+applyColorScheme();
+try { tg.onEvent('themeChanged', applyColorScheme); } catch(e){}
+try {
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (!tg.colorScheme) applyColorScheme();
+    });
+  }
+} catch(e){}
+
 setTimeout(() => {
   const sp = document.getElementById('splash');
   const app = document.getElementById('app');
@@ -22,6 +39,7 @@ const state = {
   schedule:null, weekDays:null, weekOffset:0, scheduleViewMode:'today', scheduleDay:'today',
   tasks:[], tasksStats:{active:0,done:0}, tasksView:'active',
   tasksSearch:'', tasksSort:'due', tasksTag:'', tasksTags:[], tasksStatsFull:{total_done:0, streak:0},
+  tasksDebtsCount:0,
   notes:[], notesSubjects:[], notesSearch:'', notesTag:'', notesTags:[],
   profile:null, scholarship:null, groups:null,
   pickerMode:null, pickerInstitute:null, pickerCourse:null, pickerSearch:'',
@@ -32,6 +50,10 @@ const state = {
   presentForm:{ topic:'', info:'', wishes:'', slides:10, style:'random',
                 author:'', group:'', teacher:'', year:'' },
   presentBuilding:false,
+  // Новые фичи
+  weather:null, weatherLine:'',
+  attendanceSemester:null,
+  teacherSearch:'', teacherResults:null, teacherSearching:false, teacherPanel:false,
 };
 
 function icon(id, size=16, cls='') {
@@ -143,7 +165,6 @@ function findDayByDate(days, dateStr) {
   for (const d of days) if (d.date === dateStr) return d;
   return null;
 }
-
 function renderMarkdownLight(text) {
   if (!text) return '';
   let s = escapeHtml(text);
@@ -152,6 +173,21 @@ function renderMarkdownLight(text) {
   s = s.replace(/(^|\s)\*(.+?)\*(?=\s|$)/g, '$1<i>$2</i>');
   s = s.replace(/\n/g, '<br>');
   return s;
+}
+
+/* Найти следующую пару (по Иркутску) */
+function findNextLesson(lessons) {
+  if (!lessons || !lessons.length) return null;
+  const now = nowIrkutsk();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  for (const les of lessons) {
+    const t = (les.time || '').split(':');
+    if (t.length !== 2) continue;
+    const m = parseInt(t[0],10) * 60 + parseInt(t[1],10);
+    if (isNaN(m)) continue;
+    if (m + 90 >= nowMin) return { les, minutesLeft: m - nowMin };
+  }
+  return null;
 }
 
 function render() {
@@ -216,6 +252,37 @@ function render() {
   if (state.tab === 'schedule' && !state.loading) attachSwipe();
 }
 
+/* ─── Виджет погоды ─── */
+function renderWeatherWidget() {
+  if (!state.weatherLine) return '';
+  return `<div class="weather-widget">${escapeHtml(state.weatherLine)}</div>`;
+}
+
+/* ─── Виджет «следующая пара» ─── */
+function renderNextLessonWidget() {
+  const s = state.schedule;
+  if (!s || !s.lessons || !s.lessons.length) return '';
+  const nx = findNextLesson(s.lessons);
+  if (!nx) return '';
+  const les = nx.les;
+  const minLeft = nx.minutesLeft;
+  let timeStr = '';
+  if (minLeft > 0) {
+    const h = Math.floor(minLeft / 60);
+    const m = minLeft % 60;
+    if (h > 0) timeStr = `через ${h} ч ${m} мин`;
+    else timeStr = `через ${m} мин`;
+  } else if (minLeft > -90) {
+    timeStr = 'сейчас';
+  }
+  const aud = les.auditorium ? ` · ауд. ${escapeHtml(les.auditorium)}` : '';
+  return `<div class="next-lesson-widget">
+    <div class="nlw-label">Следующая пара · ${escapeHtml(timeStr)}</div>
+    <div class="nlw-subject">${escapeHtml(les.subject)}</div>
+    <div class="nlw-meta">${escapeHtml(les.time)}${aud}</div>
+  </div>`;
+}
+
 function renderLesson(les) {
   const timeRange = les.timeEnd ? `${les.time} – ${les.timeEnd}` : les.time;
   const details = [];
@@ -266,7 +333,7 @@ function renderDayCard(day, label) {
 function renderSchedule() {
   const s = state.schedule;
   if (s?.error === 'no_group' || (state.profile && !state.profile.group)) {
-    return `<div class="card">
+    return `${renderWeatherWidget()}<div class="card">
       <div class="card-title">Как начать</div>
       <div class="card-subtitle">1. Открой профиль и нажми «Выбрать группу»</div>
       <div class="card-subtitle">2. Укажи институт, курс и группу</div>
@@ -274,7 +341,9 @@ function renderSchedule() {
       <div class="actions-row"><button class="btn" data-action="go-profile">Выбрать группу</button></div>
     </div>`;
   }
-  let html = renderDaySwitch();
+  let html = renderWeatherWidget();
+  html += renderNextLessonWidget();
+  html += renderDaySwitch();
   html += `<div class="swipe-wrap"><div class="swipe-pane" id="swipePane">`;
   if (state.scheduleViewMode === 'week' && state.weekDays) html += renderWeekView();
   else if (state.scheduleDay === 'tomorrow') html += renderTomorrowBlock();
@@ -284,6 +353,9 @@ function renderSchedule() {
     <button class="btn btn-secondary" data-action="week-prev">${icon('ic-chevron-left',16)} Прошлая</button>
     <button class="btn btn-secondary" data-action="week-current">Текущая</button>
     <button class="btn btn-secondary" data-action="week-next">Следующая ${icon('ic-chevron-right',16)}</button>
+  </div>`;
+  html += `<div class="actions-row" style="margin-top:8px">
+    <button class="btn btn-secondary" data-action="export-ics" style="flex:1">📅 В календарь (.ics)</button>
   </div>`;
   return html;
 }
@@ -727,92 +799,99 @@ function renderScholarshipBlock() {
   }
   return html;
 }
-function actionScholarshipSetAmount() {
-  const cur = state.scholarship?.amount || 0;
-  modalOpen({title:'СУММА СТИПЕНДИИ', body:`
-    <div class="label">руб. в месяц</div>
-    <input class="input" id="sch-amount" type="number" min="0" max="100000" value="${cur}">
-    <div class="choice-row">
-      <button class="choice" data-amt="0">Не получаю</button>
-      <button class="choice" data-amt="3000">3000</button>
-      <button class="choice" data-amt="5000">5000</button>
-      <button class="choice" data-amt="7000">7000</button>
-      <button class="choice" data-amt="10000">10000</button>
-    </div>`, actions:[
-    {label:'ОТМЕНА', style:'btn-secondary'},
-    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-      const v = parseInt(document.getElementById('sch-amount')?.value || '0') || 0;
-      try { await apiPost('/api/scholarship-set-amount', {amount: v}); hideKeyboard(); haptic('success'); toast('Сохранено', 'success'); await loadScholarship(); render(); }
-      catch (e) { toast(e.message, 'error'); }
-    }}
-  ]});
-  setTimeout(() => {
-    document.querySelectorAll('[data-amt]').forEach(b => b.onclick = () => {
-      const inp = document.getElementById('sch-amount'); if (inp) inp.value = b.dataset.amt;
-    });
-  }, 0);
+
+/* ─── Пропуски по семестру ─── */
+function renderAttendanceSemesterBlock() {
+  const st = state.attendanceSemester;
+  if (!st) return `<div class="card"><div class="skeleton-card" style="margin:0"></div></div>`;
+  const totals = st.totals || {};
+  const bySubj = st.by_subject || {};
+  const subjects = Object.keys(bySubj);
+  let html = `<div class="card">
+    <div class="card-title">Пропуски · семестр с ${escapeHtml(st.since || '—')}</div>
+    <div class="att-sem-totals">
+      <div class="att-sem-box"><div class="n">${totals.total||0}</div><div class="l">Всего</div></div>
+      <div class="att-sem-box ok"><div class="n">${totals.was||0}</div><div class="l">Посещено</div></div>
+      <div class="att-sem-box warn"><div class="n">${totals.missed||0}</div><div class="l">Пропущено</div></div>
+      <div class="att-sem-box"><div class="n">${totals.sick||0}</div><div class="l">Болезнь</div></div>
+      <div class="att-sem-box"><div class="n">${totals.excused||0}</div><div class="l">Уважит.</div></div>
+    </div>`;
+  if (!subjects.length) {
+    html += `<div class="sch-empty">Пока нет отметок в этом семестре.</div>`;
+  } else {
+    html += `<div class="att-sem-list">`;
+    for (const subj of subjects) {
+      const d = bySubj[subj];
+      const total = d.total || 0;
+      const was = d.was || 0;
+      const missed = d.missed || 0;
+      const sick = d.sick || 0;
+      const excused = d.excused || 0;
+      const goodMiss = sick + excused;
+      const badMiss = missed;
+      const pct = total ? Math.round((was / total) * 100) : 0;
+      let cls = 'ok';
+      if (total) {
+        const skipPct = ((missed) / total) * 100;
+        if (skipPct >= 40) cls = 'bad';
+        else if (skipPct >= 25) cls = 'warn';
+      }
+      html += `<div class="att-sem-item ${cls}">
+        <div class="att-sem-subj">${escapeHtml(subj)}</div>
+        <div class="att-sem-meta">
+          <span>Посещено: <b>${was}</b>/${total}</span>
+          <span>Пропущено: <b>${badMiss}</b></span>
+          <span>Уважит.: <b>${goodMiss}</b></span>
+        </div>
+        <div class="att-sem-bar"><div class="att-sem-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  return html;
 }
-function actionScholarshipAddGrade(editId) {
-  const isEdit = !!editId;
-  let editing = isEdit ? (state.scholarship?.grades || []).find(x => x.id === editId) : null;
-  if (isEdit && !editing) return;
-  let form = {subject: editing?.subject || '', grade: editing?.grade || 5, semester: editing?.semester || (state.schFilterSemester || ''), is_auto: !!editing?.is_auto};
-  const subs = state.scholarship?.available_subjects || [];
-  const semesters = state.scholarship?.semesters || [];
-  const renderBody = () => `
-    <div class="label">ПРЕДМЕТ</div>
-    <input class="input" id="gr-subj" placeholder="Название предмета" value="${escapeHtml(form.subject)}" maxlength="100">
-    ${subs.length ? `<div class="choice-row" style="margin-top:4px;max-height:140px;overflow-y:auto">
-      ${subs.slice(0,60).map(s => `<button class="choice ${form.subject===s?'active':''}" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}
-    </div>` : ''}
-    <div class="label">ОЦЕНКА</div>
-    <div class="choice-row">${[2,3,4,5].map(g => `<button class="choice ${form.grade===g?'active':''}" data-grade="${g}">${g}</button>`).join('')}</div>
-    <div class="label">СЕМЕСТР (необязательно)</div>
-    <input class="input" id="gr-sem" placeholder="Например: 2024/25 осень" value="${escapeHtml(form.semester)}" maxlength="40">
-    ${semesters.length ? `<div class="choice-row" style="margin-top:0">
-      ${semesters.map(sm => `<button class="choice ${form.semester===sm?'active':''}" data-sem="${escapeHtml(sm)}">${escapeHtml(sm)}</button>`).join('')}
-    </div>` : ''}
-    <label class="switch-row" style="border:none"><input type="checkbox" id="gr-auto" ${form.is_auto?'checked':''}><span>Автомат</span></label>
-  `;
-  const attach = () => {
-    const si = document.getElementById('gr-subj'); if (si) si.oninput = (e) => form.subject = e.target.value;
-    const smi = document.getElementById('gr-sem'); if (smi) smi.oninput = (e) => form.semester = e.target.value;
-    const ai = document.getElementById('gr-auto'); if (ai) ai.onchange = (e) => form.is_auto = e.target.checked;
-    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => { form.subject = b.dataset.subj; document.getElementById('gr-subj').value = form.subject; document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active')); b.classList.add('active'); });
-    document.querySelectorAll('[data-grade]').forEach(b => b.onclick = () => { form.grade = parseInt(b.dataset.grade,10); document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
-    document.querySelectorAll('[data-sem]').forEach(b => b.onclick = () => { form.semester = b.dataset.sem; document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
-  };
-  modalOpen({title: isEdit ? 'ИЗМЕНИТЬ ОЦЕНКУ' : 'ДОБАВИТЬ ОЦЕНКУ', body: renderBody(), actions:[
-    {label:'ОТМЕНА', style:'btn-secondary'},
-    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-      const s = (document.getElementById('gr-subj')?.value || '').trim();
-      const sem = (document.getElementById('gr-sem')?.value || '').trim();
-      const isAuto = !!document.getElementById('gr-auto')?.checked;
-      if (!s) { toast('Введи предмет', 'error'); return; }
-      try {
-        if (isEdit) await apiPost('/api/scholarship-update-grade', {id: editId, subject: s, grade: form.grade, is_auto: isAuto, semester: sem});
-        else await apiPost('/api/scholarship-add-grade', {subject: s, grade: form.grade, is_auto: isAuto, semester: sem});
-        hideKeyboard(); haptic('success'); toast(isEdit?'Изменено':'Сохранено', 'success'); await loadScholarship(); render();
-      } catch (e) { toast(e.message, 'error'); }
-    }}
-  ]});
-  attach();
-}
-async function actionScholarshipDeleteGrade(id) {
-  modalConfirm('УДАЛИТЬ ОЦЕНКУ?', 'Это действие нельзя отменить.', async () => {
-    try { await apiPost('/api/scholarship-delete-grade', {id}); haptic('success'); await loadScholarship(); render(); }
-    catch (e) { toast(e.message, 'error'); }
-  }, 'УДАЛИТЬ');
-}
-async function actionScholarshipClear(sem) {
-  const label = sem ? `оценки из «${sem}»` : 'все оценки';
-  modalConfirm('ОЧИСТИТЬ?', `Удалим ${label}. Отменить нельзя.`, async () => {
-    try {
-      const body = sem ? {semester: sem} : {};
-      await apiPost('/api/scholarship-clear', body);
-      haptic('success'); await loadScholarship(); render();
-    } catch (e) { toast(e.message, 'error'); }
-  }, 'ОЧИСТИТЬ');
+
+/* ─── Панель поиска препода ─── */
+function renderTeacherPanel() {
+  if (!state.teacherPanel) return '';
+  let html = `<div class="card">
+    <div class="card-title">Где преподаватель?</div>
+    <div class="card-subtitle">Введи фамилию — покажу все пары с ним за 2 недели (только популярные группы).</div>
+    <div class="tasks-filter-bar">
+      <input class="input tasks-search" id="teacher-search" placeholder="Фамилия (мин. 3 буквы)" value="${escapeHtml(state.teacherSearch)}">
+      <button class="btn" data-action="teacher-search" style="flex:0;padding:12px 18px">Найти</button>
+    </div>`;
+  if (state.teacherSearching) {
+    html += `<div class="skeleton-card"></div>`;
+  } else if (state.teacherResults) {
+    const items = state.teacherResults || [];
+    if (!items.length) {
+      html += `<div class="sch-empty">Ничего не найдено. Попробуй другую фамилию или подожди обновления парсера (до 30 мин).</div>`;
+    } else {
+      html += `<div class="teacher-results">`;
+      let lastDate = '';
+      for (const it of items) {
+        if (it.date !== lastDate) {
+          lastDate = it.date;
+          html += `<div class="teacher-date">${escapeHtml(it.day_name || '')}${it.date?', '+escapeHtml(it.date):''}</div>`;
+        }
+        const t = it.time ? (it.time_end ? `${it.time}–${it.time_end}` : it.time) : '';
+        html += `<div class="teacher-item">
+          <div class="teacher-time">${escapeHtml(t)}</div>
+          <div class="teacher-body">
+            <div class="teacher-subj">${escapeHtml(it.subject)}${it.type?` <span style="color:var(--text-2);font-weight:400">(${escapeHtml(it.type)})</span>`:''}</div>
+            <div class="teacher-meta">${escapeHtml(it.auditorium||'—')} · ${escapeHtml(it.group||'')}</div>
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+  } else {
+    html += `<div class="sch-empty">Нажми «Найти» после ввода фамилии.</div>`;
+  }
+  html += `</div>`;
+  return html;
 }
 
 /* ЗАДАЧИ */
@@ -821,10 +900,15 @@ function renderTasks() {
   const stats = state.tasksStats;
   const tstats = state.tasksStatsFull || {total_done:0, streak:0};
   const tags = state.tasksTags || [];
+  const debts = state.tasksDebtsCount || 0;
   let html = `<div class="tab-buttons">
     <button data-action="tasks-show-active" class="${state.tasksView==='active'?'active':''}">Активные (${stats.active})</button>
     <button data-action="tasks-show-done" class="${state.tasksView==='done'?'active':''}">Выполненные (${stats.done})</button>
   </div>`;
+
+  if (debts > 0) {
+    html += `<div class="debts-banner">⚠️ Долгов висит: <b>${debts}</b> — тег #долг с прошедшей датой. Переношу автоматически каждый день.</div>`;
+  }
 
   if (state.tasksView === 'active' && tstats.total_done > 0) {
     html += `<div class="tasks-stats-row">
@@ -877,9 +961,9 @@ function renderTasks() {
       : '';
     const tagsArr = (t.tags||'').split().filter(x=>x);
     const tagsHtml = tagsArr.length
-      ? `<div class="task-tags">${tagsArr.map(tg=>`<span class="task-tag">${escapeHtml(tg)}</span>`).join('')}</div>`
+      ? `<div class="task-tags">${tagsArr.map(tg=>`<span class="task-tag ${tg==='#долг'?'task-tag-debt':''}">${escapeHtml(tg)}</span>`).join('')}</div>`
       : '';
-    html += `<div class="card task-card prio-${p.cls}">
+    html += `<div class="card task-card prio-${p.cls}${t.is_debt?' task-is-debt':''}">
       <div class="card-title">${escapeHtml(t.text)}</div>
       ${tagsHtml}
       <div class="card-meta">
@@ -922,8 +1006,13 @@ function actionTaskAdd() {
     </div>
     ${form.due==='custom' ? `<div class="date-input-row"><input type="date" id="task-date" value="${escapeHtml(form.customDate)}"><input type="time" id="task-time" value="${escapeHtml(form.customTime)}"></div>` : ''}
     <div class="label">ТЕГИ (через пробел)</div>
-    <input class="input" id="task-tags" placeholder="#учёба #важное" value="${escapeHtml(form.tags)}" maxlength="100">
+    <input class="input" id="task-tags" placeholder="#учёба #важное или #долг" value="${escapeHtml(form.tags)}" maxlength="100">
     ${tags.length ? `<div class="choice-row" style="margin-top:0">${tags.slice(0,10).map(t=>`<button class="choice" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}</div>` : ''}
+    <div class="choice-row" style="margin-top:4px">
+      <button class="choice" data-tag="#долг">#долг</button>
+      <button class="choice" data-tag="#важное">#важное</button>
+      <button class="choice" data-tag="#учёба">#учёба</button>
+    </div>
     <div class="label">ПОВТОР</div>
     <div class="choice-row">
       <button class="choice ${form.repeat==='none'?'active':''}" data-rep="none">Нет</button>
@@ -1105,11 +1194,13 @@ function actionNoteEdit(id) {
     }}
   ]});
 }
+
 async function actionNoteDelete(id) { modalConfirm('УДАЛИТЬ ЗАМЕТКУ?', 'Восстановить нельзя.', async () => { try { await apiPost('/api/note-delete', {id}); haptic('success'); await loadNotes(); render(); } catch (e) { toast(e.message, 'error'); } }, 'УДАЛИТЬ'); }
 async function actionNotePin(id) {
   try { await apiPost('/api/note-pin', {id}); haptic('success'); await loadNotes(); render(); }
   catch (e) { toast(e.message, 'error'); }
 }
+
 
 /* AI + Презентация */
 function renderAI() {
@@ -1270,10 +1361,16 @@ function renderAdmin() {
   if (!state.isAdmin) return '<div class="empty">Доступ только для админа</div>';
   let html = '';
   if (state.adminStats) {
+    const ai = state.adminStats.ai_cache || {};
+    const lc = state.adminStats.lessons_cache || {};
     html += `<div class="card">
       <div class="card-title">Статистика</div>
       <div class="card-subtitle">Пользователей: ${state.adminStats.total_users}</div>
       <div class="card-subtitle">Обращений: ${state.adminStats.pending_feedback}</div>
+      <div class="card-subtitle">AI-кэш: ${ai.size||0} записей · ${ai.hits||0} попаданий</div>
+      <div class="card-subtitle">Расписание в БД: ${lc.rows||0} строк · ${lc.groups||0} групп</div>
+      <div class="card-subtitle" style="font-size:11px">Последнее обновление: ${escapeHtml(lc.last_update||'—')}</div>
+      <div class="actions-row"><button class="btn btn-secondary" data-action="admin-clear-ai-cache">Очистить AI-кэш</button></div>
     </div>`;
   } else html += '<div class="skeleton-card"></div>';
   html += `<div class="card">
@@ -1317,6 +1414,7 @@ async function loadTasks() {
     state.tasksStats = {active: r.active || 0, done: r.done || 0};
     state.tasksStatsFull = r.stats || {total_done:0, streak:0};
     state.tasksTags = r.tags || [];
+    state.tasksDebtsCount = r.debts_count || 0;
   } catch (e) { state.tasks = []; }
 }
 async function loadNotes() {
@@ -1341,6 +1439,18 @@ async function loadScholarship() { try { state.scholarship = await apiGet('/api/
 async function loadGroups(force=false) { if (state.groups && !force) return; try { const r = await apiGet('/api/groups'); state.groups = r.groups; } catch (e) { state.groups = {}; } }
 async function loadAdminStats() { try { state.adminStats = await apiGet('/api/admin/stats'); } catch (e) { state.adminStats = null; } }
 async function loadAdminFeedback() { try { const r = await apiGet('/api/admin/feedback-list'); state.adminFeedback = r.items || []; } catch (e) { state.adminFeedback = []; } }
+async function loadWeather() {
+  try {
+    const r = await apiGet('/api/weather');
+    state.weather = r.weather || null;
+    state.weatherLine = r.line || '';
+  } catch (e) { state.weather = null; state.weatherLine = ''; }
+}
+async function loadAttendanceSemester() {
+  try {
+    state.attendanceSemester = await apiGet('/api/attendance/semester');
+  } catch (e) { state.attendanceSemester = null; }
+}
 
 async function loadTabData(tab) {
   state.loading = true;
@@ -1351,12 +1461,13 @@ async function loadTabData(tab) {
   try {
     if (tab === 'schedule') {
       state.scheduleViewMode = 'today'; state.weekOffset = 0; state.scheduleDay = 'today'; state.weekDays = null;
-      await loadProfile(); await loadSchedule(); ensureWeekLoaded().catch(()=>{});
+      await Promise.all([loadProfile(), loadSchedule(), loadWeather().catch(()=>{})]);
+      ensureWeekLoaded().catch(()=>{});
     } else if (tab === 'tasks') await loadTasks();
     else if (tab === 'notes') await loadNotes();
     else if (tab === 'ai') await loadProfile();
     else if (tab === 'admin') { await loadProfile(); if (state.isAdmin) await Promise.all([loadAdminStats(), loadAdminFeedback()]); }
-    else if (tab === 'profile') { await loadProfile(); await loadScholarship(); }
+    else if (tab === 'profile') { await loadProfile(); await loadScholarship(); await loadAttendanceSemester(); }
   } catch (e) { console.error(e); state.error = e.message; }
   state.loading = false;
   render();
@@ -1394,6 +1505,11 @@ function renderProfile() {
     </div>
   </div>`;
 
+  // Пропуски семестра
+  html += `<div class="section-title">Пропуски</div>`;
+  html += renderAttendanceSemesterBlock();
+
+  // Стипендия
   html += `<div class="section-title">Стипендия</div>`;
   html += renderScholarshipBlock();
 
@@ -1422,6 +1538,24 @@ function renderProfile() {
       ${p?.daily_subscribed ? `<button class="btn btn-secondary" data-action="quote-subscribe" data-value="0">Отписаться</button>` : `<button class="btn" data-action="quote-subscribe" data-value="1">Подписаться</button>`}
     </div>
   </div>`;
+
+  html += `<div class="section-title">Экспорт</div>`;
+  html += `<div class="card">
+    <div class="card-title">Календарь</div>
+    <div class="card-subtitle">Скачай расписание в .ics — откроется в Google Calendar, Apple Calendar, Яндекс.Календаре. Пары добавятся автоматически.</div>
+    <div class="actions-row">
+      <button class="btn" data-action="export-ics-2weeks" style="flex:1">2 недели</button>
+      <button class="btn btn-secondary" data-action="export-ics-4weeks" style="flex:1">4 недели</button>
+    </div>
+  </div>`;
+
+  html += `<div class="section-title">Поиск</div>`;
+  html += `<div class="card">
+    <div class="card-title">Где препод</div>
+    <div class="card-subtitle">Найди все пары преподавателя за 2 недели (по популярным группам).</div>
+    <div class="actions-row"><button class="btn" data-action="teacher-panel-toggle">${state.teacherPanel?'Скрыть':'Открыть поиск'}</button></div>
+  </div>`;
+  html += renderTeacherPanel();
 
   html += `<div class="section-title">Прочее</div>`;
   html += `<div class="card">
@@ -1552,7 +1686,21 @@ function actionAdminFbReply(fid) {
   ]});
 }
 async function actionAdminFbPostpone(fid) { try { await apiPost('/api/admin/feedback-postpone', {id: fid}); haptic('success'); await loadAdminFeedback(); await loadAdminStats(); render(); } catch (e) { toast(e.message, 'error'); } }
+async function actionAdminClearAiCache() {
+  modalConfirm('ОЧИСТИТЬ AI-КЭШ?', 'Все сохранённые ответы ИИ удалятся.', async () => {
+    try { await apiPost('/api/admin/clear-ai-cache'); haptic('success'); toast('Кэш очищен', 'success'); await loadAdminStats(); render(); }
+    catch (e) { toast(e.message, 'error'); }
+  }, 'ОЧИСТИТЬ');
+}
 function actionExportPdf() { modalConfirm('ЭКСПОРТ PDF?', 'PDF придёт в чат с ботом.', async () => { try { await apiPost('/api/export'); haptic('success'); toast('PDF отправлен в Telegram', 'success'); } catch (e) { toast(e.message, 'error'); } }, 'ЭКСПОРТ'); }
+async function actionExportIcs(weeks) {
+  try {
+    toast('Готовлю .ics...', 'info');
+    await apiPost('/api/export_ics', {weeks});
+    haptic('success');
+    toast('Файл отправлен в чат бота', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
 async function actionShowMyFeedback() {
   try {
     const d = await apiGet('/api/feedback/my');
@@ -1588,6 +1736,24 @@ function actionAttHelp() {
   `, actions:[{label:'ПОНЯТНО', style:'btn'}]});
 }
 
+async function actionTeacherSearch() {
+  const inp = document.getElementById('teacher-search');
+  const q = (inp?.value || state.teacherSearch || '').trim();
+  if (q.length < 3) { toast('Минимум 3 буквы', 'error'); return; }
+  state.teacherSearch = q;
+  state.teacherSearching = true;
+  render();
+  try {
+    const r = await apiGet('/api/find_teacher', {q});
+    state.teacherResults = r.items || [];
+  } catch (e) {
+    toast(e.message, 'error');
+    state.teacherResults = [];
+  }
+  state.teacherSearching = false;
+  render();
+}
+
 function attachHandlers() {
   document.querySelectorAll('[data-action]').forEach(el => {
     if (el._bound) return;
@@ -1607,22 +1773,29 @@ function attachHandlers() {
     });
   });
   const notifyCb = document.getElementById('notify-changes');
-  if (notifyCb) notifyCb.addEventListener('change', async (e) => {
-    const val = e.target.checked;
-    try {
-      await apiPost('/api/notify-set', {changes: val});
-      if (state.profile) state.profile.notify_changes = val;
-      haptic('success');
-    } catch (err) { haptic('error'); toast(err.message, 'error'); e.target.checked = !val; }
-  });
+  if (notifyCb && !notifyCb._boundChange) {
+    notifyCb._boundChange = true;
+    notifyCb.addEventListener('change', async (e) => {
+      const val = e.target.checked;
+      try {
+        await apiPost('/api/notify-set', {changes: val});
+        if (state.profile) state.profile.notify_changes = val;
+        haptic('success');
+      } catch (err) { haptic('error'); toast(err.message, 'error'); e.target.checked = !val; }
+    });
+  }
   const aiPhotoInput = document.getElementById('ai-photo-input');
-  if (aiPhotoInput) aiPhotoInput.addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) actionAIPhotoSelected(file);
-    e.target.value = '';
-  });
+  if (aiPhotoInput && !aiPhotoInput._boundChange) {
+    aiPhotoInput._boundChange = true;
+    aiPhotoInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) actionAIPhotoSelected(file);
+      e.target.value = '';
+    });
+  }
   const slidesBox = document.getElementById('present-slides');
   if (slidesBox) slidesBox.querySelectorAll('.choice').forEach(b => {
+    if (b._bound) return; b._bound = true;
     b.onclick = () => {
       slidesBox.querySelectorAll('.choice').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
@@ -1632,6 +1805,7 @@ function attachHandlers() {
   });
   const styleBox = document.getElementById('present-style');
   if (styleBox) styleBox.querySelectorAll('.choice').forEach(b => {
+    if (b._bound) return; b._bound = true;
     b.onclick = () => {
       styleBox.querySelectorAll('.choice').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
@@ -1639,7 +1813,6 @@ function attachHandlers() {
       haptic('light');
     };
   });
-  // Live-сохранение полей презентации
   ['present-topic','present-info','present-wishes','present-author','present-group','present-teacher','present-year'].forEach(id => {
     const el = document.getElementById(id);
     if (!el || el._boundSave) return;
@@ -1667,7 +1840,6 @@ function attachHandlers() {
       }
     });
   });
-  // Поиск задач (debounce)
   const taskSearchEl = document.getElementById('tasks-search');
   if (taskSearchEl && !taskSearchEl._boundSearch) {
     taskSearchEl._boundSearch = true;
@@ -1695,6 +1867,14 @@ function attachHandlers() {
       clearTimeout(timer);
       timer = setTimeout(() => loadNotes().then(render), 300);
     });
+  }
+  const teacherSearchEl = document.getElementById('teacher-search');
+  if (teacherSearchEl && !teacherSearchEl._boundSearch) {
+    teacherSearchEl._boundSearch = true;
+    teacherSearchEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); state.teacherSearch = e.target.value; actionTeacherSearch(); }
+    });
+    teacherSearchEl.addEventListener('input', (e) => { state.teacherSearch = e.target.value; });
   }
 }
 
@@ -1753,7 +1933,13 @@ function handleAction(el) {
   else if (a === 'admin-broadcast') actionAdminBroadcast();
   else if (a === 'admin-fb-reply') actionAdminFbReply(parseInt(el.dataset.id));
   else if (a === 'admin-fb-postpone') actionAdminFbPostpone(parseInt(el.dataset.id));
+  else if (a === 'admin-clear-ai-cache') actionAdminClearAiCache();
   else if (a === 'export-pdf') actionExportPdf();
+  else if (a === 'export-ics') actionExportIcs(2);
+  else if (a === 'export-ics-2weeks') actionExportIcs(2);
+  else if (a === 'export-ics-4weeks') actionExportIcs(4);
+  else if (a === 'teacher-panel-toggle') { state.teacherPanel = !state.teacherPanel; render(); }
+  else if (a === 'teacher-search') actionTeacherSearch();
   else if (a === 'show-my-feedback') actionShowMyFeedback();
   else if (a === 'att-help') actionAttHelp();
 }
@@ -1774,6 +1960,13 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
   if (state.tab === 'schedule' && state.scheduleViewMode === 'week') await loadWeekAndRender();
   else await loadTabData(state.tab);
 });
+
+// Автообновление «следующей пары» каждые 30 сек (только на расписании)
+setInterval(() => {
+  if (state.tab === 'schedule' && !state.loading && !state.pickerMode && !state.notifyEditor) {
+    render();
+  }
+}, 30000);
 
 (async function init() {
   await loadTabData(state.tab);
