@@ -9,7 +9,7 @@ try { tg.enableClosingConfirmation?.(); } catch(e){}
 const tgUser = tg.initDataUnsafe?.user || { first_name:'Гость', last_name:'', username:'', id:0 };
 const INIT_DATA = tg.initData || '';
 
-/* ─── Тёмная тема по системной настройке ─── */
+/* Тёмная тема по системной настройке */
 function applyColorScheme() {
   const scheme = tg.colorScheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.documentElement.setAttribute('data-theme', scheme === 'dark' ? 'dark' : 'light');
@@ -50,10 +50,8 @@ const state = {
   presentForm:{ topic:'', info:'', wishes:'', slides:10, style:'random',
                 author:'', group:'', teacher:'', year:'' },
   presentBuilding:false,
-  // Новые фичи
   weather:null, weatherLine:'',
   attendanceSemester:null,
-  teacherSearch:'', teacherResults:null, teacherSearching:false, teacherPanel:false,
 };
 
 function icon(id, size=16, cls='') {
@@ -175,7 +173,7 @@ function renderMarkdownLight(text) {
   return s;
 }
 
-/* Найти следующую пару (по Иркутску) */
+/* Найти следующую пару по Иркутску */
 function findNextLesson(lessons) {
   if (!lessons || !lessons.length) return null;
   const now = nowIrkutsk();
@@ -252,13 +250,11 @@ function render() {
   if (state.tab === 'schedule' && !state.loading) attachSwipe();
 }
 
-/* ─── Виджет погоды ─── */
 function renderWeatherWidget() {
   if (!state.weatherLine) return '';
   return `<div class="weather-widget">${escapeHtml(state.weatherLine)}</div>`;
 }
 
-/* ─── Виджет «следующая пара» ─── */
 function renderNextLessonWidget() {
   const s = state.schedule;
   if (!s || !s.lessons || !s.lessons.length) return '';
@@ -355,7 +351,7 @@ function renderSchedule() {
     <button class="btn btn-secondary" data-action="week-next">Следующая ${icon('ic-chevron-right',16)}</button>
   </div>`;
   html += `<div class="actions-row" style="margin-top:8px">
-    <button class="btn btn-secondary" data-action="export-ics" style="flex:1">📅 В календарь (.ics)</button>
+    <button class="btn btn-secondary" data-action="export-ics" style="flex:1">В календарь (.ics)</button>
   </div>`;
   return html;
 }
@@ -800,7 +796,6 @@ function renderScholarshipBlock() {
   return html;
 }
 
-/* ─── Пропуски по семестру ─── */
 function renderAttendanceSemesterBlock() {
   const st = state.attendanceSemester;
   if (!st) return `<div class="card"><div class="skeleton-card" style="margin:0"></div></div>`;
@@ -852,48 +847,6 @@ function renderAttendanceSemesterBlock() {
   return html;
 }
 
-/* ─── Панель поиска препода ─── */
-function renderTeacherPanel() {
-  if (!state.teacherPanel) return '';
-  let html = `<div class="card">
-    <div class="card-title">Где преподаватель?</div>
-    <div class="card-subtitle">Введи фамилию — покажу все пары с ним за 2 недели (только популярные группы).</div>
-    <div class="tasks-filter-bar">
-      <input class="input tasks-search" id="teacher-search" placeholder="Фамилия (мин. 3 буквы)" value="${escapeHtml(state.teacherSearch)}">
-      <button class="btn" data-action="teacher-search" style="flex:0;padding:12px 18px">Найти</button>
-    </div>`;
-  if (state.teacherSearching) {
-    html += `<div class="skeleton-card"></div>`;
-  } else if (state.teacherResults) {
-    const items = state.teacherResults || [];
-    if (!items.length) {
-      html += `<div class="sch-empty">Ничего не найдено. Попробуй другую фамилию или подожди обновления парсера (до 30 мин).</div>`;
-    } else {
-      html += `<div class="teacher-results">`;
-      let lastDate = '';
-      for (const it of items) {
-        if (it.date !== lastDate) {
-          lastDate = it.date;
-          html += `<div class="teacher-date">${escapeHtml(it.day_name || '')}${it.date?', '+escapeHtml(it.date):''}</div>`;
-        }
-        const t = it.time ? (it.time_end ? `${it.time}–${it.time_end}` : it.time) : '';
-        html += `<div class="teacher-item">
-          <div class="teacher-time">${escapeHtml(t)}</div>
-          <div class="teacher-body">
-            <div class="teacher-subj">${escapeHtml(it.subject)}${it.type?` <span style="color:var(--text-2);font-weight:400">(${escapeHtml(it.type)})</span>`:''}</div>
-            <div class="teacher-meta">${escapeHtml(it.auditorium||'—')} · ${escapeHtml(it.group||'')}</div>
-          </div>
-        </div>`;
-      }
-      html += `</div>`;
-    }
-  } else {
-    html += `<div class="sch-empty">Нажми «Найти» после ввода фамилии.</div>`;
-  }
-  html += `</div>`;
-  return html;
-}
-
 /* ЗАДАЧИ */
 function renderTasks() {
   const tasks = state.tasks;
@@ -907,7 +860,7 @@ function renderTasks() {
   </div>`;
 
   if (debts > 0) {
-    html += `<div class="debts-banner">⚠️ Долгов висит: <b>${debts}</b> — тег #долг с прошедшей датой. Переношу автоматически каждый день.</div>`;
+    html += `<div class="debts-banner">Долгов висит: <b>${debts}</b> — тег #долг с прошедшей датой. Переношу автоматически каждый день.</div>`;
   }
 
   if (state.tasksView === 'active' && tstats.total_done > 0) {
@@ -917,8 +870,8 @@ function renderTasks() {
         <div class="label">За 30 дней</div>
       </div>
       <div class="tasks-stat-box">
-        <div class="num">${tstats.streak}${tstats.streak > 0 ? ' 🔥' : ''}</div>
-        <div class="label">Streak дней</div>
+        <div class="num">${tstats.streak}${tstats.streak > 0 ? ' подряд' : ''}</div>
+        <div class="label">Дней без пропуска</div>
       </div>
     </div>`;
   }
@@ -957,7 +910,7 @@ function renderTasks() {
       ? `<span class="${t.overdue?'overdue':''}">до ${escapeHtml(t.due_date)}${t.due_time?' '+escapeHtml(t.due_time):''}${t.overdue?' — просрочено':''}</span>`
       : '<span style="color:var(--text-2)">без срока</span>';
     const repeatBadge = t.repeat_rule
-      ? `<span class="task-repeat-badge">${t.repeat_rule==='daily'?'🔄 ежедневно':t.repeat_rule==='weekly'?'🔁 еженедельно':'🔂 ежемесячно'}</span>`
+      ? `<span class="task-repeat-badge">${t.repeat_rule==='daily'?'ежедневно':t.repeat_rule==='weekly'?'еженедельно':'ежемесячно'}</span>`
       : '';
     const tagsArr = (t.tags||'').split().filter(x=>x);
     const tagsHtml = tagsArr.length
@@ -1122,15 +1075,15 @@ function renderNotes() {
     const tagsHtml = tagsArr.length
       ? `<div class="task-tags">${tagsArr.map(tg=>`<span class="task-tag">${escapeHtml(tg)}</span>`).join('')}</div>`
       : '';
-    const pinIcon = n.pinned ? '📌' : '';
+    const pinLabel = n.pinned ? '<span class="note-pin-label">закреплено</span>' : '';
     html += `<div class="card ${n.pinned?'note-pinned':''}">
       <div class="card-title" style="justify-content:space-between">
-        <span>${pinIcon} ${escapeHtml(n.subject)}</span>
+        <span>${escapeHtml(n.subject)}</span>${pinLabel}
       </div>
       ${tagsHtml}
       <div class="card-subtitle note-text">${renderMarkdownLight(n.text)}</div>
       <div class="actions-row">
-        <button class="btn btn-secondary" data-action="note-pin" data-id="${n.id}">${n.pinned?'Открепить':'📌'}</button>
+        <button class="btn btn-secondary" data-action="note-pin" data-id="${n.id}">${n.pinned?'Открепить':'Закрепить'}</button>
         <button class="btn btn-secondary" data-action="note-edit-open" data-id="${n.id}">Изменить</button>
         <button class="btn btn-secondary" data-action="note-delete" data-id="${n.id}">Удалить</button>
       </div>
@@ -1362,14 +1315,11 @@ function renderAdmin() {
   let html = '';
   if (state.adminStats) {
     const ai = state.adminStats.ai_cache || {};
-    const lc = state.adminStats.lessons_cache || {};
     html += `<div class="card">
       <div class="card-title">Статистика</div>
       <div class="card-subtitle">Пользователей: ${state.adminStats.total_users}</div>
       <div class="card-subtitle">Обращений: ${state.adminStats.pending_feedback}</div>
       <div class="card-subtitle">AI-кэш: ${ai.size||0} записей · ${ai.hits||0} попаданий</div>
-      <div class="card-subtitle">Расписание в БД: ${lc.rows||0} строк · ${lc.groups||0} групп</div>
-      <div class="card-subtitle" style="font-size:11px">Последнее обновление: ${escapeHtml(lc.last_update||'—')}</div>
       <div class="actions-row"><button class="btn btn-secondary" data-action="admin-clear-ai-cache">Очистить AI-кэш</button></div>
     </div>`;
   } else html += '<div class="skeleton-card"></div>';
@@ -1505,11 +1455,9 @@ function renderProfile() {
     </div>
   </div>`;
 
-  // Пропуски семестра
   html += `<div class="section-title">Пропуски</div>`;
   html += renderAttendanceSemesterBlock();
 
-  // Стипендия
   html += `<div class="section-title">Стипендия</div>`;
   html += renderScholarshipBlock();
 
@@ -1548,14 +1496,6 @@ function renderProfile() {
       <button class="btn btn-secondary" data-action="export-ics-4weeks" style="flex:1">4 недели</button>
     </div>
   </div>`;
-
-  html += `<div class="section-title">Поиск</div>`;
-  html += `<div class="card">
-    <div class="card-title">Где препод</div>
-    <div class="card-subtitle">Найди все пары преподавателя за 2 недели (по популярным группам).</div>
-    <div class="actions-row"><button class="btn" data-action="teacher-panel-toggle">${state.teacherPanel?'Скрыть':'Открыть поиск'}</button></div>
-  </div>`;
-  html += renderTeacherPanel();
 
   html += `<div class="section-title">Прочее</div>`;
   html += `<div class="card">
@@ -1736,24 +1676,6 @@ function actionAttHelp() {
   `, actions:[{label:'ПОНЯТНО', style:'btn'}]});
 }
 
-async function actionTeacherSearch() {
-  const inp = document.getElementById('teacher-search');
-  const q = (inp?.value || state.teacherSearch || '').trim();
-  if (q.length < 3) { toast('Минимум 3 буквы', 'error'); return; }
-  state.teacherSearch = q;
-  state.teacherSearching = true;
-  render();
-  try {
-    const r = await apiGet('/api/find_teacher', {q});
-    state.teacherResults = r.items || [];
-  } catch (e) {
-    toast(e.message, 'error');
-    state.teacherResults = [];
-  }
-  state.teacherSearching = false;
-  render();
-}
-
 function attachHandlers() {
   document.querySelectorAll('[data-action]').forEach(el => {
     if (el._bound) return;
@@ -1868,14 +1790,6 @@ function attachHandlers() {
       timer = setTimeout(() => loadNotes().then(render), 300);
     });
   }
-  const teacherSearchEl = document.getElementById('teacher-search');
-  if (teacherSearchEl && !teacherSearchEl._boundSearch) {
-    teacherSearchEl._boundSearch = true;
-    teacherSearchEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); state.teacherSearch = e.target.value; actionTeacherSearch(); }
-    });
-    teacherSearchEl.addEventListener('input', (e) => { state.teacherSearch = e.target.value; });
-  }
 }
 
 function handleAction(el) {
@@ -1938,8 +1852,6 @@ function handleAction(el) {
   else if (a === 'export-ics') actionExportIcs(2);
   else if (a === 'export-ics-2weeks') actionExportIcs(2);
   else if (a === 'export-ics-4weeks') actionExportIcs(4);
-  else if (a === 'teacher-panel-toggle') { state.teacherPanel = !state.teacherPanel; render(); }
-  else if (a === 'teacher-search') actionTeacherSearch();
   else if (a === 'show-my-feedback') actionShowMyFeedback();
   else if (a === 'att-help') actionAttHelp();
 }
@@ -1961,7 +1873,6 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
   else await loadTabData(state.tab);
 });
 
-// Автообновление «следующей пары» каждые 30 сек (только на расписании)
 setInterval(() => {
   if (state.tab === 'schedule' && !state.loading && !state.pickerMode && !state.notifyEditor) {
     render();
