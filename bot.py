@@ -3,13 +3,15 @@ load_dotenv()
 import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging, shutil, io
 import hashlib
 import urllib.parse
-from email.utils import format_datetime
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from aiohttp import web
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (Message, InlineKeyboardMarkup, InlineKeyboardButton,
     CallbackQuery, FSInputFile, WebAppInfo, BufferedInputFile)
 from aiogram.utils.web_app import safe_parse_webapp_init_data
@@ -121,10 +123,23 @@ WEATHER_LON = float(os.getenv("WEATHER_LON", "104.2807"))
 WEATHER_CITY = os.getenv("WEATHER_CITY", "Иркутск")
 AI_CACHE_TTL_DAYS = int(os.getenv("AI_CACHE_TTL_DAYS", "7"))
 
+# Каналы
+OVERHEARD_CHANNEL_ID = os.getenv("OVERHEARD_CHANNEL_ID", "").strip()
+OVERHEARD_CHANNEL_URL = os.getenv("OVERHEARD_CHANNEL_URL", "").strip()
+MARKET_CHANNEL_ID = os.getenv("MARKET_CHANNEL_ID", "").strip()
+MARKET_CHANNEL_URL = os.getenv("MARKET_CHANNEL_URL", "").strip()
+
+# Лимиты
+OVERHEARD_MAX_LEN = 1000
+MARKET_MAX_LEN = 800
+POST_COOLDOWN_MIN = 5
+BAN_THRESHOLD = 5  # после N отклонений — блок
+
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!"); sys.exit(1)
 bot = Bot(token=TOKEN)
-dp = Dispatcher()
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
 giga_client = None
 if GIGACHAT_CREDENTIALS:
     try:
@@ -284,6 +299,35 @@ def init_db():
             task_id INTEGER, user_id INTEGER,
             old_due TEXT, new_due TEXT,
             moved_at TEXT
+        )""")
+
+        # ── mod_queue: очередь модерации подслушано и барахолки ──
+        conn.execute("""CREATE TABLE IF NOT EXISTS mod_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT,
+            user_id INTEGER,
+            username TEXT,
+            first_name TEXT,
+            text TEXT,
+            price INTEGER,
+            contact TEXT,
+            media TEXT,
+            admin_msg_id INTEGER,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT,
+            published_at TEXT,
+            post_msg_id INTEGER,
+            reject_reason TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_mod_queue_status ON mod_queue(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_mod_queue_kind ON mod_queue(kind)")
+
+        # ── user_bans: блокировка спамеров ──
+        conn.execute("""CREATE TABLE IF NOT EXISTS user_bans (
+            user_id INTEGER PRIMARY KEY,
+            reason TEXT,
+            banned_at TEXT,
+            reject_count INTEGER DEFAULT 0
         )""")
 
         conn.commit()
@@ -707,793 +751,152 @@ def get_user_feedback(user_id, limit=30):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ЗАДАЧИ
+# MOD_QUEUE: подслушано + барахолка
 # ═══════════════════════════════════════════════════════════════
-def add_task(user_id, text, due_date=None, priority=2, due_time=None, tags="", repeat_rule=None):
+def mod_queue_add(kind, user_id, username, first_name, text, price=0, contact="", media="[]"):
     conn = _connect()
     try:
-        cur = conn.execute(
-            "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
-            "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
-            (user_id, text, due_date, datetime.now(timezone.utc).isoformat(),
-             priority, due_time, tags or "", repeat_rule))
-        tid = cur.lastrowid
+        cur = conn.execute("""
+            INSERT INTO mod_queue (kind, user_id, username, first_name, text, price, contact, media, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+        """, (kind, user_id, username, first_name, text, price, contact, media,
+              datetime.now(timezone.utc).isoformat()))
+        mid = cur.lastrowid
         conn.commit()
-        return tid
+        return mid
     finally:
         conn.close()
 
 
-def update_task(task_id, user_id, text=None, due_date=None, priority=None,
-                due_time=None, reset_due=False, tags=None, repeat_rule=None):
-    conn = _connect(); fields = []; values = []
+def mod_queue_set_admin_msg(mid, admin_msg_id):
+    conn = _connect()
     try:
-        if text is not None: fields.append("text=?"); values.append(text)
-        if reset_due:
-            fields.append("due_date=NULL"); fields.append("due_time=NULL")
-        else:
-            if due_date is not None: fields.append("due_date=?"); values.append(due_date)
-            if due_time is not None: fields.append("due_time=?"); values.append(due_time)
-        if priority is not None: fields.append("priority=?"); values.append(priority)
-        if tags is not None: fields.append("tags=?"); values.append(tags)
-        if repeat_rule is not None: fields.append("repeat_rule=?"); values.append(repeat_rule or None)
-        if not fields: return
-        values.extend([task_id, user_id])
-        conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
+        conn.execute("UPDATE mod_queue SET admin_msg_id=? WHERE id=?", (admin_msg_id, mid))
         conn.commit()
     finally:
         conn.close()
 
 
-def get_task(task_id, user_id):
+def mod_queue_get(mid):
     conn = _connect()
     try:
-        row = conn.execute(
-            "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
-            "COALESCE(tags,''), repeat_rule FROM tasks WHERE id=? AND user_id=?",
-            (task_id, user_id)).fetchone()
+        row = conn.execute("""SELECT id, kind, user_id, username, first_name, text, price, contact,
+            media, admin_msg_id, status, created_at, published_at, post_msg_id FROM mod_queue WHERE id=?""",
+            (mid,)).fetchone()
         return row
     finally:
         conn.close()
 
 
-def get_user_tasks(user_id, only_active=True, tag=None, search=None, sort_by="due"):
+def mod_queue_set_status(mid, status, post_msg_id=None, reason=None):
     conn = _connect()
     try:
-        clauses = ["user_id=?"]
-        params = [user_id]
-        if only_active:
-            clauses.append("done=0")
-        if tag:
-            clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
-            params.append(f"% {tag} %")
-        if search:
-            clauses.append("(LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
-            q = f"%{search.lower()}%"
-            params.extend([q, q])
-
-        order = "ORDER BY id DESC"
-        if sort_by == "due":
-            order = ("ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, "
-                     "substr(due_date,7,4)||substr(due_date,4,2)||substr(due_date,1,2), "
-                     "COALESCE(due_time,''), priority DESC")
-        elif sort_by == "priority":
-            order = "ORDER BY priority DESC, done ASC, id DESC"
-        elif sort_by == "created":
-            order = "ORDER BY id DESC"
-
-        sql = (f"SELECT id, text, due_date, done, created_at, priority, due_time, "
-               f"COALESCE(tags,''), repeat_rule "
-               f"FROM tasks WHERE {' AND '.join(clauses)} {order}")
-        rows = conn.execute(sql, params).fetchall()
-        return rows
-    finally:
-        conn.close()
-
-
-def get_done_tasks(user_id, days=30):
-    conn = _connect()
-    try:
-        threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        rows = conn.execute(
-            "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
-            "COALESCE(tags,'') FROM tasks "
-            "WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? "
-            "ORDER BY done_at DESC",
-            (user_id, threshold)).fetchall()
-        return rows
-    finally:
-        conn.close()
-
-
-def mark_task_done(task_id, user_id):
-    conn = _connect()
-    try:
-        conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
-            (datetime.now(timezone.utc).isoformat(), task_id, user_id))
-        row = conn.execute("SELECT text, priority, tags, repeat_rule, due_date, due_time "
-                           "FROM tasks WHERE id=? AND user_id=?",
-                           (task_id, user_id)).fetchone()
-        if row and row[3]:
-            text, priority, tags, repeat_rule, due_date, due_time = row
-            next_due = None
-            if due_date:
-                try:
-                    d = datetime.strptime(due_date, "%d.%m.%Y")
-                    days_map = {"daily": 1, "weekly": 7, "monthly": 30}
-                    delta = days_map.get(repeat_rule, 7)
-                    next_due = (d + timedelta(days=delta)).strftime("%d.%m.%Y")
-                except: pass
-            conn.execute(
-                "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
-                "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
-                (user_id, text, next_due, datetime.now(timezone.utc).isoformat(),
-                 priority, due_time, tags, repeat_rule))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def delete_task(task_id, user_id):
-    conn = _connect()
-    try:
-        conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def clear_done_tasks(user_id):
-    conn = _connect()
-    try:
-        conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def count_user_tasks(user_id):
-    conn = _connect()
-    try:
-        row = conn.execute(
-            "SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), "
-            "SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?",
-            (user_id,)).fetchone()
-        return (row[0] or 0, row[1] or 0)
-    finally:
-        conn.close()
-
-
-def get_all_task_tags(user_id):
-    conn = _connect()
-    try:
-        rows = conn.execute("SELECT DISTINCT tags FROM tasks WHERE user_id=? AND COALESCE(tags,'') != ''",
-                            (user_id,)).fetchall()
-        tags = set()
-        for r in rows:
-            for t in (r[0] or "").split():
-                t = t.strip()
-                if t: tags.add(t)
-        return sorted(tags)
-    finally:
-        conn.close()
-
-
-def task_stats(user_id, days=30):
-    conn = _connect()
-    try:
-        threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        total = conn.execute("SELECT COUNT(*) FROM tasks WHERE user_id=? AND done=1 AND done_at >= ?",
-                             (user_id, threshold)).fetchone()[0] or 0
-        rows = conn.execute("SELECT done_at FROM tasks WHERE user_id=? AND done=1 AND done_at >= ? "
-                            "ORDER BY done_at DESC", (user_id, threshold)).fetchall()
-    finally:
-        conn.close()
-    days_done = set()
-    for r in rows:
-        try:
-            dt = datetime.fromisoformat(r[0]) + timedelta(hours=8)
-            days_done.add(dt.strftime("%Y-%m-%d"))
-        except: pass
-    streak = 0
-    cur = _now_irkutsk()
-    while cur.strftime("%Y-%m-%d") in days_done:
-        streak += 1
-        cur -= timedelta(days=1)
-    return {"total_done": total, "streak": streak}
-
-
-# ═══════════════════════════════════════════════════════════════
-# ЗАМЕТКИ
-# ═══════════════════════════════════════════════════════════════
-def add_or_update_note(user_id, subject, text, tags=""):
-    conn = _connect()
-    try:
-        row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
-                           (user_id, subject)).fetchone()
-        now = datetime.now(timezone.utc).isoformat()
-        if row:
-            conn.execute(
-                "UPDATE notes SET text=?, tags=?, updated_at=?, created_at=? WHERE id=?",
-                (text, tags or "", now, now, row[0]))
+        if status == "published":
+            conn.execute("UPDATE mod_queue SET status=?, published_at=?, post_msg_id=? WHERE id=?",
+                         (status, datetime.now(timezone.utc).isoformat(), post_msg_id, mid))
         else:
-            conn.execute(
-                "INSERT INTO notes (user_id, subject, text, created_at, tags, pinned, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 0, ?)",
-                (user_id, subject, text, now, tags or "", now))
+            conn.execute("UPDATE mod_queue SET status=?, reject_reason=? WHERE id=?",
+                         (status, reason, mid))
         conn.commit()
     finally:
         conn.close()
 
 
-def get_user_notes(user_id, search=None, tag=None, sort="pinned"):
+def mod_queue_pending(kind=None, limit=20):
     conn = _connect()
     try:
-        clauses = ["user_id=?"]
-        params = [user_id]
-        if tag:
-            clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
-            params.append(f"% {tag} %")
-        if search:
-            clauses.append("(LOWER(subject) LIKE ? OR LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
-            q = f"%{search.lower()}%"
-            params.extend([q, q, q])
-        order = "ORDER BY pinned DESC, LOWER(subject)"
-        if sort == "updated":
-            order = "ORDER BY COALESCE(updated_at, created_at) DESC"
-        elif sort == "subject":
-            order = "ORDER BY LOWER(subject)"
-        sql = (f"SELECT id, subject, text, COALESCE(tags,''), COALESCE(pinned,0) "
-               f"FROM notes WHERE {' AND '.join(clauses)} {order}")
-        rows = conn.execute(sql, params).fetchall()
-        return rows
-    finally:
-        conn.close()
-
-
-def delete_note_by_id(note_id, user_id):
-    conn = _connect()
-    try:
-        conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def toggle_note_pin(note_id, user_id):
-    conn = _connect()
-    try:
-        row = conn.execute("SELECT pinned FROM notes WHERE id=? AND user_id=?",
-                           (note_id, user_id)).fetchone()
-        if row is None:
-            return None
-        new_val = 0 if (row[0] or 0) else 1
-        conn.execute("UPDATE notes SET pinned=? WHERE id=? AND user_id=?",
-                     (new_val, note_id, user_id))
-        conn.commit()
-        return bool(new_val)
-    finally:
-        conn.close()
-
-
-def get_all_note_tags(user_id):
-    conn = _connect()
-    try:
-        rows = conn.execute("SELECT DISTINCT COALESCE(tags,'') FROM notes WHERE user_id=?",
-                            (user_id,)).fetchall()
-        tags = set()
-        for r in rows:
-            for t in (r[0] or "").split():
-                t = t.strip()
-                if t: tags.add(t)
-        return sorted(tags)
-    finally:
-        conn.close()
-
-
-def ai_get_history(user_id, limit=30):
-    conn = _connect()
-    try:
-        rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
-        rows.reverse()
-        return rows
-    finally:
-        conn.close()
-
-def ai_save_message(user_id, role, text, has_photo=0):
-    conn = _connect()
-    try:
-        conn.execute("INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
-        conn.commit()
-    finally:
-        conn.close()
-
-def ai_clear_history(user_id):
-    conn = _connect()
-    try:
-        conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def attendance_set(user_id, date, time, subject, status):
-    if status not in ("", "was", "missed", "sick", "excused"): return False
-    conn = _connect()
-    try:
-        if status:
-            conn.execute("INSERT INTO attendance (user_id, date, time, subject, status, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, date, time, subject) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at",
-                (user_id, date, time, subject, status, datetime.now(timezone.utc).isoformat()))
+        if kind:
+            rows = conn.execute("""SELECT id, kind, user_id, username, first_name, text, price, contact,
+                media, created_at FROM mod_queue
+                WHERE status='pending' AND kind=? ORDER BY id ASC LIMIT ?""", (kind, limit)).fetchall()
         else:
-            conn.execute("DELETE FROM attendance WHERE user_id=? AND date=? AND time=? AND subject=?", (user_id, date, time, subject))
-        conn.commit()
-        return True
-    finally:
-        conn.close()
-
-def attendance_get_map(user_id, dates):
-    if not dates: return {}
-    conn = _connect()
-    try:
-        placeholders = ",".join("?" * len(dates))
-        rows = conn.execute(f"SELECT date, time, subject, status FROM attendance WHERE user_id=? AND date IN ({placeholders})",
-            (user_id, *dates)).fetchall()
-        return {(d, t, s): st for d, t, s, st in rows}
-    finally:
-        conn.close()
-
-def attendance_stats(user_id):
-    conn = _connect()
-    try:
-        rows = conn.execute("SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status", (user_id,)).fetchall()
-        result = {"was": 0, "missed": 0, "sick": 0, "excused": 0}
-        for status, count in rows:
-            if status in result: result[status] = count
-        return result
-    finally:
-        conn.close()
-
-
-def get_export_data(user_id):
-    saved = get_user_group(user_id)
-    tasks = get_user_tasks(user_id, only_active=False)
-    notes = get_user_notes(user_id)
-    grades = get_grades(user_id)
-    amount = get_scholarship_amount(user_id)
-    feedback = get_user_feedback(user_id, limit=100)
-    att = attendance_stats(user_id)
-    conn = _connect()
-    try:
-        meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-    username = meta[0] if meta else None; first_name = meta[1] if meta else None
-    return {"exported_at": datetime.now(timezone.utc).isoformat(), "user_id": user_id,
-        "username": username, "first_name": first_name,
-        "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
-        "subgroup": get_user_subgroup(user_id), "scholarship_amount": amount,
-        "tasks": [{"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]),
-                   "priority": t[5], "due_time": t[6],
-                   "tags": t[7] if len(t) > 7 else "",
-                   "repeat_rule": t[8] if len(t) > 8 else None} for t in tasks],
-        "notes": [{"id": n[0], "subject": n[1], "text": n[2],
-                   "tags": n[3] if len(n) > 3 else "",
-                   "pinned": bool(n[4]) if len(n) > 4 else False} for n in notes],
-        "grades": [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4]} for g in grades],
-        "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
-        "attendance": att}
-
-
-# ═══════════════════════════════════════════════════════════════
-# КЭШ ИИ-ОТВЕТОВ
-# ═══════════════════════════════════════════════════════════════
-def _ai_hash(question: str) -> str:
-    q = (question or "").strip().lower()
-    q = re.sub(r"\s+", " ", q)
-    q = re.sub(r"[?!.,;:]+$", "", q)
-    return hashlib.sha256(q.encode("utf-8")).hexdigest()
-
-
-def ai_cache_get(question: str):
-    conn = _connect()
-    try:
-        h = _ai_hash(question)
-        row = conn.execute(
-            "SELECT answer, created_at FROM ai_cache WHERE prompt_hash=?", (h,)
-        ).fetchone()
-        if not row:
-            return None
-        created = row[1]
-        try:
-            if datetime.now(timezone.utc) - datetime.fromisoformat(created) > timedelta(days=AI_CACHE_TTL_DAYS):
-                conn.execute("DELETE FROM ai_cache WHERE prompt_hash=?", (h,))
-                conn.commit()
-                return None
-        except Exception:
-            pass
-        conn.execute("UPDATE ai_cache SET hits=hits+1 WHERE prompt_hash=?", (h,))
-        conn.commit()
-        return row[0]
-    finally:
-        conn.close()
-
-
-def ai_cache_put(question: str, answer: str):
-    if not question or not answer: return
-    if len(answer) > 8000: return
-    conn = _connect()
-    try:
-        h = _ai_hash(question)
-        conn.execute(
-            "INSERT OR REPLACE INTO ai_cache (prompt_hash, question, answer, created_at, hits) "
-            "VALUES (?, ?, ?, ?, COALESCE((SELECT hits FROM ai_cache WHERE prompt_hash=?), 0))",
-            (h, question[:500], answer, datetime.now(timezone.utc).isoformat(), h)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def ai_cache_stats():
-    conn = _connect()
-    try:
-        row = conn.execute("SELECT COUNT(*), SUM(hits) FROM ai_cache").fetchone()
-        return {"size": row[0] or 0, "hits": row[1] or 0}
-    finally:
-        conn.close()
-
-
-def ai_cache_clear():
-    conn = _connect()
-    try:
-        conn.execute("DELETE FROM ai_cache")
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# ═══════════════════════════════════════════════════════════════
-# ПОГОДА (Open-Meteo)
-# ═══════════════════════════════════════════════════════════════
-async def fetch_weather(force=False):
-    cache_key = f"{WEATHER_LAT:.3f},{WEATHER_LON:.3f}"
-    if not force:
-        conn = _connect()
-        try:
-            row = conn.execute(
-                "SELECT payload, updated_at FROM weather_cache WHERE cache_key=?",
-                (cache_key,)
-            ).fetchone()
-        finally:
-            conn.close()
-        if row:
-            try:
-                if datetime.now(timezone.utc) - datetime.fromisoformat(row[1]) < timedelta(hours=1):
-                    return json.loads(row[0])
-            except Exception:
-                pass
-
-    url = (
-        f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
-        f"&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m"
-        f"&daily=temperature_2m_max,temperature_2m_min,weather_code"
-        f"&timezone=Asia%2FIrkutsk&forecast_days=2"
-    )
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-    except Exception as e:
-        logging.warning(f"[WEATHER] {e}")
-        return None
-
-    cur = (data.get("current") or {})
-    daily = (data.get("daily") or {})
-    code = cur.get("weather_code", 0)
-    payload = {
-        "temp": cur.get("temperature_2m"),
-        "feels": cur.get("apparent_temperature"),
-        "wind": cur.get("wind_speed_10m"),
-        "code": code,
-        "desc": _weather_desc(code),
-        "tmax": (daily.get("temperature_2m_max") or [None])[0],
-        "tmin": (daily.get("temperature_2m_min") or [None])[0],
-        "city": WEATHER_CITY,
-    }
-
-    conn = _connect()
-    try:
-        conn.execute(
-            "INSERT OR REPLACE INTO weather_cache (cache_key, payload, updated_at) "
-            "VALUES (?, ?, ?)",
-            (cache_key, json.dumps(payload, ensure_ascii=False),
-             datetime.now(timezone.utc).isoformat())
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    return payload
-
-
-def _weather_desc(code: int) -> str:
-    if code == 0: return "ясно"
-    if code in (1, 2): return "малооблачно"
-    if code == 3: return "пасмурно"
-    if code in (45, 48): return "туман"
-    if code in (51, 53, 55, 56, 57): return "морось"
-    if code in (61, 63, 65, 66, 67): return "дождь"
-    if code in (71, 73, 75, 77): return "снег"
-    if code in (80, 81, 82): return "ливень"
-    if code in (85, 86): return "снегопад"
-    if code in (95, 96, 99): return "гроза"
-    return "—"
-
-
-def _weather_emoji(code: int) -> str:
-    if code == 0: return "☀️"
-    if code in (1, 2): return "🌤"
-    if code == 3: return "☁️"
-    if code in (45, 48): return "🌫"
-    if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82): return "🌧"
-    if code in (71, 73, 75, 77, 85, 86): return "❄️"
-    if code in (95, 96, 99): return "⛈"
-    return "🌡"
-
-
-def weather_line(w) -> str:
-    if not w: return ""
-    t = w.get("temp")
-    if t is None: return ""
-    try: t = round(float(t))
-    except: return ""
-    feels = w.get("feels")
-    try: feels = round(float(feels)) if feels is not None else None
-    except: feels = None
-    wind = w.get("wind")
-    try: wind = round(float(wind)) if wind is not None else None
-    except: wind = None
-    parts = [f"{_weather_emoji(w.get('code', 0))} {t}°C"]
-    if feels is not None and abs(feels - t) >= 3:
-        parts.append(f"ощущ. {feels}°")
-    if wind is not None and wind >= 5:
-        parts.append(f"ветер {wind} м/с")
-    parts.append(w.get("desc") or "")
-    return " · ".join(p for p in parts if p)
-
-
-# ═══════════════════════════════════════════════════════════════
-# АВТОПЕРЕНОС ДОЛГОВ
-# ═══════════════════════════════════════════════════════════════
-def get_overdue_debt_tasks():
-    conn = _connect()
-    try:
-        rows = conn.execute("""
-            SELECT id, user_id, text, due_date, due_time FROM tasks
-            WHERE done=0
-              AND due_date IS NOT NULL AND due_date != ''
-              AND (' ' || COALESCE(tags,'') || ' ') LIKE '% #долг %'
-        """).fetchall()
+            rows = conn.execute("""SELECT id, kind, user_id, username, first_name, text, price, contact,
+                media, created_at FROM mod_queue
+                WHERE status='pending' ORDER BY id ASC LIMIT ?""", (limit,)).fetchall()
         return rows
     finally:
         conn.close()
 
 
-def move_debt_to_date(task_id, user_id, new_date):
+def mod_queue_count_pending():
     conn = _connect()
     try:
-        row = conn.execute("SELECT due_date FROM tasks WHERE id=? AND user_id=?",
-                           (task_id, user_id)).fetchone()
-        old_due = row[0] if row else ""
-        conn.execute("UPDATE tasks SET due_date=? WHERE id=? AND user_id=?",
-                     (new_date, task_id, user_id))
-        conn.execute("""
-            INSERT INTO debts_log (task_id, user_id, old_due, new_due, moved_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (task_id, user_id, old_due, new_date, datetime.now(timezone.utc).isoformat()))
-        conn.commit()
-        return True
-    except Exception as e:
-        logging.warning(f"[DEBT] {e}")
-        return False
+        row = conn.execute("SELECT COUNT(*) FROM mod_queue WHERE status='pending'").fetchone()
+        return row[0] or 0
     finally:
         conn.close()
 
 
-def count_user_debts(user_id):
+def last_post_time(user_id, kind):
     conn = _connect()
     try:
-        rows = conn.execute("""
-            SELECT due_date FROM tasks
-            WHERE done=0 AND user_id=?
-              AND due_date IS NOT NULL AND due_date != ''
-              AND (' ' || COALESCE(tags,'') || ' ') LIKE '% #долг %'
-        """, (user_id,)).fetchall()
-    finally:
-        conn.close()
-    today_str = _now_irkutsk().strftime("%d.%m.%Y")
-    today_key = today_str[6:] + today_str[3:5] + today_str[:2]
-    n = 0
-    for r in rows:
-        d = r[0] or ""
-        if len(d) == 10:
-            key = d[6:] + d[3:5] + d[:2]
-            if key < today_key:
-                n += 1
-    return n
-
-
-# ═══════════════════════════════════════════════════════════════
-# ПРОПУСКИ ПО СЕМЕСТРУ
-# ═══════════════════════════════════════════════════════════════
-def get_semester_start() -> datetime:
-    now = _now_irkutsk()
-    year = now.year
-    m = now.month
-    if m >= 9:
-        return datetime(year, 9, 1, tzinfo=timezone.utc) + timedelta(hours=8)
-    if m >= 2:
-        return datetime(year, 2, 1, tzinfo=timezone.utc) + timedelta(hours=8)
-    return datetime(year - 1, 9, 1, tzinfo=timezone.utc) + timedelta(hours=8)
-
-
-def attendance_semester_stats(user_id):
-    since = get_semester_start()
-    conn = _connect()
-    try:
-        rows = conn.execute("""
-            SELECT subject, status, COUNT(*) FROM attendance
-            WHERE user_id=? AND updated_at >= ?
-            GROUP BY subject, status
-        """, (user_id, since.isoformat())).fetchall()
+        row = conn.execute("""SELECT created_at FROM mod_queue
+            WHERE user_id=? AND kind=? ORDER BY id DESC LIMIT 1""", (user_id, kind)).fetchone()
+        return row[0] if row else None
     finally:
         conn.close()
 
-    result = {}
-    for subject, status, n in rows:
-        if subject not in result:
-            result[subject] = {"total": 0, "was": 0, "missed": 0, "sick": 0, "excused": 0}
-        result[subject][status] = result[subject].get(status, 0) + n
-        result[subject]["total"] += n
 
-    totals = {"total": 0, "was": 0, "missed": 0, "sick": 0, "excused": 0}
-    for subj, d in result.items():
-        for k in ("total", "was", "missed", "sick", "excused"):
-            totals[k] += d.get(k, 0)
-
-    return {"by_subject": result, "totals": totals, "since": since.strftime("%d.%m.%Y")}
-
-
-# ═══════════════════════════════════════════════════════════════
-# ЭКСПОРТ В .ICS
-# ═══════════════════════════════════════════════════════════════
-def _ics_escape(text: str) -> str:
-    if not text: return ""
-    return (text.replace("\\", "\\\\").replace(",", "\\,")
-                .replace(";", "\\;").replace("\n", "\\n"))
-
-
-def _ics_datetime(date_str: str, time_str: str, tz_offset_hours: int = 8):
+def check_cooldown(user_id, kind):
+    last = last_post_time(user_id, kind)
+    if not last: return 0  # секунд осталось
     try:
-        d, m, y = date_str.split(".")
-        hh, mm = time_str.split(":")
-        dt = datetime(int(y), int(m), int(d), int(hh), int(mm),
-                      tzinfo=timezone(timedelta(hours=tz_offset_hours)))
-        return dt.strftime("%Y%m%dT%H%M%S")
+        dt = datetime.fromisoformat(last)
+        delta = datetime.now(timezone.utc) - dt
+        remain = POST_COOLDOWN_MIN * 60 - delta.total_seconds()
+        return max(0, int(remain))
     except Exception:
-        return None
+        return 0
 
 
-def _ics_now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+def is_banned(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT reason FROM user_bans WHERE user_id=?", (user_id,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
 
 
-async def generate_ics_for_user_async(user_id, weeks: int = 2) -> bytes:
-    saved = get_user_group(user_id)
-    if not saved:
-        raise ValueError("Сначала выбери группу")
-    group_id, group_name = saved
-    subgroup = get_user_subgroup(user_id)
-
-    now = _now_irkutsk()
-    monday = _monday_of_week(now)
-
-    lines = [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "PRODID:-//Student IRK//Schedule//RU",
-        "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH",
-        f"X-WR-CALNAME:Расписание {_ics_escape(group_name)}",
-        "X-WR-TIMEZONE:Asia/Irkutsk",
-    ]
-
-    total = 0
-    for w in range(weeks):
-        target_monday = monday + timedelta(days=7 * w)
-        html = await fetch_week_html(group_id, target_monday, use_cache=True)
-        if not html: continue
-        _, days = parse_schedule(html)
-        for d in days:
-            filtered = _filter_lessons_by_subgroup(d.get("lessons", []), subgroup)
-            for les in filtered:
-                date_str = d.get("date", "")
-                time_str = les.get("time", "")
-                time_end = LESSON_TIMES.get(time_str, "")
-                if not time_str or not time_end: continue
-                dtstart = _ics_datetime(date_str, time_str)
-                dtend = _ics_datetime(date_str, time_end)
-                if not dtstart or not dtend: continue
-
-                summary = les.get("subject", "Пара")
-                if les.get("type"):
-                    summary = f"{summary} ({les['type']})"
-
-                descr_parts = []
-                if les.get("teacher"): descr_parts.append(f"Преподаватель: {les['teacher']}")
-                if les.get("subgroup"): descr_parts.append(f"Подгруппа: {les['subgroup']}")
-                descr = "\\n".join(descr_parts)
-
-                location = f"ауд. {les.get('auditorium','')}" if les.get("auditorium") else ""
-                uid = f"{group_id}-{dtstart}-{abs(hash(summary)) % 100000}@student-irk"
-
-                lines += [
-                    "BEGIN:VEVENT",
-                    f"UID:{uid}",
-                    f"DTSTAMP:{_ics_now_utc()}",
-                    f"DTSTART:{dtstart}",
-                    f"DTEND:{dtend}",
-                    f"SUMMARY:{_ics_escape(summary)}",
-                ]
-                if location:
-                    lines.append(f"LOCATION:{_ics_escape(location)}")
-                if descr:
-                    lines.append(f"DESCRIPTION:{_ics_escape(descr)}")
-                lines += [
-                    "BEGIN:VALARM",
-                    "TRIGGER:-PT15M",
-                    "ACTION:DISPLAY",
-                    "DESCRIPTION:Напоминание о паре",
-                    "END:VALARM",
-                    "END:VEVENT",
-                ]
-                total += 1
-
-    lines.append("END:VCALENDAR")
-    if total == 0:
-        raise ValueError("Не удалось получить расписание")
-    return ("\r\n".join(lines) + "\r\n").encode("utf-8")
+def ban_user(user_id, reason=""):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR REPLACE INTO user_bans (user_id, reason, banned_at) VALUES (?, ?, ?)",
+                     (user_id, reason, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
 
 
-def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
-def _monday_of_week(d): return d - timedelta(days=d.weekday())
+def increment_rejects(user_id):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR IGNORE INTO user_bans (user_id, reject_count) VALUES (?, 0)", (user_id,))
+        conn.execute("UPDATE user_bans SET reject_count = COALESCE(reject_count,0) + 1 WHERE user_id=?", (user_id,))
+        conn.commit()
+        row = conn.execute("SELECT reject_count FROM user_bans WHERE user_id=?", (user_id,)).fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
 
 
-DAILY_QUOTES = [
-    "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
-    "Сессия сдаётся не за неделю, а за семестр.",
-    "Студент — это человек, который учится всю жизнь, но не всегда в универе.",
-    "Пара не последняя, а самая первая — просто ты её проспал.",
-    "Оценка — это не ты, но она влияет на стипендию.",
-    "Лекция без конспекта — это медитация.",
-    "Сон — это не лень, это восстановление к следующей паре.",
-    "Если не знаешь, что делать — начни с конспекта.",
-    "Сессия — это когда весь семестр за одну ночь.",
-    "Не откладывай на завтра то, что можно отложить на после сессии.",
-    "Матан — это не предмет, это образ жизни.",
-    "Лучшее, что можно взять из универа — это знакомства и привычку думать.",
-    "Пока ты спишь, кто-то учится. А кто-то тоже спит. Всё нормально.",
-    "Универ — это про то, как не сдаваться, когда сложно.",
-    "Каждый, кто сдал сессию, когда-то не понимал, что делает.",
-    "Забыл — перечитай. Не понял — спроси. Лень — иди спать.",
-    "Делай больше, чем от тебя требуют, и меньше, чем о тебе говорят.",
-    "Студенческий билет — это пропуск в мир взрослых проблем.",
-    "Не сдал — не конец. Сдал — не финиш.",
-    "Дисциплина — это не про силу воли, а про систему.",
-]
+def get_banned_users(limit=50):
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT user_id, reason, banned_at, reject_count FROM user_bans ORDER BY banned_at DESC LIMIT ?",
+                            (limit,)).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def unban_user(user_id):
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM user_bans WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1975,6 +1378,480 @@ def _check_db_integrity(path: str) -> tuple:
         return False, str(e)
 
 
+def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
+def _monday_of_week(d): return d - timedelta(days=d.weekday())
+
+
+DAILY_QUOTES = [
+    "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
+    "Сессия сдаётся не за неделю, а за семестр.",
+    "Студент — это человек, который учится всю жизнь, но не всегда в универе.",
+    "Пара не последняя, а самая первая — просто ты её проспал.",
+    "Оценка — это не ты, но она влияет на стипендию.",
+    "Лекция без конспекта — это медитация.",
+    "Сон — это не лень, это восстановление к следующей паре.",
+    "Если не знаешь, что делать — начни с конспекта.",
+    "Сессия — это когда весь семестр за одну ночь.",
+    "Не откладывай на завтра то, что можно отложить на после сессии.",
+    "Матан — это не предмет, это образ жизни.",
+    "Лучшее, что можно взять из универа — это знакомства и привычку думать.",
+    "Пока ты спишь, кто-то учится. А кто-то тоже спит. Всё нормально.",
+    "Универ — это про то, как не сдаваться, когда сложно.",
+    "Каждый, кто сдал сессию, когда-то не понимал, что делает.",
+    "Забыл — перечитай. Не понял — спроси. Лень — иди спать.",
+    "Делай больше, чем от тебя требуют, и меньше, чем о тебе говорят.",
+    "Студенческий билет — это пропуск в мир взрослых проблем.",
+    "Не сдал — не конец. Сдал — не финиш.",
+    "Дисциплина — это не про силу воли, а про систему.",
+]
+
+
+# ═══════════════════════════════════════════════════════════════
+# КЭШ ИИ-ОТВЕТОВ
+# ═══════════════════════════════════════════════════════════════
+def _ai_hash(question: str) -> str:
+    q = (question or "").strip().lower()
+    q = re.sub(r"\s+", " ", q)
+    q = re.sub(r"[?!.,;:]+$", "", q)
+    return hashlib.sha256(q.encode("utf-8")).hexdigest()
+
+
+def ai_cache_get(question: str):
+    conn = _connect()
+    try:
+        h = _ai_hash(question)
+        row = conn.execute(
+            "SELECT answer, created_at FROM ai_cache WHERE prompt_hash=?", (h,)
+        ).fetchone()
+        if not row:
+            return None
+        created = row[1]
+        try:
+            if datetime.now(timezone.utc) - datetime.fromisoformat(created) > timedelta(days=AI_CACHE_TTL_DAYS):
+                conn.execute("DELETE FROM ai_cache WHERE prompt_hash=?", (h,))
+                conn.commit()
+                return None
+        except Exception:
+            pass
+        conn.execute("UPDATE ai_cache SET hits=hits+1 WHERE prompt_hash=?", (h,))
+        conn.commit()
+        return row[0]
+    finally:
+        conn.close()
+
+
+def ai_cache_put(question: str, answer: str):
+    if not question or not answer: return
+    if len(answer) > 8000: return
+    conn = _connect()
+    try:
+        h = _ai_hash(question)
+        conn.execute(
+            "INSERT OR REPLACE INTO ai_cache (prompt_hash, question, answer, created_at, hits) "
+            "VALUES (?, ?, ?, ?, COALESCE((SELECT hits FROM ai_cache WHERE prompt_hash=?), 0))",
+            (h, question[:500], answer, datetime.now(timezone.utc).isoformat(), h)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def ai_cache_stats():
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT COUNT(*), SUM(hits) FROM ai_cache").fetchone()
+        return {"size": row[0] or 0, "hits": row[1] or 0}
+    finally:
+        conn.close()
+
+
+def ai_cache_clear():
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM ai_cache")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# GIGACHAT: защита от 429 + retry
+# ═══════════════════════════════════════════════════════════════
+_giga_semaphore = asyncio.Semaphore(3)   # не больше 3 параллельных
+_giga_last_calls = []                     # метки времени последних вызовов
+_giga_lock = asyncio.Lock()
+
+GIGA_MAX_PER_MIN = int(os.getenv("GIGA_MAX_PER_MIN", "15"))
+
+
+async def _giga_rate_wait():
+    """Пропускает не больше GIGA_MAX_PER_MIN запросов в минуту."""
+    async with _giga_lock:
+        now = datetime.now(timezone.utc).timestamp()
+        # чистим старые
+        _giga_last_calls[:] = [t for t in _giga_last_calls if now - t < 60]
+        if len(_giga_last_calls) >= GIGA_MAX_PER_MIN:
+            wait = 60 - (now - _giga_last_calls[0]) + 0.5
+            if wait > 0:
+                logging.info(f"[GIGA] rate limit, ждём {wait:.1f}с")
+                await asyncio.sleep(wait)
+        _giga_last_calls.append(datetime.now(timezone.utc).timestamp())
+
+
+async def giga_chat_safe(prompt: str, timeout: int = 120, max_retries: int = 3):
+    """Безопасный вызов GigaChat с защитой от 429 и retry.
+    Возвращает текст ответа или кидает RuntimeError с понятным сообщением.
+    """
+    if giga_client is None:
+        raise RuntimeError("GigaChat не настроен")
+
+    last_err = None
+    for attempt in range(max_retries):
+        await _giga_rate_wait()
+        async with _giga_semaphore:
+            try:
+                resp = await asyncio.wait_for(giga_client.achat(prompt), timeout=timeout)
+                try:
+                    return resp.choices[0].message.content or ""
+                except AttributeError:
+                    return resp.messages[0].content[0].text if resp.messages else ""
+            except asyncio.TimeoutError:
+                last_err = "GigaChat не ответил вовремя"
+            except Exception as e:
+                msg = str(e)
+                last_err = msg
+                # 429 или 5xx — retry
+                if "429" in msg or "Too Many Requests" in msg:
+                    wait = 2 ** attempt * 3   # 3, 6, 12 сек
+                    logging.warning(f"[GIGA] 429 на попытке {attempt+1}, ждём {wait}с")
+                    await asyncio.sleep(wait)
+                    continue
+                if any(code in msg for code in ("500", "502", "503", "504")):
+                    wait = 2 ** attempt * 2
+                    logging.warning(f"[GIGA] {msg[:80]} на попытке {attempt+1}, ждём {wait}с")
+                    await asyncio.sleep(wait)
+                    continue
+                raise
+    if "429" in str(last_err) or "Too Many Requests" in str(last_err):
+        raise RuntimeError("GigaChat перегружен, попробуй через минуту")
+    raise RuntimeError(f"GigaChat: {last_err}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# ПОГОДА (Open-Meteo)
+# ═══════════════════════════════════════════════════════════════
+async def fetch_weather(force=False):
+    cache_key = f"{WEATHER_LAT:.3f},{WEATHER_LON:.3f}"
+    if not force:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT payload, updated_at FROM weather_cache WHERE cache_key=?",
+                (cache_key,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row:
+            try:
+                if datetime.now(timezone.utc) - datetime.fromisoformat(row[1]) < timedelta(hours=1):
+                    return json.loads(row[0])
+            except Exception:
+                pass
+
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
+        f"&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m"
+        f"&daily=temperature_2m_max,temperature_2m_min,weather_code"
+        f"&timezone=Asia%2FIrkutsk&forecast_days=2"
+    )
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+    except Exception as e:
+        logging.warning(f"[WEATHER] {e}")
+        return None
+
+    cur = (data.get("current") or {})
+    daily = (data.get("daily") or {})
+    code = cur.get("weather_code", 0)
+    payload = {
+        "temp": cur.get("temperature_2m"),
+        "feels": cur.get("apparent_temperature"),
+        "wind": cur.get("wind_speed_10m"),
+        "code": code,
+        "desc": _weather_desc(code),
+        "tmax": (daily.get("temperature_2m_max") or [None])[0],
+        "tmin": (daily.get("temperature_2m_min") or [None])[0],
+        "city": WEATHER_CITY,
+    }
+
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO weather_cache (cache_key, payload, updated_at) "
+            "VALUES (?, ?, ?)",
+            (cache_key, json.dumps(payload, ensure_ascii=False),
+             datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return payload
+
+
+def _weather_desc(code: int) -> str:
+    if code == 0: return "ясно"
+    if code in (1, 2): return "малооблачно"
+    if code == 3: return "пасмурно"
+    if code in (45, 48): return "туман"
+    if code in (51, 53, 55, 56, 57): return "морось"
+    if code in (61, 63, 65, 66, 67): return "дождь"
+    if code in (71, 73, 75, 77): return "снег"
+    if code in (80, 81, 82): return "ливень"
+    if code in (85, 86): return "снегопад"
+    if code in (95, 96, 99): return "гроза"
+    return "—"
+
+
+def _weather_emoji(code: int) -> str:
+    if code == 0: return "☀️"
+    if code in (1, 2): return "🌤"
+    if code == 3: return "☁️"
+    if code in (45, 48): return "🌫"
+    if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82): return "🌧"
+    if code in (71, 73, 75, 77, 85, 86): return "❄️"
+    if code in (95, 96, 99): return "⛈"
+    return "🌡"
+
+
+def weather_line(w) -> str:
+    if not w: return ""
+    t = w.get("temp")
+    if t is None: return ""
+    try: t = round(float(t))
+    except: return ""
+    feels = w.get("feels")
+    try: feels = round(float(feels)) if feels is not None else None
+    except: feels = None
+    wind = w.get("wind")
+    try: wind = round(float(wind)) if wind is not None else None
+    except: wind = None
+    parts = [f"{_weather_emoji(w.get('code', 0))} {t}°C"]
+    if feels is not None and abs(feels - t) >= 3:
+        parts.append(f"ощущ. {feels}°")
+    if wind is not None and wind >= 5:
+        parts.append(f"ветер {wind} м/с")
+    parts.append(w.get("desc") or "")
+    return " · ".join(p for p in parts if p)
+
+
+# ═══════════════════════════════════════════════════════════════
+# АВТОПЕРЕНОС ДОЛГОВ
+# ═══════════════════════════════════════════════════════════════
+def get_overdue_debt_tasks():
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT id, user_id, text, due_date, due_time FROM tasks
+            WHERE done=0
+              AND due_date IS NOT NULL AND due_date != ''
+              AND (' ' || COALESCE(tags,'') || ' ') LIKE '% #долг %'
+        """).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def move_debt_to_date(task_id, user_id, new_date):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT due_date FROM tasks WHERE id=? AND user_id=?",
+                           (task_id, user_id)).fetchone()
+        old_due = row[0] if row else ""
+        conn.execute("UPDATE tasks SET due_date=? WHERE id=? AND user_id=?",
+                     (new_date, task_id, user_id))
+        conn.execute("""
+            INSERT INTO debts_log (task_id, user_id, old_due, new_due, moved_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (task_id, user_id, old_due, new_date, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+        return True
+    except Exception as e:
+        logging.warning(f"[DEBT] {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def count_user_debts(user_id):
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT due_date FROM tasks
+            WHERE done=0 AND user_id=?
+              AND due_date IS NOT NULL AND due_date != ''
+              AND (' ' || COALESCE(tags,'') || ' ') LIKE '% #долг %'
+        """, (user_id,)).fetchall()
+    finally:
+        conn.close()
+    today_str = _now_irkutsk().strftime("%d.%m.%Y")
+    today_key = today_str[6:] + today_str[3:5] + today_str[:2]
+    n = 0
+    for r in rows:
+        d = r[0] or ""
+        if len(d) == 10:
+            key = d[6:] + d[3:5] + d[:2]
+            if key < today_key:
+                n += 1
+    return n
+
+
+# ═══════════════════════════════════════════════════════════════
+# ПРОПУСКИ ПО СЕМЕСТРУ
+# ═══════════════════════════════════════════════════════════════
+def get_semester_start() -> datetime:
+    now = _now_irkutsk()
+    year = now.year
+    m = now.month
+    if m >= 9:
+        return datetime(year, 9, 1, tzinfo=timezone.utc) + timedelta(hours=8)
+    if m >= 2:
+        return datetime(year, 2, 1, tzinfo=timezone.utc) + timedelta(hours=8)
+    return datetime(year - 1, 9, 1, tzinfo=timezone.utc) + timedelta(hours=8)
+
+
+def attendance_semester_stats(user_id):
+    since = get_semester_start()
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT subject, status, COUNT(*) FROM attendance
+            WHERE user_id=? AND updated_at >= ?
+            GROUP BY subject, status
+        """, (user_id, since.isoformat())).fetchall()
+    finally:
+        conn.close()
+
+    result = {}
+    for subject, status, n in rows:
+        if subject not in result:
+            result[subject] = {"total": 0, "was": 0, "missed": 0, "sick": 0, "excused": 0}
+        result[subject][status] = result[subject].get(status, 0) + n
+        result[subject]["total"] += n
+
+    totals = {"total": 0, "was": 0, "missed": 0, "sick": 0, "excused": 0}
+    for subj, d in result.items():
+        for k in ("total", "was", "missed", "sick", "excused"):
+            totals[k] += d.get(k, 0)
+
+    return {"by_subject": result, "totals": totals, "since": since.strftime("%d.%m.%Y")}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ЭКСПОРТ В .ICS
+# ═══════════════════════════════════════════════════════════════
+def _ics_escape(text: str) -> str:
+    if not text: return ""
+    return (text.replace("\\", "\\\\").replace(",", "\\,")
+                .replace(";", "\\;").replace("\n", "\\n"))
+
+
+def _ics_datetime(date_str: str, time_str: str, tz_offset_hours: int = 8):
+    try:
+        d, m, y = date_str.split(".")
+        hh, mm = time_str.split(":")
+        dt = datetime(int(y), int(m), int(d), int(hh), int(mm),
+                      tzinfo=timezone(timedelta(hours=tz_offset_hours)))
+        return dt.strftime("%Y%m%dT%H%M%S")
+    except Exception:
+        return None
+
+
+def _ics_now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+async def generate_ics_for_user_async(user_id, weeks: int = 2) -> bytes:
+    saved = get_user_group(user_id)
+    if not saved:
+        raise ValueError("Сначала выбери группу")
+    group_id, group_name = saved
+    subgroup = get_user_subgroup(user_id)
+
+    now = _now_irkutsk()
+    monday = _monday_of_week(now)
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Student IRK//Schedule//RU",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:Расписание {_ics_escape(group_name)}",
+        "X-WR-TIMEZONE:Asia/Irkutsk",
+    ]
+
+    total = 0
+    for w in range(weeks):
+        target_monday = monday + timedelta(days=7 * w)
+        html = await fetch_week_html(group_id, target_monday, use_cache=True)
+        if not html: continue
+        _, days = parse_schedule(html)
+        for d in days:
+            filtered = _filter_lessons_by_subgroup(d.get("lessons", []), subgroup)
+            for les in filtered:
+                date_str = d.get("date", "")
+                time_str = les.get("time", "")
+                time_end = LESSON_TIMES.get(time_str, "")
+                if not time_str or not time_end: continue
+                dtstart = _ics_datetime(date_str, time_str)
+                dtend = _ics_datetime(date_str, time_end)
+                if not dtstart or not dtend: continue
+
+                summary = les.get("subject", "Пара")
+                if les.get("type"):
+                    summary = f"{summary} ({les['type']})"
+
+                descr_parts = []
+                if les.get("teacher"): descr_parts.append(f"Преподаватель: {les['teacher']}")
+                if les.get("subgroup"): descr_parts.append(f"Подгруппа: {les['subgroup']}")
+                descr = "\\n".join(descr_parts)
+
+                location = f"ауд. {les.get('auditorium','')}" if les.get("auditorium") else ""
+                uid = f"{group_id}-{dtstart}-{abs(hash(summary)) % 100000}@student-irk"
+
+                lines += [
+                    "BEGIN:VEVENT",
+                    f"UID:{uid}",
+                    f"DTSTAMP:{_ics_now_utc()}",
+                    f"DTSTART:{dtstart}",
+                    f"DTEND:{dtend}",
+                    f"SUMMARY:{_ics_escape(summary)}",
+                ]
+                if location:
+                    lines.append(f"LOCATION:{_ics_escape(location)}")
+                if descr:
+                    lines.append(f"DESCRIPTION:{_ics_escape(descr)}")
+                lines += [
+                    "BEGIN:VALARM",
+                    "TRIGGER:-PT15M",
+                    "ACTION:DISPLAY",
+                    "DESCRIPTION:Напоминание о паре",
+                    "END:VALARM",
+                    "END:VEVENT",
+                ]
+                total += 1
+
+    lines.append("END:VCALENDAR")
+    if total == 0:
+        raise ValueError("Не удалось получить расписание")
+    return ("\r\n".join(lines) + "\r\n").encode("utf-8")
+
+
 # ═══════════════════════════════════════════════════════════════
 # PRESENTATIONS
 # ═══════════════════════════════════════════════════════════════
@@ -2092,10 +1969,7 @@ def _extract_json(text: str) -> dict:
 
 
 async def _gigachat_json(prompt: str) -> dict:
-    if giga_client is None: raise RuntimeError("GigaChat не настроен")
-    resp = await asyncio.wait_for(giga_client.achat(prompt), timeout=180)
-    try: content = resp.choices[0].message.content
-    except AttributeError: content = resp.messages[0].content[0].text if resp.messages else ""
+    content = await giga_chat_safe(prompt, timeout=180)
     return _extract_json(content or "")
 
 
@@ -2726,8 +2600,6 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
             logging.warning(f"[PLAN] попытка {attempt+1}: {last_err}")
         except ValueError:
             raise
-        except asyncio.TimeoutError:
-            last_err = "Таймаут GigaChat (попробуй ещё раз или сократи материал)"
         except Exception as e:
             last_err = str(e)
     if plan is None:
@@ -2912,27 +2784,22 @@ async def api_set_group(request):
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad_json"}, status=400)
-
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id:
         logging.warning("[API/set-group] unauthorized")
         return web.json_response({"error": "unauthorized"}, status=401)
-
     group_id = str(body.get("group_id", "")).strip()
     group_name = str(body.get("group_name", "")).strip()
     try:
         subgroup = int(body.get("subgroup", 0))
     except Exception:
         subgroup = 0
-
     if not group_id or not group_name:
         delete_user_group(user_id)
         logging.info(f"[API/set-group] user={user_id} → forget")
         return web.json_response({"ok": True, "saved": False})
-
     ok = save_user_group(user_id, group_id, group_name)
     set_user_subgroup(user_id, subgroup)
-
     saved = get_user_group(user_id)
     if not ok or not saved:
         logging.error(f"[API/set-group] user={user_id} НЕ сохранилось: {group_name} ({group_id})")
@@ -2940,7 +2807,6 @@ async def api_set_group(request):
             "error": "db_error",
             "message": "Не удалось сохранить группу. Открой /whereami у админа."
         }, status=500)
-
     logging.info(f"[API/set-group] user={user_id} → {group_name} ({group_id}) sub={subgroup}")
     return web.json_response({
         "ok": True, "saved": True,
@@ -2985,7 +2851,6 @@ async def api_tasks(request):
     search = (request.query.get("search") or "").strip() or None
     sort_by = (request.query.get("sort") or "due").strip()
     if sort_by not in ("due", "priority", "created"): sort_by = "due"
-
     if show_done:
         rows = get_done_tasks(user_id, days=30)
         tasks = []
@@ -3036,11 +2901,9 @@ async def api_task_update(request):
     if not tid: return web.json_response({"error": "no_id"}, status=400)
     row = get_task(tid, user_id)
     if not row: return web.json_response({"error": "not_found"}, status=404)
-
     if body.get("done") is True:
         mark_task_done(tid, user_id)
         return web.json_response({"ok": True, "done": True})
-
     text = body.get("text")
     due_date = body.get("due_date")
     due_time = body.get("due_time")
@@ -3377,10 +3240,7 @@ async def api_ai(request):
             "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
             "- Структурируй текст простыми списками.\n- Пиши без воды.\n\n"
             f"Вопрос: {question}")
-        response = await asyncio.wait_for(giga_client.achat(prompt), timeout=120)
-        try: answer = response.choices[0].message.content
-        except AttributeError:
-            answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
+        answer = await giga_chat_safe(prompt, timeout=120)
         answer = clean_latex(answer); answer = clean_markdown(answer)
         if len(answer) > 4000: answer = answer[:4000] + "\n... (обрезано)"
         ai_save_message(user_id, 'assistant', answer, has_photo=0)
@@ -3440,10 +3300,7 @@ async def api_ai_photo(request):
             "- НЕ используй LaTeX-команды.\n- Формулы пиши обычным текстом.\n"
             "- Структурируй текст простыми списками.\n- Пиши без воды.\n\n"
             f"Распознанный текст с фото:\n{recognized_text}\n\nЗадача студента: {question}")
-        response = await asyncio.wait_for(giga_client.achat(prompt), timeout=120)
-        try: answer = response.choices[0].message.content
-        except AttributeError:
-            answer = response.messages[0].content[0].text if response.messages else "Нет ответа."
+        answer = await giga_chat_safe(prompt, timeout=120)
         answer = clean_latex(answer); answer = clean_markdown(answer)
         if len(answer) > 4000: answer = answer[:4000] + "\n... (обрезано)"
         ai_save_message(user_id, 'assistant', answer, has_photo=0)
@@ -3676,6 +3533,7 @@ async def api_admin_stats(request):
         "total_users": get_total_users(),
         "pending_feedback": len(get_pending_feedback()),
         "ai_cache": cache_stats,
+        "mod_pending": mod_queue_count_pending(),
     })
 
 
@@ -3752,56 +3610,6 @@ async def api_admin_clear_ai_cache(request):
     if not _admin_only(body.get("initData", "")): return web.json_response({"error": "forbidden"}, status=403)
     ai_cache_clear()
     return web.json_response({"ok": True})
-
-
-# ═══════════════════════════════════════════════════════════════
-# ФОНОВЫЕ ВОРКЕРЫ
-# ═══════════════════════════════════════════════════════════════
-async def debts_worker():
-    await asyncio.sleep(60)
-    last_date = None
-    while True:
-        try:
-            now = _now_irkutsk()
-            today = now.strftime("%Y-%m-%d")
-            if now.hour == 9 and last_date != today:
-                last_date = today
-                rows = get_overdue_debt_tasks()
-                moved_by_user = {}
-                today_str = now.strftime("%d.%m.%Y")
-                tomorrow_str = (now + timedelta(days=1)).strftime("%d.%m.%Y")
-                today_key = today_str[6:] + today_str[3:5] + today_str[:2]
-                for tid, uid, text, due, due_time in rows:
-                    if not due or len(due) != 10: continue
-                    key = due[6:] + due[3:5] + due[:2]
-                    if key < today_key:
-                        if move_debt_to_date(tid, uid, tomorrow_str):
-                            moved_by_user.setdefault(uid, []).append(text[:60])
-                for uid, items in moved_by_user.items():
-                    n = len(items)
-                    word = "долг" if n == 1 else ("долга" if n in (2, 3, 4) else "долгов")
-                    lines = [f"{n} {word} перенесено на завтра ({tomorrow_str}):", ""]
-                    for t in items[:10]:
-                        lines.append(f"- {t}")
-                    if n > 10: lines.append(f"... и ещё {n-10}")
-                    lines.append("")
-                    lines.append("Разберись, пока не превратилось в хвост.")
-                    try:
-                        await bot.send_message(uid, "\n".join(lines), parse_mode=None)
-                    except Exception:
-                        pass
-        except Exception:
-            logging.exception("[DEBTS]")
-        await asyncio.sleep(600)
-
-
-async def weather_warmup_worker():
-    while True:
-        try:
-            await fetch_weather(force=True)
-        except Exception:
-            logging.exception("[WEATHER]")
-        await asyncio.sleep(3600)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -3897,527 +3705,587 @@ async def start_webapp():
 
 
 # ═══════════════════════════════════════════════════════════════
-# КОМАНДЫ БОТА
+# FSM: ПОДСЛУШАНО + БАРАХОЛКА
 # ═══════════════════════════════════════════════════════════════
+class OverheardFSM(StatesGroup):
+    waiting_text = State()
+
+class MarketFSM(StatesGroup):
+    waiting_content = State()
+
+
+def main_menu_kb():
+    rows = []
+    if WEBAPP_URL:
+        rows.append([InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))])
+    rows.append([InlineKeyboardButton(text="Подслушано ИРНИТУ", callback_data="menu:overheard")])
+    rows.append([InlineKeyboardButton(text="Барахолка ИРНИТУ", callback_data="menu:market")])
+    rows.append([InlineKeyboardButton(text="Что умеет бот", callback_data="menu:help")])
+    rows.append([InlineKeyboardButton(text="Обратная связь", callback_data="menu:feedback")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def overheard_intro_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Отмена", callback_data="overheard:cancel")],
+    ])
+
+
+def market_intro_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Отмена", callback_data="market:cancel")],
+    ])
+
+
+def mod_kb(mid, kind):
+    prefix = "mod:overheard" if kind == "overheard" else "mod:market"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Опубликовать", callback_data=f"{prefix}:pub:{mid}"),
+            InlineKeyboardButton(text="Отклонить", callback_data=f"{prefix}:rej:{mid}"),
+        ],
+        [
+            InlineKeyboardButton(text="Открыть профиль автора", url=f"tg://user?id=0") if False else InlineKeyboardButton(text="Заблокировать автора", callback_data=f"{prefix}:ban:{mid}"),
+        ],
+    ])
+
+
+async def send_menu(message: Message):
+    await message.answer(
+        "Что хочешь сделать?",
+        reply_markup=main_menu_kb()
+    )
+
+
 @dp.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
+    try: await state.clear()
+    except: pass
     _ensure_user(message.from_user.id)
     try: _update_user_meta(message.from_user.id, message.from_user.username, message.from_user.first_name)
     except: pass
-    if not WEBAPP_URL:
-        await message.answer("Приложение ещё не настроено."); return
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))]])
-    await message.answer("Привет. Открой приложение.", reply_markup=kb)
-
-
-@dp.message(Command("admin"))
-async def cmd_admin(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}"); return
     await message.answer(
-        "АДМИН-КОМАНДЫ:\n"
-        "/backup — снимок users.db (SQLite Backup API)\n"
-        "/backup_all — полный zip (БД + шрифты + webapp)\n"
-        "/restore — восстановить users.db (отправь .db с подписью)\n"
-        "/whereami — где база и твой ID\n"
-        "/dbcheck — проверка схемы БД (колонки, пользователи)\n"
-        "/cache — статистика кэша ИИ\n"
-        "/admin — эта справка")
+        f"Привет, {message.from_user.first_name or 'студент'}!\n\n"
+        "Здесь можно:\n"
+        "- посмотреть расписание и вести учёбу в приложении\n"
+        "- отправить анонимный пост в «Подслушано ИРНИТУ»\n"
+        "- выставить объявление в «Барахолке ИРНИТУ»\n"
+        "- задать вопрос AI-помощнику\n\n"
+        "Выбирай:",
+        reply_markup=main_menu_kb()
+    )
 
 
-@dp.message(Command("whereami"))
-async def cmd_whereami(message: Message):
-    db_abs = os.path.abspath(DB_PATH)
-    exists = os.path.isfile(db_abs)
-    size = os.path.getsize(db_abs) if exists else 0
-    wal_exists = os.path.isfile(db_abs + "-wal")
-    shm_exists = os.path.isfile(db_abs + "-shm")
-    text = (f"Твой ID: {message.from_user.id}\n"
-            f"ADMIN_ID: {ADMIN_ID}\n"
-            f"cwd: {os.getcwd()}\n"
-            f"DB_PATH: {DB_PATH}\n"
-            f"abs: {db_abs}\n"
-            f"exists: {exists}\n"
-            f"size: {size} B ({size // 1024} КБ)\n"
-            f"WAL: {'да' if wal_exists else 'нет'} | SHM: {'да' if shm_exists else 'нет'}\n"
-            f"schema: {_db_schema_version()}")
-    await message.answer(text)
+@dp.message(Command("menu"))
+async def cmd_menu(message: Message, state: FSMContext):
+    try: await state.clear()
+    except: pass
+    await send_menu(message)
 
 
-@dp.message(Command("dbcheck"))
-async def cmd_dbcheck(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа."); return
-    try:
-        conn = _connect()
-        try:
-            tables = [r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            ).fetchall()]
-            cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
-            cols_tasks = [r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()]
-            cols_notes = [r[1] for r in conn.execute("PRAGMA table_info(notes)").fetchall()]
-            total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-            with_group = conn.execute(
-                "SELECT COUNT(*) FROM users WHERE group_id IS NOT NULL AND group_id != ''"
-            ).fetchone()[0]
-            sample = conn.execute("""SELECT user_id, group_id, group_name, subgroup
-                FROM users WHERE group_id IS NOT NULL AND group_id != ''
-                ORDER BY user_id DESC LIMIT 3""").fetchall()
-        finally:
-            conn.close()
-
-        need_users = {"user_id", "group_id", "group_name", "subgroup",
-                      "notify_hour", "notify_minute", "notify_type",
-                      "notify_changes", "notify_before_min",
-                      "username", "first_name"}
-        missing_users = need_users - set(cols_users)
-
-        lines = [
-            f"Таблицы ({len(tables)}): {', '.join(tables[:15])}",
-            "",
-            f"users ({len(cols_users)}): {', '.join(cols_users)}",
-            f"tasks ({len(cols_tasks)}): {', '.join(cols_tasks)}",
-            f"notes ({len(cols_notes)}): {', '.join(cols_notes)}",
-            "",
-            f"Пользователей: {total}",
-            f"С группой: {with_group}",
-        ]
-        if missing_users:
-            lines.append("")
-            lines.append(f"[!] В users НЕТ колонок: {sorted(missing_users)}")
-            lines.append("Запусти бота один раз, init_db() добавит их.")
-        else:
-            lines.append("")
-            lines.append("[OK] users содержит все нужные колонки")
-        if sample:
-            lines.append("")
-            lines.append("Последние с группой:")
-            for r in sample:
-                lines.append(f"  user={r[0]}  {r[2]} ({r[1]})  sub={r[3]}")
-        await message.answer("\n".join(lines))
-    except Exception as e:
-        logging.exception("[DBCHECK]")
-        await message.answer(f"Ошибка: {e}")
-
-
-@dp.message(Command("cache"))
-async def cmd_cache(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа."); return
-    ai = ai_cache_stats()
-    lines = [
-        "КЭШ ИИ:",
-        "",
-        f"Записей: {ai['size']}",
-        f"Попаданий: {ai['hits']}",
-    ]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Очистить кэш ИИ", callback_data="admin_clear_ai")],
-    ])
-    await message.answer("\n".join(lines), reply_markup=kb)
-
-
-@dp.callback_query(F.data == "admin_clear_ai")
-async def cb_admin_clear_ai(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("Не для тебя", show_alert=True); return
-    ai_cache_clear()
-    await callback.answer("Кэш ИИ очищен", show_alert=True)
-    try:
-        await callback.message.edit_text("Кэш ИИ очищен. AI-ответы: 0 записей.")
-    except Exception:
-        pass
-
-
-@dp.message(Command("backup"))
-async def cmd_backup(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}\nНужен: {ADMIN_ID}")
+# ─── Подслушано ───
+@dp.callback_query(F.data == "menu:overheard")
+async def cb_menu_overheard(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if not OVERHEARD_CHANNEL_ID:
+        await callback.message.answer("Канал «Подслушано» пока не настроен. Попробуй позже.")
         return
-    try:
-        db_abs = os.path.abspath(DB_PATH)
-        if not os.path.isfile(db_abs):
-            await message.answer(f"Файл базы не найден:\n{db_abs}"); return
-
-        ts = _now_irkutsk().strftime('%Y%m%d_%H%M%S')
-        tmp_path = db_abs + f".snapshot_{ts}"
-        _make_db_snapshot(tmp_path)
-
-        size_kb = os.path.getsize(tmp_path) // 1024
-        total = get_total_users()
-        fname = f"users_backup_{_now_irkutsk().strftime('%Y%m%d_%H%M')}.db"
-        doc = FSInputFile(tmp_path, filename=fname)
-        await message.answer_document(
-            doc,
-            caption=(f"Резервная копия\n"
-                     f"Пользователей: {total}\n"
-                     f"Размер: {size_kb} КБ\n"
-                     f"WAL-checkpoint: OK\n"
-                     f"Схема: {_db_schema_version()}")
-        )
-        try: os.remove(tmp_path)
-        except: pass
-    except Exception as e:
-        logging.exception("[BACKUP]")
-        await message.answer(f"Ошибка бэкапа: {e}")
-
-
-@dp.message(Command("backup_all"))
-async def cmd_backup_all(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа."); return
-    try:
-        import zipfile
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        ts = _now_irkutsk().strftime('%Y%m%d_%H%M%S')
-        zip_path = os.path.join(base_dir, f"student_irk_backup_{ts}.zip")
-
-        db_abs = os.path.abspath(DB_PATH)
-        db_snap = db_abs + f".snap_tmp_{ts}"
-        _make_db_snapshot(db_snap)
-
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-            z.write(db_snap, "users.db")
-            fonts_dir = os.path.join(base_dir, "fonts")
-            if os.path.isdir(fonts_dir):
-                for f in os.listdir(fonts_dir):
-                    fp = os.path.join(fonts_dir, f)
-                    if os.path.isfile(fp):
-                        z.write(fp, f"fonts/{f}")
-            webapp_dir = os.path.join(base_dir, "webapp")
-            if os.path.isdir(webapp_dir):
-                for root, _, files in os.walk(webapp_dir):
-                    for f in files:
-                        p = os.path.join(root, f)
-                        rel = os.path.relpath(p, base_dir)
-                        z.write(p, rel)
-            z.writestr("README.txt",
-                f"Student IRK backup\nДата: {ts} (Иркутск)\nПользователей: {get_total_users()}\nСхема: {_db_schema_version()}\n")
-
-        try: os.remove(db_snap)
-        except: pass
-
-        size_mb = os.path.getsize(zip_path) / 1024 / 1024
-        await message.answer_document(
-            FSInputFile(zip_path, filename=os.path.basename(zip_path)),
-            caption=f"Полный бэкап\nРазмер: {size_mb:.2f} МБ"
-        )
-        try: os.remove(zip_path)
-        except: pass
-    except Exception as e:
-        logging.exception("[BACKUP_ALL]")
-        await message.answer(f"Ошибка: {e}")
-
-
-@dp.message(Command("restore"))
-async def cmd_restore(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}")
+    banned_reason = is_banned(callback.from_user.id)
+    if banned_reason:
+        await callback.message.answer("Ты заблокирован в этом сервисе.")
         return
-    if not message.document:
-        await message.answer("Пришли .db файл с подписью /restore (в одном сообщении)."); return
-    fname = (message.document.file_name or "").lower()
-    if not fname.endswith(".db"):
-        await message.answer("Нужен файл с расширением .db"); return
-
-    async with _restore_lock:
-        try:
-            db_abs = os.path.abspath(DB_PATH)
-
-            if os.path.isfile(db_abs):
-                bak = db_abs + ".before_restore_" + _now_irkutsk().strftime('%Y%m%d_%H%M%S')
-                shutil.copy2(db_abs, bak)
-                for ext in ("-wal", "-shm"):
-                    if os.path.isfile(db_abs + ext):
-                        try: shutil.copy2(db_abs + ext, bak + ext)
-                        except: pass
-
-            os.makedirs(os.path.dirname(db_abs) or ".", exist_ok=True)
-            tmp_new = db_abs + ".incoming"
-            file = await bot.get_file(message.document.file_id)
-            await bot.download_file(file.file_path, tmp_new)
-
-            ok, err = _check_db_integrity(tmp_new)
-            if not ok:
-                try: os.remove(tmp_new)
-                except: pass
-                await message.answer(f"Файл не прошёл проверку: {err}"); return
-
-            for ext in ("-wal", "-shm"):
-                if os.path.isfile(db_abs + ext):
-                    try: os.remove(db_abs + ext)
-                    except: pass
-
-            os.replace(tmp_new, db_abs)
-
-            init_db()
-            await message.answer(
-                f"База восстановлена.\n"
-                f"Всего пользователей: {get_total_users()}\n"
-                f"Схема: {_db_schema_version()}\n"
-                f"Файл: {db_abs}"
-            )
-        except Exception as e:
-            logging.exception("[RESTORE]")
-            await message.answer(f"Ошибка восстановления: {e}")
+    remain = check_cooldown(callback.from_user.id, "overheard")
+    if remain > 0:
+        m = remain // 60
+        s = remain % 60
+        await callback.message.answer(f"Подожди ещё {m} мин {s} сек перед следующей отправкой.")
+        return
+    await state.set_state(OverheardFSM.waiting_text)
+    await callback.message.answer(
+        "Подслушано ИРНИТУ\n\n"
+        f"Отправь текст одним сообщением (до {OVERHEARD_MAX_LEN} символов). "
+        "Можно приложить фото или видео.\n\n"
+        "Оскорбления, имена преподавателей, реклама — запрещены.",
+        reply_markup=overheard_intro_kb()
+    )
 
 
-# ═══════════════════════════════════════════════════════════════
-# ВОРКЕРЫ УВЕДОМЛЕНИЙ
-# ═══════════════════════════════════════════════════════════════
-async def send_schedule_notification(user_id, group_id, subgroup, ntype):
+@dp.callback_query(F.data == "overheard:cancel")
+async def cb_overheard_cancel(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    try: await state.clear()
+    except: pass
+    await callback.message.answer("Отменено.", reply_markup=main_menu_kb())
+
+
+@dp.message(OverheardFSM.waiting_text)
+async def msg_overheard_text(message: Message, state: FSMContext):
+    text = (message.text or message.caption or "").strip()
+    if not text:
+        await message.answer("Пришли текст сообщением.")
+        return
+    if len(text) > OVERHEARD_MAX_LEN:
+        await message.answer(f"Слишком длинно. Максимум {OVERHEARD_MAX_LEN} символов.")
+        return
+
+    media_ids = []
+    if message.photo:
+        media_ids.append({"type": "photo", "file_id": message.photo[-1].file_id})
+    if message.video:
+        media_ids.append({"type": "video", "file_id": message.video.file_id})
+    if message.animation:
+        media_ids.append({"type": "animation", "file_id": message.animation.file_id})
+
+    mid = mod_queue_add(
+        kind="overheard",
+        user_id=message.from_user.id,
+        username=message.from_user.username or "",
+        first_name=message.from_user.first_name or "",
+        text=text,
+        media=json.dumps(media_ids, ensure_ascii=False)
+    )
+
+    # отправка админу
+    admin_text = (
+        f"Подслушано #{mid}\n"
+        f"От: @{message.from_user.username or message.from_user.id} "
+        f"({message.from_user.first_name or ''})\n"
+        f"user_id: {message.from_user.id}\n\n"
+        f"{text}"
+    )
     try:
-        today = _now_irkutsk()
-        target_date = today + timedelta(days=1) if ntype == "tomorrow" else today
-        monday = _monday_of_week(target_date)
-        html = await fetch_week_html(group_id, monday, use_cache=True)
-        if not html: return
-        _, days = parse_schedule(html)
-        target_str = target_date.strftime("%d.%m.%Y")
-        day = next((d for d in days if d["date"] == target_str), None)
-        label = "Сегодня" if ntype == "today" else "Завтра"
-        header = f"{label}, {target_str}"
-
-        w_line = ""
-        if ntype == "today":
-            try:
-                w = await fetch_weather()
-                w_line = weather_line(w)
-            except Exception:
-                pass
-
-        if not day:
-            txt = f"{header}\n"
-            if w_line: txt += f"\n{w_line}\n"
-            txt += "\nНе удалось загрузить."
-            await bot.send_message(user_id, txt, parse_mode=None); return
-        lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
-        lines = [header]
-        if w_line:
-            lines.append("")
-            lines.append(w_line)
-        if not lessons:
-            lines.append("")
-            lines.append("Занятий нет.")
-            await bot.send_message(user_id, "\n".join(lines), parse_mode=None); return
-        lines.append("")
-        for les in lessons:
-            time_end = LESSON_TIMES.get(les["time"], "")
-            time_str = f"{les['time']}–{time_end}" if time_end else les["time"]
-            lines.append(time_str); lines.append(les["subject"])
-            details = []
-            if les.get("type"): details.append(les["type"])
-            if les.get("auditorium"): details.append(f"ауд. {les['auditorium']}")
-            if les.get("teacher"): details.append(les["teacher"])
-            if details: lines.append(f"{' · '.join(details)}")
-            lines.append("")
-        await bot.send_message(user_id, "\n".join(lines), parse_mode=None)
-    except Exception as e:
-        logging.error(f"[NOTIFY] user={user_id}: {e}")
-
-
-async def send_lesson_reminder(user_id, les, before_min):
-    try:
-        subject = les.get("subject", "Пара"); time_str = les.get("time", "")
-        text = f"Через {before_min} мин — {subject}"
-        if time_str: text += f" в {time_str}"
-        details = []
-        if les.get("auditorium"): details.append(f"ауд. {les['auditorium']}")
-        if les.get("teacher"): details.append(les["teacher"])
-        if details: text += "\n" + " · ".join(details)
-        await bot.send_message(user_id, text, parse_mode=None)
-    except Exception as e:
-        logging.error(f"[REMIND] user={user_id}: {e}")
-
-
-async def send_daily_quotes():
-    subs = daily_get_all_subscribers()
-    if not subs: return
-    quote = random.choice(DAILY_QUOTES)
-    text = f"Цитата дня\n\n{quote}"
-    for uid in subs:
-        try: await bot.send_message(uid, text, parse_mode=None)
-        except: pass
-        await asyncio.sleep(0.05)
-
-
-async def notification_worker():
-    last_quote_date = None
-    while True:
-        try:
-            now = _now_irkutsk(); today_str = now.strftime("%Y-%m-%d")
-            hh, mm = now.hour, now.minute
-            for uid, gid, subgroup, ntype, nh, nm in get_users_for_notification():
-                if nh == hh and nm == mm:
-                    await send_schedule_notification(uid, gid, subgroup, ntype)
-            if hh == 10 and mm == 0 and last_quote_date != today_str:
-                last_quote_date = today_str
-                await send_daily_quotes()
-        except: logging.exception("[NOTIFY]")
-        await asyncio.sleep(60 - datetime.now().second)
-
-
-async def lesson_reminder_worker():
-    sent_keys = set()
-    while True:
-        try:
-            now = _now_irkutsk(); today_str = now.strftime("%d.%m.%Y")
-            if len(sent_keys) > 20000: sent_keys.clear()
-            html_cache = {}
-            for uid, gid, subgroup, before_min in get_users_for_lesson_reminder():
+        if media_ids:
+            first = media_ids[0]
+            if first["type"] == "photo":
+                sent = await bot.send_photo(ADMIN_ID, first["file_id"], caption=admin_text[:1000], reply_markup=mod_kb(mid, "overheard"))
+            elif first["type"] == "video":
+                sent = await bot.send_video(ADMIN_ID, first["file_id"], caption=admin_text[:1000], reply_markup=mod_kb(mid, "overheard"))
+            elif first["type"] == "animation":
+                sent = await bot.send_animation(ADMIN_ID, first["file_id"], caption=admin_text[:1000], reply_markup=mod_kb(mid, "overheard"))
+            else:
+                sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "overheard"))
+            # остальные вложения — вторым сообщением
+            for extra in media_ids[1:4]:
                 try:
-                    monday = _monday_of_week(now)
-                    key_cache = (gid, monday.strftime("%Y-%m-%d"))
-                    if key_cache in html_cache: html = html_cache[key_cache]
-                    else:
-                        html = await fetch_week_html(gid, monday, use_cache=True)
-                        html_cache[key_cache] = html
-                    if not html: continue
-                    _, days = parse_schedule(html)
-                    day = next((d for d in days if d["date"] == today_str), None)
-                    if not day: continue
-                    lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
-                    for les in lessons:
-                        time_str = les.get("time", "")
-                        if not time_str or ":" not in time_str: continue
-                        try:
-                            hh_s, mm_s = time_str.split(":")
-                            lesson_dt = now.replace(hour=int(hh_s), minute=int(mm_s), second=0, microsecond=0)
-                        except: continue
-                        delta_min = (lesson_dt - now).total_seconds() / 60
-                        if abs(delta_min - before_min) < 1:
-                            key = (uid, today_str, time_str, before_min)
-                            if key in sent_keys: continue
-                            sent_keys.add(key)
-                            await send_lesson_reminder(uid, les, before_min)
-                except: pass
-        except: logging.exception("[REMIND]")
-        await asyncio.sleep(60)
-
-
-async def check_schedule_changes():
-    users = get_users_for_change_tracking()
-    if not users: return
-    html_cache = {}; now = _now_irkutsk()
-    for uid, group_id, subgroup in users:
-        try:
-            for offset in (0, 1):
-                target_monday = _monday_of_week(now) + timedelta(days=7 * offset)
-                week_start_str = target_monday.strftime("%Y-%m-%d")
-                cache_key = (group_id, week_start_str)
-                if cache_key in html_cache: html = html_cache[cache_key]
-                else:
-                    html = await fetch_week_html(group_id, target_monday, use_cache=False)
-                    html_cache[cache_key] = html
-                if not html: continue
-                _, days = parse_schedule(html)
-                new_snap = make_snapshot_str(days)
-                old_snap = get_snapshot(group_id, week_start_str)
-                if old_snap is None:
-                    save_snapshot(group_id, week_start_str, new_snap); continue
-                if old_snap != new_snap:
-                    save_snapshot(group_id, week_start_str, new_snap)
-                    label = "текущей" if offset == 0 else "следующей"
-                    try:
-                        await bot.send_message(uid, f"Изменения в расписании\n\nОбнаружены правки на {label} неделе.", parse_mode=None)
-                    except: pass
-        except: pass
-
-
-async def change_worker():
-    await asyncio.sleep(180)
-    while True:
-        try: await check_schedule_changes()
-        except: logging.exception("[CHANGE]")
-        await asyncio.sleep(1800)
-
-
-async def cleanup_cache_worker():
-    while True:
-        try:
-            await asyncio.sleep(3600)
-            now = _now_irkutsk()
-            if now.hour == 4:
-                cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-                conn = _connect()
-                try:
-                    conn.execute("DELETE FROM schedule_cache WHERE cached_at < ?", (cutoff,))
-                    conn.commit()
-                finally:
-                    conn.close()
-                try:
-                    conn = _connect()
-                    try:
-                        ai_cutoff = (datetime.now(timezone.utc) - timedelta(days=AI_CACHE_TTL_DAYS)).isoformat()
-                        conn.execute("DELETE FROM ai_cache WHERE created_at < ?", (ai_cutoff,))
-                        conn.commit()
-                    finally:
-                        conn.close()
+                    if extra["type"] == "photo":
+                        await bot.send_photo(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                    elif extra["type"] == "video":
+                        await bot.send_video(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                    elif extra["type"] == "animation":
+                        await bot.send_animation(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
                 except Exception:
                     pass
-                logging.info("[CLEANUP] старый кэш удалён")
-        except Exception:
-            logging.exception("[CLEANUP]")
+        else:
+            sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "overheard"))
+        mod_queue_set_admin_msg(mid, sent.message_id)
+    except Exception as e:
+        logging.exception("[OVERHEARD-SEND]")
 
-
-async def autobackup_worker():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    backup_dir = os.path.join(base_dir, "backups")
-    try: os.makedirs(backup_dir, exist_ok=True)
+    try: await state.clear()
     except: pass
-    last_date = None
-    while True:
-        try:
-            now = _now_irkutsk()
-            today = now.strftime("%Y-%m-%d")
-            if now.hour == 4 and now.minute < 5 and last_date != today:
-                last_date = today
-                db_abs = os.path.abspath(DB_PATH)
-                dst_path = os.path.join(backup_dir, f"auto_{now.strftime('%Y%m%d_%H%M')}.db")
-                try:
-                    _make_db_snapshot(dst_path)
-                    logging.info(f"[AUTOBACKUP] {dst_path}")
-                    cutoff = now - timedelta(days=14)
-                    for f in os.listdir(backup_dir):
-                        if not f.startswith("auto_"): continue
-                        p = os.path.join(backup_dir, f)
-                        try:
-                            mt = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc) + timedelta(hours=8)
-                            if mt < cutoff: os.remove(p)
-                        except Exception: pass
-                except Exception as e:
-                    logging.error(f"[AUTOBACKUP] {e}")
-        except Exception:
-            logging.exception("[AUTOBACKUP]")
-        await asyncio.sleep(60)
+    await message.answer(
+        "Отправлено на модерацию. Если одобрят — увидишь пост в канале.",
+        reply_markup=main_menu_kb()
+    )
 
 
-# ═══════════════════════════════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════════════════════════════
-async def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
-        stream=sys.stdout, force=True)
-    init_db()
-    if not WEBAPP_URL:
-        logging.warning("[MAIN] WEBAPP_URL не задан — кнопка приложения в /start не появится")
-    await bot.delete_webhook(drop_pending_updates=True)
+# ─── Барахолка ───
+@dp.callback_query(F.data == "menu:market")
+async def cb_menu_market(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if not MARKET_CHANNEL_ID:
+        await callback.message.answer("Канал «Барахолка» пока не настроен. Попробуй позже.")
+        return
+    banned_reason = is_banned(callback.from_user.id)
+    if banned_reason:
+        await callback.message.answer("Ты заблокирован в этом сервисе.")
+        return
+    remain = check_cooldown(callback.from_user.id, "market")
+    if remain > 0:
+        m = remain // 60
+        s = remain % 60
+        await callback.message.answer(f"Подожди ещё {m} мин {s} сек перед следующей отправкой.")
+        return
+    await state.set_state(MarketFSM.waiting_content)
+    await callback.message.answer(
+        "Барахолка ИРНИТУ\n\n"
+        "Отправь одним сообщением текст объявления: что продаёшь, состояние, цену.\n"
+        "Можно приложить сколько угодно фото или видео.\n\n"
+        f"Максимум {MARKET_MAX_LEN} символов.\n\n"
+        "Оружие, наркотики, реклама услуг 18+ — запрещены.",
+        reply_markup=market_intro_kb()
+    )
+
+
+@dp.callback_query(F.data == "market:cancel")
+async def cb_market_cancel(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    try: await state.clear()
+    except: pass
+    await callback.message.answer("Отменено.", reply_markup=main_menu_kb())
+
+
+@dp.message(MarketFSM.waiting_content)
+async def msg_market_content(message: Message, state: FSMContext):
+    text = (message.text or message.caption or "").strip()
+    if not text:
+        await message.answer("Пришли текст объявления (можно с фото).")
+        return
+    if len(text) > MARKET_MAX_LEN:
+        await message.answer(f"Слишком длинно. Максимум {MARKET_MAX_LEN} символов.")
+        return
+
+    media_ids = []
+    if message.photo:
+        media_ids.append({"type": "photo", "file_id": message.photo[-1].file_id})
+    if message.video:
+        media_ids.append({"type": "video", "file_id": message.video.file_id})
+    if message.animation:
+        media_ids.append({"type": "animation", "file_id": message.animation.file_id})
+
+    contact = f"@{message.from_user.username}" if message.from_user.username else f"tg://user?id={message.from_user.id}"
+    mid = mod_queue_add(
+        kind="market",
+        user_id=message.from_user.id,
+        username=message.from_user.username or "",
+        first_name=message.from_user.first_name or "",
+        text=text,
+        contact=contact,
+        media=json.dumps(media_ids, ensure_ascii=False)
+    )
+
+    admin_text = (
+        f"Барахолка #{mid}\n"
+        f"От: {contact} ({message.from_user.first_name or ''})\n"
+        f"user_id: {message.from_user.id}\n\n"
+        f"{text}"
+    )
     try:
-        if _FPDF_AVAILABLE: await asyncio.to_thread(_find_or_download_pdf_font)
+        if media_ids:
+            first = media_ids[0]
+            if first["type"] == "photo":
+                sent = await bot.send_photo(ADMIN_ID, first["file_id"], caption=admin_text[:1000], reply_markup=mod_kb(mid, "market"))
+            elif first["type"] == "video":
+                sent = await bot.send_video(ADMIN_ID, first["file_id"], caption=admin_text[:1000], reply_markup=mod_kb(mid, "market"))
+            elif first["type"] == "animation":
+                sent = await bot.send_animation(ADMIN_ID, first["file_id"], caption=admin_text[:1000], reply_markup=mod_kb(mid, "market"))
+            else:
+                sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "market"))
+            for extra in media_ids[1:9]:
+                try:
+                    if extra["type"] == "photo":
+                        await bot.send_photo(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                    elif extra["type"] == "video":
+                        await bot.send_video(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                    elif extra["type"] == "animation":
+                        await bot.send_animation(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                except Exception:
+                    pass
+        else:
+            sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "market"))
+        mod_queue_set_admin_msg(mid, sent.message_id)
+    except Exception as e:
+        logging.exception("[MARKET-SEND]")
+
+    try: await state.clear()
     except: pass
-
-    asyncio.create_task(start_webapp())
-    asyncio.create_task(notification_worker())
-    asyncio.create_task(lesson_reminder_worker())
-    asyncio.create_task(change_worker())
-    asyncio.create_task(cleanup_cache_worker())
-    asyncio.create_task(autobackup_worker())
-    asyncio.create_task(debts_worker())
-    asyncio.create_task(weather_warmup_worker())
-
-    await dp.start_polling(bot)
+    await message.answer(
+        "Отправлено на модерацию. Если одобрят — увидишь объявление в канале.",
+        reply_markup=main_menu_kb()
+    )
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# ─── Модерация (кнопки под заявкой у админа) ───
+async def _publish_to_channel(mid: int, kind: str):
+    row = mod_queue_get(mid)
+    if not row: return None
+    (rid, rkind, uid, uname, fname, text, price, contact, media_json,
+     admin_msg_id, status, created_at, published_at, post_msg_id) = row
+    if status != "pending":
+        return None
+    try:
+        media = json.loads(media_json or "[]")
+    except Exception:
+        media = []
+
+    channel_id = OVERHEARD_CHANNEL_ID if kind == "overheard" else MARKET_CHANNEL_ID
+    header = "Подслушано ИРНИТУ" if kind == "overheard" else "Барахолка ИРНИТУ"
+
+    kb = None
+    if kind == "market" and contact:
+        if contact.startswith("@"):
+            url = f"https://t.me/{contact[1:]}"
+        else:
+            url = contact  # tg://user?id=...
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Написать продавцу", url=url)]])
+
+    caption = f"{text}"
+    sent = None
+    try:
+        if media:
+            first = media[0]
+            if first["type"] == "photo":
+                sent = await bot.send_photo(channel_id, first["file_id"], caption=caption[:1000], reply_markup=kb)
+            elif first["type"] == "video":
+                sent = await bot.send_video(channel_id, first["file_id"], caption=caption[:1000], reply_markup=kb)
+            elif first["type"] == "animation":
+                sent = await bot.send_animation(channel_id, first["file_id"], caption=caption[:1000], reply_markup=kb)
+            for extra in media[1:9]:
+                try:
+                    if extra["type"] == "photo":
+                        await bot.send_photo(channel_id, extra["file_id"])
+                    elif extra["type"] == "video":
+                        await bot.send_video(channel_id, extra["file_id"])
+                    elif extra["type"] == "animation":
+                        await bot.send_animation(channel_id, extra["file_id"])
+                except Exception:
+                    pass
+        else:
+            sent = await bot.send_message(channel_id, caption[:4000], reply_markup=kb)
+        post_id = sent.message_id if sent else None
+        mod_queue_set_status(mid, "published", post_msg_id=post_id)
+        # уведомить автора
+        try:
+            await bot.send_message(uid, f"Твоё сообщение опубликовано в канале: {header}.")
+        except Exception:
+            pass
+        return sent
+    except Exception as e:
+        logging.exception("[PUBLISH]")
+        return None
+
+
+@dp.callback_query(F.data.startswith("mod:overheard:pub:"))
+async def cb_mod_overheard_pub(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    try:
+        mid = int(callback.data.rsplit(":", 1)[1])
+    except Exception:
+        await callback.answer("Ошибка данных", show_alert=True); return
+    res = await _publish_to_channel(mid, "overheard")
+    if res:
+        try: await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception: pass
+        await callback.answer("Опубликовано")
+        try: await callback.message.reply(f"#{mid} → опубликовано")
+        except Exception: pass
+    else:
+        await callback.answer("Не удалось опубликовать", show_alert=True)
+
+
+@dp.callback_query(F.data.startswith("mod:overheard:rej:"))
+async def cb_mod_overheard_rej(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    try:
+        mid = int(callback.data.rsplit(":", 1)[1])
+    except Exception:
+        await callback.answer("Ошибка данных", show_alert=True); return
+    row = mod_queue_get(mid)
+    if not row:
+        await callback.answer("Заявка не найдена", show_alert=True); return
+    mod_queue_set_status(mid, "rejected", reason="manual")
+    uid = row[2]
+    rejects = increment_rejects(uid)
+    if rejects >= BAN_THRESHOLD:
+        ban_user(uid, reason=f"{BAN_THRESHOLD}+ отклонений")
+    try:
+        await bot.send_message(uid, "Твоё сообщение отклонено модератором.")
+    except Exception:
+        pass
+    try: await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception: pass
+    await callback.answer("Отклонено")
+    try: await callback.message.reply(f"#{mid} → отклонено (reject #{rejects})")
+    except Exception: pass
+
+
+@dp.callback_query(F.data.startswith("mod:overheard:ban:"))
+async def cb_mod_overheard_ban(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    try:
+        mid = int(callback.data.rsplit(":", 1)[1])
+    except Exception:
+        await callback.answer("Ошибка данных", show_alert=True); return
+    row = mod_queue_get(mid)
+    if not row:
+        await callback.answer("Заявка не найдена", show_alert=True); return
+    uid = row[2]
+    ban_user(uid, reason=f"бан из заявки #{mid}")
+    mod_queue_set_status(mid, "rejected", reason="banned")
+    try:
+        await bot.send_message(uid, "Ты заблокирован за нарушение правил.")
+    except Exception:
+        pass
+    try: await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception: pass
+    await callback.answer("Заблокирован")
+    try: await callback.message.reply(f"#{mid} → автор заблокирован")
+    except Exception: pass
+
+
+@dp.callback_query(F.data.startswith("mod:market:pub:"))
+async def cb_mod_market_pub(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    try:
+        mid = int(callback.data.rsplit(":", 1)[1])
+    except Exception:
+        await callback.answer("Ошибка данных", show_alert=True); return
+    res = await _publish_to_channel(mid, "market")
+    if res:
+        try: await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception: pass
+        await callback.answer("Опубликовано")
+        try: await callback.message.reply(f"#{mid} → опубликовано")
+        except Exception: pass
+    else:
+        await callback.answer("Не удалось опубликовать", show_alert=True)
+
+
+@dp.callback_query(F.data.startswith("mod:market:rej:"))
+async def cb_mod_market_rej(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    try:
+        mid = int(callback.data.rsplit(":", 1)[1])
+    except Exception:
+        await callback.answer("Ошибка данных", show_alert=True); return
+    row = mod_queue_get(mid)
+    if not row:
+        await callback.answer("Заявка не найдена", show_alert=True); return
+    mod_queue_set_status(mid, "rejected", reason="manual")
+    uid = row[2]
+    rejects = increment_rejects(uid)
+    if rejects >= BAN_THRESHOLD:
+        ban_user(uid, reason=f"{BAN_THRESHOLD}+ отклонений")
+    try:
+        await bot.send_message(uid, "Твоё объявление отклонено модератором.")
+    except Exception:
+        pass
+    try: await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception: pass
+    await callback.answer("Отклонено")
+    try: await callback.message.reply(f"#{mid} → отклонено (reject #{rejects})")
+    except Exception: pass
+
+
+@dp.callback_query(F.data.startswith("mod:market:ban:"))
+async def cb_mod_market_ban(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    try:
+        mid = int(callback.data.rsplit(":", 1)[1])
+    except Exception:
+        await callback.answer("Ошибка данных", show_alert=True); return
+    row = mod_queue_get(mid)
+    if not row:
+        await callback.answer("Заявка не найдена", show_alert=True); return
+    uid = row[2]
+    ban_user(uid, reason=f"бан из объявления #{mid}")
+    mod_queue_set_status(mid, "rejected", reason="banned")
+    try:
+        await bot.send_message(uid, "Ты заблокирован за нарушение правил.")
+    except Exception:
+        pass
+    try: await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception: pass
+    await callback.answer("Заблокирован")
+    try: await callback.message.reply(f"#{mid} → автор заблокирован")
+    except Exception: pass
+
+
+# ─── Прочие callbacks меню ───
+@dp.callback_query(F.data == "menu:help")
+async def cb_menu_help(callback: CallbackQuery):
+    await callback.answer()
+    text = (
+        "Что умеет бот:\n\n"
+        "1. Приложение (кнопка сверху): расписание, задачи, заметки, стипендия, AI, презентации.\n"
+        "2. Подслушано ИРНИТУ: анонимные сообщения в канал (через модерацию).\n"
+        "3. Барахолка ИРНИТУ: объявления о продаже (через модерацию).\n\n"
+        "Команды:\n"
+        "/start — главное меню\n"
+        "/menu — то же меню\n"
+        "/overheard — быстрое сообщение в подслушано\n"
+        "/sell — быстрое объявление (в один текст)\n"
+        "/cancel — отменить текущий диалог"
+    )
+    await callback.message.answer(text)
+
+
+@dp.callback_query(F.data == "menu:feedback")
+async def cb_menu_feedback(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "Обратная связь: открой приложение → Профиль → Обратная связь."
+    )
+
+
+@dp.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext):
+    try: await state.clear()
+    except: pass
+    await message.answer("Отменено.", reply_markup=main_menu_kb())
+
+
+@dp.message(Command("overheard"))
+async def cmd_overheard(message: Message, state: FSMContext):
+    if not OVERHEARD_CHANNEL_ID:
+        await message.answer("Канал не настроен."); return
+    if is_banned(message.from_user.id):
+        await message.answer("Ты заблокирован."); return
+    remain = check_cooldown(message.from_user.id, "overheard")
+    if remain > 0:
+        await message.answer(f"Подожди {remain // 60} мин {remain % 60} сек."); return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) == 2 and parts[1].strip():
+        text = parts[1].strip()
+        if len(text) > OVERHEARD_MAX_LEN:
+            await message.answer(f"Слишком длинно, максимум {OVERHEARD_MAX_LEN}."); return
+        mid = mod_queue_add("overheard", message.from_user.id,
+                            message.from_user.username or "", message.from_user.first_name or "",
+                            text, media="[]")
+        admin_text = f"Подслушано #{mid}\nОт: @{message.from_user.username or message.from_user.id}\n\n{text}"
+        sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "overheard"))
+        mod_queue_set_admin_msg(mid, sent.message_id)
+        await message.answer("Отправлено на модерацию.")
+        return
+    # без текста — входим в диалог
+    await state.set_state(OverheardFSM.waiting_text)
+    await message.answer(
+        "Отправь текст одним сообщением (можно с фото).",
+        reply_markup=overheard_intro_kb()
+    )
+
+
+@dp.message(Command("sell"))
+async def cmd_sell(message: Message, state: FSMContext):
+    if not MARKET_CHANNEL_ID:
+        await message.answer("Канал не настроен."); return
+    if is_banned(message.from_user.id):
+        await message.answer("Ты заблокирован."); return
+    remain = check_cooldown(message.from_user.id, "market")
+    if remain > 0:
+        await message.answer(f"Подожди {remain // 60} мин {remain % 60} сек."); return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) == 2 and parts[1].strip():
+        text = parts[1].strip()
+        if len(text) > MARKET_MAX_LEN:
+            await message.answer(f"Слишком длинно, максимум {MARKET_MAX_LEN}."); return
+        contact = f"@{message.from_user.username}" if message.from_user.username else f"tg://user?id={message.from_user.id}"
+        mid = mod_queue_add("market", message.from_user.id,
+                            message.from_user.username or "", message.from_user.first_name or "",
+                            text, contact=contact, media="[]")
+        admin_text = f"Барахолка #{mid}\nОт: {contact}\n\n{text}"
+        sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "market"))
+        mod_queue_set_admin_msg(mid, sent.message_id)
+        await message.answer("Отправлено на модерацию.")
+        return
+    await state.set_state(MarketFSM.waiting_content)
+    await message.answer(
+        "Отправь текст объявления (можно с фото).",
+        reply_markup=market_intro_kb()
+    )
