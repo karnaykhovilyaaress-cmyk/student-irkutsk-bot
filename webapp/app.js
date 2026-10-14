@@ -9,7 +9,6 @@ try { tg.enableClosingConfirmation?.(); } catch(e){}
 const tgUser = tg.initDataUnsafe?.user || { first_name:'Гость', last_name:'', username:'', id:0 };
 const INIT_DATA = tg.initData || '';
 
-/* Тёмная тема по системной настройке */
 function applyColorScheme() {
   const scheme = tg.colorScheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.documentElement.setAttribute('data-theme', scheme === 'dark' ? 'dark' : 'light');
@@ -173,7 +172,6 @@ function renderMarkdownLight(text) {
   return s;
 }
 
-/* Найти следующую пару по Иркутску */
 function findNextLesson(lessons) {
   if (!lessons || !lessons.length) return null;
   const now = nowIrkutsk();
@@ -186,6 +184,15 @@ function findNextLesson(lessons) {
     if (m + 90 >= nowMin) return { les, minutesLeft: m - nowMin };
   }
   return null;
+}
+
+/* ═════ НАВИГАЦИЯ: перерисовка кнопок с учётом isAdmin ═════ */
+function renderNav() {
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    const isAdmin = b.dataset.tab === 'admin';
+    b.style.display = (isAdmin && !state.isAdmin) ? 'none' : '';
+    b.classList.toggle('active', b.dataset.tab === state.tab);
+  });
 }
 
 function render() {
@@ -241,11 +248,7 @@ function render() {
     }
   }
   content.innerHTML = html;
-  document.querySelectorAll('.nav-btn').forEach(b => {
-    const isAdmin = b.dataset.tab === 'admin';
-    b.style.display = (isAdmin && !state.isAdmin) ? 'none' : '';
-    b.classList.toggle('active', b.dataset.tab === state.tab);
-  });
+  renderNav();
   attachHandlers();
   if (state.tab === 'schedule' && !state.loading) attachSwipe();
 }
@@ -1383,6 +1386,8 @@ async function loadProfile() {
   try {
     state.profile = await apiGet('/api/me');
     state.isAdmin = !!state.profile.is_admin;
+    // Принудительно обновляем навигацию — чтобы кнопка админа появилась сразу
+    renderNav();
   } catch (e) { state.profile = {error:e.message}; }
 }
 async function loadScholarship() { try { state.scholarship = await apiGet('/api/scholarship'); } catch (e) { state.scholarship = null; } }
@@ -1412,6 +1417,7 @@ async function loadTabData(tab) {
     if (tab === 'schedule') {
       state.scheduleViewMode = 'today'; state.weekOffset = 0; state.scheduleDay = 'today'; state.weekDays = null;
       await Promise.all([loadProfile(), loadSchedule(), loadWeather().catch(()=>{})]);
+      renderNav();
       ensureWeekLoaded().catch(()=>{});
     } else if (tab === 'tasks') await loadTasks();
     else if (tab === 'notes') await loadNotes();
@@ -1523,15 +1529,37 @@ function actionPickerBack() {
 }
 function actionPickerChooseInstitute(inst) { state.pickerInstitute = inst; state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = ''; render(); }
 function actionPickerChooseCourse(course) { state.pickerCourse = parseInt(course, 10); state.pickerMode = 'group'; state.pickerSearch = ''; render(); }
+
+/* ═════ ГЛАВНЫЙ ФИКС: проверяем, что группа реально сохранилась ═════ */
 async function actionPickerChooseGroup(groupId, groupName) {
   haptic('success');
   try {
-    await apiPost('/api/set-group', {group_id: groupId, group_name: groupName, subgroup: state.profile?.subgroup || 0});
-    if (state.profile) state.profile.group = groupName;
+    const res = await apiPost('/api/set-group', {
+      group_id: groupId,
+      group_name: groupName,
+      subgroup: state.profile?.subgroup || 0
+    });
+    // Проверка 1: бэк вернул saved=true
+    if (!res || !res.saved) {
+      toast('Сервер не сохранил группу. Проверь /whereami у админа.', 'error');
+      return;
+    }
     state.pickerMode = null; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
-    await loadProfile(); await loadSchedule(); toast('Группа обновлена', 'success'); render();
-  } catch (e) { toast(e.message, 'error'); }
+    // Проверка 2: перечитываем профиль и сверяем группу
+    await loadProfile();
+    if (state.profile?.group !== groupName) {
+      toast('Группа не сохранилась. Смотри /dbcheck у админа.', 'error');
+      render();
+      return;
+    }
+    await loadSchedule();
+    toast('Группа обновлена', 'success');
+    render();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
+
 async function actionSetSubgroup(value) { try { await apiPost('/api/set-subgroup', {subgroup: value}); if (state.profile) state.profile.subgroup = value; haptic('success'); render(); } catch (e) { toast(e.message, 'error'); } }
 async function actionQuoteSubscribe(value) { try { await apiPost('/api/quote-subscribe', {subscribe: value === 1}); if (state.profile) state.profile.daily_subscribed = value === 1; haptic('success'); render(); } catch (e) { toast(e.message, 'error'); } }
 async function actionFeedbackSend() {
