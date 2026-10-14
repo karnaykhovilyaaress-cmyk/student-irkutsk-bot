@@ -133,7 +133,7 @@ body.picker-open{overflow:hidden;}
   text-transform:uppercase;color:var(--text-2);padding:14px 4px 8px;margin-top:0}
 .section-title:first-child{padding-top:0}
 
-/* ─── Погода ─── */
+/* Погода */
 .weather-widget{
   background:linear-gradient(135deg, var(--sch-hero-1) 0%, var(--sch-hero-2) 100%);
   color:#FFF;padding:12px 16px;border-radius:var(--r-md);margin-bottom:12px;
@@ -141,7 +141,7 @@ body.picker-open{overflow:hidden;}
   box-shadow:0 6px 20px rgba(14,106,99,.18);
 }
 
-/* ─── Следующая пара ─── */
+/* Следующая пара */
 .next-lesson-widget{
   background:linear-gradient(135deg, var(--cyan) 0%, var(--cyan-dark) 100%);
   color:#0A0E0F;padding:14px 18px;border-radius:var(--r-lg);margin-bottom:12px;
@@ -157,7 +157,7 @@ body.picker-open{overflow:hidden;}
   margin-bottom:4px;text-transform:uppercase}
 .nlw-meta{font-size:12px;font-weight:600;opacity:.8}
 
-/* ─── Задачи ─── */
+/* Задачи */
 .task-card{border-left:5px solid var(--divider);transition:all .2s;background:var(--card-bg)}
 .task-card.prio-low{border-left-color:#7FE9FF;background:linear-gradient(90deg,rgba(127,233,255,.10),var(--card-bg) 40%)}
 .task-card.prio-medium{border-left-color:var(--yellow);background:linear-gradient(90deg,rgba(255,164,43,.12),var(--card-bg) 40%)}
@@ -206,15 +206,17 @@ body.picker-open{overflow:hidden;}
 .task-repeat-badge{display:inline-block;font-size:11px;color:var(--text-2);font-weight:600;
   padding:2px 8px;background:var(--bg-2);border-radius:999px;margin-left:4px}
 
-/* ─── Заметки ─── */
+/* Заметки */
 .note-pinned{border-color:var(--cyan);background:linear-gradient(135deg,rgba(62,230,210,.06),var(--card-bg) 60%)}
+.note-pin-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;
+  color:var(--cyan-dark);background:rgba(62,230,210,.15);padding:3px 8px;border-radius:999px}
 .note-text{font-size:13px;line-height:1.55;color:var(--text)}
 .note-text code{background:var(--bg-2);padding:1px 5px;border-radius:4px;font-size:12px;
   font-family:ui-monospace,monospace}
 .note-text b{font-weight:700}
 .note-text i{font-style:italic;color:var(--text-2)}
 
-/* ─── Пропуски ─── */
+/* Пропуски */
 .att-sem-totals{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:10px 0 14px}
 .att-sem-box{background:var(--bg-2);border:1px solid var(--divider);border-radius:10px;
   padding:8px 4px;text-align:center}
@@ -237,22 +239,7 @@ body.picker-open{overflow:hidden;}
 .att-sem-bar-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--cyan));
   transition:width .4s ease}
 
-/* ─── Поиск препода ─── */
-.teacher-results{margin-top:10px;border-top:1px solid var(--divider);padding-top:10px;
-  max-height:60vh;overflow-y:auto}
-.teacher-date{font-family:'Anton',sans-serif;font-style:italic;font-size:13px;letter-spacing:.8px;
-  text-transform:uppercase;color:var(--cyan-dark);margin:10px 0 6px;padding-bottom:4px;
-  border-bottom:1px solid var(--divider)}
-.teacher-date:first-child{margin-top:0}
-.teacher-item{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--divider)}
-.teacher-item:last-child{border-bottom:none}
-.teacher-time{min-width:80px;font-family:'Anton',sans-serif;font-style:italic;font-size:13px;
-  color:var(--cyan-dark);letter-spacing:.4px}
-.teacher-body{flex:1;min-width:0}
-.teacher-subj{font-size:13px;font-weight:600;margin-bottom:2px;line-height:1.35}
-.teacher-meta{font-size:11px;color:var(--text-2);font-weight:500}
-
-/* ─── Стипендия ─── */
+/* Стипендия */
 .sch-hero{background:linear-gradient(135deg,var(--sch-hero-1) 0%,var(--sch-hero-2) 100%);
   border-radius:var(--r-lg);padding:20px;color:#FFF;margin-bottom:14px;
   box-shadow:0 12px 32px rgba(62,230,210,.15)}
@@ -314,7 +301,7 @@ body.picker-open{overflow:hidden;}
 .sch-subj-chip:active{transform:scale(.95)}
 .sch-subj-chip.selected{background:var(--cyan);border-color:var(--cyan);color:#0A0E0F}
 
-/* ─── Расписание ─── */
+/* Расписание */
 .lesson{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--divider)}
 .lesson:last-child{border-bottom:none}
 .lesson-time{min-width:72px;font-family:'Anton',sans-serif;font-style:italic;font-size:14px;color:var(--cyan-dark);letter-spacing:.5px}
@@ -490,16 +477,12 @@ select.input{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg 
 .toast.error{background:var(--red);color:#FFF}
 .toast.info{background:var(--cyan-dark);color:#FFF}
 @keyframes toastIn{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
-@keyframes pop{0%{transform:translate(-50%,-50%) scale(.4);opacity:0}40%{transform:translate(-50%,-50%) scale(1.2);opacity:1}
-  100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-thumb{background:rgba(62,230,210,.5);border-radius:3px}
 ::-webkit-scrollbar-track{background:transparent}
 
-/* AI-сообщения */
 .ai-msg{animation:fadeIn .3s}
 
-/* Адаптив для мелких телефонов */
 @media (max-width: 380px){
   .header h1{font-size:22px}
   .card{padding:14px 15px}
