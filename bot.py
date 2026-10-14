@@ -123,17 +123,14 @@ WEATHER_LON = float(os.getenv("WEATHER_LON", "104.2807"))
 WEATHER_CITY = os.getenv("WEATHER_CITY", "Иркутск")
 AI_CACHE_TTL_DAYS = int(os.getenv("AI_CACHE_TTL_DAYS", "7"))
 
-# Каналы
 OVERHEARD_CHANNEL_ID = os.getenv("OVERHEARD_CHANNEL_ID", "").strip()
 OVERHEARD_CHANNEL_URL = os.getenv("OVERHEARD_CHANNEL_URL", "").strip()
 MARKET_CHANNEL_ID = os.getenv("MARKET_CHANNEL_ID", "").strip()
 MARKET_CHANNEL_URL = os.getenv("MARKET_CHANNEL_URL", "").strip()
 
-# Лимиты
 OVERHEARD_MAX_LEN = 1000
 MARKET_MAX_LEN = 800
 POST_COOLDOWN_MIN = 5
-BAN_THRESHOLD = 5  # после N отклонений — блок
 
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!"); sys.exit(1)
@@ -301,7 +298,6 @@ def init_db():
             moved_at TEXT
         )""")
 
-        # ── mod_queue: очередь модерации подслушано и барахолки ──
         conn.execute("""CREATE TABLE IF NOT EXISTS mod_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kind TEXT,
@@ -321,14 +317,6 @@ def init_db():
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mod_queue_status ON mod_queue(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mod_queue_kind ON mod_queue(kind)")
-
-        # ── user_bans: блокировка спамеров ──
-        conn.execute("""CREATE TABLE IF NOT EXISTS user_bans (
-            user_id INTEGER PRIMARY KEY,
-            reason TEXT,
-            banned_at TEXT,
-            reject_count INTEGER DEFAULT 0
-        )""")
 
         conn.commit()
         logging.info("[DB] init_db OK")
@@ -751,7 +739,7 @@ def get_user_feedback(user_id, limit=30):
 
 
 # ═══════════════════════════════════════════════════════════════
-# MOD_QUEUE: подслушано + барахолка
+# MOD_QUEUE (подслушано + барахолка)
 # ═══════════════════════════════════════════════════════════════
 def mod_queue_add(kind, user_id, username, first_name, text, price=0, contact="", media="[]"):
     conn = _connect()
@@ -839,7 +827,7 @@ def last_post_time(user_id, kind):
 
 def check_cooldown(user_id, kind):
     last = last_post_time(user_id, kind)
-    if not last: return 0  # секунд осталось
+    if not last: return 0
     try:
         dt = datetime.fromisoformat(last)
         delta = datetime.now(timezone.utc) - dt
@@ -847,56 +835,6 @@ def check_cooldown(user_id, kind):
         return max(0, int(remain))
     except Exception:
         return 0
-
-
-def is_banned(user_id):
-    conn = _connect()
-    try:
-        row = conn.execute("SELECT reason FROM user_bans WHERE user_id=?", (user_id,)).fetchone()
-        return row[0] if row else None
-    finally:
-        conn.close()
-
-
-def ban_user(user_id, reason=""):
-    conn = _connect()
-    try:
-        conn.execute("INSERT OR REPLACE INTO user_bans (user_id, reason, banned_at) VALUES (?, ?, ?)",
-                     (user_id, reason, datetime.now(timezone.utc).isoformat()))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def increment_rejects(user_id):
-    conn = _connect()
-    try:
-        conn.execute("INSERT OR IGNORE INTO user_bans (user_id, reject_count) VALUES (?, 0)", (user_id,))
-        conn.execute("UPDATE user_bans SET reject_count = COALESCE(reject_count,0) + 1 WHERE user_id=?", (user_id,))
-        conn.commit()
-        row = conn.execute("SELECT reject_count FROM user_bans WHERE user_id=?", (user_id,)).fetchone()
-        return row[0] if row else 0
-    finally:
-        conn.close()
-
-
-def get_banned_users(limit=50):
-    conn = _connect()
-    try:
-        rows = conn.execute("SELECT user_id, reason, banned_at, reject_count FROM user_bans ORDER BY banned_at DESC LIMIT ?",
-                            (limit,)).fetchall()
-        return rows
-    finally:
-        conn.close()
-
-
-def unban_user(user_id):
-    conn = _connect()
-    try:
-        conn.execute("DELETE FROM user_bans WHERE user_id=?", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1407,7 +1345,7 @@ DAILY_QUOTES = [
 
 
 # ═══════════════════════════════════════════════════════════════
-# КЭШ ИИ-ОТВЕТОВ
+# КЭШ ИИ
 # ═══════════════════════════════════════════════════════════════
 def _ai_hash(question: str) -> str:
     q = (question or "").strip().lower()
@@ -1477,18 +1415,15 @@ def ai_cache_clear():
 # ═══════════════════════════════════════════════════════════════
 # GIGACHAT: защита от 429 + retry
 # ═══════════════════════════════════════════════════════════════
-_giga_semaphore = asyncio.Semaphore(3)   # не больше 3 параллельных
-_giga_last_calls = []                     # метки времени последних вызовов
+_giga_semaphore = asyncio.Semaphore(3)
+_giga_last_calls = []
 _giga_lock = asyncio.Lock()
-
 GIGA_MAX_PER_MIN = int(os.getenv("GIGA_MAX_PER_MIN", "15"))
 
 
 async def _giga_rate_wait():
-    """Пропускает не больше GIGA_MAX_PER_MIN запросов в минуту."""
     async with _giga_lock:
         now = datetime.now(timezone.utc).timestamp()
-        # чистим старые
         _giga_last_calls[:] = [t for t in _giga_last_calls if now - t < 60]
         if len(_giga_last_calls) >= GIGA_MAX_PER_MIN:
             wait = 60 - (now - _giga_last_calls[0]) + 0.5
@@ -1499,12 +1434,8 @@ async def _giga_rate_wait():
 
 
 async def giga_chat_safe(prompt: str, timeout: int = 120, max_retries: int = 3):
-    """Безопасный вызов GigaChat с защитой от 429 и retry.
-    Возвращает текст ответа или кидает RuntimeError с понятным сообщением.
-    """
     if giga_client is None:
         raise RuntimeError("GigaChat не настроен")
-
     last_err = None
     for attempt in range(max_retries):
         await _giga_rate_wait()
@@ -1520,9 +1451,8 @@ async def giga_chat_safe(prompt: str, timeout: int = 120, max_retries: int = 3):
             except Exception as e:
                 msg = str(e)
                 last_err = msg
-                # 429 или 5xx — retry
                 if "429" in msg or "Too Many Requests" in msg:
-                    wait = 2 ** attempt * 3   # 3, 6, 12 сек
+                    wait = 2 ** attempt * 3
                     logging.warning(f"[GIGA] 429 на попытке {attempt+1}, ждём {wait}с")
                     await asyncio.sleep(wait)
                     continue
@@ -1538,7 +1468,7 @@ async def giga_chat_safe(prompt: str, timeout: int = 120, max_retries: int = 3):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ПОГОДА (Open-Meteo)
+# ПОГОДА
 # ═══════════════════════════════════════════════════════════════
 async def fetch_weather(force=False):
     cache_key = f"{WEATHER_LAT:.3f},{WEATHER_LON:.3f}"
@@ -1650,7 +1580,7 @@ def weather_line(w) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-# АВТОПЕРЕНОС ДОЛГОВ
+# ДОЛГИ
 # ═══════════════════════════════════════════════════════════════
 def get_overdue_debt_tasks():
     conn = _connect()
@@ -1711,7 +1641,7 @@ def count_user_debts(user_id):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ПРОПУСКИ ПО СЕМЕСТРУ
+# ПОСЕЩАЕМОСТЬ / СЕМЕСТР
 # ═══════════════════════════════════════════════════════════════
 def get_semester_start() -> datetime:
     now = _now_irkutsk()
@@ -1752,7 +1682,7 @@ def attendance_semester_stats(user_id):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ЭКСПОРТ В .ICS
+# .ICS ЭКСПОРТ
 # ═══════════════════════════════════════════════════════════════
 def _ics_escape(text: str) -> str:
     if not text: return ""
@@ -2232,7 +2162,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                  color=style["accent"] if SHAPE in ("glow_line", "neon_line") else style["text"])
         _add_rect(slide, Inches(1.0), Inches(1.55), Inches(1.8), Inches(0.05), style["accent"])
 
-    # ТИТУЛЬНЫЙ
     s0 = prs.slides.add_slide(blank)
     _add_rect(s0, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
     _add_rect(s0, 0, 0, Inches(4.7), prs.slide_height, style["accent"])
@@ -2256,7 +2185,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     slides = plan.get("slides", [])
     page_num = 2
 
-    # СОДЕРЖАНИЕ
     outline = plan.get("outline") or []
     if outline and len(outline) >= 2:
         so = prs.slides.add_slide(blank)
@@ -2267,7 +2195,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         add_bullets(so, Inches(1.5), Inches(2.3), Inches(10.5), Inches(4.5), bullets, size=16)
         _add_page_number(so, page_num); page_num += 1
 
-    # КОНТЕНТ
     for idx, sl in enumerate(slides):
         s = prs.slides.add_slide(blank)
         _add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
@@ -2513,7 +2440,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
 
         _add_page_number(s, page_num); page_num += 1
 
-    # ИСТОЧНИКИ
     sources = plan.get("sources") or []
     if sources:
         ss = prs.slides.add_slide(blank)
@@ -2531,7 +2457,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         add_bullets(ss, Inches(1.0), Inches(2.2), Inches(11.3), Inches(4.6), lines, size=12)
         _add_page_number(ss, page_num); page_num += 1
 
-    # ФИНАЛЬНЫЙ
     sN = prs.slides.add_slide(blank)
     _add_rect(sN, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
     _add_rect(sN, 0, 0, prs.slide_width, Inches(0.15), style["accent"])
@@ -3347,7 +3272,7 @@ async def api_feedback(request):
     if len(text) > 2000: text = text[:2000]
     fid = save_feedback(user_id, f"user_{user_id}", text)
     try:
-        admin_msg = await bot.send_message(ADMIN_ID, f"Обращение #{fid} (из веба)\nОт: user_{user_id}\n\n{text}")
+        admin_msg = await bot.send_message(ADMIN_ID, f"Обращение (из веба)\nОт: user_{user_id}\n\n{text}")
         update_feedback_admin_msg(fid, admin_msg.message_id)
     except Exception as e:
         logging.error(f"[FEEDBACK-WEB] {e}")
@@ -3556,7 +3481,7 @@ async def api_admin_feedback_reply(request):
     if not row: return web.json_response({"error": "not_found"}, status=404)
     _, target_uid, _, _ = row
     try:
-        await bot.send_message(target_uid, f"Ответ администратора на обращение #{fid}:\n\n{reply}")
+        await bot.send_message(target_uid, f"Ответ администратора:\n\n{reply}")
         mark_feedback_answered(fid, reply)
         return web.json_response({"ok": True})
     except Exception as e:
@@ -3705,7 +3630,7 @@ async def start_webapp():
 
 
 # ═══════════════════════════════════════════════════════════════
-# FSM: ПОДСЛУШАНО + БАРАХОЛКА
+# FSM: подслушано + барахолка
 # ═══════════════════════════════════════════════════════════════
 class OverheardFSM(StatesGroup):
     waiting_text = State()
@@ -3743,9 +3668,6 @@ def mod_kb(mid, kind):
         [
             InlineKeyboardButton(text="Опубликовать", callback_data=f"{prefix}:pub:{mid}"),
             InlineKeyboardButton(text="Отклонить", callback_data=f"{prefix}:rej:{mid}"),
-        ],
-        [
-            InlineKeyboardButton(text="Открыть профиль автора", url=f"tg://user?id=0") if False else InlineKeyboardButton(text="Заблокировать автора", callback_data=f"{prefix}:ban:{mid}"),
         ],
     ])
 
@@ -3789,10 +3711,6 @@ async def cb_menu_overheard(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     if not OVERHEARD_CHANNEL_ID:
         await callback.message.answer("Канал «Подслушано» пока не настроен. Попробуй позже.")
-        return
-    banned_reason = is_banned(callback.from_user.id)
-    if banned_reason:
-        await callback.message.answer("Ты заблокирован в этом сервисе.")
         return
     remain = check_cooldown(callback.from_user.id, "overheard")
     if remain > 0:
@@ -3845,9 +3763,8 @@ async def msg_overheard_text(message: Message, state: FSMContext):
         media=json.dumps(media_ids, ensure_ascii=False)
     )
 
-    # отправка админу
     admin_text = (
-        f"Подслушано #{mid}\n"
+        f"Подслушано\n"
         f"От: @{message.from_user.username or message.from_user.id} "
         f"({message.from_user.first_name or ''})\n"
         f"user_id: {message.from_user.id}\n\n"
@@ -3864,15 +3781,14 @@ async def msg_overheard_text(message: Message, state: FSMContext):
                 sent = await bot.send_animation(ADMIN_ID, first["file_id"], caption=admin_text[:1000], reply_markup=mod_kb(mid, "overheard"))
             else:
                 sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "overheard"))
-            # остальные вложения — вторым сообщением
             for extra in media_ids[1:4]:
                 try:
                     if extra["type"] == "photo":
-                        await bot.send_photo(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                        await bot.send_photo(ADMIN_ID, extra["file_id"])
                     elif extra["type"] == "video":
-                        await bot.send_video(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                        await bot.send_video(ADMIN_ID, extra["file_id"])
                     elif extra["type"] == "animation":
-                        await bot.send_animation(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                        await bot.send_animation(ADMIN_ID, extra["file_id"])
                 except Exception:
                     pass
         else:
@@ -3895,10 +3811,6 @@ async def cb_menu_market(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     if not MARKET_CHANNEL_ID:
         await callback.message.answer("Канал «Барахолка» пока не настроен. Попробуй позже.")
-        return
-    banned_reason = is_banned(callback.from_user.id)
-    if banned_reason:
-        await callback.message.answer("Ты заблокирован в этом сервисе.")
         return
     remain = check_cooldown(callback.from_user.id, "market")
     if remain > 0:
@@ -3955,7 +3867,7 @@ async def msg_market_content(message: Message, state: FSMContext):
     )
 
     admin_text = (
-        f"Барахолка #{mid}\n"
+        f"Барахолка\n"
         f"От: {contact} ({message.from_user.first_name or ''})\n"
         f"user_id: {message.from_user.id}\n\n"
         f"{text}"
@@ -3974,11 +3886,11 @@ async def msg_market_content(message: Message, state: FSMContext):
             for extra in media_ids[1:9]:
                 try:
                     if extra["type"] == "photo":
-                        await bot.send_photo(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                        await bot.send_photo(ADMIN_ID, extra["file_id"])
                     elif extra["type"] == "video":
-                        await bot.send_video(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                        await bot.send_video(ADMIN_ID, extra["file_id"])
                     elif extra["type"] == "animation":
-                        await bot.send_animation(ADMIN_ID, extra["file_id"], caption=f"(вложение к #{mid})")
+                        await bot.send_animation(ADMIN_ID, extra["file_id"])
                 except Exception:
                     pass
         else:
@@ -3995,7 +3907,7 @@ async def msg_market_content(message: Message, state: FSMContext):
     )
 
 
-# ─── Модерация (кнопки под заявкой у админа) ───
+# ─── Модерация (кнопки) ───
 async def _publish_to_channel(mid: int, kind: str):
     row = mod_queue_get(mid)
     if not row: return None
@@ -4016,7 +3928,7 @@ async def _publish_to_channel(mid: int, kind: str):
         if contact.startswith("@"):
             url = f"https://t.me/{contact[1:]}"
         else:
-            url = contact  # tg://user?id=...
+            url = contact
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Написать продавцу", url=url)]])
 
     caption = f"{text}"
@@ -4044,7 +3956,6 @@ async def _publish_to_channel(mid: int, kind: str):
             sent = await bot.send_message(channel_id, caption[:4000], reply_markup=kb)
         post_id = sent.message_id if sent else None
         mod_queue_set_status(mid, "published", post_msg_id=post_id)
-        # уведомить автора
         try:
             await bot.send_message(uid, f"Твоё сообщение опубликовано в канале: {header}.")
         except Exception:
@@ -4068,7 +3979,7 @@ async def cb_mod_overheard_pub(callback: CallbackQuery):
         try: await callback.message.edit_reply_markup(reply_markup=None)
         except Exception: pass
         await callback.answer("Опубликовано")
-        try: await callback.message.reply(f"#{mid} → опубликовано")
+        try: await callback.message.reply("Опубликовано")
         except Exception: pass
     else:
         await callback.answer("Не удалось опубликовать", show_alert=True)
@@ -4087,9 +3998,6 @@ async def cb_mod_overheard_rej(callback: CallbackQuery):
         await callback.answer("Заявка не найдена", show_alert=True); return
     mod_queue_set_status(mid, "rejected", reason="manual")
     uid = row[2]
-    rejects = increment_rejects(uid)
-    if rejects >= BAN_THRESHOLD:
-        ban_user(uid, reason=f"{BAN_THRESHOLD}+ отклонений")
     try:
         await bot.send_message(uid, "Твоё сообщение отклонено модератором.")
     except Exception:
@@ -4097,32 +4005,7 @@ async def cb_mod_overheard_rej(callback: CallbackQuery):
     try: await callback.message.edit_reply_markup(reply_markup=None)
     except Exception: pass
     await callback.answer("Отклонено")
-    try: await callback.message.reply(f"#{mid} → отклонено (reject #{rejects})")
-    except Exception: pass
-
-
-@dp.callback_query(F.data.startswith("mod:overheard:ban:"))
-async def cb_mod_overheard_ban(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("Не для тебя", show_alert=True); return
-    try:
-        mid = int(callback.data.rsplit(":", 1)[1])
-    except Exception:
-        await callback.answer("Ошибка данных", show_alert=True); return
-    row = mod_queue_get(mid)
-    if not row:
-        await callback.answer("Заявка не найдена", show_alert=True); return
-    uid = row[2]
-    ban_user(uid, reason=f"бан из заявки #{mid}")
-    mod_queue_set_status(mid, "rejected", reason="banned")
-    try:
-        await bot.send_message(uid, "Ты заблокирован за нарушение правил.")
-    except Exception:
-        pass
-    try: await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception: pass
-    await callback.answer("Заблокирован")
-    try: await callback.message.reply(f"#{mid} → автор заблокирован")
+    try: await callback.message.reply("Отклонено")
     except Exception: pass
 
 
@@ -4139,7 +4022,7 @@ async def cb_mod_market_pub(callback: CallbackQuery):
         try: await callback.message.edit_reply_markup(reply_markup=None)
         except Exception: pass
         await callback.answer("Опубликовано")
-        try: await callback.message.reply(f"#{mid} → опубликовано")
+        try: await callback.message.reply("Опубликовано")
         except Exception: pass
     else:
         await callback.answer("Не удалось опубликовать", show_alert=True)
@@ -4158,9 +4041,6 @@ async def cb_mod_market_rej(callback: CallbackQuery):
         await callback.answer("Заявка не найдена", show_alert=True); return
     mod_queue_set_status(mid, "rejected", reason="manual")
     uid = row[2]
-    rejects = increment_rejects(uid)
-    if rejects >= BAN_THRESHOLD:
-        ban_user(uid, reason=f"{BAN_THRESHOLD}+ отклонений")
     try:
         await bot.send_message(uid, "Твоё объявление отклонено модератором.")
     except Exception:
@@ -4168,36 +4048,10 @@ async def cb_mod_market_rej(callback: CallbackQuery):
     try: await callback.message.edit_reply_markup(reply_markup=None)
     except Exception: pass
     await callback.answer("Отклонено")
-    try: await callback.message.reply(f"#{mid} → отклонено (reject #{rejects})")
+    try: await callback.message.reply("Отклонено")
     except Exception: pass
 
 
-@dp.callback_query(F.data.startswith("mod:market:ban:"))
-async def cb_mod_market_ban(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("Не для тебя", show_alert=True); return
-    try:
-        mid = int(callback.data.rsplit(":", 1)[1])
-    except Exception:
-        await callback.answer("Ошибка данных", show_alert=True); return
-    row = mod_queue_get(mid)
-    if not row:
-        await callback.answer("Заявка не найдена", show_alert=True); return
-    uid = row[2]
-    ban_user(uid, reason=f"бан из объявления #{mid}")
-    mod_queue_set_status(mid, "rejected", reason="banned")
-    try:
-        await bot.send_message(uid, "Ты заблокирован за нарушение правил.")
-    except Exception:
-        pass
-    try: await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception: pass
-    await callback.answer("Заблокирован")
-    try: await callback.message.reply(f"#{mid} → автор заблокирован")
-    except Exception: pass
-
-
-# ─── Прочие callbacks меню ───
 @dp.callback_query(F.data == "menu:help")
 async def cb_menu_help(callback: CallbackQuery):
     await callback.answer()
@@ -4235,8 +4089,6 @@ async def cmd_cancel(message: Message, state: FSMContext):
 async def cmd_overheard(message: Message, state: FSMContext):
     if not OVERHEARD_CHANNEL_ID:
         await message.answer("Канал не настроен."); return
-    if is_banned(message.from_user.id):
-        await message.answer("Ты заблокирован."); return
     remain = check_cooldown(message.from_user.id, "overheard")
     if remain > 0:
         await message.answer(f"Подожди {remain // 60} мин {remain % 60} сек."); return
@@ -4248,12 +4100,11 @@ async def cmd_overheard(message: Message, state: FSMContext):
         mid = mod_queue_add("overheard", message.from_user.id,
                             message.from_user.username or "", message.from_user.first_name or "",
                             text, media="[]")
-        admin_text = f"Подслушано #{mid}\nОт: @{message.from_user.username or message.from_user.id}\n\n{text}"
+        admin_text = f"Подслушано\nОт: @{message.from_user.username or message.from_user.id}\n\n{text}"
         sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "overheard"))
         mod_queue_set_admin_msg(mid, sent.message_id)
         await message.answer("Отправлено на модерацию.")
         return
-    # без текста — входим в диалог
     await state.set_state(OverheardFSM.waiting_text)
     await message.answer(
         "Отправь текст одним сообщением (можно с фото).",
@@ -4265,8 +4116,6 @@ async def cmd_overheard(message: Message, state: FSMContext):
 async def cmd_sell(message: Message, state: FSMContext):
     if not MARKET_CHANNEL_ID:
         await message.answer("Канал не настроен."); return
-    if is_banned(message.from_user.id):
-        await message.answer("Ты заблокирован."); return
     remain = check_cooldown(message.from_user.id, "market")
     if remain > 0:
         await message.answer(f"Подожди {remain // 60} мин {remain % 60} сек."); return
@@ -4279,7 +4128,7 @@ async def cmd_sell(message: Message, state: FSMContext):
         mid = mod_queue_add("market", message.from_user.id,
                             message.from_user.username or "", message.from_user.first_name or "",
                             text, contact=contact, media="[]")
-        admin_text = f"Барахолка #{mid}\nОт: {contact}\n\n{text}"
+        admin_text = f"Барахолка\nОт: {contact}\n\n{text}"
         sent = await bot.send_message(ADMIN_ID, admin_text, reply_markup=mod_kb(mid, "market"))
         mod_queue_set_admin_msg(mid, sent.message_id)
         await message.answer("Отправлено на модерацию.")
@@ -4308,10 +4157,53 @@ async def cmd_admin(message: Message):
         "/dbcheck — проверка схемы БД (колонки, пользователи)\n"
         "/cache — статистика кэша ИИ\n"
         f"/modqueue — очередь модерации (в очереди: {pending})\n"
-        "/ban <user_id> [причина] — заблокировать\n"
-        "/unban <user_id> — разблокировать\n"
-        "/bans — список заблокированных\n"
+        "/channels — проверка ID каналов\n"
         "/admin — эта справка")
+
+
+@dp.message(Command("channels"))
+async def cmd_channels(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    lines = []
+    # Подслушано
+    if not OVERHEARD_CHANNEL_ID:
+        lines.append("OVERHEARD_CHANNEL_ID: НЕ ЗАДАН")
+    else:
+        lines.append(f"OVERHEARD_CHANNEL_ID: {OVERHEARD_CHANNEL_ID}")
+        try:
+            chat = await bot.get_chat(OVERHEARD_CHANNEL_ID)
+            lines.append(f"  -> {chat.title} (@{chat.username or '—'})")
+            try:
+                member = await bot.get_chat_member(OVERHEARD_CHANNEL_ID, bot.id)
+                status = getattr(member, "status", "?")
+                can_post = getattr(member, "can_post_messages", False)
+                lines.append(f"  -> права бота: {status}, может публиковать: {can_post}")
+            except Exception as e:
+                lines.append(f"  -> НЕ могу проверить права: {e}")
+        except Exception as e:
+            lines.append(f"  -> ОШИБКА: {e}")
+            lines.append("  -> проверь ID (должен быть -100...) и что бот админ")
+    lines.append("")
+    # Барахолка
+    if not MARKET_CHANNEL_ID:
+        lines.append("MARKET_CHANNEL_ID: НЕ ЗАДАН")
+    else:
+        lines.append(f"MARKET_CHANNEL_ID: {MARKET_CHANNEL_ID}")
+        try:
+            chat = await bot.get_chat(MARKET_CHANNEL_ID)
+            lines.append(f"  -> {chat.title} (@{chat.username or '—'})")
+            try:
+                member = await bot.get_chat_member(MARKET_CHANNEL_ID, bot.id)
+                status = getattr(member, "status", "?")
+                can_post = getattr(member, "can_post_messages", False)
+                lines.append(f"  -> права бота: {status}, может публиковать: {can_post}")
+            except Exception as e:
+                lines.append(f"  -> НЕ могу проверить права: {e}")
+        except Exception as e:
+            lines.append(f"  -> ОШИБКА: {e}")
+            lines.append("  -> проверь ID (должен быть -100...) и что бот админ")
+    await message.answer("\n".join(lines))
 
 
 @dp.message(Command("whereami"))
@@ -4411,6 +4303,24 @@ async def cb_admin_clear_ai(callback: CallbackQuery):
         await callback.message.edit_text("Кэш ИИ очищен. AI-ответы: 0 записей.")
     except Exception:
         pass
+
+
+@dp.message(Command("modqueue"))
+async def cmd_modqueue(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    rows = mod_queue_pending(limit=30)
+    if not rows:
+        await message.answer("Очередь модерации пуста."); return
+    lines = [f"Очередь модерации ({len(rows)}):", ""]
+    for r in rows:
+        mid, kind, uid, uname, fname, text, price, contact, media, created = r
+        kind_label = "Подслушано" if kind == "overheard" else "Барахолка"
+        lines.append(f"[{kind_label}] от {fname or uid}:")
+        t = (text or "")[:120]
+        lines.append(f"  {t}{'...' if len(text or '') > 120 else ''}")
+        lines.append("")
+    await message.answer("\n".join(lines)[:4000])
 
 
 @dp.message(Command("backup"))
@@ -4531,70 +4441,8 @@ async def cmd_restore(message: Message):
             await message.answer(f"Ошибка восстановления: {e}")
 
 
-@dp.message(Command("modqueue"))
-async def cmd_modqueue(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа."); return
-    rows = mod_queue_pending(limit=30)
-    if not rows:
-        await message.answer("Очередь модерации пуста."); return
-    lines = [f"Очередь модерации ({len(rows)}):", ""]
-    for r in rows:
-        mid, kind, uid, uname, fname, text, price, contact, media, created = r
-        kind_label = "Подслушано" if kind == "overheard" else "Барахолка"
-        lines.append(f"#{mid} [{kind_label}] от {fname or uid}:")
-        t = (text or "")[:120]
-        lines.append(f"  {t}{'...' if len(text or '') > 120 else ''}")
-        lines.append("")
-    await message.answer("\n".join(lines)[:4000])
-
-
-@dp.message(Command("ban"))
-async def cmd_ban(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа."); return
-    parts = message.text.split(maxsplit=2)
-    if len(parts) < 2:
-        await message.answer("Формат: /ban <user_id> [причина]"); return
-    try:
-        uid = int(parts[1])
-    except Exception:
-        await message.answer("user_id должен быть числом"); return
-    reason = parts[2].strip() if len(parts) > 2 else "ручной бан"
-    ban_user(uid, reason)
-    await message.answer(f"Заблокирован: {uid}\nПричина: {reason}")
-
-
-@dp.message(Command("unban"))
-async def cmd_unban(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа."); return
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.answer("Формат: /unban <user_id>"); return
-    try:
-        uid = int(parts[1])
-    except Exception:
-        await message.answer("user_id должен быть числом"); return
-    unban_user(uid)
-    await message.answer(f"Разблокирован: {uid}")
-
-
-@dp.message(Command("bans"))
-async def cmd_bans(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Только для админа."); return
-    rows = get_banned_users(limit=50)
-    if not rows:
-        await message.answer("Список блокировок пуст."); return
-    lines = [f"Заблокированные ({len(rows)}):", ""]
-    for uid, reason, banned_at, rejects in rows:
-        lines.append(f"{uid}  ·  reject: {rejects}  ·  {reason or 'без причины'}")
-    await message.answer("\n".join(lines)[:4000])
-
-
 # ═══════════════════════════════════════════════════════════════
-# ВОРКЕРЫ
+# ВОРКЕРЫ УВЕДОМЛЕНИЙ
 # ═══════════════════════════════════════════════════════════════
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
@@ -4879,9 +4727,13 @@ async def main():
     init_db()
     if not WEBAPP_URL:
         logging.warning("[MAIN] WEBAPP_URL не задан — кнопка приложения в /start не появится")
-    if not OVERHEARD_CHANNEL_ID:
+    if OVERHEARD_CHANNEL_ID:
+        logging.info(f"[MAIN] OVERHEARD_CHANNEL_ID: {OVERHEARD_CHANNEL_ID}")
+    else:
         logging.warning("[MAIN] OVERHEARD_CHANNEL_ID не задан — подслушано отключено")
-    if not MARKET_CHANNEL_ID:
+    if MARKET_CHANNEL_ID:
+        logging.info(f"[MAIN] MARKET_CHANNEL_ID: {MARKET_CHANNEL_ID}")
+    else:
         logging.warning("[MAIN] MARKET_CHANNEL_ID не задан — барахолка отключена")
     await bot.delete_webhook(drop_pending_updates=True)
     try:
