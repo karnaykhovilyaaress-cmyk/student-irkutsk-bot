@@ -149,6 +149,918 @@ def _connect():
     return conn
 
 
+def _table_columns(conn, table: str):
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return {r[1] for r in rows}
+    except Exception:
+        return set()
+
+
+def _ensure_column(conn, table: str, column: str, ddl: str):
+    cols = _table_columns(conn, table)
+    if column in cols:
+        return False
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+        logging.info(f"[DB] ALTER {table} ADD COLUMN {column}")
+        return True
+    except Exception as e:
+        logging.warning(f"[DB] ALTER {table} ADD COLUMN {column} failed: {e}")
+        return False
+
+
+def init_db():
+    conn = _connect()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            group_id TEXT,
+            group_name TEXT,
+            notify_hour INTEGER DEFAULT -1,
+            notify_minute INTEGER DEFAULT 0,
+            notify_changes INTEGER DEFAULT 0,
+            subgroup INTEGER DEFAULT 0
+        )""")
+        _ensure_column(conn, "users", "group_id",       "group_id TEXT")
+        _ensure_column(conn, "users", "group_name",     "group_name TEXT")
+        _ensure_column(conn, "users", "notify_hour",    "notify_hour INTEGER DEFAULT -1")
+        _ensure_column(conn, "users", "notify_minute",  "notify_minute INTEGER DEFAULT 0")
+        _ensure_column(conn, "users", "notify_changes", "notify_changes INTEGER DEFAULT 0")
+        _ensure_column(conn, "users", "subgroup",       "subgroup INTEGER DEFAULT 0")
+        _ensure_column(conn, "users", "notify_type",    "notify_type TEXT DEFAULT NULL")
+        _ensure_column(conn, "users", "last_notified_at", "last_notified_at TEXT DEFAULT NULL")
+        _ensure_column(conn, "users", "notify_before_min", "notify_before_min INTEGER DEFAULT 0")
+        _ensure_column(conn, "users", "username",       "username TEXT DEFAULT NULL")
+        _ensure_column(conn, "users", "first_name",     "first_name TEXT DEFAULT NULL")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (
+            user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS scholarship (
+            user_id INTEGER PRIMARY KEY,
+            current_amount INTEGER DEFAULT 0,
+            updated_at TEXT)""")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, subject TEXT, grade INTEGER,
+            created_at TEXT, is_auto INTEGER DEFAULT 0, semester TEXT DEFAULT NULL)""")
+        _ensure_column(conn, "grades", "is_auto",  "is_auto INTEGER DEFAULT 0")
+        _ensure_column(conn, "grades", "semester", "semester TEXT DEFAULT NULL")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (
+            group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT,
+            PRIMARY KEY (group_id, week_start))""")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS schedule_snapshots (
+            group_id TEXT, week_start TEXT, snapshot TEXT, updated_at TEXT,
+            PRIMARY KEY (group_id, week_start))""")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, username TEXT, text TEXT, created_at TEXT,
+            admin_msg_id INTEGER, status TEXT DEFAULT 'new',
+            answered_at TEXT, admin_reply TEXT DEFAULT NULL)""")
+        _ensure_column(conn, "feedback", "status",      "status TEXT DEFAULT 'new'")
+        _ensure_column(conn, "feedback", "answered_at", "answered_at TEXT")
+        _ensure_column(conn, "feedback", "admin_reply", "admin_reply TEXT DEFAULT NULL")
+        try:
+            conn.execute("UPDATE feedback SET status='new' WHERE status IS NULL")
+        except Exception:
+            pass
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, text TEXT, due_date TEXT, done INTEGER DEFAULT 0,
+            created_at TEXT, priority INTEGER DEFAULT 2, due_time TEXT, done_at TEXT)""")
+        _ensure_column(conn, "tasks", "priority",    "priority INTEGER DEFAULT 2")
+        _ensure_column(conn, "tasks", "due_time",    "due_time TEXT")
+        _ensure_column(conn, "tasks", "done_at",     "done_at TEXT")
+        _ensure_column(conn, "tasks", "tags",        "tags TEXT DEFAULT ''")
+        _ensure_column(conn, "tasks", "repeat_rule", "repeat_rule TEXT DEFAULT NULL")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, subject TEXT, text TEXT, created_at TEXT)""")
+        _ensure_column(conn, "notes", "tags",       "tags TEXT DEFAULT ''")
+        _ensure_column(conn, "notes", "pinned",     "pinned INTEGER DEFAULT 0")
+        _ensure_column(conn, "notes", "updated_at", "updated_at TEXT DEFAULT NULL")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS ai_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, role TEXT, text TEXT,
+            has_photo INTEGER DEFAULT 0, created_at TEXT)""")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, date TEXT, time TEXT, subject TEXT,
+            status TEXT, updated_at TEXT,
+            UNIQUE(user_id, date, time, subject))""")
+
+        conn.commit()
+        logging.info("[DB] init_db OK")
+    except Exception as e:
+        logging.exception(f"[DB] init_db error: {e}")
+        raise
+    finally:
+        conn.close()
+
+
+def _ensure_user(user_id):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _update_user_meta(user_id, username, first_name):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?",
+                     (username, first_name, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def user_exists(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def save_user_group(user_id, group_id, group_name):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        cols = _table_columns(conn, "users")
+        if "group_id" not in cols or "group_name" not in cols:
+            logging.error(f"[DB] users без колонок group_id/group_name. cols={sorted(cols)}")
+            return False
+        conn.execute(
+            "UPDATE users SET group_id=?, group_name=? WHERE user_id=?",
+            (str(group_id), str(group_name), user_id)
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT group_id, group_name FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        ok = bool(row and row[0] == str(group_id) and row[1] == str(group_name))
+        if not ok:
+            logging.warning(f"[DB] save_user_group: не сохранилось. user={user_id} row={row}")
+        return ok
+    except Exception as e:
+        logging.exception(f"[DB] save_user_group error: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_user_group(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT group_id, group_name FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        return row if row and row[0] else None
+    finally:
+        conn.close()
+
+
+def delete_user_group(user_id):
+    conn = _connect()
+    try:
+        conn.execute("""UPDATE users SET group_id=NULL, group_name=NULL,
+            notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL
+            WHERE user_id=?""", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_user_subgroup(user_id, subgroup):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        conn.execute("UPDATE users SET subgroup=? WHERE user_id=?", (int(subgroup), user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_subgroup(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT subgroup FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return row[0] if row and row[0] is not None else 0
+    finally:
+        conn.close()
+
+
+def daily_subscribe(user_id):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR IGNORE INTO daily_subscribers (user_id, subscribed_at) VALUES (?, ?)",
+            (user_id, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def daily_unsubscribe(user_id):
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+def daily_is_subscribed(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT 1 FROM daily_subscribers WHERE user_id=?", (user_id,)).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+def daily_get_all_subscribers():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
+        return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def set_scholarship_amount(user_id, amount):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR REPLACE INTO scholarship (user_id, current_amount, updated_at) VALUES (?, ?, ?)",
+            (user_id, amount, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_scholarship_amount(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?", (user_id,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?) AND COALESCE(semester,'')=COALESCE(?,'')",
+            (user_id, subject, semester)).fetchone()
+        if row:
+            conn.execute("UPDATE grades SET grade=?, subject=?, is_auto=?, semester=?, created_at=? WHERE id=?",
+                (grade, subject, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat(), row[0]))
+        else:
+            conn.execute("INSERT INTO grades (user_id, subject, grade, is_auto, semester, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, subject, grade, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_grades(user_id):
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') FROM grades WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+_ALLOWED_GRADE_COLS = {"subject", "grade", "is_auto", "semester"}
+
+def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None, semester=None):
+    conn = _connect(); fields = []; values = []
+    try:
+        for name, val in (("subject", subject), ("grade", grade),
+                          ("is_auto", None if is_auto is None else int(bool(is_auto))),
+                          ("semester", semester)):
+            if val is not None and name in _ALLOWED_GRADE_COLS:
+                fields.append(f"{name}=?"); values.append(val)
+        if not fields: return
+        values.extend([grade_id, user_id])
+        conn.execute(f"UPDATE grades SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
+        conn.commit()
+    finally:
+        conn.close()
+
+def delete_grade(grade_id, user_id):
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def clear_grades(user_id, semester=None):
+    conn = _connect()
+    try:
+        if semester: conn.execute("DELETE FROM grades WHERE user_id=? AND COALESCE(semester,'')=?", (user_id, semester))
+        else: conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_notify_changes(user_id, enabled):
+    _ensure_user(user_id)
+    conn = _connect()
+    try:
+        conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?", (1 if enabled else 0, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_notify_changes(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return bool(row and row[0])
+    finally:
+        conn.close()
+
+def set_notify_settings(user_id, ntype, hour, minute):
+    _ensure_user(user_id)
+    conn = _connect()
+    try:
+        conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?", (ntype, hour, minute, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_notify_settings(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if row and row[0]:
+            return {"type": row[0], "hour": row[1] if row[1] is not None else 0, "minute": row[2] if row[2] is not None else 0}
+        return None
+    finally:
+        conn.close()
+
+def set_notify_before_min(user_id, minutes):
+    _ensure_user(user_id)
+    conn = _connect()
+    try:
+        conn.execute("UPDATE users SET notify_before_min=? WHERE user_id=?", (int(minutes), user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_notify_before_min(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT notify_before_min FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+    finally:
+        conn.close()
+
+def get_users_for_notification():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute FROM users WHERE notify_type IS NOT NULL AND notify_type != '' AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+        return rows
+    finally:
+        conn.close()
+
+def get_users_for_change_tracking():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT user_id, group_id, subgroup FROM users WHERE notify_changes=1 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+        return rows
+    finally:
+        conn.close()
+
+def get_users_for_lesson_reminder():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT user_id, group_id, subgroup, notify_before_min FROM users WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
+        return rows
+    finally:
+        conn.close()
+
+def get_total_users():
+    conn = _connect()
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        return n
+    finally:
+        conn.close()
+
+def get_all_user_ids():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT user_id FROM users").fetchall()
+        return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def get_cached_schedule(group_id, week_start):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT html, cached_at FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
+        if not row: return None
+        html, cached_at = row
+        try:
+            if datetime.now(timezone.utc) - datetime.fromisoformat(cached_at) < timedelta(hours=CACHE_TTL_HOURS): return html
+        except: pass
+        return None
+    finally:
+        conn.close()
+
+def save_cached_schedule(group_id, week_start, html):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
+            (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def save_snapshot(group_id, week_start, snapshot_str):
+    conn = _connect()
+    try:
+        conn.execute("INSERT OR REPLACE INTO schedule_snapshots (group_id, week_start, snapshot, updated_at) VALUES (?, ?, ?, ?)",
+            (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_snapshot(group_id, week_start):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+def make_snapshot_str(days):
+    parts = []
+    for d in days:
+        day_key = d.get("date", "")
+        for les in d.get("lessons", []):
+            parts.append(f"{day_key}|{les.get('time','')}|{les.get('subject','')}|{les.get('type','')}|{les.get('teacher','')}|{les.get('auditorium','')}|{les.get('subgroup','')}")
+    return "\n".join(sorted(parts))
+
+
+def save_feedback(user_id, username, text, admin_msg_id=None):
+    conn = _connect()
+    try:
+        cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
+            (user_id, username, text, datetime.now(timezone.utc).isoformat(), admin_msg_id))
+        fid = cur.lastrowid
+        conn.commit()
+        return fid
+    finally:
+        conn.close()
+
+def update_feedback_admin_msg(feedback_id, admin_msg_id):
+    conn = _connect()
+    try:
+        conn.execute("UPDATE feedback SET admin_msg_id=? WHERE id=?", (admin_msg_id, feedback_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_pending_feedback():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT id, user_id, username, text, created_at, COALESCE(status,'new') FROM feedback WHERE COALESCE(status,'new') IN ('new', 'postponed') ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC").fetchall()
+        return rows
+    finally:
+        conn.close()
+
+def set_feedback_status(feedback_id, status):
+    conn = _connect()
+    try:
+        conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def mark_feedback_answered(feedback_id, reply_text=None):
+    conn = _connect()
+    try:
+        conn.execute("UPDATE feedback SET status='answered', answered_at=?, admin_reply=? WHERE id=?",
+            (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_feedback_by_id(feedback_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?", (feedback_id,)).fetchone()
+        return row
+    finally:
+        conn.close()
+
+def get_user_feedback(user_id, limit=30):
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT id, text, COALESCE(status,'new'), created_at, answered_at, admin_reply FROM feedback WHERE user_id=? ORDER BY id DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# ЗАДАЧИ
+# ═══════════════════════════════════════════════════════════════
+def add_task(user_id, text, due_date=None, priority=2, due_time=None, tags="", repeat_rule=None):
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
+            "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
+            (user_id, text, due_date, datetime.now(timezone.utc).isoformat(),
+             priority, due_time, tags or "", repeat_rule))
+        tid = cur.lastrowid
+        conn.commit()
+        return tid
+    finally:
+        conn.close()
+
+
+def update_task(task_id, user_id, text=None, due_date=None, priority=None,
+                due_time=None, reset_due=False, tags=None, repeat_rule=None):
+    conn = _connect(); fields = []; values = []
+    try:
+        if text is not None: fields.append("text=?"); values.append(text)
+        if reset_due:
+            fields.append("due_date=NULL"); fields.append("due_time=NULL")
+        else:
+            if due_date is not None: fields.append("due_date=?"); values.append(due_date)
+            if due_time is not None: fields.append("due_time=?"); values.append(due_time)
+        if priority is not None: fields.append("priority=?"); values.append(priority)
+        if tags is not None: fields.append("tags=?"); values.append(tags)
+        if repeat_rule is not None: fields.append("repeat_rule=?"); values.append(repeat_rule or None)
+        if not fields: return
+        values.extend([task_id, user_id])
+        conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_task(task_id, user_id):
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
+            "COALESCE(tags,''), repeat_rule FROM tasks WHERE id=? AND user_id=?",
+            (task_id, user_id)).fetchone()
+        return row
+    finally:
+        conn.close()
+
+
+def get_user_tasks(user_id, only_active=True, tag=None, search=None, sort_by="due"):
+    conn = _connect()
+    try:
+        clauses = ["user_id=?"]
+        params = [user_id]
+        if only_active:
+            clauses.append("done=0")
+        if tag:
+            clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
+            params.append(f"% {tag} %")
+        if search:
+            clauses.append("(LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
+            q = f"%{search.lower()}%"
+            params.extend([q, q])
+
+        order = "ORDER BY id DESC"
+        if sort_by == "due":
+            order = ("ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, "
+                     "substr(due_date,7,4)||substr(due_date,4,2)||substr(due_date,1,2), "
+                     "COALESCE(due_time,''), priority DESC")
+        elif sort_by == "priority":
+            order = "ORDER BY priority DESC, done ASC, id DESC"
+        elif sort_by == "created":
+            order = "ORDER BY id DESC"
+
+        sql = (f"SELECT id, text, due_date, done, created_at, priority, due_time, "
+               f"COALESCE(tags,''), repeat_rule "
+               f"FROM tasks WHERE {' AND '.join(clauses)} {order}")
+        rows = conn.execute(sql, params).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def get_done_tasks(user_id, days=30):
+    conn = _connect()
+    try:
+        threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        rows = conn.execute(
+            "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
+            "COALESCE(tags,'') FROM tasks "
+            "WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? "
+            "ORDER BY done_at DESC",
+            (user_id, threshold)).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def mark_task_done(task_id, user_id):
+    conn = _connect()
+    try:
+        conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
+            (datetime.now(timezone.utc).isoformat(), task_id, user_id))
+        row = conn.execute("SELECT text, priority, tags, repeat_rule, due_date, due_time "
+                           "FROM tasks WHERE id=? AND user_id=?",
+                           (task_id, user_id)).fetchone()
+        if row and row[3]:
+            text, priority, tags, repeat_rule, due_date, due_time = row
+            next_due = None
+            if due_date:
+                try:
+                    d = datetime.strptime(due_date, "%d.%m.%Y")
+                    days_map = {"daily": 1, "weekly": 7, "monthly": 30}
+                    delta = days_map.get(repeat_rule, 7)
+                    next_due = (d + timedelta(days=delta)).strftime("%d.%m.%Y")
+                except: pass
+            conn.execute(
+                "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
+                "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
+                (user_id, text, next_due, datetime.now(timezone.utc).isoformat(),
+                 priority, due_time, tags, repeat_rule))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_task(task_id, user_id):
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def clear_done_tasks(user_id):
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def count_user_tasks(user_id):
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?",
+            (user_id,)).fetchone()
+        return (row[0] or 0, row[1] or 0)
+    finally:
+        conn.close()
+
+
+def get_all_task_tags(user_id):
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT DISTINCT tags FROM tasks WHERE user_id=? AND COALESCE(tags,'') != ''",
+                            (user_id,)).fetchall()
+        tags = set()
+        for r in rows:
+            for t in (r[0] or "").split():
+                t = t.strip()
+                if t: tags.add(t)
+        return sorted(tags)
+    finally:
+        conn.close()
+
+
+def task_stats(user_id, days=30):
+    conn = _connect()
+    try:
+        threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        total = conn.execute("SELECT COUNT(*) FROM tasks WHERE user_id=? AND done=1 AND done_at >= ?",
+                             (user_id, threshold)).fetchone()[0] or 0
+        rows = conn.execute("SELECT done_at FROM tasks WHERE user_id=? AND done=1 AND done_at >= ? "
+                            "ORDER BY done_at DESC", (user_id, threshold)).fetchall()
+    finally:
+        conn.close()
+    days_done = set()
+    for r in rows:
+        try:
+            dt = datetime.fromisoformat(r[0]) + timedelta(hours=8)
+            days_done.add(dt.strftime("%Y-%m-%d"))
+        except: pass
+    streak = 0
+    cur = _now_irkutsk()
+    while cur.strftime("%Y-%m-%d") in days_done:
+        streak += 1
+        cur -= timedelta(days=1)
+    return {"total_done": total, "streak": streak}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ЗАМЕТКИ
+# ═══════════════════════════════════════════════════════════════
+def add_or_update_note(user_id, subject, text, tags=""):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
+                           (user_id, subject)).fetchone()
+        now = datetime.now(timezone.utc).isoformat()
+        if row:
+            conn.execute(
+                "UPDATE notes SET text=?, tags=?, updated_at=?, created_at=? WHERE id=?",
+                (text, tags or "", now, now, row[0]))
+        else:
+            conn.execute(
+                "INSERT INTO notes (user_id, subject, text, created_at, tags, pinned, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (user_id, subject, text, now, tags or "", now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_notes(user_id, search=None, tag=None, sort="pinned"):
+    conn = _connect()
+    try:
+        clauses = ["user_id=?"]
+        params = [user_id]
+        if tag:
+            clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
+            params.append(f"% {tag} %")
+        if search:
+            clauses.append("(LOWER(subject) LIKE ? OR LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
+            q = f"%{search.lower()}%"
+            params.extend([q, q, q])
+        order = "ORDER BY pinned DESC, LOWER(subject)"
+        if sort == "updated":
+            order = "ORDER BY COALESCE(updated_at, created_at) DESC"
+        elif sort == "subject":
+            order = "ORDER BY LOWER(subject)"
+        sql = (f"SELECT id, subject, text, COALESCE(tags,''), COALESCE(pinned,0) "
+               f"FROM notes WHERE {' AND '.join(clauses)} {order}")
+        rows = conn.execute(sql, params).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def delete_note_by_id(note_id, user_id):
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def toggle_note_pin(note_id, user_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT pinned FROM notes WHERE id=? AND user_id=?",
+                           (note_id, user_id)).fetchone()
+        if row is None:
+            return None
+        new_val = 0 if (row[0] or 0) else 1
+        conn.execute("UPDATE notes SET pinned=? WHERE id=? AND user_id=?",
+                     (new_val, note_id, user_id))
+        conn.commit()
+        return bool(new_val)
+    finally:
+        conn.close()
+
+
+def get_all_note_tags(user_id):
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT DISTINCT COALESCE(tags,'') FROM notes WHERE user_id=?",
+                            (user_id,)).fetchall()
+        tags = set()
+        for r in rows:
+            for t in (r[0] or "").split():
+                t = t.strip()
+                if t: tags.add(t)
+        return sorted(tags)
+    finally:
+        conn.close()
+
+
+def ai_get_history(user_id, limit=30):
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
+        rows.reverse()
+        return rows
+    finally:
+        conn.close()
+
+def ai_save_message(user_id, role, text, has_photo=0):
+    conn = _connect()
+    try:
+        conn.execute("INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def ai_clear_history(user_id):
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def attendance_set(user_id, date, time, subject, status):
+    if status not in ("", "was", "missed", "sick", "excused"): return False
+    conn = _connect()
+    try:
+        if status:
+            conn.execute("INSERT INTO attendance (user_id, date, time, subject, status, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, date, time, subject) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at",
+                (user_id, date, time, subject, status, datetime.now(timezone.utc).isoformat()))
+        else:
+            conn.execute("DELETE FROM attendance WHERE user_id=? AND date=? AND time=? AND subject=?", (user_id, date, time, subject))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+def attendance_get_map(user_id, dates):
+    if not dates: return {}
+    conn = _connect()
+    try:
+        placeholders = ",".join("?" * len(dates))
+        rows = conn.execute(f"SELECT date, time, subject, status FROM attendance WHERE user_id=? AND date IN ({placeholders})",
+            (user_id, *dates)).fetchall()
+        return {(d, t, s): st for d, t, s, st in rows}
+    finally:
+        conn.close()
+
+def attendance_stats(user_id):
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status", (user_id,)).fetchall()
+        result = {"was": 0, "missed": 0, "sick": 0, "excused": 0}
+        for status, count in rows:
+            if status in result: result[status] = count
+        return result
+    finally:
+        conn.close()
+
+
+def get_export_data(user_id):
+    saved = get_user_group(user_id)
+    tasks = get_user_tasks(user_id, only_active=False)
+    notes = get_user_notes(user_id)
+    grades = get_grades(user_id)
+    amount = get_scholarship_amount(user_id)
+    feedback = get_user_feedback(user_id, limit=100)
+    att = attendance_stats(user_id)
+    conn = _connect()
+    try:
+        meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+    username = meta[0] if meta else None; first_name = meta[1] if meta else None
+    return {"exported_at": datetime.now(timezone.utc).isoformat(), "user_id": user_id,
+        "username": username, "first_name": first_name,
+        "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
+        "subgroup": get_user_subgroup(user_id), "scholarship_amount": amount,
+        "tasks": [{"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]),
+                   "priority": t[5], "due_time": t[6],
+                   "tags": t[7] if len(t) > 7 else "",
+                   "repeat_rule": t[8] if len(t) > 8 else None} for t in tasks],
+        "notes": [{"id": n[0], "subject": n[1], "text": n[2],
+                   "tags": n[3] if len(n) > 3 else "",
+                   "pinned": bool(n[4]) if len(n) > 4 else False} for n in notes],
+        "grades": [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4]} for g in grades],
+        "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
+        "attendance": att}
+
+
+def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
+def _monday_of_week(d): return d - timedelta(days=d.weekday())
+
+
 DAILY_QUOTES = [
     "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
     "Сессия сдаётся не за неделю, а за семестр.",
@@ -171,629 +1083,6 @@ DAILY_QUOTES = [
     "Не сдал — не конец. Сдал — не финиш.",
     "Дисциплина — это не про силу воли, а про систему.",
 ]
-
-def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
-def _monday_of_week(d): return d - timedelta(days=d.weekday())
-
-
-def init_db():
-    conn = _connect()
-    conn.execute("""CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, group_id TEXT, group_name TEXT,
-        notify_hour INTEGER DEFAULT -1, notify_minute INTEGER DEFAULT 0, notify_changes INTEGER DEFAULT 0, subgroup INTEGER DEFAULT 0)""")
-    for a in ["ALTER TABLE users ADD COLUMN notify_changes INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN subgroup INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN notify_type TEXT DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN last_notified_at TEXT DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN notify_before_min INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN username TEXT DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT NULL"]:
-        try: conn.execute(a)
-        except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS daily_subscribers (user_id INTEGER PRIMARY KEY, subscribed_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS scholarship (user_id INTEGER PRIMARY KEY, current_amount INTEGER DEFAULT 0, updated_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
-        subject TEXT, grade INTEGER, created_at TEXT, is_auto INTEGER DEFAULT 0)""")
-    for a in ["ALTER TABLE grades ADD COLUMN is_auto INTEGER DEFAULT 0","ALTER TABLE grades ADD COLUMN semester TEXT DEFAULT NULL"]:
-        try: conn.execute(a)
-        except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_cache (group_id TEXT, week_start TEXT, html TEXT, cached_at TEXT, PRIMARY KEY (group_id, week_start))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS schedule_snapshots (group_id TEXT, week_start TEXT, snapshot TEXT, updated_at TEXT, PRIMARY KEY (group_id, week_start))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT,
-        text TEXT, created_at TEXT, admin_msg_id INTEGER, status TEXT DEFAULT 'new', answered_at TEXT, admin_reply TEXT DEFAULT NULL)""")
-    for a in ["ALTER TABLE feedback ADD COLUMN status TEXT DEFAULT 'new'","ALTER TABLE feedback ADD COLUMN answered_at TEXT","ALTER TABLE feedback ADD COLUMN admin_reply TEXT DEFAULT NULL"]:
-        try: conn.execute(a)
-        except: pass
-    conn.execute("UPDATE feedback SET status='new' WHERE status IS NULL")
-    conn.execute("""CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, text TEXT,
-        due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT, priority INTEGER DEFAULT 2, due_time TEXT, done_at TEXT)""")
-    for a in ["ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 2",
-              "ALTER TABLE tasks ADD COLUMN due_time TEXT",
-              "ALTER TABLE tasks ADD COLUMN done_at TEXT",
-              "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT ''",
-              "ALTER TABLE tasks ADD COLUMN repeat_rule TEXT DEFAULT NULL"]:
-        try: conn.execute(a)
-        except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT, text TEXT, created_at TEXT)""")
-    for a in ["ALTER TABLE notes ADD COLUMN tags TEXT DEFAULT ''",
-              "ALTER TABLE notes ADD COLUMN pinned INTEGER DEFAULT 0",
-              "ALTER TABLE notes ADD COLUMN updated_at TEXT DEFAULT NULL"]:
-        try: conn.execute(a)
-        except: pass
-    conn.execute("""CREATE TABLE IF NOT EXISTS ai_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, role TEXT,
-        text TEXT, has_photo INTEGER DEFAULT 0, created_at TEXT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, date TEXT,
-        time TEXT, subject TEXT, status TEXT, updated_at TEXT, UNIQUE(user_id, date, time, subject))""")
-    conn.commit(); conn.close()
-
-
-def _ensure_user(user_id):
-    conn = _connect()
-    conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
-    conn.commit(); conn.close()
-
-def _update_user_meta(user_id, username, first_name):
-    conn = _connect()
-    conn.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (username, first_name, user_id))
-    conn.commit(); conn.close()
-
-def user_exists(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return row is not None
-
-
-def daily_subscribe(user_id):
-    conn = _connect()
-    conn.execute("INSERT OR IGNORE INTO daily_subscribers (user_id, subscribed_at) VALUES (?, ?)",
-        (user_id, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-def daily_unsubscribe(user_id):
-    conn = _connect()
-    conn.execute("DELETE FROM daily_subscribers WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-
-def daily_is_subscribed(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT 1 FROM daily_subscribers WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return row is not None
-
-def daily_get_all_subscribers():
-    conn = _connect()
-    rows = conn.execute("SELECT user_id FROM daily_subscribers").fetchall()
-    conn.close()
-    return [r[0] for r in rows]
-
-
-def set_scholarship_amount(user_id, amount):
-    conn = _connect()
-    conn.execute("INSERT OR REPLACE INTO scholarship (user_id, current_amount, updated_at) VALUES (?, ?, ?)",
-        (user_id, amount, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-def get_scholarship_amount(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT current_amount FROM scholarship WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
-def upsert_grade(user_id, subject, grade, is_auto=0, semester=None):
-    conn = _connect()
-    row = conn.execute("SELECT id FROM grades WHERE user_id=? AND LOWER(subject)=LOWER(?) AND COALESCE(semester,'')=COALESCE(?,'')",
-        (user_id, subject, semester)).fetchone()
-    if row:
-        conn.execute("UPDATE grades SET grade=?, subject=?, is_auto=?, semester=?, created_at=? WHERE id=?",
-            (grade, subject, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat(), row[0]))
-    else:
-        conn.execute("INSERT INTO grades (user_id, subject, grade, is_auto, semester, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, subject, grade, int(bool(is_auto)), semester, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-def get_grades(user_id):
-    conn = _connect()
-    rows = conn.execute("SELECT id, subject, grade, COALESCE(is_auto, 0), COALESCE(semester, '') FROM grades WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
-    conn.close()
-    return rows
-
-_ALLOWED_GRADE_COLS = {"subject", "grade", "is_auto", "semester"}
-
-def update_grade_by_id(grade_id, user_id, subject=None, grade=None, is_auto=None, semester=None):
-    conn = _connect(); fields = []; values = []
-    for name, val in (("subject", subject), ("grade", grade),
-                      ("is_auto", None if is_auto is None else int(bool(is_auto))),
-                      ("semester", semester)):
-        if val is not None and name in _ALLOWED_GRADE_COLS:
-            fields.append(f"{name}=?"); values.append(val)
-    if not fields: conn.close(); return
-    values.extend([grade_id, user_id])
-    conn.execute(f"UPDATE grades SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
-    conn.commit(); conn.close()
-
-def delete_grade(grade_id, user_id):
-    conn = _connect()
-    conn.execute("DELETE FROM grades WHERE id=? AND user_id=?", (grade_id, user_id))
-    conn.commit(); conn.close()
-
-def clear_grades(user_id, semester=None):
-    conn = _connect()
-    if semester: conn.execute("DELETE FROM grades WHERE user_id=? AND COALESCE(semester,'')=?", (user_id, semester))
-    else: conn.execute("DELETE FROM grades WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-
-
-def save_user_group(user_id, group_id, group_name):
-    _ensure_user(user_id)
-    conn = _connect()
-    conn.execute("UPDATE users SET group_id=?, group_name=? WHERE user_id=?", (group_id, group_name, user_id))
-    conn.commit(); conn.close()
-
-def get_user_group(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT group_id, group_name FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return row if row and row[0] else None
-
-def delete_user_group(user_id):
-    conn = _connect()
-    conn.execute("UPDATE users SET group_id=NULL, group_name=NULL, notify_hour=-1, notify_changes=0, subgroup=0, notify_type=NULL WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-
-def set_user_subgroup(user_id, subgroup):
-    _ensure_user(user_id)
-    conn = _connect()
-    conn.execute("UPDATE users SET subgroup=? WHERE user_id=?", (subgroup, user_id))
-    conn.commit(); conn.close()
-
-def get_user_subgroup(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT subgroup FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return row[0] if row and row[0] else 0
-
-def set_notify_changes(user_id, enabled):
-    _ensure_user(user_id)
-    conn = _connect()
-    conn.execute("UPDATE users SET notify_changes=? WHERE user_id=?", (1 if enabled else 0, user_id))
-    conn.commit(); conn.close()
-
-def get_notify_changes(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT notify_changes FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return bool(row and row[0])
-
-def set_notify_settings(user_id, ntype, hour, minute):
-    _ensure_user(user_id)
-    conn = _connect()
-    conn.execute("UPDATE users SET notify_type=?, notify_hour=?, notify_minute=? WHERE user_id=?", (ntype, hour, minute, user_id))
-    conn.commit(); conn.close()
-
-def get_notify_settings(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT notify_type, notify_hour, notify_minute FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    if row and row[0]:
-        return {"type": row[0], "hour": row[1] if row[1] is not None else 0, "minute": row[2] if row[2] is not None else 0}
-    return None
-
-def set_notify_before_min(user_id, minutes):
-    _ensure_user(user_id)
-    conn = _connect()
-    conn.execute("UPDATE users SET notify_before_min=? WHERE user_id=?", (int(minutes), user_id))
-    conn.commit(); conn.close()
-
-def get_notify_before_min(user_id):
-    conn = _connect()
-    row = conn.execute("SELECT notify_before_min FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    return int(row[0]) if row and row[0] is not None else 0
-
-def get_users_for_notification():
-    conn = _connect()
-    rows = conn.execute("SELECT user_id, group_id, subgroup, notify_type, notify_hour, notify_minute FROM users WHERE notify_type IS NOT NULL AND notify_type != '' AND notify_hour >= 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
-    conn.close()
-    return rows
-
-def get_users_for_change_tracking():
-    conn = _connect()
-    rows = conn.execute("SELECT user_id, group_id, subgroup FROM users WHERE notify_changes=1 AND group_id IS NOT NULL AND group_id != ''").fetchall()
-    conn.close()
-    return rows
-
-def get_users_for_lesson_reminder():
-    conn = _connect()
-    rows = conn.execute("SELECT user_id, group_id, subgroup, notify_before_min FROM users WHERE notify_before_min > 0 AND group_id IS NOT NULL AND group_id != ''").fetchall()
-    conn.close()
-    return rows
-
-def get_total_users():
-    conn = _connect()
-    n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    conn.close()
-    return n
-
-def get_all_user_ids():
-    conn = _connect()
-    rows = conn.execute("SELECT user_id FROM users").fetchall()
-    conn.close()
-    return [r[0] for r in rows]
-
-
-def get_cached_schedule(group_id, week_start):
-    conn = _connect()
-    row = conn.execute("SELECT html, cached_at FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
-    conn.close()
-    if not row: return None
-    html, cached_at = row
-    try:
-        if datetime.now(timezone.utc) - datetime.fromisoformat(cached_at) < timedelta(hours=CACHE_TTL_HOURS): return html
-    except: pass
-    return None
-
-def save_cached_schedule(group_id, week_start, html):
-    conn = _connect()
-    conn.execute("INSERT OR REPLACE INTO schedule_cache VALUES (?, ?, ?, ?)",
-        (group_id, week_start, html, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-def save_snapshot(group_id, week_start, snapshot_str):
-    conn = _connect()
-    conn.execute("INSERT OR REPLACE INTO schedule_snapshots (group_id, week_start, snapshot, updated_at) VALUES (?, ?, ?, ?)",
-        (group_id, week_start, snapshot_str, datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-def get_snapshot(group_id, week_start):
-    conn = _connect()
-    row = conn.execute("SELECT snapshot FROM schedule_snapshots WHERE group_id=? AND week_start=?", (group_id, week_start)).fetchone()
-    conn.close()
-    return row[0] if row else None
-
-def make_snapshot_str(days):
-    parts = []
-    for d in days:
-        day_key = d.get("date", "")
-        for les in d.get("lessons", []):
-            parts.append(f"{day_key}|{les.get('time','')}|{les.get('subject','')}|{les.get('type','')}|{les.get('teacher','')}|{les.get('auditorium','')}|{les.get('subgroup','')}")
-    return "\n".join(sorted(parts))
-
-
-def save_feedback(user_id, username, text, admin_msg_id=None):
-    conn = _connect()
-    cur = conn.execute("INSERT INTO feedback (user_id, username, text, created_at, admin_msg_id, status) VALUES (?, ?, ?, ?, ?, 'new')",
-        (user_id, username, text, datetime.now(timezone.utc).isoformat(), admin_msg_id))
-    fid = cur.lastrowid
-    conn.commit(); conn.close()
-    return fid
-
-def update_feedback_admin_msg(feedback_id, admin_msg_id):
-    conn = _connect()
-    conn.execute("UPDATE feedback SET admin_msg_id=? WHERE id=?", (admin_msg_id, feedback_id))
-    conn.commit(); conn.close()
-
-def get_pending_feedback():
-    conn = _connect()
-    rows = conn.execute("SELECT id, user_id, username, text, created_at, COALESCE(status,'new') FROM feedback WHERE COALESCE(status,'new') IN ('new', 'postponed') ORDER BY CASE COALESCE(status,'new') WHEN 'new' THEN 0 ELSE 1 END, id DESC").fetchall()
-    conn.close()
-    return rows
-
-def set_feedback_status(feedback_id, status):
-    conn = _connect()
-    conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
-    conn.commit(); conn.close()
-
-def mark_feedback_answered(feedback_id, reply_text=None):
-    conn = _connect()
-    conn.execute("UPDATE feedback SET status='answered', answered_at=?, admin_reply=? WHERE id=?",
-        (datetime.now(timezone.utc).isoformat(), reply_text, feedback_id))
-    conn.commit(); conn.close()
-
-def get_feedback_by_id(feedback_id):
-    conn = _connect()
-    row = conn.execute("SELECT id, user_id, username, text FROM feedback WHERE id=?", (feedback_id,)).fetchone()
-    conn.close()
-    return row
-
-def get_user_feedback(user_id, limit=30):
-    conn = _connect()
-    rows = conn.execute("SELECT id, text, COALESCE(status,'new'), created_at, answered_at, admin_reply FROM feedback WHERE user_id=? ORDER BY id DESC LIMIT ?",
-        (user_id, limit)).fetchall()
-    conn.close()
-    return rows
-
-
-# ═══════════════════════════════════════════════════════════════
-# ЗАДАЧИ (обновлено)
-# ═══════════════════════════════════════════════════════════════
-def add_task(user_id, text, due_date=None, priority=2, due_time=None, tags="", repeat_rule=None):
-    conn = _connect()
-    cur = conn.execute(
-        "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
-        "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
-        (user_id, text, due_date, datetime.now(timezone.utc).isoformat(),
-         priority, due_time, tags or "", repeat_rule))
-    tid = cur.lastrowid
-    conn.commit(); conn.close()
-    return tid
-
-
-def update_task(task_id, user_id, text=None, due_date=None, priority=None,
-                due_time=None, reset_due=False, tags=None, repeat_rule=None):
-    conn = _connect(); fields = []; values = []
-    if text is not None: fields.append("text=?"); values.append(text)
-    if reset_due:
-        fields.append("due_date=NULL"); fields.append("due_time=NULL")
-    else:
-        if due_date is not None: fields.append("due_date=?"); values.append(due_date)
-        if due_time is not None: fields.append("due_time=?"); values.append(due_time)
-    if priority is not None: fields.append("priority=?"); values.append(priority)
-    if tags is not None: fields.append("tags=?"); values.append(tags)
-    if repeat_rule is not None: fields.append("repeat_rule=?"); values.append(repeat_rule or None)
-    if not fields: conn.close(); return
-    values.extend([task_id, user_id])
-    conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
-    conn.commit(); conn.close()
-
-
-def get_task(task_id, user_id):
-    conn = _connect()
-    row = conn.execute(
-        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
-        "COALESCE(tags,''), repeat_rule FROM tasks WHERE id=? AND user_id=?",
-        (task_id, user_id)).fetchone()
-    conn.close()
-    return row
-
-
-def get_user_tasks(user_id, only_active=True, tag=None, search=None, sort_by="due"):
-    conn = _connect()
-    clauses = ["user_id=?"]
-    params = [user_id]
-    if only_active:
-        clauses.append("done=0")
-    if tag:
-        clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
-        params.append(f"% {tag} %")
-    if search:
-        clauses.append("(LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
-        q = f"%{search.lower()}%"
-        params.extend([q, q])
-
-    order = "ORDER BY id DESC"
-    if sort_by == "due":
-        order = ("ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, "
-                 "substr(due_date,7,4)||substr(due_date,4,2)||substr(due_date,1,2), "
-                 "COALESCE(due_time,''), priority DESC")
-    elif sort_by == "priority":
-        order = "ORDER BY priority DESC, done ASC, id DESC"
-    elif sort_by == "created":
-        order = "ORDER BY id DESC"
-
-    sql = (f"SELECT id, text, due_date, done, created_at, priority, due_time, "
-           f"COALESCE(tags,''), repeat_rule "
-           f"FROM tasks WHERE {' AND '.join(clauses)} {order}")
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-    return rows
-
-
-def get_done_tasks(user_id, days=30):
-    conn = _connect()
-    threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    rows = conn.execute(
-        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
-        "COALESCE(tags,'') FROM tasks "
-        "WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? "
-        "ORDER BY done_at DESC",
-        (user_id, threshold)).fetchall()
-    conn.close()
-    return rows
-
-
-def mark_task_done(task_id, user_id):
-    conn = _connect()
-    conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
-        (datetime.now(timezone.utc).isoformat(), task_id, user_id))
-    row = conn.execute("SELECT text, priority, tags, repeat_rule, due_date, due_time "
-                       "FROM tasks WHERE id=? AND user_id=?",
-                       (task_id, user_id)).fetchone()
-    if row and row[3]:
-        text, priority, tags, repeat_rule, due_date, due_time = row
-        next_due = None
-        if due_date:
-            try:
-                d = datetime.strptime(due_date, "%d.%m.%Y")
-                days_map = {"daily": 1, "weekly": 7, "monthly": 30}
-                delta = days_map.get(repeat_rule, 7)
-                next_due = (d + timedelta(days=delta)).strftime("%d.%m.%Y")
-            except: pass
-        conn.execute(
-            "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
-            "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
-            (user_id, text, next_due, datetime.now(timezone.utc).isoformat(),
-             priority, due_time, tags, repeat_rule))
-    conn.commit(); conn.close()
-
-
-def delete_task(task_id, user_id):
-    conn = _connect()
-    conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
-    conn.commit(); conn.close()
-
-
-def clear_done_tasks(user_id):
-    conn = _connect()
-    conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
-    conn.commit(); conn.close()
-
-
-def count_user_tasks(user_id):
-    conn = _connect()
-    row = conn.execute(
-        "SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), "
-        "SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?",
-        (user_id,)).fetchone()
-    conn.close()
-    return (row[0] or 0, row[1] or 0)
-
-
-def get_all_task_tags(user_id):
-    conn = _connect()
-    rows = conn.execute("SELECT DISTINCT tags FROM tasks WHERE user_id=? AND COALESCE(tags,'') != ''",
-                        (user_id,)).fetchall()
-    conn.close()
-    tags = set()
-    for r in rows:
-        for t in (r[0] or "").split():
-            t = t.strip()
-            if t: tags.add(t)
-    return sorted(tags)
-
-
-def task_stats(user_id, days=30):
-    conn = _connect()
-    threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    total = conn.execute("SELECT COUNT(*) FROM tasks WHERE user_id=? AND done=1 AND done_at >= ?",
-                         (user_id, threshold)).fetchone()[0] or 0
-    rows = conn.execute("SELECT done_at FROM tasks WHERE user_id=? AND done=1 AND done_at >= ? "
-                        "ORDER BY done_at DESC", (user_id, threshold)).fetchall()
-    conn.close()
-    days_done = set()
-    for r in rows:
-        try:
-            dt = datetime.fromisoformat(r[0]) + timedelta(hours=8)
-            days_done.add(dt.strftime("%Y-%m-%d"))
-        except: pass
-    streak = 0
-    cur = _now_irkutsk()
-    while cur.strftime("%Y-%m-%d") in days_done:
-        streak += 1
-        cur -= timedelta(days=1)
-    return {"total_done": total, "streak": streak}
-
-
-# ═══════════════════════════════════════════════════════════════
-# ЗАМЕТКИ (обновлено)
-# ═══════════════════════════════════════════════════════════════
-def add_or_update_note(user_id, subject, text, tags=""):
-    conn = _connect()
-    row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
-                       (user_id, subject)).fetchone()
-    now = datetime.now(timezone.utc).isoformat()
-    if row:
-        conn.execute(
-            "UPDATE notes SET text=?, tags=?, updated_at=?, created_at=? WHERE id=?",
-            (text, tags or "", now, now, row[0]))
-    else:
-        conn.execute(
-            "INSERT INTO notes (user_id, subject, text, created_at, tags, pinned, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, 0, ?)",
-            (user_id, subject, text, now, tags or "", now))
-    conn.commit(); conn.close()
-
-
-def get_user_notes(user_id, search=None, tag=None, sort="pinned"):
-    conn = _connect()
-    clauses = ["user_id=?"]
-    params = [user_id]
-    if tag:
-        clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
-        params.append(f"% {tag} %")
-    if search:
-        clauses.append("(LOWER(subject) LIKE ? OR LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
-        q = f"%{search.lower()}%"
-        params.extend([q, q, q])
-    order = "ORDER BY pinned DESC, LOWER(subject)"
-    if sort == "updated":
-        order = "ORDER BY COALESCE(updated_at, created_at) DESC"
-    elif sort == "subject":
-        order = "ORDER BY LOWER(subject)"
-    sql = (f"SELECT id, subject, text, COALESCE(tags,''), COALESCE(pinned,0) "
-           f"FROM notes WHERE {' AND '.join(clauses)} {order}")
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-    return rows
-
-
-def delete_note_by_id(note_id, user_id):
-    conn = _connect()
-    conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
-    conn.commit(); conn.close()
-
-
-def toggle_note_pin(note_id, user_id):
-    conn = _connect()
-    row = conn.execute("SELECT pinned FROM notes WHERE id=? AND user_id=?",
-                       (note_id, user_id)).fetchone()
-    if row is None:
-        conn.close(); return None
-    new_val = 0 if (row[0] or 0) else 1
-    conn.execute("UPDATE notes SET pinned=? WHERE id=? AND user_id=?",
-                 (new_val, note_id, user_id))
-    conn.commit(); conn.close()
-    return bool(new_val)
-
-
-def get_all_note_tags(user_id):
-    conn = _connect()
-    rows = conn.execute("SELECT DISTINCT COALESCE(tags,'') FROM notes WHERE user_id=?",
-                        (user_id,)).fetchall()
-    conn.close()
-    tags = set()
-    for r in rows:
-        for t in (r[0] or "").split():
-            t = t.strip()
-            if t: tags.add(t)
-    return sorted(tags)
-
-
-def ai_get_history(user_id, limit=30):
-    conn = _connect()
-    rows = conn.execute("SELECT id, role, text, has_photo, created_at FROM ai_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
-    conn.close()
-    rows.reverse()
-    return rows
-
-def ai_save_message(user_id, role, text, has_photo=0):
-    conn = _connect()
-    conn.execute("INSERT INTO ai_messages (user_id, role, text, has_photo, created_at) VALUES (?, ?, ?, ?, ?)",
-        (user_id, role, text or '', int(bool(has_photo)), datetime.now(timezone.utc).isoformat()))
-    conn.commit(); conn.close()
-
-def ai_clear_history(user_id):
-    conn = _connect()
-    conn.execute("DELETE FROM ai_messages WHERE user_id=?", (user_id,))
-    conn.commit(); conn.close()
-
-
-def get_export_data(user_id):
-    saved = get_user_group(user_id)
-    tasks = get_user_tasks(user_id, only_active=False)
-    notes = get_user_notes(user_id)
-    grades = get_grades(user_id)
-    amount = get_scholarship_amount(user_id)
-    feedback = get_user_feedback(user_id, limit=100)
-    att = attendance_stats(user_id)
-    conn = _connect()
-    meta = conn.execute("SELECT username, first_name FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    username = meta[0] if meta else None; first_name = meta[1] if meta else None
-    return {"exported_at": datetime.now(timezone.utc).isoformat(), "user_id": user_id,
-        "username": username, "first_name": first_name,
-        "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
-        "subgroup": get_user_subgroup(user_id), "scholarship_amount": amount,
-        "tasks": [{"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]),
-                   "priority": t[5], "due_time": t[6],
-                   "tags": t[8] if len(t) > 8 else "", "repeat_rule": t[9] if len(t) > 9 else None}
-                  for t in tasks],
-        "notes": [{"id": n[0], "subject": n[1], "text": n[2],
-                   "tags": n[3] if len(n) > 3 else "",
-                   "pinned": bool(n[4]) if len(n) > 4 else False} for n in notes],
-        "grades": [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4]} for g in grades],
-        "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
-        "attendance": att}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1208,9 +1497,11 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
         logging.error(f"[WEEK] Ошибка: {e}")
         if use_cache:
             conn = _connect()
-            row = conn.execute("SELECT html FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start_str)).fetchone()
-            conn.close()
-            if row: return row[0]
+            try:
+                row = conn.execute("SELECT html FROM schedule_cache WHERE group_id=? AND week_start=?", (group_id, week_start_str)).fetchone()
+                if row: return row[0]
+            finally:
+                conn.close()
         return ""
 
 
@@ -1237,10 +1528,12 @@ _restore_lock = asyncio.Lock()
 def _db_schema_version() -> str:
     try:
         conn = _connect()
-        cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
-        cols_grades = [r[1] for r in conn.execute("PRAGMA table_info(grades)").fetchall()]
-        conn.close()
-        return f"users:{len(cols_users)} | grades:{len(cols_grades)}"
+        try:
+            cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+            cols_grades = [r[1] for r in conn.execute("PRAGMA table_info(grades)").fetchall()]
+            return f"users:{len(cols_users)} | grades:{len(cols_grades)}"
+        finally:
+            conn.close()
     except Exception:
         return "unknown"
 
@@ -1328,7 +1621,6 @@ PRESENT_STYLES = {
 _style_history = {"recent": []}
 
 def _pick_random_style() -> str:
-    """Выбирает стиль, исключая последние 3 использованных."""
     all_keys = list(PRESENT_STYLES.keys())
     recent = _style_history["recent"][-3:]
     candidates = [k for k in all_keys if k not in recent]
@@ -1501,7 +1793,6 @@ async def _generate_slide_plan(topic: str, slides_count: int,
     return await _gigachat_json(base)
 
 
-# ─── Утилиты рисования PPTX ───
 def _add_rect(slide, x, y, w, h, color):
     shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
     shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(*color)
@@ -1550,7 +1841,6 @@ def _add_bar_chart(slide, x, y, w, h, categories, values, unit="", title=""):
         return None
 
 
-# ─── Layout'ы для разных типов слайдов ───
 BULLET_LAYOUTS = [
     "text_left_image_right",
     "image_left_text_right",
@@ -1559,36 +1849,13 @@ BULLET_LAYOUTS = [
     "big_first_bullet",
     "accent_block_left",
 ]
-
-FLOW_LAYOUTS = [
-    "flow_horizontal",
-    "flow_vertical",
-    "flow_zigzag",
-]
-
-COMPARE_LAYOUTS = [
-    "compare_two_cols",
-    "compare_split_diagonal",
-]
-
-NUMBERS_LAYOUTS = [
-    "numbers_row",
-    "numbers_grid_2x2",
-    "numbers_hero_one",
-]
-
-CARDS_LAYOUTS = [
-    "cards_row",
-    "cards_stack_vertical",
-]
-
-CHART_LAYOUTS = [
-    "chart_full",
-    "chart_with_text",
-]
+FLOW_LAYOUTS = ["flow_horizontal", "flow_vertical", "flow_zigzag"]
+COMPARE_LAYOUTS = ["compare_two_cols", "compare_split_diagonal"]
+NUMBERS_LAYOUTS = ["numbers_row", "numbers_grid_2x2", "numbers_hero_one"]
+CARDS_LAYOUTS = ["cards_row", "cards_stack_vertical"]
+CHART_LAYOUTS = ["chart_full", "chart_with_text"]
 
 def _pick_layout(kind: str, idx: int) -> str:
-    """Детерминированно выбирает layout по индексу слайда + типу."""
     pools = {
         "bullets": BULLET_LAYOUTS,
         "flow": FLOW_LAYOUTS,
@@ -1688,7 +1955,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                  color=style["accent"] if SHAPE in ("glow_line", "neon_line") else style["text"])
         _add_rect(slide, Inches(1.0), Inches(1.55), Inches(1.8), Inches(0.05), style["accent"])
 
-    # ═════════ ТИТУЛЬНЫЙ ═════════
+    # ТИТУЛЬНЫЙ
     s0 = prs.slides.add_slide(blank)
     _add_rect(s0, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
     _add_rect(s0, 0, 0, Inches(4.7), prs.slide_height, style["accent"])
@@ -1712,7 +1979,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     slides = plan.get("slides", [])
     page_num = 2
 
-    # ═════════ СОДЕРЖАНИЕ ═════════
+    # СОДЕРЖАНИЕ
     outline = plan.get("outline") or []
     if outline and len(outline) >= 2:
         so = prs.slides.add_slide(blank)
@@ -1723,7 +1990,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         add_bullets(so, Inches(1.5), Inches(2.3), Inches(10.5), Inches(4.5), bullets, size=16)
         _add_page_number(so, page_num); page_num += 1
 
-    # ═════════ КОНТЕНТНЫЕ ═════════
+    # КОНТЕНТНЫЕ
     for idx, sl in enumerate(slides):
         s = prs.slides.add_slide(blank)
         _add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
@@ -1737,7 +2004,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             try: s.notes_slide.notes_text_frame.text = str(notes)
             except: pass
 
-        # ─── BULLETS — 6 разных композиций ───
         if stype == "bullets":
             bullets = sl.get("bullets", []) or []
             hint = sl.get("image_hint", "")
@@ -1768,11 +2034,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                                 style["accent2"], style["accent"])
                 add_bullets(s, Inches(1.0), Inches(2.3), Inches(4.5), Inches(4.0), bullets, size=12)
                 add_image_placeholder(s, Inches(6.2), Inches(2.0), Inches(6.6), Inches(4.5), hint)
-            else:
-                add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9), bullets, size=13)
-                add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5), hint)
 
-        # ─── FLOW — 3 композиции ───
         elif stype == "flow":
             steps = sl.get("steps", [])[:4]
             n = len(steps) if steps else 1
@@ -1820,7 +2082,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                         _add_arrow(s, bx + box_w + Inches(0.06), y0 + box_h / 2 - Inches(0.22),
                                    gap - Inches(0.12), Inches(0.44), style["accent"])
 
-        # ─── COMPARE — 2 композиции ───
         elif stype == "compare":
             lt = sl.get("left_title", "A"); rt = sl.get("right_title", "B")
             li = sl.get("left_items", [])[:4]; ri = sl.get("right_items", [])[:4]
@@ -1848,7 +2109,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                 add_bullets(s, Inches(7.05), y0 + Inches(0.95), col_w - Inches(0.4),
                             col_h - Inches(1.1), ri, size=11)
 
-        # ─── NUMBERS — 3 композиции ───
         elif stype == "numbers":
             facts = sl.get("facts", [])[:4]
             n = len(facts) if facts else 1
@@ -1900,7 +2160,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                              f.get("label", ""), size=12, color=style["text"],
                              align=PP_ALIGN.CENTER, spacing=1.1)
 
-        # ─── CARDS — 2 композиции ───
         elif stype == "cards":
             cards = sl.get("cards", [])[:4]
             n = len(cards) if cards else 1
@@ -1945,7 +2204,6 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                              c.get("text", ""), size=10, color=style["text_soft"],
                              align=PP_ALIGN.CENTER, spacing=1.1)
 
-        # ─── CHART — 2 композиции ───
         elif stype == "chart":
             cats = sl.get("categories") or []
             vals = sl.get("values") or []
@@ -1978,7 +2236,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
 
         _add_page_number(s, page_num); page_num += 1
 
-    # ═════════ ИСТОЧНИКИ ═════════
+    # ИСТОЧНИКИ
     sources = plan.get("sources") or []
     if sources:
         ss = prs.slides.add_slide(blank)
@@ -1996,7 +2254,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         add_bullets(ss, Inches(1.0), Inches(2.2), Inches(11.3), Inches(4.6), lines, size=12)
         _add_page_number(ss, page_num); page_num += 1
 
-    # ═════════ ФИНАЛЬНЫЙ ═════════
+    # ФИНАЛЬНЫЙ
     sN = prs.slides.add_slide(blank)
     _add_rect(sN, 0, 0, prs.slide_width, prs.slide_height, style["title_bg"])
     _add_rect(sN, 0, 0, prs.slide_width, Inches(0.15), style["accent"])
@@ -2205,44 +2463,92 @@ async def api_week(request):
 async def api_me(request):
     init_data = request.query.get("initData", "")
     user_obj = _verify_webapp_init_full(init_data)
-    if not user_obj: return web.json_response({"error": "unauthorized"}, status=401)
+    if not user_obj:
+        return web.json_response({"error": "unauthorized"}, status=401)
     user_id = user_obj.id
-    _ensure_user(user_id); _update_user_meta(user_id, user_obj.username, user_obj.first_name)
-    saved = get_user_group(user_id); active, done = count_user_tasks(user_id)
-    notes = get_user_notes(user_id); amount = get_scholarship_amount(user_id)
-    grades = get_grades(user_id); daily = daily_is_subscribed(user_id)
+    _ensure_user(user_id)
+    _update_user_meta(user_id, user_obj.username, user_obj.first_name)
+
+    saved = get_user_group(user_id)
+    active, done = count_user_tasks(user_id)
+    notes = get_user_notes(user_id)
+    amount = get_scholarship_amount(user_id)
+    grades = get_grades(user_id)
+    daily = daily_is_subscribed(user_id)
     notif_settings = get_notify_settings(user_id)
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     att_stats = attendance_stats(user_id)
-    return web.json_response({"user_id": user_id, "is_admin": user_id == ADMIN_ID,
-        "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
-        "subgroup": get_user_subgroup(user_id), "tasks_active": active, "tasks_done": done,
-        "notes_count": len(notes), "scholarship_amount": amount, "grades_count": len(grades),
-        "grades_avg": round(avg, 2), "daily_subscribed": daily,
+
+    return web.json_response({
+        "user_id": user_id,
+        "is_admin": user_id == ADMIN_ID,
+        "group": saved[1] if saved else None,
+        "group_id": saved[0] if saved else None,
+        "subgroup": get_user_subgroup(user_id),
+        "tasks_active": active, "tasks_done": done,
+        "notes_count": len(notes),
+        "scholarship_amount": amount,
+        "grades_count": len(grades),
+        "grades_avg": round(avg, 2),
+        "daily_subscribed": daily,
         "notify_type": notif_settings["type"] if notif_settings else None,
         "notify_hour": notif_settings["hour"] if notif_settings else -1,
         "notify_minute": notif_settings["minute"] if notif_settings else 0,
-        "notify_changes": get_notify_changes(user_id), "notify_before_min": get_notify_before_min(user_id),
-        "attendance_was": att_stats["was"], "attendance_missed": att_stats["missed"],
-        "attendance_sick": att_stats["sick"], "attendance_excused": att_stats["excused"],
-        "attendance_total": sum(att_stats.values()), "username": user_obj.username,
-        "first_name": user_obj.first_name, "last_name": user_obj.last_name})
+        "notify_changes": get_notify_changes(user_id),
+        "notify_before_min": get_notify_before_min(user_id),
+        "attendance_was": att_stats["was"],
+        "attendance_missed": att_stats["missed"],
+        "attendance_sick": att_stats["sick"],
+        "attendance_excused": att_stats["excused"],
+        "attendance_total": sum(att_stats.values()),
+        "username": user_obj.username,
+        "first_name": user_obj.first_name,
+        "last_name": user_obj.last_name
+    })
 
 
 async def api_groups(request): return web.json_response({"groups": GROUPS})
 
 
 async def api_set_group(request):
-    try: body = await request.json()
-    except: return web.json_response({"error": "bad_json"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+
     user_id = _verify_webapp_init(body.get("initData", ""))
-    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    group_id = str(body.get("group_id", "")); group_name = str(body.get("group_name", ""))
-    subgroup = int(body.get("subgroup", 0))
+    if not user_id:
+        logging.warning("[API/set-group] unauthorized")
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    group_id = str(body.get("group_id", "")).strip()
+    group_name = str(body.get("group_name", "")).strip()
+    try:
+        subgroup = int(body.get("subgroup", 0))
+    except Exception:
+        subgroup = 0
+
     if not group_id or not group_name:
-        delete_user_group(user_id); return web.json_response({"ok": True})
-    save_user_group(user_id, group_id, group_name); set_user_subgroup(user_id, subgroup)
-    return web.json_response({"ok": True})
+        delete_user_group(user_id)
+        logging.info(f"[API/set-group] user={user_id} → forget")
+        return web.json_response({"ok": True, "saved": False})
+
+    ok = save_user_group(user_id, group_id, group_name)
+    set_user_subgroup(user_id, subgroup)
+
+    saved = get_user_group(user_id)
+    if not ok or not saved:
+        logging.error(f"[API/set-group] user={user_id} НЕ сохранилось: {group_name} ({group_id})")
+        return web.json_response({
+            "error": "db_error",
+            "message": "Не удалось сохранить группу. Открой /whereami у админа."
+        }, status=500)
+
+    logging.info(f"[API/set-group] user={user_id} → {group_name} ({group_id}) sub={subgroup}")
+    return web.json_response({
+        "ok": True, "saved": True,
+        "group": saved[1], "group_id": saved[0], "subgroup": subgroup
+    })
 
 
 async def api_set_subgroup(request):
@@ -2250,12 +2556,12 @@ async def api_set_subgroup(request):
     except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    subgroup = int(body.get("subgroup", 0))
+    try: subgroup = int(body.get("subgroup", 0))
+    except: subgroup = 0
     set_user_subgroup(user_id, subgroup)
     return web.json_response({"ok": True})
 
 
-# ─── ЗАДАЧИ API ───
 def _task_to_dict(row):
     tid, text, due_date, done, created_at, priority, due_time, tags, repeat_rule = row
     overdue = False
@@ -2378,7 +2684,6 @@ async def api_task_clear(request):
     return web.json_response({"ok": True})
 
 
-# ─── ЗАМЕТКИ API ───
 async def api_notes(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
@@ -2850,7 +3155,7 @@ def generate_user_pdf(user_id):
     if not notes: pdf.cell(0, 6, "Нет заметок", ln=True)
     else:
         for n in notes:
-            pin = "📌 " if n.get("pinned") else ""
+            pin = "[PIN] " if n.get("pinned") else ""
             pdf.set_font("Main", size=11); pdf.multi_cell(0, 5.5, f"{pin}{n['subject']}:")
             pdf.set_font("Main", size=10); pdf.set_text_color(70, 70, 70)
             pdf.multi_cell(0, 5, "    " + _pdf_short(n["text"], 400))
@@ -3101,6 +3406,7 @@ async def cmd_admin(message: Message):
         "/backup_all — полный zip (БД + шрифты + webapp)\n"
         "/restore — восстановить users.db (отправь .db с подписью)\n"
         "/whereami — где база и твой ID\n"
+        "/dbcheck — проверка схемы БД (колонки, пользователи)\n"
         "/admin — эта справка")
 
 
@@ -3121,6 +3427,64 @@ async def cmd_whereami(message: Message):
             f"WAL: {'да' if wal_exists else 'нет'} | SHM: {'да' if shm_exists else 'нет'}\n"
             f"schema: {_db_schema_version()}")
     await message.answer(text)
+
+
+@dp.message(Command("dbcheck"))
+async def cmd_dbcheck(message: Message):
+    """Диагностика схемы БД — что есть, что отсутствует."""
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    try:
+        conn = _connect()
+        try:
+            tables = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()]
+            cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+            cols_tasks = [r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()]
+            cols_notes = [r[1] for r in conn.execute("PRAGMA table_info(notes)").fetchall()]
+            total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            with_group = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE group_id IS NOT NULL AND group_id != ''"
+            ).fetchone()[0]
+            sample = conn.execute("""SELECT user_id, group_id, group_name, subgroup
+                FROM users WHERE group_id IS NOT NULL AND group_id != ''
+                ORDER BY user_id DESC LIMIT 3""").fetchall()
+        finally:
+            conn.close()
+
+        need_users = {"user_id", "group_id", "group_name", "subgroup",
+                      "notify_hour", "notify_minute", "notify_type",
+                      "notify_changes", "notify_before_min",
+                      "username", "first_name"}
+        missing_users = need_users - set(cols_users)
+
+        lines = [
+            f"Таблицы ({len(tables)}): {', '.join(tables[:15])}",
+            "",
+            f"users ({len(cols_users)}): {', '.join(cols_users)}",
+            f"tasks ({len(cols_tasks)}): {', '.join(cols_tasks)}",
+            f"notes ({len(cols_notes)}): {', '.join(cols_notes)}",
+            "",
+            f"Пользователей: {total}",
+            f"С группой: {with_group}",
+        ]
+        if missing_users:
+            lines.append("")
+            lines.append(f"[!] В users НЕТ колонок: {sorted(missing_users)}")
+            lines.append("→ Запусти бота один раз, init_db() добавит их.")
+        else:
+            lines.append("")
+            lines.append("[OK] users содержит все нужные колонки")
+        if sample:
+            lines.append("")
+            lines.append("Последние с группой:")
+            for r in sample:
+                lines.append(f"  user={r[0]}  {r[2]} ({r[1]})  sub={r[3]}")
+        await message.answer("\n".join(lines))
+    except Exception as e:
+        logging.exception("[DBCHECK]")
+        await message.answer(f"Ошибка: {e}")
 
 
 @dp.message(Command("backup"))
@@ -3414,8 +3778,11 @@ async def cleanup_cache_worker():
             if now.hour == 4:
                 cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
                 conn = _connect()
-                conn.execute("DELETE FROM schedule_cache WHERE cached_at < ?", (cutoff,))
-                conn.commit(); conn.close()
+                try:
+                    conn.execute("DELETE FROM schedule_cache WHERE cached_at < ?", (cutoff,))
+                    conn.commit()
+                finally:
+                    conn.close()
                 logging.info("[CLEANUP] старый кэш расписания удалён")
         except Exception:
             logging.exception("[CLEANUP]")
