@@ -21,7 +21,8 @@ const state = {
   tab:'schedule', loading:false, error:null, user:tgUser, isAdmin:false,
   schedule:null, weekDays:null, weekOffset:0, scheduleViewMode:'today', scheduleDay:'today',
   tasks:[], tasksStats:{active:0,done:0}, tasksView:'active',
-  notes:[], notesSubjects:[],
+  tasksSearch:'', tasksSort:'due', tasksTag:'', tasksTags:[], tasksStatsFull:{total_done:0, streak:0},
+  notes:[], notesSubjects:[], notesSearch:'', notesTag:'', notesTags:[],
   profile:null, scholarship:null, groups:null,
   pickerMode:null, pickerInstitute:null, pickerCourse:null, pickerSearch:'',
   notifyEditor:false, notifyEditorType:'today', notifyEditorHour:8, notifyEditorMinute:0,
@@ -141,6 +142,16 @@ function findDayByDate(days, dateStr) {
   if (!days) return null;
   for (const d of days) if (d.date === dateStr) return d;
   return null;
+}
+
+function renderMarkdownLight(text) {
+  if (!text) return '';
+  let s = escapeHtml(text);
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  s = s.replace(/(^|\s)\*(.+?)\*(?=\s|$)/g, '$1<i>$2</i>');
+  s = s.replace(/\n/g, '<br>');
+  return s;
 }
 
 function render() {
@@ -804,27 +815,78 @@ async function actionScholarshipClear(sem) {
   }, 'ОЧИСТИТЬ');
 }
 
+/* ЗАДАЧИ */
 function renderTasks() {
   const tasks = state.tasks;
   const stats = state.tasksStats;
+  const tstats = state.tasksStatsFull || {total_done:0, streak:0};
+  const tags = state.tasksTags || [];
   let html = `<div class="tab-buttons">
     <button data-action="tasks-show-active" class="${state.tasksView==='active'?'active':''}">Активные (${stats.active})</button>
     <button data-action="tasks-show-done" class="${state.tasksView==='done'?'active':''}">Выполненные (${stats.done})</button>
   </div>`;
-  if (state.tasksView === 'active') html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить задачу</button>`;
+
+  if (state.tasksView === 'active' && tstats.total_done > 0) {
+    html += `<div class="tasks-stats-row">
+      <div class="tasks-stat-box">
+        <div class="num">${tstats.total_done}</div>
+        <div class="label">За 30 дней</div>
+      </div>
+      <div class="tasks-stat-box">
+        <div class="num">${tstats.streak}${tstats.streak > 0 ? ' 🔥' : ''}</div>
+        <div class="label">Streak дней</div>
+      </div>
+    </div>`;
+  }
+
+  if (state.tasksView === 'active') {
+    html += `<button class="btn" data-action="task-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить задачу</button>`;
+
+    html += `<div class="tasks-filter-bar">
+      <input class="input tasks-search" id="tasks-search" placeholder="Поиск..." value="${escapeHtml(state.tasksSearch||'')}">
+      <select class="input tasks-sort" id="tasks-sort">
+        <option value="due" ${state.tasksSort==='due'?'selected':''}>По сроку</option>
+        <option value="priority" ${state.tasksSort==='priority'?'selected':''}>По приоритету</option>
+        <option value="created" ${state.tasksSort==='created'?'selected':''}>По дате</option>
+      </select>
+    </div>`;
+
+    if (tags.length > 0) {
+      html += `<div class="tasks-tags-scroll">`;
+      html += `<button class="sch-subj-chip ${!state.tasksTag?'selected':''}" data-action="tasks-filter-tag" data-value="">Все</button>`;
+      for (const t of tags) {
+        html += `<button class="sch-subj-chip ${state.tasksTag===t?'selected':''}" data-action="tasks-filter-tag" data-value="${escapeHtml(t)}">${escapeHtml(t)}</button>`;
+      }
+      html += `</div>`;
+    }
+  }
+
   if (!tasks?.length) {
     html += state.tasksView === 'active' ? '<div class="empty">Задач нет. Добавь первую.</div>' : '<div class="empty">Нет выполненных</div>';
     return html;
   }
+
   const prioMap = {1: {cls:'low', label:'Низкий'}, 2: {cls:'medium', label:'Средний'}, 3: {cls:'high', label:'Высокий'}};
   for (const t of tasks) {
     const p = prioMap[t.priority] || prioMap[2];
     const dueStr = t.due_date
       ? `<span class="${t.overdue?'overdue':''}">до ${escapeHtml(t.due_date)}${t.due_time?' '+escapeHtml(t.due_time):''}${t.overdue?' — просрочено':''}</span>`
       : '<span style="color:var(--text-2)">без срока</span>';
+    const repeatBadge = t.repeat_rule
+      ? `<span class="task-repeat-badge">${t.repeat_rule==='daily'?'🔄 ежедневно':t.repeat_rule==='weekly'?'🔁 еженедельно':'🔂 ежемесячно'}</span>`
+      : '';
+    const tagsArr = (t.tags||'').split().filter(x=>x);
+    const tagsHtml = tagsArr.length
+      ? `<div class="task-tags">${tagsArr.map(tg=>`<span class="task-tag">${escapeHtml(tg)}</span>`).join('')}</div>`
+      : '';
     html += `<div class="card task-card prio-${p.cls}">
       <div class="card-title">${escapeHtml(t.text)}</div>
-      <div class="card-meta"><span class="task-prio-badge ${p.cls}">${p.label}</span>${dueStr}</div>
+      ${tagsHtml}
+      <div class="card-meta">
+        <span class="task-prio-badge ${p.cls}">${p.label}</span>
+        ${dueStr}
+        ${repeatBadge}
+      </div>
       <div class="actions-row">
         ${!t.done ? `<button class="btn btn-secondary" data-action="task-done" data-id="${t.id}">${icon('ic-check',14)} Готово</button>` : ''}
         <button class="btn btn-secondary" data-action="task-edit-open" data-id="${t.id}">Изменить</button>
@@ -838,14 +900,148 @@ function renderTasks() {
   return html;
 }
 
+function actionTaskAdd() {
+  let form = {text:'', priority:2, due:'none', customDate:'', customTime:'',
+              tags:'', repeat:'none'};
+  const tags = state.tasksTags || [];
+  const renderBody = () => `
+    <div class="label">ЧТО СДЕЛАТЬ</div>
+    <input class="input" id="task-text" placeholder="Например: сдать лабу" value="${escapeHtml(form.text)}" maxlength="200">
+    <div class="label">ПРИОРИТЕТ</div>
+    <div class="choice-row">
+      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
+      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
+      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
+    </div>
+    <div class="label">КОГДА</div>
+    <div class="choice-row">
+      <button class="choice ${form.due==='none'?'active':''}" data-due="none">Без срока</button>
+      <button class="choice ${form.due==='today'?'active':''}" data-due="today">Сегодня</button>
+      <button class="choice ${form.due==='tomorrow'?'active':''}" data-due="tomorrow">Завтра</button>
+      <button class="choice ${form.due==='custom'?'active':''}" data-due="custom">Своя дата</button>
+    </div>
+    ${form.due==='custom' ? `<div class="date-input-row"><input type="date" id="task-date" value="${escapeHtml(form.customDate)}"><input type="time" id="task-time" value="${escapeHtml(form.customTime)}"></div>` : ''}
+    <div class="label">ТЕГИ (через пробел)</div>
+    <input class="input" id="task-tags" placeholder="#учёба #важное" value="${escapeHtml(form.tags)}" maxlength="100">
+    ${tags.length ? `<div class="choice-row" style="margin-top:0">${tags.slice(0,10).map(t=>`<button class="choice" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}</div>` : ''}
+    <div class="label">ПОВТОР</div>
+    <div class="choice-row">
+      <button class="choice ${form.repeat==='none'?'active':''}" data-rep="none">Нет</button>
+      <button class="choice ${form.repeat==='daily'?'active':''}" data-rep="daily">Ежедневно</button>
+      <button class="choice ${form.repeat==='weekly'?'active':''}" data-rep="weekly">Еженедельно</button>
+      <button class="choice ${form.repeat==='monthly'?'active':''}" data-rep="monthly">Ежемесячно</button>
+    </div>
+  `;
+  const attach = () => {
+    const ti = document.getElementById('task-text'); if (ti) ti.oninput = (e) => form.text = e.target.value;
+    const di = document.getElementById('task-date'); if (di) di.onchange = (e) => form.customDate = e.target.value;
+    const ti2 = document.getElementById('task-time'); if (ti2) ti2.onchange = (e) => form.customTime = e.target.value;
+    const tgi = document.getElementById('task-tags'); if (tgi) tgi.oninput = (e) => form.tags = e.target.value;
+    document.querySelectorAll('[data-due]').forEach(b => b.onclick = () => { form.due = b.dataset.due; document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
+    document.querySelectorAll('[data-prio]').forEach(b => b.onclick = () => { form.priority = parseInt(b.dataset.prio); document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
+    document.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => { form.repeat = b.dataset.rep; document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
+    document.querySelectorAll('[data-tag]').forEach(b => b.onclick = () => { form.tags = (form.tags + ' ' + b.dataset.tag).trim(); document.getElementById('task-tags').value = form.tags; });
+  };
+  modalOpen({title:'НОВАЯ ЗАДАЧА', body: renderBody(), actions: [
+    {label:'ОТМЕНА', style:'btn-secondary'},
+    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+      const ti = document.getElementById('task-text');
+      const text = (ti?.value || form.text || '').trim();
+      if (!text) { toast('Введи текст', 'error'); return; }
+      let due_date = null, due_time = null; const today = nowIrkutsk();
+      if (form.due === 'today') due_date = fmtDate(today);
+      else if (form.due === 'tomorrow') due_date = fmtDate(addDays(today,1));
+      else if (form.due === 'custom' && form.customDate) { const [y,m,d] = form.customDate.split('-'); due_date = `${d}.${m}.${y}`; if (form.customTime) due_time = form.customTime; }
+      const tags = (document.getElementById('task-tags')?.value || '').trim();
+      const repeat_rule = form.repeat === 'none' ? null : form.repeat;
+      try {
+        await apiPost('/api/task-add', {text, due_date, due_time, priority: form.priority, tags, repeat_rule});
+        hideKeyboard(); haptic('success'); toast('Задача добавлена', 'success'); await loadTasks(); render();
+      } catch (e) { toast(e.message, 'error'); }
+    }}
+  ]});
+  attach();
+}
+
+function actionTaskEdit(id) {
+  const t = state.tasks.find(x => x.id === id); if (!t) return;
+  let form = {text: t.text, priority: t.priority || 2, tags: t.tags || '',
+              repeat: t.repeat_rule || 'none'};
+  const tags = state.tasksTags || [];
+  const renderBody = () => `
+    <div class="label">ТЕКСТ</div>
+    <input class="input" id="task-edit-text" value="${escapeHtml(form.text)}" maxlength="200">
+    <div class="label">ПРИОРИТЕТ</div>
+    <div class="choice-row">
+      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
+      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
+      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
+    </div>
+    <div class="label">ТЕГИ</div>
+    <input class="input" id="task-edit-tags" value="${escapeHtml(form.tags)}" maxlength="100">
+    ${tags.length ? `<div class="choice-row" style="margin-top:0">${tags.slice(0,10).map(tg=>`<button class="choice" data-edittag="${escapeHtml(tg)}">${escapeHtml(tg)}</button>`).join('')}</div>` : ''}
+    <div class="label">ПОВТОР</div>
+    <div class="choice-row">
+      <button class="choice ${form.repeat==='none'?'active':''}" data-rep="none">Нет</button>
+      <button class="choice ${form.repeat==='daily'?'active':''}" data-rep="daily">Ежедневно</button>
+      <button class="choice ${form.repeat==='weekly'?'active':''}" data-rep="weekly">Еженедельно</button>
+      <button class="choice ${form.repeat==='monthly'?'active':''}" data-rep="monthly">Ежемесячно</button>
+    </div>
+  `;
+  const attach = () => {
+    const ti = document.getElementById('task-edit-text'); if (ti) ti.oninput = (e) => form.text = e.target.value;
+    const tgi = document.getElementById('task-edit-tags'); if (tgi) tgi.oninput = (e) => form.tags = e.target.value;
+    document.querySelectorAll('[data-prio]').forEach(b => b.onclick = () => { form.priority = parseInt(b.dataset.prio); document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
+    document.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => { form.repeat = b.dataset.rep; document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
+    document.querySelectorAll('[data-edittag]').forEach(b => b.onclick = () => { form.tags = (form.tags + ' ' + b.dataset.edittag).trim(); document.getElementById('task-edit-tags').value = form.tags; });
+  };
+  modalOpen({title:'ИЗМЕНИТЬ ЗАДАЧУ', body: renderBody(), actions:[
+    {label:'ОТМЕНА', style:'btn-secondary'},
+    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+      const ti = document.getElementById('task-edit-text');
+      const text = (ti?.value || form.text || '').trim();
+      if (!text) { toast('Пустой текст', 'error'); return; }
+      const tags = (document.getElementById('task-edit-tags')?.value || '').trim();
+      const repeat_rule = form.repeat === 'none' ? null : form.repeat;
+      try {
+        await apiPost('/api/task-update', {id, text, priority: form.priority, tags, repeat_rule});
+        hideKeyboard(); haptic('success'); toast('Сохранено', 'success'); await loadTasks(); render();
+      } catch (e) { toast(e.message, 'error'); }
+    }}
+  ]});
+  attach();
+}
+
+/* ЗАМЕТКИ */
 function renderNotes() {
+  const tags = state.notesTags || [];
   let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить заметку</button>`;
+  html += `<div class="tasks-filter-bar">
+    <input class="input tasks-search" id="notes-search" placeholder="Поиск заметок..." value="${escapeHtml(state.notesSearch||'')}">
+  </div>`;
+  if (tags.length > 0) {
+    html += `<div class="tasks-tags-scroll">`;
+    html += `<button class="sch-subj-chip ${!state.notesTag?'selected':''}" data-action="notes-filter-tag" data-value="">Все</button>`;
+    for (const t of tags) {
+      html += `<button class="sch-subj-chip ${state.notesTag===t?'selected':''}" data-action="notes-filter-tag" data-value="${escapeHtml(t)}">${escapeHtml(t)}</button>`;
+    }
+    html += `</div>`;
+  }
   if (!state.notes?.length) return html + '<div class="empty">Заметок нет.</div>';
   for (const n of state.notes) {
-    html += `<div class="card">
-      <div class="card-title">${escapeHtml(n.subject)}</div>
-      <div class="card-subtitle">${escapeHtml(n.text)}</div>
+    const tagsArr = (n.tags||'').split().filter(x=>x);
+    const tagsHtml = tagsArr.length
+      ? `<div class="task-tags">${tagsArr.map(tg=>`<span class="task-tag">${escapeHtml(tg)}</span>`).join('')}</div>`
+      : '';
+    const pinIcon = n.pinned ? '📌' : '';
+    html += `<div class="card ${n.pinned?'note-pinned':''}">
+      <div class="card-title" style="justify-content:space-between">
+        <span>${pinIcon} ${escapeHtml(n.subject)}</span>
+      </div>
+      ${tagsHtml}
+      <div class="card-subtitle note-text">${renderMarkdownLight(n.text)}</div>
       <div class="actions-row">
+        <button class="btn btn-secondary" data-action="note-pin" data-id="${n.id}">${n.pinned?'Открепить':'📌'}</button>
         <button class="btn btn-secondary" data-action="note-edit-open" data-id="${n.id}">Изменить</button>
         <button class="btn btn-secondary" data-action="note-delete" data-id="${n.id}">Удалить</button>
       </div>
@@ -854,7 +1050,68 @@ function renderNotes() {
   return html;
 }
 
+function actionNoteAdd() {
+  let form = {subject:'', text:'', tags:''};
+  const tags = state.notesTags || [];
+  const renderBody = () => `
+    <div class="label">ПРЕДМЕТ</div>
+    <input class="input" id="note-subj" placeholder="Название предмета" value="${escapeHtml(form.subject)}" maxlength="100">
+    ${state.notesSubjects?.length ? `<div class="choice-row" style="margin-top:4px">${state.notesSubjects.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
+    <div class="label">ТЕГИ (через пробел)</div>
+    <input class="input" id="note-tags" placeholder="#лекция #формулы" value="${escapeHtml(form.tags)}" maxlength="100">
+    ${tags.length ? `<div class="choice-row" style="margin-top:0">${tags.slice(0,10).map(t=>`<button class="choice" data-ntag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}</div>` : ''}
+    <div class="label">ТЕКСТ (можно **жирный**, *курсив*, \`код\`)</div>
+    <textarea class="input" id="note-text" rows="5" maxlength="5000">${escapeHtml(form.text)}</textarea>
+  `;
+  const attach = () => {
+    const si = document.getElementById('note-subj'); if (si) si.oninput = (e) => form.subject = e.target.value;
+    const ti = document.getElementById('note-text'); if (ti) ti.oninput = (e) => form.text = e.target.value;
+    const tgi = document.getElementById('note-tags'); if (tgi) tgi.oninput = (e) => form.tags = e.target.value;
+    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => { form.subject = b.dataset.subj; document.getElementById('note-subj').value = form.subject; document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active')); b.classList.add('active'); });
+    document.querySelectorAll('[data-ntag]').forEach(b => b.onclick = () => { form.tags = (form.tags + ' ' + b.dataset.ntag).trim(); document.getElementById('note-tags').value = form.tags; });
+  };
+  modalOpen({title:'НОВАЯ ЗАМЕТКА', body: renderBody(), actions:[
+    {label:'ОТМЕНА', style:'btn-secondary'},
+    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+      const s = (document.getElementById('note-subj')?.value || form.subject || '').trim();
+      const t = (document.getElementById('note-text')?.value || form.text || '').trim();
+      const tags = (document.getElementById('note-tags')?.value || '').trim();
+      if (!s || !t) { toast('Заполни предмет и текст', 'error'); return; }
+      try { await apiPost('/api/note-save', {subject: s, text: t, tags}); hideKeyboard(); haptic('success'); toast('Заметка сохранена', 'success'); await loadNotes(); render(); }
+      catch (e) { toast(e.message, 'error'); }
+    }}
+  ]});
+  attach();
+}
 
+function actionNoteEdit(id) {
+  const n = state.notes.find(x => x.id === id); if (!n) return;
+  modalOpen({title:'ИЗМЕНИТЬ ЗАМЕТКУ', body: `
+    <div class="label">ПРЕДМЕТ</div>
+    <input class="input" id="note-edit-subj" value="${escapeHtml(n.subject)}" maxlength="100">
+    <div class="label">ТЕГИ</div>
+    <input class="input" id="note-edit-tags" value="${escapeHtml(n.tags||'')}" maxlength="100">
+    <div class="label">ТЕКСТ</div>
+    <textarea class="input" id="note-edit-text" rows="5" maxlength="5000">${escapeHtml(n.text)}</textarea>
+  `, actions:[
+    {label:'ОТМЕНА', style:'btn-secondary'},
+    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+      const s = (document.getElementById('note-edit-subj')?.value || '').trim();
+      const t = (document.getElementById('note-edit-text')?.value || '').trim();
+      const tags = (document.getElementById('note-edit-tags')?.value || '').trim();
+      if (!s || !t) { toast('Заполни предмет и текст', 'error'); return; }
+      try { await apiPost('/api/note-save', {subject: s, text: t, tags}); hideKeyboard(); haptic('success'); toast('Сохранено', 'success'); await loadNotes(); render(); }
+      catch (e) { toast(e.message, 'error'); }
+    }}
+  ]});
+}
+async function actionNoteDelete(id) { modalConfirm('УДАЛИТЬ ЗАМЕТКУ?', 'Восстановить нельзя.', async () => { try { await apiPost('/api/note-delete', {id}); haptic('success'); await loadNotes(); render(); } catch (e) { toast(e.message, 'error'); } }, 'УДАЛИТЬ'); }
+async function actionNotePin(id) {
+  try { await apiPost('/api/note-pin', {id}); haptic('success'); await loadNotes(); render(); }
+  catch (e) { toast(e.message, 'error'); }
+}
+
+/* AI + Презентация */
 function renderAI() {
   let html = '';
   if (!state.aiMessages.length) {
@@ -907,7 +1164,6 @@ function renderAI() {
   return html;
 }
 
-/* Презентация */
 function renderPresentationForm() {
   const f = state.presentForm;
   const slidesOpts = [6, 10, 14, 18];
@@ -943,7 +1199,7 @@ function renderPresentationForm() {
     <textarea class="input" id="present-info" placeholder="Вставь сюда текст по теме — конспект, реферат, тезисы…" rows="10" style="min-height:200px">${escapeHtml(f.info)}</textarea>
 
     <div class="label">ПОЖЕЛАНИЯ К СТРУКТУРЕ (необязательно)</div>
-    <textarea class="input" id="present-wishes" placeholder="Например: сделать акцент на практической части, объединить разделы 3 и 4" rows="2">${escapeHtml(f.wishes)}</textarea>
+    <textarea class="input" id="present-wishes" placeholder="Например: сделать акцент на практической части" rows="2">${escapeHtml(f.wishes)}</textarea>
 
     <div class="label">ДАННЫЕ СТУДЕНТА (для титульного)</div>
     <input class="input" id="present-author" placeholder="ФИО (Иванов И.И.)" value="${escapeHtml(f.author)}" maxlength="120">
@@ -1053,15 +1309,24 @@ async function loadSchedule() { try { state.schedule = await apiGet('/api/schedu
 async function loadTasks() {
   try {
     const doneParam = state.tasksView === 'done' ? '1' : '0';
-    const r = await apiGet('/api/tasks', {done: doneParam});
+    const params = {done: doneParam, sort: state.tasksSort};
+    if (state.tasksSearch) params.search = state.tasksSearch;
+    if (state.tasksTag) params.tag = state.tasksTag;
+    const r = await apiGet('/api/tasks', params);
     state.tasks = r.tasks || [];
     state.tasksStats = {active: r.active || 0, done: r.done || 0};
+    state.tasksStatsFull = r.stats || {total_done:0, streak:0};
+    state.tasksTags = r.tags || [];
   } catch (e) { state.tasks = []; }
 }
 async function loadNotes() {
   try {
-    const r = await apiGet('/api/notes');
+    const params = {};
+    if (state.notesSearch) params.search = state.notesSearch;
+    if (state.notesTag) params.tag = state.notesTag;
+    const r = await apiGet('/api/notes', params);
     state.notes = r.notes || [];
+    state.notesTags = r.tags || [];
     const subs = new Set(state.notes.map(n => n.subject));
     state.notesSubjects = Array.from(subs);
   } catch (e) { state.notes = []; }
@@ -1205,122 +1470,6 @@ async function actionFeedbackSend() {
 async function actionTaskDone(id) { try { await apiPost('/api/task-update', {id, done: true}); haptic('success'); toast('Готово', 'success'); await loadTasks(); render(); } catch (e) { toast(e.message, 'error'); } }
 async function actionTaskDelete(id) { modalConfirm('УДАЛИТЬ ЗАДАЧУ?', 'Отменить не получится.', async () => { try { await apiPost('/api/task-delete', {id}); haptic('success'); await loadTasks(); render(); } catch (e) { toast(e.message, 'error'); } }, 'УДАЛИТЬ'); }
 async function actionTasksClear() { modalConfirm('ОЧИСТИТЬ?', 'Все выполненные задачи удалятся.', async () => { try { await apiPost('/api/task-clear'); haptic('success'); await loadTasks(); render(); } catch (e) { toast(e.message, 'error'); } }, 'ОЧИСТИТЬ'); }
-function actionTaskAdd() {
-  let form = {text:'', priority:2, due:'none', customDate:'', customTime:''};
-  const renderBody = () => `
-    <div class="label">ЧТО СДЕЛАТЬ</div>
-    <input class="input" id="task-text" placeholder="Например: сдать лабу" value="${escapeHtml(form.text)}" maxlength="200">
-    <div class="label">ПРИОРИТЕТ</div>
-    <div class="choice-row">
-      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
-      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
-      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
-    </div>
-    <div class="label">КОГДА</div>
-    <div class="choice-row">
-      <button class="choice ${form.due==='none'?'active':''}" data-due="none">Без срока</button>
-      <button class="choice ${form.due==='today'?'active':''}" data-due="today">Сегодня</button>
-      <button class="choice ${form.due==='tomorrow'?'active':''}" data-due="tomorrow">Завтра</button>
-      <button class="choice ${form.due==='custom'?'active':''}" data-due="custom">Своя дата</button>
-    </div>
-    ${form.due==='custom' ? `<div class="date-input-row"><input type="date" id="task-date" value="${escapeHtml(form.customDate)}"><input type="time" id="task-time" value="${escapeHtml(form.customTime)}"></div>` : ''}
-  `;
-  const attach = () => {
-    const ti = document.getElementById('task-text'); if (ti) ti.oninput = (e) => form.text = e.target.value;
-    const di = document.getElementById('task-date'); if (di) di.onchange = (e) => form.customDate = e.target.value;
-    const ti2 = document.getElementById('task-time'); if (ti2) ti2.onchange = (e) => form.customTime = e.target.value;
-    document.querySelectorAll('[data-due]').forEach(b => b.onclick = () => { form.due = b.dataset.due; document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
-    document.querySelectorAll('[data-prio]').forEach(b => b.onclick = () => { form.priority = parseInt(b.dataset.prio); document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
-  };
-  modalOpen({title:'НОВАЯ ЗАДАЧА', body: renderBody(), actions: [
-    {label:'ОТМЕНА', style:'btn-secondary'},
-    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-      const ti = document.getElementById('task-text');
-      const text = (ti?.value || form.text || '').trim();
-      if (!text) { toast('Введи текст', 'error'); return; }
-      let due_date = null, due_time = null; const today = nowIrkutsk();
-      if (form.due === 'today') due_date = fmtDate(today);
-      else if (form.due === 'tomorrow') due_date = fmtDate(addDays(today,1));
-      else if (form.due === 'custom' && form.customDate) { const [y,m,d] = form.customDate.split('-'); due_date = `${d}.${m}.${y}`; if (form.customTime) due_time = form.customTime; }
-      try { await apiPost('/api/task-add', {text, due_date, due_time, priority: form.priority}); hideKeyboard(); haptic('success'); toast('Задача добавлена', 'success'); await loadTasks(); render(); }
-      catch (e) { toast(e.message, 'error'); }
-    }}
-  ]});
-  attach();
-}
-function actionTaskEdit(id) {
-  const t = state.tasks.find(x => x.id === id); if (!t) return;
-  let form = {text: t.text, priority: t.priority || 2};
-  const renderBody = () => `
-    <div class="label">ТЕКСТ</div>
-    <input class="input" id="task-edit-text" value="${escapeHtml(form.text)}" maxlength="200">
-    <div class="label">ПРИОРИТЕТ</div>
-    <div class="choice-row">
-      <button class="choice ${form.priority===1?'active':''}" data-prio="1">Низкий</button>
-      <button class="choice ${form.priority===2?'active':''}" data-prio="2">Средний</button>
-      <button class="choice ${form.priority===3?'active':''}" data-prio="3">Высокий</button>
-    </div>
-  `;
-  const attach = () => {
-    document.querySelectorAll('[data-prio]').forEach(b => b.onclick = () => { form.priority = parseInt(b.dataset.prio); document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
-  };
-  modalOpen({title:'ИЗМЕНИТЬ ЗАДАЧУ', body: renderBody(), actions:[
-    {label:'ОТМЕНА', style:'btn-secondary'},
-    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-      const ti = document.getElementById('task-edit-text');
-      const text = (ti?.value || form.text || '').trim();
-      if (!text) { toast('Пустой текст', 'error'); return; }
-      try { await apiPost('/api/task-update', {id, text, priority: form.priority}); hideKeyboard(); haptic('success'); toast('Сохранено', 'success'); await loadTasks(); render(); }
-      catch (e) { toast(e.message, 'error'); }
-    }}
-  ]});
-  attach();
-}
-function actionNoteAdd() {
-  let form = {subject:'', text:''};
-  const renderBody = () => `
-    <div class="label">ПРЕДМЕТ</div>
-    <input class="input" id="note-subj" placeholder="Название предмета" value="${escapeHtml(form.subject)}" maxlength="100">
-    ${state.notesSubjects?.length ? `<div class="choice-row" style="margin-top:4px">${state.notesSubjects.map(s => `<button class="choice" data-subj="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>` : ''}
-    <div class="label">ТЕКСТ</div>
-    <textarea class="input" id="note-text" rows="4" maxlength="500">${escapeHtml(form.text)}</textarea>
-  `;
-  const attach = () => {
-    const si = document.getElementById('note-subj'); if (si) si.oninput = (e) => form.subject = e.target.value;
-    const ti = document.getElementById('note-text'); if (ti) ti.oninput = (e) => form.text = e.target.value;
-    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => { form.subject = b.dataset.subj; document.getElementById('note-subj').value = form.subject; document.querySelectorAll('[data-subj]').forEach(x => x.classList.remove('active')); b.classList.add('active'); });
-  };
-  modalOpen({title:'НОВАЯ ЗАМЕТКА', body: renderBody(), actions:[
-    {label:'ОТМЕНА', style:'btn-secondary'},
-    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-      const s = (document.getElementById('note-subj')?.value || form.subject || '').trim();
-      const t = (document.getElementById('note-text')?.value || form.text || '').trim();
-      if (!s || !t) { toast('Заполни оба поля', 'error'); return; }
-      try { await apiPost('/api/note-save', {subject: s, text: t}); hideKeyboard(); haptic('success'); toast('Заметка сохранена', 'success'); await loadNotes(); render(); }
-      catch (e) { toast(e.message, 'error'); }
-    }}
-  ]});
-  attach();
-}
-function actionNoteEdit(id) {
-  const n = state.notes.find(x => x.id === id); if (!n) return;
-  modalOpen({title:'ИЗМЕНИТЬ ЗАМЕТКУ', body: `
-    <div class="label">ПРЕДМЕТ</div>
-    <input class="input" id="note-edit-subj" value="${escapeHtml(n.subject)}" maxlength="100">
-    <div class="label">ТЕКСТ</div>
-    <textarea class="input" id="note-edit-text" rows="4" maxlength="500">${escapeHtml(n.text)}</textarea>
-  `, actions:[
-    {label:'ОТМЕНА', style:'btn-secondary'},
-    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
-      const s = (document.getElementById('note-edit-subj')?.value || '').trim();
-      const t = (document.getElementById('note-edit-text')?.value || '').trim();
-      if (!s || !t) { toast('Заполни оба поля', 'error'); return; }
-      try { await apiPost('/api/note-save', {subject: s, text: t}); hideKeyboard(); haptic('success'); toast('Сохранено', 'success'); await loadNotes(); render(); }
-      catch (e) { toast(e.message, 'error'); }
-    }}
-  ]});
-}
-async function actionNoteDelete(id) { modalConfirm('УДАЛИТЬ ЗАМЕТКУ?', 'Восстановить нельзя.', async () => { try { await apiPost('/api/note-delete', {id}); haptic('success'); await loadNotes(); render(); } catch (e) { toast(e.message, 'error'); } }, 'УДАЛИТЬ'); }
 async function actionAISend() {
   const el = document.getElementById('ai-input');
   const question = (el?.value || '').trim();
@@ -1490,6 +1639,7 @@ function attachHandlers() {
       haptic('light');
     };
   });
+  // Live-сохранение полей презентации
   ['present-topic','present-info','present-wishes','present-author','present-group','present-teacher','present-year'].forEach(id => {
     const el = document.getElementById(id);
     if (!el || el._boundSave) return;
@@ -1517,6 +1667,35 @@ function attachHandlers() {
       }
     });
   });
+  // Поиск задач (debounce)
+  const taskSearchEl = document.getElementById('tasks-search');
+  if (taskSearchEl && !taskSearchEl._boundSearch) {
+    taskSearchEl._boundSearch = true;
+    let timer = null;
+    taskSearchEl.addEventListener('input', (e) => {
+      state.tasksSearch = e.target.value;
+      clearTimeout(timer);
+      timer = setTimeout(() => loadTasks().then(render), 300);
+    });
+  }
+  const taskSortEl = document.getElementById('tasks-sort');
+  if (taskSortEl && !taskSortEl._boundSort) {
+    taskSortEl._boundSort = true;
+    taskSortEl.addEventListener('change', (e) => {
+      state.tasksSort = e.target.value;
+      loadTasks().then(render);
+    });
+  }
+  const noteSearchEl = document.getElementById('notes-search');
+  if (noteSearchEl && !noteSearchEl._boundSearch) {
+    noteSearchEl._boundSearch = true;
+    let timer = null;
+    noteSearchEl.addEventListener('input', (e) => {
+      state.notesSearch = e.target.value;
+      clearTimeout(timer);
+      timer = setTimeout(() => loadNotes().then(render), 300);
+    });
+  }
 }
 
 function handleAction(el) {
@@ -1531,9 +1710,12 @@ function handleAction(el) {
   else if (a === 'tasks-clear') actionTasksClear();
   else if (a === 'tasks-show-active') { state.tasksView = 'active'; loadTasks().then(render); }
   else if (a === 'tasks-show-done') { state.tasksView = 'done'; loadTasks().then(render); }
+  else if (a === 'tasks-filter-tag') { state.tasksTag = el.dataset.value || ''; loadTasks().then(render); }
   else if (a === 'note-add-open') actionNoteAdd();
   else if (a === 'note-edit-open') actionNoteEdit(parseInt(el.dataset.id));
   else if (a === 'note-delete') actionNoteDelete(parseInt(el.dataset.id));
+  else if (a === 'note-pin') actionNotePin(parseInt(el.dataset.id));
+  else if (a === 'notes-filter-tag') { state.notesTag = el.dataset.value || ''; loadNotes().then(render); }
   else if (a === 'sch-set-amount') actionScholarshipSetAmount();
   else if (a === 'sch-add-grade') actionScholarshipAddGrade();
   else if (a === 'sch-edit-grade') actionScholarshipAddGrade(parseInt(el.dataset.id,10));
