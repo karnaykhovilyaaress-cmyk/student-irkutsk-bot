@@ -4289,3 +4289,616 @@ async def cmd_sell(message: Message, state: FSMContext):
         "Отправь текст объявления (можно с фото).",
         reply_markup=market_intro_kb()
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# КОМАНДЫ АДМИНА
+# ═══════════════════════════════════════════════════════════════
+@dp.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}"); return
+    pending = mod_queue_count_pending()
+    await message.answer(
+        "АДМИН-КОМАНДЫ:\n"
+        "/backup — снимок users.db (SQLite Backup API)\n"
+        "/backup_all — полный zip (БД + шрифты + webapp)\n"
+        "/restore — восстановить users.db (отправь .db с подписью)\n"
+        "/whereami — где база и твой ID\n"
+        "/dbcheck — проверка схемы БД (колонки, пользователи)\n"
+        "/cache — статистика кэша ИИ\n"
+        f"/modqueue — очередь модерации (в очереди: {pending})\n"
+        "/ban <user_id> [причина] — заблокировать\n"
+        "/unban <user_id> — разблокировать\n"
+        "/bans — список заблокированных\n"
+        "/admin — эта справка")
+
+
+@dp.message(Command("whereami"))
+async def cmd_whereami(message: Message):
+    db_abs = os.path.abspath(DB_PATH)
+    exists = os.path.isfile(db_abs)
+    size = os.path.getsize(db_abs) if exists else 0
+    wal_exists = os.path.isfile(db_abs + "-wal")
+    shm_exists = os.path.isfile(db_abs + "-shm")
+    text = (f"Твой ID: {message.from_user.id}\n"
+            f"ADMIN_ID: {ADMIN_ID}\n"
+            f"cwd: {os.getcwd()}\n"
+            f"DB_PATH: {DB_PATH}\n"
+            f"abs: {db_abs}\n"
+            f"exists: {exists}\n"
+            f"size: {size} B ({size // 1024} КБ)\n"
+            f"WAL: {'да' if wal_exists else 'нет'} | SHM: {'да' if shm_exists else 'нет'}\n"
+            f"schema: {_db_schema_version()}")
+    await message.answer(text)
+
+
+@dp.message(Command("dbcheck"))
+async def cmd_dbcheck(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    try:
+        conn = _connect()
+        try:
+            tables = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()]
+            cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+            cols_tasks = [r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()]
+            cols_notes = [r[1] for r in conn.execute("PRAGMA table_info(notes)").fetchall()]
+            total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            with_group = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE group_id IS NOT NULL AND group_id != ''"
+            ).fetchone()[0]
+            mod_pending = conn.execute("SELECT COUNT(*) FROM mod_queue WHERE status='pending'").fetchone()[0]
+        finally:
+            conn.close()
+
+        need_users = {"user_id", "group_id", "group_name", "subgroup",
+                      "notify_hour", "notify_minute", "notify_type",
+                      "notify_changes", "notify_before_min",
+                      "username", "first_name"}
+        missing_users = need_users - set(cols_users)
+
+        lines = [
+            f"Таблицы ({len(tables)}): {', '.join(tables[:20])}",
+            "",
+            f"users ({len(cols_users)}): {', '.join(cols_users)}",
+            f"tasks ({len(cols_tasks)}): {', '.join(cols_tasks)}",
+            f"notes ({len(cols_notes)}): {', '.join(cols_notes)}",
+            "",
+            f"Пользователей: {total}",
+            f"С группой: {with_group}",
+            f"На модерации: {mod_pending}",
+        ]
+        if missing_users:
+            lines.append("")
+            lines.append(f"[!] В users НЕТ колонок: {sorted(missing_users)}")
+            lines.append("Запусти бота один раз, init_db() добавит их.")
+        else:
+            lines.append("")
+            lines.append("[OK] users содержит все нужные колонки")
+        await message.answer("\n".join(lines))
+    except Exception as e:
+        logging.exception("[DBCHECK]")
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("cache"))
+async def cmd_cache(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    ai = ai_cache_stats()
+    lines = [
+        "КЭШ ИИ:",
+        "",
+        f"Записей: {ai['size']}",
+        f"Попаданий: {ai['hits']}",
+    ]
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Очистить кэш ИИ", callback_data="admin_clear_ai")],
+    ])
+    await message.answer("\n".join(lines), reply_markup=kb)
+
+
+@dp.callback_query(F.data == "admin_clear_ai")
+async def cb_admin_clear_ai(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    ai_cache_clear()
+    await callback.answer("Кэш ИИ очищен", show_alert=True)
+    try:
+        await callback.message.edit_text("Кэш ИИ очищен. AI-ответы: 0 записей.")
+    except Exception:
+        pass
+
+
+@dp.message(Command("backup"))
+async def cmd_backup(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}"); return
+    try:
+        db_abs = os.path.abspath(DB_PATH)
+        if not os.path.isfile(db_abs):
+            await message.answer(f"Файл базы не найден:\n{db_abs}"); return
+        ts = _now_irkutsk().strftime('%Y%m%d_%H%M%S')
+        tmp_path = db_abs + f".snapshot_{ts}"
+        _make_db_snapshot(tmp_path)
+        size_kb = os.path.getsize(tmp_path) // 1024
+        total = get_total_users()
+        fname = f"users_backup_{_now_irkutsk().strftime('%Y%m%d_%H%M')}.db"
+        doc = FSInputFile(tmp_path, filename=fname)
+        await message.answer_document(
+            doc,
+            caption=(f"Резервная копия\n"
+                     f"Пользователей: {total}\n"
+                     f"Размер: {size_kb} КБ\n"
+                     f"WAL-checkpoint: OK\n"
+                     f"Схема: {_db_schema_version()}")
+        )
+        try: os.remove(tmp_path)
+        except: pass
+    except Exception as e:
+        logging.exception("[BACKUP]")
+        await message.answer(f"Ошибка бэкапа: {e}")
+
+
+@dp.message(Command("backup_all"))
+async def cmd_backup_all(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    try:
+        import zipfile
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        ts = _now_irkutsk().strftime('%Y%m%d_%H%M%S')
+        zip_path = os.path.join(base_dir, f"student_irk_backup_{ts}.zip")
+        db_abs = os.path.abspath(DB_PATH)
+        db_snap = db_abs + f".snap_tmp_{ts}"
+        _make_db_snapshot(db_snap)
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(db_snap, "users.db")
+            fonts_dir = os.path.join(base_dir, "fonts")
+            if os.path.isdir(fonts_dir):
+                for f in os.listdir(fonts_dir):
+                    fp = os.path.join(fonts_dir, f)
+                    if os.path.isfile(fp):
+                        z.write(fp, f"fonts/{f}")
+            webapp_dir = os.path.join(base_dir, "webapp")
+            if os.path.isdir(webapp_dir):
+                for root, _, files in os.walk(webapp_dir):
+                    for f in files:
+                        p = os.path.join(root, f)
+                        rel = os.path.relpath(p, base_dir)
+                        z.write(p, rel)
+            z.writestr("README.txt",
+                f"Student IRK backup\nДата: {ts} (Иркутск)\nПользователей: {get_total_users()}\nСхема: {_db_schema_version()}\n")
+        try: os.remove(db_snap)
+        except: pass
+        size_mb = os.path.getsize(zip_path) / 1024 / 1024
+        await message.answer_document(
+            FSInputFile(zip_path, filename=os.path.basename(zip_path)),
+            caption=f"Полный бэкап\nРазмер: {size_mb:.2f} МБ"
+        )
+        try: os.remove(zip_path)
+        except: pass
+    except Exception as e:
+        logging.exception("[BACKUP_ALL]")
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("restore"))
+async def cmd_restore(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer(f"Только для админа.\nТвой ID: {message.from_user.id}"); return
+    if not message.document:
+        await message.answer("Пришли .db файл с подписью /restore (в одном сообщении)."); return
+    fname = (message.document.file_name or "").lower()
+    if not fname.endswith(".db"):
+        await message.answer("Нужен файл с расширением .db"); return
+    async with _restore_lock:
+        try:
+            db_abs = os.path.abspath(DB_PATH)
+            if os.path.isfile(db_abs):
+                bak = db_abs + ".before_restore_" + _now_irkutsk().strftime('%Y%m%d_%H%M%S')
+                shutil.copy2(db_abs, bak)
+                for ext in ("-wal", "-shm"):
+                    if os.path.isfile(db_abs + ext):
+                        try: shutil.copy2(db_abs + ext, bak + ext)
+                        except: pass
+            os.makedirs(os.path.dirname(db_abs) or ".", exist_ok=True)
+            tmp_new = db_abs + ".incoming"
+            file = await bot.get_file(message.document.file_id)
+            await bot.download_file(file.file_path, tmp_new)
+            ok, err = _check_db_integrity(tmp_new)
+            if not ok:
+                try: os.remove(tmp_new)
+                except: pass
+                await message.answer(f"Файл не прошёл проверку: {err}"); return
+            for ext in ("-wal", "-shm"):
+                if os.path.isfile(db_abs + ext):
+                    try: os.remove(db_abs + ext)
+                    except: pass
+            os.replace(tmp_new, db_abs)
+            init_db()
+            await message.answer(
+                f"База восстановлена.\n"
+                f"Всего пользователей: {get_total_users()}\n"
+                f"Схема: {_db_schema_version()}\n"
+                f"Файл: {db_abs}"
+            )
+        except Exception as e:
+            logging.exception("[RESTORE]")
+            await message.answer(f"Ошибка восстановления: {e}")
+
+
+@dp.message(Command("modqueue"))
+async def cmd_modqueue(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    rows = mod_queue_pending(limit=30)
+    if not rows:
+        await message.answer("Очередь модерации пуста."); return
+    lines = [f"Очередь модерации ({len(rows)}):", ""]
+    for r in rows:
+        mid, kind, uid, uname, fname, text, price, contact, media, created = r
+        kind_label = "Подслушано" if kind == "overheard" else "Барахолка"
+        lines.append(f"#{mid} [{kind_label}] от {fname or uid}:")
+        t = (text or "")[:120]
+        lines.append(f"  {t}{'...' if len(text or '') > 120 else ''}")
+        lines.append("")
+    await message.answer("\n".join(lines)[:4000])
+
+
+@dp.message(Command("ban"))
+async def cmd_ban(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 2:
+        await message.answer("Формат: /ban <user_id> [причина]"); return
+    try:
+        uid = int(parts[1])
+    except Exception:
+        await message.answer("user_id должен быть числом"); return
+    reason = parts[2].strip() if len(parts) > 2 else "ручной бан"
+    ban_user(uid, reason)
+    await message.answer(f"Заблокирован: {uid}\nПричина: {reason}")
+
+
+@dp.message(Command("unban"))
+async def cmd_unban(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Формат: /unban <user_id>"); return
+    try:
+        uid = int(parts[1])
+    except Exception:
+        await message.answer("user_id должен быть числом"); return
+    unban_user(uid)
+    await message.answer(f"Разблокирован: {uid}")
+
+
+@dp.message(Command("bans"))
+async def cmd_bans(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    rows = get_banned_users(limit=50)
+    if not rows:
+        await message.answer("Список блокировок пуст."); return
+    lines = [f"Заблокированные ({len(rows)}):", ""]
+    for uid, reason, banned_at, rejects in rows:
+        lines.append(f"{uid}  ·  reject: {rejects}  ·  {reason or 'без причины'}")
+    await message.answer("\n".join(lines)[:4000])
+
+
+# ═══════════════════════════════════════════════════════════════
+# ВОРКЕРЫ
+# ═══════════════════════════════════════════════════════════════
+async def send_schedule_notification(user_id, group_id, subgroup, ntype):
+    try:
+        today = _now_irkutsk()
+        target_date = today + timedelta(days=1) if ntype == "tomorrow" else today
+        monday = _monday_of_week(target_date)
+        html = await fetch_week_html(group_id, monday, use_cache=True)
+        if not html: return
+        _, days = parse_schedule(html)
+        target_str = target_date.strftime("%d.%m.%Y")
+        day = next((d for d in days if d["date"] == target_str), None)
+        label = "Сегодня" if ntype == "today" else "Завтра"
+        header = f"{label}, {target_str}"
+
+        w_line = ""
+        if ntype == "today":
+            try:
+                w = await fetch_weather()
+                w_line = weather_line(w)
+            except Exception:
+                pass
+
+        if not day:
+            txt = f"{header}\n"
+            if w_line: txt += f"\n{w_line}\n"
+            txt += "\nНе удалось загрузить."
+            await bot.send_message(user_id, txt, parse_mode=None); return
+        lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
+        lines = [header]
+        if w_line:
+            lines.append("")
+            lines.append(w_line)
+        if not lessons:
+            lines.append("")
+            lines.append("Занятий нет.")
+            await bot.send_message(user_id, "\n".join(lines), parse_mode=None); return
+        lines.append("")
+        for les in lessons:
+            time_end = LESSON_TIMES.get(les["time"], "")
+            time_str = f"{les['time']}–{time_end}" if time_end else les["time"]
+            lines.append(time_str); lines.append(les["subject"])
+            details = []
+            if les.get("type"): details.append(les["type"])
+            if les.get("auditorium"): details.append(f"ауд. {les['auditorium']}")
+            if les.get("teacher"): details.append(les["teacher"])
+            if details: lines.append(f"{' · '.join(details)}")
+            lines.append("")
+        await bot.send_message(user_id, "\n".join(lines), parse_mode=None)
+    except Exception as e:
+        logging.error(f"[NOTIFY] user={user_id}: {e}")
+
+
+async def send_lesson_reminder(user_id, les, before_min):
+    try:
+        subject = les.get("subject", "Пара"); time_str = les.get("time", "")
+        text = f"Через {before_min} мин — {subject}"
+        if time_str: text += f" в {time_str}"
+        details = []
+        if les.get("auditorium"): details.append(f"ауд. {les['auditorium']}")
+        if les.get("teacher"): details.append(les["teacher"])
+        if details: text += "\n" + " · ".join(details)
+        await bot.send_message(user_id, text, parse_mode=None)
+    except Exception as e:
+        logging.error(f"[REMIND] user={user_id}: {e}")
+
+
+async def send_daily_quotes():
+    subs = daily_get_all_subscribers()
+    if not subs: return
+    quote = random.choice(DAILY_QUOTES)
+    text = f"Цитата дня\n\n{quote}"
+    for uid in subs:
+        try: await bot.send_message(uid, text, parse_mode=None)
+        except: pass
+        await asyncio.sleep(0.05)
+
+
+async def notification_worker():
+    last_quote_date = None
+    while True:
+        try:
+            now = _now_irkutsk(); today_str = now.strftime("%Y-%m-%d")
+            hh, mm = now.hour, now.minute
+            for uid, gid, subgroup, ntype, nh, nm in get_users_for_notification():
+                if nh == hh and nm == mm:
+                    await send_schedule_notification(uid, gid, subgroup, ntype)
+            if hh == 10 and mm == 0 and last_quote_date != today_str:
+                last_quote_date = today_str
+                await send_daily_quotes()
+        except: logging.exception("[NOTIFY]")
+        await asyncio.sleep(60 - datetime.now().second)
+
+
+async def lesson_reminder_worker():
+    sent_keys = set()
+    while True:
+        try:
+            now = _now_irkutsk(); today_str = now.strftime("%d.%m.%Y")
+            if len(sent_keys) > 20000: sent_keys.clear()
+            html_cache = {}
+            for uid, gid, subgroup, before_min in get_users_for_lesson_reminder():
+                try:
+                    monday = _monday_of_week(now)
+                    key_cache = (gid, monday.strftime("%Y-%m-%d"))
+                    if key_cache in html_cache: html = html_cache[key_cache]
+                    else:
+                        html = await fetch_week_html(gid, monday, use_cache=True)
+                        html_cache[key_cache] = html
+                    if not html: continue
+                    _, days = parse_schedule(html)
+                    day = next((d for d in days if d["date"] == today_str), None)
+                    if not day: continue
+                    lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
+                    for les in lessons:
+                        time_str = les.get("time", "")
+                        if not time_str or ":" not in time_str: continue
+                        try:
+                            hh_s, mm_s = time_str.split(":")
+                            lesson_dt = now.replace(hour=int(hh_s), minute=int(mm_s), second=0, microsecond=0)
+                        except: continue
+                        delta_min = (lesson_dt - now).total_seconds() / 60
+                        if abs(delta_min - before_min) < 1:
+                            key = (uid, today_str, time_str, before_min)
+                            if key in sent_keys: continue
+                            sent_keys.add(key)
+                            await send_lesson_reminder(uid, les, before_min)
+                except: pass
+        except: logging.exception("[REMIND]")
+        await asyncio.sleep(60)
+
+
+async def check_schedule_changes():
+    users = get_users_for_change_tracking()
+    if not users: return
+    html_cache = {}; now = _now_irkutsk()
+    for uid, group_id, subgroup in users:
+        try:
+            for offset in (0, 1):
+                target_monday = _monday_of_week(now) + timedelta(days=7 * offset)
+                week_start_str = target_monday.strftime("%Y-%m-%d")
+                cache_key = (group_id, week_start_str)
+                if cache_key in html_cache: html = html_cache[cache_key]
+                else:
+                    html = await fetch_week_html(group_id, target_monday, use_cache=False)
+                    html_cache[cache_key] = html
+                if not html: continue
+                _, days = parse_schedule(html)
+                new_snap = make_snapshot_str(days)
+                old_snap = get_snapshot(group_id, week_start_str)
+                if old_snap is None:
+                    save_snapshot(group_id, week_start_str, new_snap); continue
+                if old_snap != new_snap:
+                    save_snapshot(group_id, week_start_str, new_snap)
+                    label = "текущей" if offset == 0 else "следующей"
+                    try:
+                        await bot.send_message(uid, f"Изменения в расписании\n\nОбнаружены правки на {label} неделе.", parse_mode=None)
+                    except: pass
+        except: pass
+
+
+async def change_worker():
+    await asyncio.sleep(180)
+    while True:
+        try: await check_schedule_changes()
+        except: logging.exception("[CHANGE]")
+        await asyncio.sleep(1800)
+
+
+async def cleanup_cache_worker():
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            now = _now_irkutsk()
+            if now.hour == 4:
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+                conn = _connect()
+                try:
+                    conn.execute("DELETE FROM schedule_cache WHERE cached_at < ?", (cutoff,))
+                    conn.commit()
+                finally:
+                    conn.close()
+                try:
+                    conn = _connect()
+                    try:
+                        ai_cutoff = (datetime.now(timezone.utc) - timedelta(days=AI_CACHE_TTL_DAYS)).isoformat()
+                        conn.execute("DELETE FROM ai_cache WHERE created_at < ?", (ai_cutoff,))
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception:
+                    pass
+                logging.info("[CLEANUP] старый кэш удалён")
+        except Exception:
+            logging.exception("[CLEANUP]")
+
+
+async def autobackup_worker():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    backup_dir = os.path.join(base_dir, "backups")
+    try: os.makedirs(backup_dir, exist_ok=True)
+    except: pass
+    last_date = None
+    while True:
+        try:
+            now = _now_irkutsk()
+            today = now.strftime("%Y-%m-%d")
+            if now.hour == 4 and now.minute < 5 and last_date != today:
+                last_date = today
+                db_abs = os.path.abspath(DB_PATH)
+                dst_path = os.path.join(backup_dir, f"auto_{now.strftime('%Y%m%d_%H%M')}.db")
+                try:
+                    _make_db_snapshot(dst_path)
+                    logging.info(f"[AUTOBACKUP] {dst_path}")
+                    cutoff = now - timedelta(days=14)
+                    for f in os.listdir(backup_dir):
+                        if not f.startswith("auto_"): continue
+                        p = os.path.join(backup_dir, f)
+                        try:
+                            mt = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc) + timedelta(hours=8)
+                            if mt < cutoff: os.remove(p)
+                        except Exception: pass
+                except Exception as e:
+                    logging.error(f"[AUTOBACKUP] {e}")
+        except Exception:
+            logging.exception("[AUTOBACKUP]")
+        await asyncio.sleep(60)
+
+
+async def debts_worker():
+    await asyncio.sleep(60)
+    last_date = None
+    while True:
+        try:
+            now = _now_irkutsk()
+            today = now.strftime("%Y-%m-%d")
+            if now.hour == 9 and last_date != today:
+                last_date = today
+                rows = get_overdue_debt_tasks()
+                moved_by_user = {}
+                today_str = now.strftime("%d.%m.%Y")
+                tomorrow_str = (now + timedelta(days=1)).strftime("%d.%m.%Y")
+                today_key = today_str[6:] + today_str[3:5] + today_str[:2]
+                for tid, uid, text, due, due_time in rows:
+                    if not due or len(due) != 10: continue
+                    key = due[6:] + due[3:5] + due[:2]
+                    if key < today_key:
+                        if move_debt_to_date(tid, uid, tomorrow_str):
+                            moved_by_user.setdefault(uid, []).append(text[:60])
+                for uid, items in moved_by_user.items():
+                    n = len(items)
+                    word = "долг" if n == 1 else ("долга" if n in (2, 3, 4) else "долгов")
+                    lines = [f"{n} {word} перенесено на завтра ({tomorrow_str}):", ""]
+                    for t in items[:10]:
+                        lines.append(f"- {t}")
+                    if n > 10: lines.append(f"... и ещё {n-10}")
+                    lines.append("")
+                    lines.append("Разберись, пока не превратилось в хвост.")
+                    try:
+                        await bot.send_message(uid, "\n".join(lines), parse_mode=None)
+                    except Exception:
+                        pass
+        except Exception:
+            logging.exception("[DEBTS]")
+        await asyncio.sleep(600)
+
+
+async def weather_warmup_worker():
+    while True:
+        try:
+            await fetch_weather(force=True)
+        except Exception:
+            logging.exception("[WEATHER]")
+        await asyncio.sleep(3600)
+
+
+# ═══════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════
+async def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
+        stream=sys.stdout, force=True)
+    init_db()
+    if not WEBAPP_URL:
+        logging.warning("[MAIN] WEBAPP_URL не задан — кнопка приложения в /start не появится")
+    if not OVERHEARD_CHANNEL_ID:
+        logging.warning("[MAIN] OVERHEARD_CHANNEL_ID не задан — подслушано отключено")
+    if not MARKET_CHANNEL_ID:
+        logging.warning("[MAIN] MARKET_CHANNEL_ID не задан — барахолка отключена")
+    await bot.delete_webhook(drop_pending_updates=True)
+    try:
+        if _FPDF_AVAILABLE: await asyncio.to_thread(_find_or_download_pdf_font)
+    except: pass
+
+    asyncio.create_task(start_webapp())
+    asyncio.create_task(notification_worker())
+    asyncio.create_task(lesson_reminder_worker())
+    asyncio.create_task(change_worker())
+    asyncio.create_task(cleanup_cache_worker())
+    asyncio.create_task(autobackup_worker())
+    asyncio.create_task(debts_worker())
+    asyncio.create_task(weather_warmup_worker())
+
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
