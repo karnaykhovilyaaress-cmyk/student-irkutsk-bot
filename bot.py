@@ -1,6 +1,9 @@
 from dotenv import load_dotenv
 load_dotenv()
 import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging, shutil, io
+import hashlib
+import urllib.parse
+from email.utils import format_datetime
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from aiohttp import web
@@ -112,6 +115,15 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "@student_irk38_bot")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 CACHE_TTL_HOURS = int(os.getenv("CACHE_TTL_HOURS", "2"))
 DB_PATH = os.getenv("DB_PATH", "users.db")
+
+WEATHER_LAT = float(os.getenv("WEATHER_LAT", "52.2864"))
+WEATHER_LON = float(os.getenv("WEATHER_LON", "104.2807"))
+WEATHER_CITY = os.getenv("WEATHER_CITY", "Иркутск")
+AI_CACHE_TTL_DAYS = int(os.getenv("AI_CACHE_TTL_DAYS", "7"))
+SEMESTER_SPRING_START = os.getenv("SEMESTER_SPRING_START", "02-01")
+SEMESTER_FALL_START   = os.getenv("SEMESTER_FALL_START",   "09-01")
+PARSER_TOP_GROUPS = int(os.getenv("PARSER_TOP_GROUPS", "20"))
+
 if not TOKEN:
     logging.error("BOT_TOKEN не задан!"); sys.exit(1)
 bot = Bot(token=TOKEN)
@@ -257,6 +269,42 @@ def init_db():
             user_id INTEGER, date TEXT, time TEXT, subject TEXT,
             status TEXT, updated_at TEXT,
             UNIQUE(user_id, date, time, subject))""")
+
+        # ── lessons_cache: автопарсинг в БД ──
+        conn.execute("""CREATE TABLE IF NOT EXISTS lessons_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id TEXT, group_name TEXT,
+            week_start TEXT, date TEXT, day_name TEXT,
+            time TEXT, time_end TEXT,
+            subject TEXT, type TEXT, teacher TEXT,
+            auditorium TEXT, subgroup TEXT,
+            updated_at TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons_cache(date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_teacher ON lessons_cache(teacher)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_group_week ON lessons_cache(group_id, week_start)")
+
+        # ── ai_cache: кэш ответов ИИ ──
+        conn.execute("""CREATE TABLE IF NOT EXISTS ai_cache (
+            prompt_hash TEXT PRIMARY KEY,
+            question TEXT, answer TEXT,
+            created_at TEXT, hits INTEGER DEFAULT 0
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_cache_created ON ai_cache(created_at)")
+
+        # ── weather_cache ──
+        conn.execute("""CREATE TABLE IF NOT EXISTS weather_cache (
+            cache_key TEXT PRIMARY KEY,
+            payload TEXT, updated_at TEXT
+        )""")
+
+        # ── debts_log ──
+        conn.execute("""CREATE TABLE IF NOT EXISTS debts_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER, user_id INTEGER,
+            old_due TEXT, new_due TEXT,
+            moved_at TEXT
+        )""")
 
         conn.commit()
         logging.info("[DB] init_db OK")
@@ -1057,6 +1105,494 @@ def get_export_data(user_id):
         "attendance": att}
 
 
+# ═══════════════════════════════════════════════════════════════
+# КЭШ ИИ-ОТВЕТОВ
+# ═══════════════════════════════════════════════════════════════
+def _ai_hash(question: str) -> str:
+    q = (question or "").strip().lower()
+    q = re.sub(r"\s+", " ", q)
+    q = re.sub(r"[?!.,;:]+$", "", q)
+    return hashlib.sha256(q.encode("utf-8")).hexdigest()
+
+
+def ai_cache_get(question: str):
+    conn = _connect()
+    try:
+        h = _ai_hash(question)
+        row = conn.execute(
+            "SELECT answer, created_at FROM ai_cache WHERE prompt_hash=?", (h,)
+        ).fetchone()
+        if not row:
+            return None
+        created = row[1]
+        try:
+            if datetime.now(timezone.utc) - datetime.fromisoformat(created) > timedelta(days=AI_CACHE_TTL_DAYS):
+                conn.execute("DELETE FROM ai_cache WHERE prompt_hash=?", (h,))
+                conn.commit()
+                return None
+        except Exception:
+            pass
+        conn.execute("UPDATE ai_cache SET hits=hits+1 WHERE prompt_hash=?", (h,))
+        conn.commit()
+        return row[0]
+    finally:
+        conn.close()
+
+
+def ai_cache_put(question: str, answer: str):
+    if not question or not answer: return
+    if len(answer) > 8000: return
+    conn = _connect()
+    try:
+        h = _ai_hash(question)
+        conn.execute(
+            "INSERT OR REPLACE INTO ai_cache (prompt_hash, question, answer, created_at, hits) "
+            "VALUES (?, ?, ?, ?, COALESCE((SELECT hits FROM ai_cache WHERE prompt_hash=?), 0))",
+            (h, question[:500], answer, datetime.now(timezone.utc).isoformat(), h)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def ai_cache_stats():
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT COUNT(*), SUM(hits) FROM ai_cache").fetchone()
+        return {"size": row[0] or 0, "hits": row[1] or 0}
+    finally:
+        conn.close()
+
+
+def ai_cache_clear():
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM ai_cache")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# ПОГОДА (Open-Meteo)
+# ═══════════════════════════════════════════════════════════════
+async def fetch_weather(force=False):
+    cache_key = f"{WEATHER_LAT:.3f},{WEATHER_LON:.3f}"
+    if not force:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT payload, updated_at FROM weather_cache WHERE cache_key=?",
+                (cache_key,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row:
+            try:
+                if datetime.now(timezone.utc) - datetime.fromisoformat(row[1]) < timedelta(hours=1):
+                    return json.loads(row[0])
+            except Exception:
+                pass
+
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
+        f"&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m"
+        f"&daily=temperature_2m_max,temperature_2m_min,weather_code"
+        f"&timezone=Asia%2FIrkutsk&forecast_days=2"
+    )
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+    except Exception as e:
+        logging.warning(f"[WEATHER] {e}")
+        return None
+
+    cur = (data.get("current") or {})
+    daily = (data.get("daily") or {})
+    code = cur.get("weather_code", 0)
+    payload = {
+        "temp": cur.get("temperature_2m"),
+        "feels": cur.get("apparent_temperature"),
+        "wind": cur.get("wind_speed_10m"),
+        "code": code,
+        "desc": _weather_desc(code),
+        "tmax": (daily.get("temperature_2m_max") or [None])[0],
+        "tmin": (daily.get("temperature_2m_min") or [None])[0],
+        "city": WEATHER_CITY,
+    }
+
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO weather_cache (cache_key, payload, updated_at) "
+            "VALUES (?, ?, ?)",
+            (cache_key, json.dumps(payload, ensure_ascii=False),
+             datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return payload
+
+
+def _weather_desc(code: int) -> str:
+    if code == 0: return "ясно"
+    if code in (1, 2): return "малооблачно"
+    if code == 3: return "пасмурно"
+    if code in (45, 48): return "туман"
+    if code in (51, 53, 55, 56, 57): return "морось"
+    if code in (61, 63, 65, 66, 67): return "дождь"
+    if code in (71, 73, 75, 77): return "снег"
+    if code in (80, 81, 82): return "ливень"
+    if code in (85, 86): return "снегопад"
+    if code in (95, 96, 99): return "гроза"
+    return "—"
+
+
+def _weather_emoji(code: int) -> str:
+    if code == 0: return "☀️"
+    if code in (1, 2): return "🌤"
+    if code == 3: return "☁️"
+    if code in (45, 48): return "🌫"
+    if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82): return "🌧"
+    if code in (71, 73, 75, 77, 85, 86): return "❄️"
+    if code in (95, 96, 99): return "⛈"
+    return "🌡"
+
+
+def weather_line(w) -> str:
+    if not w: return ""
+    t = w.get("temp")
+    if t is None: return ""
+    try: t = round(float(t))
+    except: return ""
+    feels = w.get("feels")
+    try: feels = round(float(feels)) if feels is not None else None
+    except: feels = None
+    wind = w.get("wind")
+    try: wind = round(float(wind)) if wind is not None else None
+    except: wind = None
+    parts = [f"{_weather_emoji(w.get('code', 0))} {t}°C"]
+    if feels is not None and abs(feels - t) >= 3:
+        parts.append(f"ощущ. {feels}°")
+    if wind is not None and wind >= 5:
+        parts.append(f"ветер {wind} м/с")
+    parts.append(w.get("desc") or "")
+    return " · ".join(p for p in parts if p)
+
+
+# ═══════════════════════════════════════════════════════════════
+# АВТОПАРСИНГ РАСПИСАНИЯ В БД
+# ═══════════════════════════════════════════════════════════════
+def _group_name_by_id(group_id: str) -> str:
+    for inst, groups in GROUPS.items():
+        for g in groups:
+            if g["id"] == str(group_id):
+                return g["name"]
+    return str(group_id)
+
+
+def get_top_groups(limit: int = 20):
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT group_id, COUNT(*) as cnt FROM users
+            WHERE group_id IS NOT NULL AND group_id != ''
+            GROUP BY group_id ORDER BY cnt DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [(r[0], _group_name_by_id(r[0])) for r in rows]
+    finally:
+        conn.close()
+
+
+def save_lessons_to_cache(group_id, group_name, week_start, days):
+    conn = _connect()
+    try:
+        conn.execute(
+            "DELETE FROM lessons_cache WHERE group_id=? AND week_start=?",
+            (str(group_id), str(week_start))
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        for d in days:
+            day_key = d.get("date", "")
+            day_name = d.get("name", "")
+            for les in d.get("lessons", []):
+                conn.execute("""
+                    INSERT INTO lessons_cache
+                    (group_id, group_name, week_start, date, day_name,
+                     time, time_end, subject, type, teacher, auditorium, subgroup, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    str(group_id), group_name, str(week_start), day_key, day_name,
+                    les.get("time", ""), LESSON_TIMES.get(les.get("time", ""), ""),
+                    les.get("subject", ""), les.get("type", ""), les.get("teacher", ""),
+                    les.get("auditorium", ""), les.get("subgroup", ""), now
+                ))
+        conn.commit()
+        return True
+    except Exception as e:
+        logging.warning(f"[LESSONS_CACHE] {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def find_teacher_lessons(teacher_query: str, date_from: str = None, date_to: str = None,
+                         group_filter: str = None):
+    conn = _connect()
+    try:
+        clauses = ["LOWER(teacher) LIKE ?"]
+        q = f"%{teacher_query.strip().lower()}%"
+        params = [q]
+        if date_from:
+            clauses.append("date >= ?"); params.append(date_from)
+        if date_to:
+            clauses.append("date <= ?"); params.append(date_to)
+        if group_filter:
+            clauses.append("group_id = ?"); params.append(str(group_filter))
+        sql = (f"SELECT date, day_name, time, time_end, subject, type, teacher, "
+               f"auditorium, group_name, subgroup FROM lessons_cache "
+               f"WHERE {' AND '.join(clauses)} "
+               f"ORDER BY substr(date,7,4)||substr(date,4,2)||substr(date,1,2), time")
+        rows = conn.execute(sql, params).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def lessons_cache_stats():
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT group_id), MAX(updated_at) FROM lessons_cache"
+        ).fetchone()
+        return {"rows": row[0] or 0, "groups": row[1] or 0, "last_update": row[2]}
+    finally:
+        conn.close()
+
+
+def lessons_cache_cleanup(days: int = 14):
+    conn = _connect()
+    try:
+        cutoff_dt = _now_irkutsk() - timedelta(days=days)
+        cutoff = cutoff_dt.strftime("%d.%m.%Y")
+        cutoff_key = cutoff[6:] + cutoff[3:5] + cutoff[:2]
+        conn.execute(
+            "DELETE FROM lessons_cache WHERE substr(date,7,4)||substr(date,4,2)||substr(date,1,2) < ?",
+            (cutoff_key,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# АВТОПЕРЕНОС ДОЛГОВ
+# ═══════════════════════════════════════════════════════════════
+def get_overdue_debt_tasks():
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT id, user_id, text, due_date, due_time FROM tasks
+            WHERE done=0
+              AND due_date IS NOT NULL AND due_date != ''
+              AND (' ' || COALESCE(tags,'') || ' ') LIKE '% #долг %'
+        """).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def move_debt_to_date(task_id, user_id, new_date):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT due_date FROM tasks WHERE id=? AND user_id=?",
+                           (task_id, user_id)).fetchone()
+        old_due = row[0] if row else ""
+        conn.execute("UPDATE tasks SET due_date=? WHERE id=? AND user_id=?",
+                     (new_date, task_id, user_id))
+        conn.execute("""
+            INSERT INTO debts_log (task_id, user_id, old_due, new_due, moved_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (task_id, user_id, old_due, new_date, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+        return True
+    except Exception as e:
+        logging.warning(f"[DEBT] {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def count_user_debts(user_id):
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT due_date FROM tasks
+            WHERE done=0 AND user_id=?
+              AND due_date IS NOT NULL AND due_date != ''
+              AND (' ' || COALESCE(tags,'') || ' ') LIKE '% #долг %'
+        """, (user_id,)).fetchall()
+    finally:
+        conn.close()
+    today_str = _now_irkutsk().strftime("%d.%m.%Y")
+    today_key = today_str[6:] + today_str[3:5] + today_str[:2]
+    n = 0
+    for r in rows:
+        d = r[0] or ""
+        if len(d) == 10:
+            key = d[6:] + d[3:5] + d[:2]
+            if key < today_key:
+                n += 1
+    return n
+
+
+# ═══════════════════════════════════════════════════════════════
+# ПРОПУСКИ ПО СЕМЕСТРУ
+# ═══════════════════════════════════════════════════════════════
+def get_semester_start() -> datetime:
+    now = _now_irkutsk()
+    year = now.year
+    m = now.month
+    if m >= 9:
+        return datetime(year, 9, 1, tzinfo=timezone.utc) + timedelta(hours=8)
+    if m >= 2:
+        return datetime(year, 2, 1, tzinfo=timezone.utc) + timedelta(hours=8)
+    return datetime(year - 1, 9, 1, tzinfo=timezone.utc) + timedelta(hours=8)
+
+
+def attendance_semester_stats(user_id):
+    since = get_semester_start()
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT subject, status, COUNT(*) FROM attendance
+            WHERE user_id=? AND updated_at >= ?
+            GROUP BY subject, status
+        """, (user_id, since.isoformat())).fetchall()
+    finally:
+        conn.close()
+
+    result = {}
+    for subject, status, n in rows:
+        if subject not in result:
+            result[subject] = {"total": 0, "was": 0, "missed": 0, "sick": 0, "excused": 0}
+        result[subject][status] = result[subject].get(status, 0) + n
+        result[subject]["total"] += n
+
+    totals = {"total": 0, "was": 0, "missed": 0, "sick": 0, "excused": 0}
+    for subj, d in result.items():
+        for k in ("total", "was", "missed", "sick", "excused"):
+            totals[k] += d.get(k, 0)
+
+    return {"by_subject": result, "totals": totals, "since": since.strftime("%d.%m.%Y")}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ЭКСПОРТ В .ICS
+# ═══════════════════════════════════════════════════════════════
+def _ics_escape(text: str) -> str:
+    if not text: return ""
+    return (text.replace("\\", "\\\\").replace(",", "\\,")
+                .replace(";", "\\;").replace("\n", "\\n"))
+
+
+def _ics_datetime(date_str: str, time_str: str, tz_offset_hours: int = 8):
+    try:
+        d, m, y = date_str.split(".")
+        hh, mm = time_str.split(":")
+        dt = datetime(int(y), int(m), int(d), int(hh), int(mm),
+                      tzinfo=timezone(timedelta(hours=tz_offset_hours)))
+        return dt.strftime("%Y%m%dT%H%M%S")
+    except Exception:
+        return None
+
+
+def _ics_now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+async def generate_ics_for_user_async(user_id, weeks: int = 2) -> bytes:
+    saved = get_user_group(user_id)
+    if not saved:
+        raise ValueError("Сначала выбери группу")
+    group_id, group_name = saved
+    subgroup = get_user_subgroup(user_id)
+
+    now = _now_irkutsk()
+    monday = _monday_of_week(now)
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Student IRK//Schedule//RU",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:Расписание {_ics_escape(group_name)}",
+        "X-WR-TIMEZONE:Asia/Irkutsk",
+    ]
+
+    total = 0
+    for w in range(weeks):
+        target_monday = monday + timedelta(days=7 * w)
+        html = await fetch_week_html(group_id, target_monday, use_cache=True)
+        if not html: continue
+        _, days = parse_schedule(html)
+        for d in days:
+            filtered = _filter_lessons_by_subgroup(d.get("lessons", []), subgroup)
+            for les in filtered:
+                date_str = d.get("date", "")
+                time_str = les.get("time", "")
+                time_end = LESSON_TIMES.get(time_str, "")
+                if not time_str or not time_end: continue
+                dtstart = _ics_datetime(date_str, time_str)
+                dtend = _ics_datetime(date_str, time_end)
+                if not dtstart or not dtend: continue
+
+                summary = les.get("subject", "Пара")
+                if les.get("type"):
+                    summary = f"{summary} ({les['type']})"
+
+                descr_parts = []
+                if les.get("teacher"): descr_parts.append(f"Преподаватель: {les['teacher']}")
+                if les.get("subgroup"): descr_parts.append(f"Подгруппа: {les['subgroup']}")
+                descr = "\\n".join(descr_parts)
+
+                location = f"ауд. {les.get('auditorium','')}" if les.get("auditorium") else ""
+                uid = f"{group_id}-{dtstart}-{abs(hash(summary)) % 100000}@student-irk"
+
+                lines += [
+                    "BEGIN:VEVENT",
+                    f"UID:{uid}",
+                    f"DTSTAMP:{_ics_now_utc()}",
+                    f"DTSTART:{dtstart}",
+                    f"DTEND:{dtend}",
+                    f"SUMMARY:{_ics_escape(summary)}",
+                ]
+                if location:
+                    lines.append(f"LOCATION:{_ics_escape(location)}")
+                if descr:
+                    lines.append(f"DESCRIPTION:{_ics_escape(descr)}")
+                lines += [
+                    "BEGIN:VALARM",
+                    "TRIGGER:-PT15M",
+                    "ACTION:DISPLAY",
+                    "DESCRIPTION:Напоминание о паре",
+                    "END:VALARM",
+                    "END:VEVENT",
+                ]
+                total += 1
+
+    lines.append("END:VCALENDAR")
+    if total == 0:
+        raise ValueError("Не удалось получить расписание")
+    return ("\r\n".join(lines) + "\r\n").encode("utf-8")
+
+
 def _now_irkutsk(): return datetime.now(timezone.utc) + timedelta(hours=8)
 def _monday_of_week(d): return d - timedelta(days=d.weekday())
 
@@ -1842,12 +2378,9 @@ def _add_bar_chart(slide, x, y, w, h, categories, values, unit="", title=""):
 
 
 BULLET_LAYOUTS = [
-    "text_left_image_right",
-    "image_left_text_right",
-    "full_text_top_image_bottom",
-    "two_columns_text",
-    "big_first_bullet",
-    "accent_block_left",
+    "text_left_image_right", "image_left_text_right",
+    "full_text_top_image_bottom", "two_columns_text",
+    "big_first_bullet", "accent_block_left",
 ]
 FLOW_LAYOUTS = ["flow_horizontal", "flow_vertical", "flow_zigzag"]
 COMPARE_LAYOUTS = ["compare_two_cols", "compare_split_diagonal"]
@@ -1857,12 +2390,8 @@ CHART_LAYOUTS = ["chart_full", "chart_with_text"]
 
 def _pick_layout(kind: str, idx: int) -> str:
     pools = {
-        "bullets": BULLET_LAYOUTS,
-        "flow": FLOW_LAYOUTS,
-        "compare": COMPARE_LAYOUTS,
-        "numbers": NUMBERS_LAYOUTS,
-        "cards": CARDS_LAYOUTS,
-        "chart": CHART_LAYOUTS,
+        "bullets": BULLET_LAYOUTS, "flow": FLOW_LAYOUTS, "compare": COMPARE_LAYOUTS,
+        "numbers": NUMBERS_LAYOUTS, "cards": CARDS_LAYOUTS, "chart": CHART_LAYOUTS,
     }
     pool = pools.get(kind, BULLET_LAYOUTS)
     return pool[idx % len(pool)]
@@ -1903,8 +2432,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             p.space_after = Pt(11)
             try: p.line_spacing = 1.15
             except: pass
-            run = p.add_run()
-            run.text = f"{bullet_char}  {b}"
+            run = p.add_run(); run.text = f"{bullet_char}  {b}"
             run.font.size = Pt(size)
             run.font.color.rgb = rgb(_pick_readable(style["text"], style["bg"]))
             run.font.name = "DejaVu Sans"
@@ -1990,7 +2518,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         add_bullets(so, Inches(1.5), Inches(2.3), Inches(10.5), Inches(4.5), bullets, size=16)
         _add_page_number(so, page_num); page_num += 1
 
-    # КОНТЕНТНЫЕ
+    # КОНТЕНТ
     for idx, sl in enumerate(slides):
         s = prs.slides.add_slide(blank)
         _add_rect(s, 0, 0, prs.slide_width, prs.slide_height, style["bg"])
@@ -2478,31 +3006,25 @@ async def api_me(request):
     notif_settings = get_notify_settings(user_id)
     avg = sum(g[2] for g in grades) / len(grades) if grades else 0
     att_stats = attendance_stats(user_id)
+    debts_count = count_user_debts(user_id)
 
     return web.json_response({
-        "user_id": user_id,
-        "is_admin": user_id == ADMIN_ID,
-        "group": saved[1] if saved else None,
-        "group_id": saved[0] if saved else None,
+        "user_id": user_id, "is_admin": user_id == ADMIN_ID,
+        "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id),
-        "tasks_active": active, "tasks_done": done,
-        "notes_count": len(notes),
-        "scholarship_amount": amount,
-        "grades_count": len(grades),
-        "grades_avg": round(avg, 2),
+        "tasks_active": active, "tasks_done": done, "tasks_debts": debts_count,
+        "notes_count": len(notes), "scholarship_amount": amount,
+        "grades_count": len(grades), "grades_avg": round(avg, 2),
         "daily_subscribed": daily,
         "notify_type": notif_settings["type"] if notif_settings else None,
         "notify_hour": notif_settings["hour"] if notif_settings else -1,
         "notify_minute": notif_settings["minute"] if notif_settings else 0,
         "notify_changes": get_notify_changes(user_id),
         "notify_before_min": get_notify_before_min(user_id),
-        "attendance_was": att_stats["was"],
-        "attendance_missed": att_stats["missed"],
-        "attendance_sick": att_stats["sick"],
-        "attendance_excused": att_stats["excused"],
+        "attendance_was": att_stats["was"], "attendance_missed": att_stats["missed"],
+        "attendance_sick": att_stats["sick"], "attendance_excused": att_stats["excused"],
         "attendance_total": sum(att_stats.values()),
-        "username": user_obj.username,
-        "first_name": user_obj.first_name,
+        "username": user_obj.username, "first_name": user_obj.first_name,
         "last_name": user_obj.last_name
     })
 
@@ -2573,9 +3095,10 @@ def _task_to_dict(row):
         except: pass
     p = priority if priority is not None else 2
     if p not in (1, 2, 3): p = 2
+    is_debt = " #долг " in f" {(tags or '')} "
     return {"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
             "priority": p, "done": bool(done), "overdue": overdue,
-            "tags": tags or "", "repeat_rule": repeat_rule}
+            "tags": tags or "", "repeat_rule": repeat_rule, "is_debt": is_debt}
 
 
 async def api_tasks(request):
@@ -2596,15 +3119,17 @@ async def api_tasks(request):
             p = priority if priority in (1, 2, 3) else 2
             tasks.append({"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
                           "priority": p, "done": True, "done_at": done_at, "overdue": False,
-                          "tags": tags or "", "repeat_rule": None})
+                          "tags": tags or "", "repeat_rule": None,
+                          "is_debt": " #долг " in f" {(tags or '')} "})
     else:
         rows = get_user_tasks(user_id, only_active=True, tag=tag, search=search, sort_by=sort_by)
         tasks = [_task_to_dict(r) for r in rows]
     active, done_count = count_user_tasks(user_id)
     stats = task_stats(user_id)
     tags = get_all_task_tags(user_id)
+    debts_count = count_user_debts(user_id)
     return web.json_response({"tasks": tasks, "active": active, "done": done_count,
-        "stats": stats, "tags": tags})
+        "stats": stats, "tags": tags, "debts_count": debts_count})
 
 
 async def api_task_add(request):
@@ -2914,6 +3439,61 @@ async def api_attendance_set(request):
     return web.json_response({"ok": True, "status": status})
 
 
+async def api_attendance_semester(request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    stats = attendance_semester_stats(user_id)
+    return web.json_response(stats)
+
+
+async def api_weather(request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    w = await fetch_weather()
+    return web.json_response({"weather": w, "line": weather_line(w) if w else ""})
+
+
+async def api_export_ics(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        weeks = int(body.get("weeks", 2))
+        weeks = max(1, min(4, weeks))
+        ics_bytes = await generate_ics_for_user_async(user_id, weeks=weeks)
+    except ValueError as e:
+        return web.json_response({"error": "no_group", "message": str(e)}, status=400)
+    except Exception as e:
+        logging.exception("[ICS]")
+        return web.json_response({"error": "ics_failed", "message": str(e)}, status=500)
+
+    try:
+        doc = BufferedInputFile(ics_bytes, filename="student_irk_schedule.ics")
+        await bot.send_document(user_id, doc, caption="Расписание в формате .ics.\nОткрой файл в Google Calendar / Apple Calendar / Яндекс.Календаре — пары добавятся автоматически.")
+        return web.json_response({"ok": True})
+    except TelegramForbiddenError:
+        return web.json_response({"error": "bot_blocked"}, status=403)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def api_find_teacher(request):
+    init_data = request.query.get("initData", "")
+    user_id = _verify_webapp_init(init_data)
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    q = (request.query.get("q") or "").strip()
+    if len(q) < 3:
+        return web.json_response({"error": "short", "message": "Введи минимум 3 символа"}, status=400)
+    rows = find_teacher_lessons(q)
+    items = [{"date": r[0], "day_name": r[1], "time": r[2], "time_end": r[3],
+              "subject": r[4], "type": r[5], "teacher": r[6],
+              "auditorium": r[7], "group": r[8], "subgroup": r[9]} for r in rows[:50]]
+    return web.json_response({"items": items, "count": len(items)})
+
+
 async def api_ai(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -2924,6 +3504,13 @@ async def api_ai(request):
     if not question: return web.json_response({"error": "empty"}, status=400)
     if len(question) > 2000: question = question[:2000]
     ai_save_message(user_id, 'user', question, has_photo=0)
+
+    # Кэш
+    cached = ai_cache_get(question)
+    if cached:
+        ai_save_message(user_id, 'assistant', cached, has_photo=0)
+        return web.json_response({"answer": cached, "cached": True})
+
     try:
         prompt = ("Ты студенческий помощник. Ответь на вопрос студента.\n\n"
             "ТРЕБОВАНИЯ К ФОРМАТУ:\n- НЕ используй Markdown-таблицы, заголовки ### и горизонтальные линии.\n"
@@ -2937,7 +3524,8 @@ async def api_ai(request):
         answer = clean_latex(answer); answer = clean_markdown(answer)
         if len(answer) > 4000: answer = answer[:4000] + "\n... (обрезано)"
         ai_save_message(user_id, 'assistant', answer, has_photo=0)
-        return web.json_response({"answer": answer})
+        ai_cache_put(question, answer)
+        return web.json_response({"answer": answer, "cached": False})
     except Exception as e:
         logging.exception("[AI-WEB]")
         return web.json_response({"error": "ai_failed", "message": str(e)}, status=500)
@@ -3223,8 +3811,14 @@ def _admin_only(init_data):
 async def api_admin_stats(request):
     init_data = request.query.get("initData", "")
     if not _admin_only(init_data): return web.json_response({"error": "forbidden"}, status=403)
-    return web.json_response({"total_users": get_total_users(),
-        "pending_feedback": len(get_pending_feedback())})
+    cache_stats = ai_cache_stats()
+    lc_stats = lessons_cache_stats()
+    return web.json_response({
+        "total_users": get_total_users(),
+        "pending_feedback": len(get_pending_feedback()),
+        "ai_cache": cache_stats,
+        "lessons_cache": lc_stats,
+    })
 
 
 async def api_admin_feedback_list(request):
@@ -3294,6 +3888,94 @@ async def api_admin_monitor(request):
         return web.json_response({"status": 0, "ok": False, "error": str(e)})
 
 
+async def api_admin_clear_ai_cache(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    if not _admin_only(body.get("initData", "")): return web.json_response({"error": "forbidden"}, status=403)
+    ai_cache_clear()
+    return web.json_response({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════════
+# ФОНОВЫЕ ВОРКЕРЫ
+# ═══════════════════════════════════════════════════════════════
+async def parser_worker():
+    """Каждые 30 минут парсит расписание топ-N групп в lessons_cache."""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            groups = get_top_groups(PARSER_TOP_GROUPS)
+            if groups:
+                now = _now_irkutsk()
+                monday = _monday_of_week(now)
+                next_monday = monday + timedelta(days=7)
+                logging.info(f"[PARSER] обновляю {len(groups)} групп")
+                for gid, gname in groups:
+                    for monday_dt in (monday, next_monday):
+                        try:
+                            html = await fetch_week_html(gid, monday_dt, use_cache=True)
+                            if not html: continue
+                            _, days = parse_schedule(html)
+                            week_start_str = monday_dt.strftime("%Y-%m-%d")
+                            save_lessons_to_cache(gid, gname, week_start_str, days)
+                        except Exception as e:
+                            logging.warning(f"[PARSER] {gid}: {e}")
+                        await asyncio.sleep(0.5)
+            lessons_cache_cleanup(days=14)
+        except Exception:
+            logging.exception("[PARSER]")
+        await asyncio.sleep(1800)
+
+
+async def debts_worker():
+    """Раз в сутки переносит просроченные #долг на завтра и уведомляет."""
+    await asyncio.sleep(60)
+    last_date = None
+    while True:
+        try:
+            now = _now_irkutsk()
+            today = now.strftime("%Y-%m-%d")
+            if now.hour == 9 and last_date != today:
+                last_date = today
+                rows = get_overdue_debt_tasks()
+                moved_by_user = {}
+                today_str = now.strftime("%d.%m.%Y")
+                tomorrow_str = (now + timedelta(days=1)).strftime("%d.%m.%Y")
+                today_key = today_str[6:] + today_str[3:5] + today_str[:2]
+                for tid, uid, text, due, due_time in rows:
+                    if not due or len(due) != 10: continue
+                    key = due[6:] + due[3:5] + due[:2]
+                    if key < today_key:
+                        if move_debt_to_date(tid, uid, tomorrow_str):
+                            moved_by_user.setdefault(uid, []).append(text[:60])
+                for uid, items in moved_by_user.items():
+                    n = len(items)
+                    word = "долг" if n == 1 else ("долга" if n in (2, 3, 4) else "долгов")
+                    lines = [f"⚠️ {n} {word} перенесено на завтра ({tomorrow_str}):", ""]
+                    for t in items[:10]:
+                        lines.append(f"• {t}")
+                    if n > 10: lines.append(f"... и ещё {n-10}")
+                    lines.append("")
+                    lines.append("Разберись, пока не превратилось в хвост 😉")
+                    try:
+                        await bot.send_message(uid, "\n".join(lines), parse_mode=None)
+                    except Exception:
+                        pass
+        except Exception:
+            logging.exception("[DEBTS]")
+        await asyncio.sleep(600)
+
+
+async def weather_warmup_worker():
+    """Раз в час обновляет погоду (прогрев кэша)."""
+    while True:
+        try:
+            await fetch_weather(force=True)
+        except Exception:
+            logging.exception("[WEATHER]")
+        await asyncio.sleep(3600)
+
+
 # ═══════════════════════════════════════════════════════════════
 # ЗАПУСК WEBAPP
 # ═══════════════════════════════════════════════════════════════
@@ -3332,6 +4014,10 @@ async def start_webapp():
     app.router.add_post("/api/scholarship-delete-grade", api_scholarship_delete_grade)
     app.router.add_post("/api/scholarship-clear", api_scholarship_clear)
     app.router.add_post("/api/attendance-set", api_attendance_set)
+    app.router.add_get("/api/attendance/semester", api_attendance_semester)
+    app.router.add_get("/api/weather", api_weather)
+    app.router.add_post("/api/export_ics", api_export_ics)
+    app.router.add_get("/api/find_teacher", api_find_teacher)
     app.router.add_get("/api/ai/history", api_ai_history)
     app.router.add_post("/api/ai/clear-history", api_ai_clear_history)
     app.router.add_post("/api/ai", api_ai)
@@ -3346,6 +4032,7 @@ async def start_webapp():
     app.router.add_post("/api/admin/feedback-postpone", api_admin_feedback_postpone)
     app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
     app.router.add_get("/api/admin/monitor", api_admin_monitor)
+    app.router.add_post("/api/admin/clear-ai-cache", api_admin_clear_ai_cache)
     if webapp_dir:
         NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate","Pragma": "no-cache","Expires": "0"}
         async def index_handler(request):
@@ -3407,6 +4094,7 @@ async def cmd_admin(message: Message):
         "/restore — восстановить users.db (отправь .db с подписью)\n"
         "/whereami — где база и твой ID\n"
         "/dbcheck — проверка схемы БД (колонки, пользователи)\n"
+        "/cache — статистика кэша ИИ и расписания\n"
         "/admin — эта справка")
 
 
@@ -3431,7 +4119,6 @@ async def cmd_whereami(message: Message):
 
 @dp.message(Command("dbcheck"))
 async def cmd_dbcheck(message: Message):
-    """Диагностика схемы БД — что есть, что отсутствует."""
     if message.from_user.id != ADMIN_ID:
         await message.answer("Только для админа."); return
     try:
@@ -3485,6 +4172,41 @@ async def cmd_dbcheck(message: Message):
     except Exception as e:
         logging.exception("[DBCHECK]")
         await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("cache"))
+async def cmd_cache(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Только для админа."); return
+    ai = ai_cache_stats()
+    lc = lessons_cache_stats()
+    lines = [
+        "КЭШ:",
+        "",
+        f"AI-ответы: {ai['size']} записей",
+        f"AI-попаданий: {ai['hits']}",
+        "",
+        f"Расписание (lessons_cache):",
+        f"  строк: {lc['rows']}",
+        f"  групп: {lc['groups']}",
+        f"  обновлено: {lc['last_update'] or '—'}",
+    ]
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Очистить кэш ИИ", callback_data="admin_clear_ai")],
+    ])
+    await message.answer("\n".join(lines), reply_markup=kb)
+
+
+@dp.callback_query(F.data == "admin_clear_ai")
+async def cb_admin_clear_ai(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Не для тебя", show_alert=True); return
+    ai_cache_clear()
+    await callback.answer("Кэш ИИ очищен", show_alert=True)
+    try:
+        await callback.message.edit_text("Кэш ИИ очищен. AI-ответы: 0 записей.")
+    except Exception:
+        pass
 
 
 @dp.message(Command("backup"))
@@ -3621,7 +4343,7 @@ async def cmd_restore(message: Message):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ВОРКЕРЫ
+# ВОРКЕРЫ УВЕДОМЛЕНИЙ
 # ═══════════════════════════════════════════════════════════════
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
@@ -3635,12 +4357,31 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         day = next((d for d in days if d["date"] == target_str), None)
         label = "Сегодня" if ntype == "today" else "Завтра"
         header = f"{label}, {target_str}"
+
+        # погода (только для "сегодня")
+        w_line = ""
+        if ntype == "today":
+            try:
+                w = await fetch_weather()
+                w_line = weather_line(w)
+            except Exception:
+                pass
+
         if not day:
-            await bot.send_message(user_id, f"{header}\n\nНе удалось загрузить.", parse_mode=None); return
+            txt = f"{header}\n"
+            if w_line: txt += f"\n{w_line}\n"
+            txt += "\nНе удалось загрузить."
+            await bot.send_message(user_id, txt, parse_mode=None); return
         lessons = _filter_lessons_by_subgroup(day.get("lessons", []), subgroup)
+        lines = [header]
+        if w_line:
+            lines.append("")
+            lines.append(w_line)
         if not lessons:
-            await bot.send_message(user_id, f"{header}\n\nЗанятий нет.", parse_mode=None); return
-        lines = [header, ""]
+            lines.append("")
+            lines.append("Занятий нет.")
+            await bot.send_message(user_id, "\n".join(lines), parse_mode=None); return
+        lines.append("")
         for les in lessons:
             time_end = LESSON_TIMES.get(les["time"], "")
             time_str = f"{les['time']}–{time_end}" if time_end else les["time"]
@@ -3652,7 +4393,8 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
             if details: lines.append(f"{' · '.join(details)}")
             lines.append("")
         await bot.send_message(user_id, "\n".join(lines), parse_mode=None)
-    except Exception as e: logging.error(f"[NOTIFY] user={user_id}: {e}")
+    except Exception as e:
+        logging.error(f"[NOTIFY] user={user_id}: {e}")
 
 
 async def send_lesson_reminder(user_id, les, before_min):
@@ -3665,7 +4407,8 @@ async def send_lesson_reminder(user_id, les, before_min):
         if les.get("teacher"): details.append(les["teacher"])
         if details: text += "\n" + " · ".join(details)
         await bot.send_message(user_id, text, parse_mode=None)
-    except Exception as e: logging.error(f"[REMIND] user={user_id}: {e}")
+    except Exception as e:
+        logging.error(f"[REMIND] user={user_id}: {e}")
 
 
 async def send_daily_quotes():
@@ -3783,7 +4526,18 @@ async def cleanup_cache_worker():
                     conn.commit()
                 finally:
                     conn.close()
-                logging.info("[CLEANUP] старый кэш расписания удалён")
+                # чистим кэш ИИ старше TTL
+                try:
+                    conn = _connect()
+                    try:
+                        ai_cutoff = (datetime.now(timezone.utc) - timedelta(days=AI_CACHE_TTL_DAYS)).isoformat()
+                        conn.execute("DELETE FROM ai_cache WHERE created_at < ?", (ai_cutoff,))
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception:
+                    pass
+                logging.info("[CLEANUP] старый кэш удалён")
         except Exception:
             logging.exception("[CLEANUP]")
 
@@ -3833,12 +4587,18 @@ async def main():
     try:
         if _FPDF_AVAILABLE: await asyncio.to_thread(_find_or_download_pdf_font)
     except: pass
+
+    # Фоновые сервисы
     asyncio.create_task(start_webapp())
     asyncio.create_task(notification_worker())
     asyncio.create_task(lesson_reminder_worker())
     asyncio.create_task(change_worker())
     asyncio.create_task(cleanup_cache_worker())
     asyncio.create_task(autobackup_worker())
+    asyncio.create_task(parser_worker())            # автопарсинг расписания в БД
+    asyncio.create_task(debts_worker())             # автоперенос #долг
+    asyncio.create_task(weather_warmup_worker())    # прогрев кэша погоды
+
     await dp.start_polling(bot)
 
 
