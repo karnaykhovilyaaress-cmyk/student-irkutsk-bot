@@ -78,22 +78,6 @@ def clean_latex(text):
     return text.strip()
 
 
-def render_latex_png(latex: str, dpi: int = 220) -> bytes | None:
-    if not _MATPLOTLIB_AVAILABLE or not latex: return None
-    try:
-        fig = plt.figure(figsize=(0.01, 0.01))
-        fig.text(0, 0, f"${latex}$", fontsize=16)
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                    transparent=True, pad_inches=0.06)
-        plt.close(fig)
-        data = buf.getvalue()
-        return data if len(data) > 200 else None
-    except Exception as e:
-        logging.debug(f"[LATEX] {latex!r}: {e}")
-        return None
-
-
 def clean_markdown(text):
     if not text: return text
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
@@ -142,9 +126,6 @@ if GIGACHAT_CREDENTIALS:
             scope="GIGACHAT_API_PERS",
             model="GigaChat-2-Max",
             timeout=600,
-            # botxost проксирует HTTPS с самоподписанным корнем,
-            # иначе получаем: [SSL: CERTIFICATE_VERIFY_FAILED].
-            # Отключено ТОЛЬКО для GigaChat — для Telegram и OCR SSL остаётся включён.
             verify_ssl_certs=False,
         )
     except Exception as e:
@@ -225,10 +206,19 @@ def init_db():
     conn.execute("UPDATE feedback SET status='new' WHERE status IS NULL")
     conn.execute("""CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, text TEXT,
         due_date TEXT, done INTEGER DEFAULT 0, created_at TEXT, priority INTEGER DEFAULT 2, due_time TEXT, done_at TEXT)""")
-    for a in ["ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 2","ALTER TABLE tasks ADD COLUMN due_time TEXT","ALTER TABLE tasks ADD COLUMN done_at TEXT"]:
+    for a in ["ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 2",
+              "ALTER TABLE tasks ADD COLUMN due_time TEXT",
+              "ALTER TABLE tasks ADD COLUMN done_at TEXT",
+              "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT ''",
+              "ALTER TABLE tasks ADD COLUMN repeat_rule TEXT DEFAULT NULL"]:
         try: conn.execute(a)
         except: pass
     conn.execute("""CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT, text TEXT, created_at TEXT)""")
+    for a in ["ALTER TABLE notes ADD COLUMN tags TEXT DEFAULT ''",
+              "ALTER TABLE notes ADD COLUMN pinned INTEGER DEFAULT 0",
+              "ALTER TABLE notes ADD COLUMN updated_at TEXT DEFAULT NULL"]:
+        try: conn.execute(a)
+        except: pass
     conn.execute("""CREATE TABLE IF NOT EXISTS ai_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, role TEXT,
         text TEXT, has_photo INTEGER DEFAULT 0, created_at TEXT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, date TEXT,
@@ -514,17 +504,23 @@ def get_user_feedback(user_id, limit=30):
     return rows
 
 
-def add_task(user_id, text, due_date=None, priority=2, due_time=None):
+# ═══════════════════════════════════════════════════════════════
+# ЗАДАЧИ (обновлено)
+# ═══════════════════════════════════════════════════════════════
+def add_task(user_id, text, due_date=None, priority=2, due_time=None, tags="", repeat_rule=None):
     conn = _connect()
-    cur = conn.execute("INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time) VALUES (?, ?, ?, 0, ?, ?, ?)",
-        (user_id, text, due_date, datetime.now(timezone.utc).isoformat(), priority, due_time))
+    cur = conn.execute(
+        "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
+        "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
+        (user_id, text, due_date, datetime.now(timezone.utc).isoformat(),
+         priority, due_time, tags or "", repeat_rule))
     tid = cur.lastrowid
     conn.commit(); conn.close()
     return tid
 
-_ALLOWED_TASK_COLS = {"text", "due_date", "priority", "due_time", "done", "done_at"}
 
-def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_time=None, reset_due=False):
+def update_task(task_id, user_id, text=None, due_date=None, priority=None,
+                due_time=None, reset_due=False, tags=None, repeat_rule=None):
     conn = _connect(); fields = []; values = []
     if text is not None: fields.append("text=?"); values.append(text)
     if reset_due:
@@ -533,74 +529,193 @@ def update_task(task_id, user_id, text=None, due_date=None, priority=None, due_t
         if due_date is not None: fields.append("due_date=?"); values.append(due_date)
         if due_time is not None: fields.append("due_time=?"); values.append(due_time)
     if priority is not None: fields.append("priority=?"); values.append(priority)
+    if tags is not None: fields.append("tags=?"); values.append(tags)
+    if repeat_rule is not None: fields.append("repeat_rule=?"); values.append(repeat_rule or None)
     if not fields: conn.close(); return
     values.extend([task_id, user_id])
     conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
     conn.commit(); conn.close()
 
+
 def get_task(task_id, user_id):
     conn = _connect()
-    row = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE id=? AND user_id=?",
+    row = conn.execute(
+        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
+        "COALESCE(tags,''), repeat_rule FROM tasks WHERE id=? AND user_id=?",
         (task_id, user_id)).fetchone()
     conn.close()
     return row
 
-def get_user_tasks(user_id, only_active=True):
+
+def get_user_tasks(user_id, only_active=True, tag=None, search=None, sort_by="due"):
     conn = _connect()
+    clauses = ["user_id=?"]
+    params = [user_id]
     if only_active:
-        rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time FROM tasks WHERE user_id=? AND done=0", (user_id,)).fetchall()
-    else:
-        rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time FROM tasks WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
+        clauses.append("done=0")
+    if tag:
+        clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
+        params.append(f"% {tag} %")
+    if search:
+        clauses.append("(LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
+        q = f"%{search.lower()}%"
+        params.extend([q, q])
+
+    order = "ORDER BY id DESC"
+    if sort_by == "due":
+        order = ("ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, "
+                 "substr(due_date,7,4)||substr(due_date,4,2)||substr(due_date,1,2), "
+                 "COALESCE(due_time,''), priority DESC")
+    elif sort_by == "priority":
+        order = "ORDER BY priority DESC, done ASC, id DESC"
+    elif sort_by == "created":
+        order = "ORDER BY id DESC"
+
+    sql = (f"SELECT id, text, due_date, done, created_at, priority, due_time, "
+           f"COALESCE(tags,''), repeat_rule "
+           f"FROM tasks WHERE {' AND '.join(clauses)} {order}")
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     return rows
 
-def get_done_tasks(user_id, days=7):
+
+def get_done_tasks(user_id, days=30):
     conn = _connect()
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    rows = conn.execute("SELECT id, text, due_date, done, created_at, priority, due_time, done_at FROM tasks WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? ORDER BY done_at DESC",
+    rows = conn.execute(
+        "SELECT id, text, due_date, done, created_at, priority, due_time, done_at, "
+        "COALESCE(tags,'') FROM tasks "
+        "WHERE user_id=? AND done=1 AND done_at IS NOT NULL AND done_at >= ? "
+        "ORDER BY done_at DESC",
         (user_id, threshold)).fetchall()
     conn.close()
     return rows
+
 
 def mark_task_done(task_id, user_id):
     conn = _connect()
     conn.execute("UPDATE tasks SET done=1, done_at=? WHERE id=? AND user_id=?",
         (datetime.now(timezone.utc).isoformat(), task_id, user_id))
+    row = conn.execute("SELECT text, priority, tags, repeat_rule, due_date, due_time "
+                       "FROM tasks WHERE id=? AND user_id=?",
+                       (task_id, user_id)).fetchone()
+    if row and row[3]:
+        text, priority, tags, repeat_rule, due_date, due_time = row
+        next_due = None
+        if due_date:
+            try:
+                d = datetime.strptime(due_date, "%d.%m.%Y")
+                days_map = {"daily": 1, "weekly": 7, "monthly": 30}
+                delta = days_map.get(repeat_rule, 7)
+                next_due = (d + timedelta(days=delta)).strftime("%d.%m.%Y")
+            except: pass
+        conn.execute(
+            "INSERT INTO tasks (user_id, text, due_date, done, created_at, priority, due_time, tags, repeat_rule) "
+            "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
+            (user_id, text, next_due, datetime.now(timezone.utc).isoformat(),
+             priority, due_time, tags, repeat_rule))
     conn.commit(); conn.close()
+
 
 def delete_task(task_id, user_id):
     conn = _connect()
     conn.execute("DELETE FROM tasks WHERE id=? AND user_id=?", (task_id, user_id))
     conn.commit(); conn.close()
 
+
 def clear_done_tasks(user_id):
     conn = _connect()
     conn.execute("DELETE FROM tasks WHERE user_id=? AND done=1", (user_id,))
     conn.commit(); conn.close()
 
+
 def count_user_tasks(user_id):
     conn = _connect()
-    row = conn.execute("SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?", (user_id,)).fetchone()
+    row = conn.execute(
+        "SELECT SUM(CASE WHEN done=0 THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) FROM tasks WHERE user_id=?",
+        (user_id,)).fetchone()
     conn.close()
     return (row[0] or 0, row[1] or 0)
 
 
-def add_or_update_note(user_id, subject, text):
+def get_all_task_tags(user_id):
     conn = _connect()
-    row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)", (user_id, subject)).fetchone()
+    rows = conn.execute("SELECT DISTINCT tags FROM tasks WHERE user_id=? AND COALESCE(tags,'') != ''",
+                        (user_id,)).fetchall()
+    conn.close()
+    tags = set()
+    for r in rows:
+        for t in (r[0] or "").split():
+            t = t.strip()
+            if t: tags.add(t)
+    return sorted(tags)
+
+
+def task_stats(user_id, days=30):
+    conn = _connect()
+    threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    total = conn.execute("SELECT COUNT(*) FROM tasks WHERE user_id=? AND done=1 AND done_at >= ?",
+                         (user_id, threshold)).fetchone()[0] or 0
+    rows = conn.execute("SELECT done_at FROM tasks WHERE user_id=? AND done=1 AND done_at >= ? "
+                        "ORDER BY done_at DESC", (user_id, threshold)).fetchall()
+    conn.close()
+    days_done = set()
+    for r in rows:
+        try:
+            dt = datetime.fromisoformat(r[0]) + timedelta(hours=8)
+            days_done.add(dt.strftime("%Y-%m-%d"))
+        except: pass
+    streak = 0
+    cur = _now_irkutsk()
+    while cur.strftime("%Y-%m-%d") in days_done:
+        streak += 1
+        cur -= timedelta(days=1)
+    return {"total_done": total, "streak": streak}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ЗАМЕТКИ (обновлено)
+# ═══════════════════════════════════════════════════════════════
+def add_or_update_note(user_id, subject, text, tags=""):
+    conn = _connect()
+    row = conn.execute("SELECT id FROM notes WHERE user_id=? AND LOWER(subject)=LOWER(?)",
+                       (user_id, subject)).fetchone()
+    now = datetime.now(timezone.utc).isoformat()
     if row:
-        conn.execute("UPDATE notes SET text=?, created_at=? WHERE id=?",
-            (text, datetime.now(timezone.utc).isoformat(), row[0]))
+        conn.execute(
+            "UPDATE notes SET text=?, tags=?, updated_at=?, created_at=? WHERE id=?",
+            (text, tags or "", now, now, row[0]))
     else:
-        conn.execute("INSERT INTO notes (user_id, subject, text, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, subject, text, datetime.now(timezone.utc).isoformat()))
+        conn.execute(
+            "INSERT INTO notes (user_id, subject, text, created_at, tags, pinned, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, 0, ?)",
+            (user_id, subject, text, now, tags or "", now))
     conn.commit(); conn.close()
 
-def get_user_notes(user_id):
+
+def get_user_notes(user_id, search=None, tag=None, sort="pinned"):
     conn = _connect()
-    rows = conn.execute("SELECT id, subject, text FROM notes WHERE user_id=? ORDER BY subject", (user_id,)).fetchall()
+    clauses = ["user_id=?"]
+    params = [user_id]
+    if tag:
+        clauses.append("(' ' || COALESCE(tags,'') || ' ') LIKE ?")
+        params.append(f"% {tag} %")
+    if search:
+        clauses.append("(LOWER(subject) LIKE ? OR LOWER(text) LIKE ? OR LOWER(COALESCE(tags,'')) LIKE ?)")
+        q = f"%{search.lower()}%"
+        params.extend([q, q, q])
+    order = "ORDER BY pinned DESC, LOWER(subject)"
+    if sort == "updated":
+        order = "ORDER BY COALESCE(updated_at, created_at) DESC"
+    elif sort == "subject":
+        order = "ORDER BY LOWER(subject)"
+    sql = (f"SELECT id, subject, text, COALESCE(tags,''), COALESCE(pinned,0) "
+           f"FROM notes WHERE {' AND '.join(clauses)} {order}")
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     return rows
+
 
 def delete_note_by_id(note_id, user_id):
     conn = _connect()
@@ -608,34 +723,30 @@ def delete_note_by_id(note_id, user_id):
     conn.commit(); conn.close()
 
 
-def attendance_set(user_id, date, time, subject, status):
-    if status not in ("", "was", "missed", "sick", "excused"): return False
+def toggle_note_pin(note_id, user_id):
     conn = _connect()
-    if status:
-        conn.execute("INSERT INTO attendance (user_id, date, time, subject, status, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, date, time, subject) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at",
-            (user_id, date, time, subject, status, datetime.now(timezone.utc).isoformat()))
-    else:
-        conn.execute("DELETE FROM attendance WHERE user_id=? AND date=? AND time=? AND subject=?", (user_id, date, time, subject))
+    row = conn.execute("SELECT pinned FROM notes WHERE id=? AND user_id=?",
+                       (note_id, user_id)).fetchone()
+    if row is None:
+        conn.close(); return None
+    new_val = 0 if (row[0] or 0) else 1
+    conn.execute("UPDATE notes SET pinned=? WHERE id=? AND user_id=?",
+                 (new_val, note_id, user_id))
     conn.commit(); conn.close()
-    return True
+    return bool(new_val)
 
-def attendance_get_map(user_id, dates):
-    if not dates: return {}
-    conn = _connect()
-    placeholders = ",".join("?" * len(dates))
-    rows = conn.execute(f"SELECT date, time, subject, status FROM attendance WHERE user_id=? AND date IN ({placeholders})",
-        (user_id, *dates)).fetchall()
-    conn.close()
-    return {(d, t, s): st for d, t, s, st in rows}
 
-def attendance_stats(user_id):
+def get_all_note_tags(user_id):
     conn = _connect()
-    rows = conn.execute("SELECT status, COUNT(*) FROM attendance WHERE user_id=? GROUP BY status", (user_id,)).fetchall()
+    rows = conn.execute("SELECT DISTINCT COALESCE(tags,'') FROM notes WHERE user_id=?",
+                        (user_id,)).fetchall()
     conn.close()
-    result = {"was": 0, "missed": 0, "sick": 0, "excused": 0}
-    for status, count in rows:
-        if status in result: result[status] = count
-    return result
+    tags = set()
+    for r in rows:
+        for t in (r[0] or "").split():
+            t = t.strip()
+            if t: tags.add(t)
+    return sorted(tags)
 
 
 def ai_get_history(user_id, limit=30):
@@ -673,8 +784,13 @@ def get_export_data(user_id):
         "username": username, "first_name": first_name,
         "group": saved[1] if saved else None, "group_id": saved[0] if saved else None,
         "subgroup": get_user_subgroup(user_id), "scholarship_amount": amount,
-        "tasks": [{"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]), "priority": t[5], "due_time": t[6]} for t in tasks],
-        "notes": [{"id": n[0], "subject": n[1], "text": n[2]} for n in notes],
+        "tasks": [{"id": t[0], "text": t[1], "due_date": t[2], "done": bool(t[3]),
+                   "priority": t[5], "due_time": t[6],
+                   "tags": t[8] if len(t) > 8 else "", "repeat_rule": t[9] if len(t) > 9 else None}
+                  for t in tasks],
+        "notes": [{"id": n[0], "subject": n[1], "text": n[2],
+                   "tags": n[3] if len(n) > 3 else "",
+                   "pinned": bool(n[4]) if len(n) > 4 else False} for n in notes],
         "grades": [{"id": g[0], "subject": g[1], "grade": g[2], "is_auto": bool(g[3]), "semester": g[4]} for g in grades],
         "feedback": [{"id": f[0], "text": f[1], "status": f[2], "created_at": f[3], "answered_at": f[4], "admin_reply": f[5]} for f in feedback],
         "attendance": att}
@@ -1130,7 +1246,6 @@ def _db_schema_version() -> str:
 
 
 def _make_db_snapshot(dst_path: str) -> None:
-    """Атомарный снимок SQLite с учётом WAL через Backup API."""
     src = sqlite3.connect(DB_PATH, timeout=30)
     dst = sqlite3.connect(dst_path)
     try:
@@ -1140,7 +1255,7 @@ def _make_db_snapshot(dst_path: str) -> None:
         dst.close(); src.close()
 
 
-def _check_db_integrity(path: str) -> tuple[bool, str]:
+def _check_db_integrity(path: str) -> tuple:
     try:
         c = sqlite3.connect(path)
         ok = c.execute("PRAGMA integrity_check").fetchone()[0]
@@ -1166,17 +1281,15 @@ PRESENT_STYLES = {
         "accent": (31, 184, 166), "accent2": (196, 240, 235),
         "text": (15, 25, 28), "text_soft": (110, 125, 128),
         "title_text": (255, 255, 255),
-        "layout": "image_right", "shape_style": "rect_thin",
-        "heading_case": "upper",
+        "shape_style": "rect_thin", "heading_case": "upper",
     },
     "creative": {
         "name": "Креативный",
         "bg": (245, 242, 235), "title_bg": (26, 26, 36),
-        "accent": (255, 138, 30), "accent2": (255, 90, 90),
+        "accent": (255, 138, 30), "accent2": (255, 200, 130),
         "text": (26, 20, 15), "text_soft": (140, 120, 100),
         "title_text": (255, 255, 255),
-        "layout": "image_left", "shape_style": "circle_big",
-        "heading_case": "normal",
+        "shape_style": "circle_big", "heading_case": "normal",
     },
     "minimal": {
         "name": "Минимализм",
@@ -1184,47 +1297,47 @@ PRESENT_STYLES = {
         "accent": (20, 20, 20), "accent2": (220, 220, 220),
         "text": (15, 15, 15), "text_soft": (130, 130, 130),
         "title_text": (20, 20, 20),
-        "layout": "image_right", "shape_style": "line_only",
-        "heading_case": "upper",
+        "shape_style": "line_only", "heading_case": "upper",
     },
     "dark": {
         "name": "Тёмный",
         "bg": (16, 22, 26), "title_bg": (10, 14, 18),
-        "accent": (127, 233, 255), "accent2": (62, 230, 210),
-        "text": (235, 240, 245), "text_soft": (180, 195, 200),
+        "accent": (127, 233, 255), "accent2": (40, 100, 115),
+        "text": (235, 240, 245), "text_soft": (170, 190, 195),
         "title_text": (255, 255, 255),
-        "layout": "image_full", "shape_style": "glow_line",
-        "heading_case": "normal",
+        "shape_style": "glow_line", "heading_case": "normal",
     },
     "magazine": {
         "name": "Журнальный",
         "bg": (252, 248, 240), "title_bg": (235, 220, 195),
-        "accent": (200, 30, 40), "accent2": (255, 164, 43),
+        "accent": (200, 30, 40), "accent2": (245, 200, 130),
         "text": (25, 15, 15), "text_soft": (130, 100, 90),
         "title_text": (25, 15, 15),
-        "layout": "image_left", "shape_style": "big_number",
-        "heading_case": "upper",
+        "shape_style": "big_number", "heading_case": "upper",
     },
     "neon": {
         "name": "Неон",
         "bg": (18, 10, 30), "title_bg": (10, 6, 22),
-        "accent": (255, 60, 180), "accent2": (127, 233, 255),
+        "accent": (255, 60, 180), "accent2": (100, 30, 90),
         "text": (240, 240, 255), "text_soft": (200, 180, 240),
         "title_text": (255, 255, 255),
-        "layout": "image_right", "shape_style": "neon_line",
-        "heading_case": "normal",
+        "shape_style": "neon_line", "heading_case": "normal",
     },
 }
 
-_last_used_style = {"id": None}
-
+_style_history = {"recent": []}
 
 def _pick_random_style() -> str:
-    keys = list(PRESENT_STYLES.keys())
-    if _last_used_style["id"] and len(keys) > 1:
-        keys = [k for k in keys if k != _last_used_style["id"]]
-    chosen = random.choice(keys)
-    _last_used_style["id"] = chosen
+    """Выбирает стиль, исключая последние 3 использованных."""
+    all_keys = list(PRESENT_STYLES.keys())
+    recent = _style_history["recent"][-3:]
+    candidates = [k for k in all_keys if k not in recent]
+    if not candidates:
+        candidates = all_keys
+    chosen = random.choice(candidates)
+    _style_history["recent"].append(chosen)
+    if len(_style_history["recent"]) > 10:
+        _style_history["recent"] = _style_history["recent"][-10:]
     return chosen
 
 
@@ -1314,11 +1427,6 @@ def _validate_plan(plan: dict, topic: str) -> list:
 async def _generate_slide_plan(topic: str, slides_count: int,
                                extra_context: str = "", user_wishes: str = "",
                                meta: dict = None) -> dict:
-    """Строит план презентации СТРОГО из материала пользователя.
-
-    ИИ НЕ добавляет собственных фактов, цифр, имён, дат и источников.
-    Если данных мало — вернёт сколько хватает, остальное оставит пустым.
-    """
     if not extra_context or len(extra_context.strip()) < 40:
         raise ValueError(
             "Материал пуст или слишком короткий. "
@@ -1382,11 +1490,11 @@ async def _generate_slide_plan(topic: str, slides_count: int,
 - Количество слайдов — ровно столько, сколько позволяет материал. Если материала мало — меньше. МАКСИМУМ = """ + str(slides_count) + """.
 - Первый содержательный слайд — обзор/введение (из материала).
 - Последний — вывод (только если вывод есть в материале явно).
-- Распределяй типы: bullets (40%), flow (20%), compare (15%), numbers (10%), cards (10%), chart (5%) — но ТОЛЬКО если материал это позволяет. Иначе — bullets.
+- РАСПРЕДЕЛЯЙ типы РАЗНООБРАЗНО: bullets, flow, compare, numbers, cards, chart — по смыслу материала.
 - bullets: 3-5 пунктов, каждый — фраза из материала (не переписывай красиво, сохраняй суть).
 - numbers: только если в материале есть минимум 3 числовых факта.
 - chart: только если в материале есть явные категории + значения.
-- sources: только источники, ЯВНО упомянутые в материале (например, «по данным Росстата 2023», «учебник Иванова»). Если источников нет — верни пустой массив [].
+- sources: только источники, ЯВНО упомянутые в материале. Если источников нет — верни пустой массив [].
 - Никаких «это важно», «данная тема актуальна», «в современном мире» — если этого нет в материале.
 - Только JSON. Без пояснений.
 """
@@ -1442,21 +1550,70 @@ def _add_bar_chart(slide, x, y, w, h, categories, values, unit="", title=""):
         return None
 
 
+# ─── Layout'ы для разных типов слайдов ───
+BULLET_LAYOUTS = [
+    "text_left_image_right",
+    "image_left_text_right",
+    "full_text_top_image_bottom",
+    "two_columns_text",
+    "big_first_bullet",
+    "accent_block_left",
+]
+
+FLOW_LAYOUTS = [
+    "flow_horizontal",
+    "flow_vertical",
+    "flow_zigzag",
+]
+
+COMPARE_LAYOUTS = [
+    "compare_two_cols",
+    "compare_split_diagonal",
+]
+
+NUMBERS_LAYOUTS = [
+    "numbers_row",
+    "numbers_grid_2x2",
+    "numbers_hero_one",
+]
+
+CARDS_LAYOUTS = [
+    "cards_row",
+    "cards_stack_vertical",
+]
+
+CHART_LAYOUTS = [
+    "chart_full",
+    "chart_with_text",
+]
+
+def _pick_layout(kind: str, idx: int) -> str:
+    """Детерминированно выбирает layout по индексу слайда + типу."""
+    pools = {
+        "bullets": BULLET_LAYOUTS,
+        "flow": FLOW_LAYOUTS,
+        "compare": COMPARE_LAYOUTS,
+        "numbers": NUMBERS_LAYOUTS,
+        "cards": CARDS_LAYOUTS,
+        "chart": CHART_LAYOUTS,
+    }
+    pool = pools.get(kind, BULLET_LAYOUTS)
+    return pool[idx % len(pool)]
+
+
 def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     if not _PPTX_AVAILABLE: raise RuntimeError("python-pptx не установлена")
     style = PRESENT_STYLES.get(style_id, PRESENT_STYLES["academic"])
     prs = Presentation()
     prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     blank = prs.slide_layouts[6]
-    LAYOUT = style.get("layout", "image_right")
     SHAPE = style.get("shape_style", "rect_thin")
     CASE = style.get("heading_case", "normal")
 
     def rgb(t): return RGBColor(*t)
 
     def add_text(slide, x, y, w, h, text, size=16, bold=False, color=None,
-                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False,
-                 spacing=None):
+                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False, spacing=None):
         base = color if color else style["text"]
         c = _pick_readable(base, style["bg"])
         tb = slide.shapes.add_textbox(x, y, w, h)
@@ -1464,13 +1621,13 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         p = tf.paragraphs[0]; p.alignment = align
         if spacing is not None:
             try: p.line_spacing = spacing
-            except Exception: pass
+            except: pass
         run = p.add_run(); run.text = str(text)
         run.font.size = Pt(size); run.font.bold = bold; run.font.italic = italic
         run.font.color.rgb = rgb(c); run.font.name = "DejaVu Sans"
         return tb
 
-    def add_bullets(slide, x, y, w, h, bullets, size=13):
+    def add_bullets(slide, x, y, w, h, bullets, size=13, bullet_char="•"):
         if not bullets: return
         tf = slide.shapes.add_textbox(x, y, w, h).text_frame
         tf.word_wrap = True
@@ -1478,9 +1635,9 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
             p.space_after = Pt(11)
             try: p.line_spacing = 1.15
-            except Exception: pass
+            except: pass
             run = p.add_run()
-            run.text = "•  " + str(b)
+            run.text = f"{bullet_char}  {b}"
             run.font.size = Pt(size)
             run.font.color.rgb = rgb(_pick_readable(style["text"], style["bg"]))
             run.font.name = "DejaVu Sans"
@@ -1491,8 +1648,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         iw = w - Inches(0.4); ih = h - Inches(0.4)
         _add_round_rect(slide, ix, iy, iw, ih, style["bg"])
         tf = slide.shapes.add_textbox(ix, iy, iw, ih).text_frame
-        tf.word_wrap = True
-        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        tf.word_wrap = True; tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
         r = p.add_run(); r.text = "СХЕМА / ИЛЛЮСТРАЦИЯ"
         r.font.size = Pt(12); r.font.bold = True
@@ -1502,7 +1658,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         r2.font.size = Pt(11); r2.font.italic = True
         r2.font.color.rgb = rgb(_pick_readable(style["text_soft"], style["bg"]))
 
-    def _add_page_number(slide, n: int):
+    def _add_page_number(slide, n):
         add_text(slide, Inches(12.3), Inches(7.0), Inches(0.8), Inches(0.4),
                  str(n), size=11, color=style["text_soft"], align=PP_ALIGN.RIGHT)
 
@@ -1551,8 +1707,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
     if plan.get("year"): meta_line.append(str(plan["year"]))
     if meta_line:
         add_text(s0, Inches(5.4), Inches(6.1), Inches(7.4), Inches(0.9),
-                 " · ".join(meta_line), size=12,
-                 color=style["accent2"], align=PP_ALIGN.LEFT)
+                 " · ".join(meta_line), size=12, color=style["accent2"])
 
     slides = plan.get("slides", [])
     page_num = 2
@@ -1576,99 +1731,221 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
         _header(s, sl.get("heading", "Слайд"))
 
         stype = (sl.get("type") or "bullets").lower()
+        layout = _pick_layout(stype, idx)
         notes = sl.get("notes")
         if notes:
             try: s.notes_slide.notes_text_frame.text = str(notes)
-            except Exception: pass
+            except: pass
 
+        # ─── BULLETS — 6 разных композиций ───
         if stype == "bullets":
-            bullets = sl.get("bullets", [])
+            bullets = sl.get("bullets", []) or []
             hint = sl.get("image_hint", "")
-            if LAYOUT == "image_right":
+            if layout == "text_left_image_right":
                 add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9), bullets, size=13)
                 add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5), hint)
-            elif LAYOUT == "image_left":
+            elif layout == "image_left_text_right":
                 add_image_placeholder(s, Inches(0.9), Inches(2.0), Inches(4.6), Inches(4.5), hint)
                 add_bullets(s, Inches(5.9), Inches(2.0), Inches(6.9), Inches(4.9), bullets, size=13)
+            elif layout == "full_text_top_image_bottom":
+                add_bullets(s, Inches(1.0), Inches(2.0), Inches(11.3), Inches(2.5), bullets[:3], size=13)
+                add_image_placeholder(s, Inches(1.0), Inches(4.8), Inches(11.3), Inches(2.4), hint)
+            elif layout == "two_columns_text":
+                half = max(1, (len(bullets) + 1) // 2)
+                add_bullets(s, Inches(1.0), Inches(2.0), Inches(5.5), Inches(4.9), bullets[:half], size=13)
+                add_bullets(s, Inches(7.0), Inches(2.0), Inches(5.5), Inches(4.9), bullets[half:], size=13)
+            elif layout == "big_first_bullet":
+                if bullets:
+                    _add_round_rect(s, Inches(1.0), Inches(2.0), Inches(11.3), Inches(1.5),
+                                    style["accent2"], style["accent"])
+                    add_text(s, Inches(1.3), Inches(2.25), Inches(10.7), Inches(1.1),
+                             bullets[0], size=16, bold=True, color=style["text"],
+                             align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE)
+                    add_bullets(s, Inches(1.0), Inches(3.8), Inches(11.3), Inches(3.2),
+                                bullets[1:5], size=12)
+            elif layout == "accent_block_left":
+                _add_round_rect(s, Inches(0.7), Inches(2.0), Inches(5.0), Inches(4.5),
+                                style["accent2"], style["accent"])
+                add_bullets(s, Inches(1.0), Inches(2.3), Inches(4.5), Inches(4.0), bullets, size=12)
+                add_image_placeholder(s, Inches(6.2), Inches(2.0), Inches(6.6), Inches(4.5), hint)
             else:
-                add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.5), Inches(4.9), bullets, size=13)
-                add_image_placeholder(s, Inches(7.8), Inches(2.0), Inches(4.95), Inches(4.5), hint)
+                add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9), bullets, size=13)
+                add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5), hint)
 
+        # ─── FLOW — 3 композиции ───
         elif stype == "flow":
             steps = sl.get("steps", [])[:4]
             n = len(steps) if steps else 1
-            total_w = Inches(12.0)
-            gap = Inches(0.55)
-            box_w = int((total_w - gap * (n - 1)) / n) if n > 1 else total_w
-            box_h = Inches(2.6)
-            y0 = Inches(2.7); x0 = Inches(0.7)
-            for i, stp in enumerate(steps):
-                bx = x0 + i * (box_w + gap)
-                _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"], style["accent"])
-                add_text(s, bx + Inches(0.15), y0 + Inches(0.25), box_w - Inches(0.3), Inches(0.7),
-                         stp.get("label", f"Шаг {i+1}"), size=16, bold=True,
-                         color=style["accent"], align=PP_ALIGN.CENTER)
-                add_text(s, bx + Inches(0.15), y0 + Inches(1.0), box_w - Inches(0.3), Inches(1.5),
-                         stp.get("text", ""), size=11, color=style["text"],
-                         align=PP_ALIGN.CENTER, spacing=1.1)
-                if i < n - 1:
-                    _add_arrow(s, bx + box_w + Inches(0.06), y0 + box_h / 2 - Inches(0.22),
-                               gap - Inches(0.12), Inches(0.44), style["accent"])
+            if layout == "flow_vertical":
+                y0 = Inches(2.1); box_h = Inches(1.05); gap_y = Inches(0.2)
+                for i, stp in enumerate(steps):
+                    by = y0 + i * (box_h + gap_y)
+                    _add_round_rect(s, Inches(1.0), by, Inches(11.3), box_h,
+                                    style["accent2"], style["accent"])
+                    add_text(s, Inches(1.3), by, Inches(2.5), box_h,
+                             stp.get("label", f"Шаг {i+1}"), size=15, bold=True,
+                             color=style["accent"], anchor=MSO_ANCHOR.MIDDLE)
+                    add_text(s, Inches(3.9), by, Inches(8.2), box_h,
+                             stp.get("text", ""), size=11, color=style["text"],
+                             anchor=MSO_ANCHOR.MIDDLE)
+            elif layout == "flow_zigzag":
+                cols = 2
+                box_w = Inches(5.6); box_h = Inches(2.2)
+                gx = Inches(0.3); gy = Inches(0.25)
+                for i, stp in enumerate(steps):
+                    r = i // cols; c = i % cols
+                    bx = Inches(0.85) + c * (box_w + gx)
+                    by = Inches(2.2) + r * (box_h + gy)
+                    _add_round_rect(s, bx, by, box_w, box_h, style["accent2"], style["accent"])
+                    add_text(s, bx + Inches(0.15), by + Inches(0.15), box_w - Inches(0.3), Inches(0.6),
+                             stp.get("label", f"Шаг {i+1}"), size=14, bold=True,
+                             color=style["accent"], align=PP_ALIGN.CENTER)
+                    add_text(s, bx + Inches(0.15), by + Inches(0.8), box_w - Inches(0.3), Inches(1.3),
+                             stp.get("text", ""), size=10, color=style["text"],
+                             align=PP_ALIGN.CENTER, spacing=1.1)
+            else:
+                total_w = Inches(12.0); gap = Inches(0.55)
+                box_w = int((total_w - gap * (n - 1)) / n) if n > 1 else total_w
+                box_h = Inches(2.6); y0 = Inches(2.7); x0 = Inches(0.7)
+                for i, stp in enumerate(steps):
+                    bx = x0 + i * (box_w + gap)
+                    _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"], style["accent"])
+                    add_text(s, bx + Inches(0.15), y0 + Inches(0.25), box_w - Inches(0.3), Inches(0.7),
+                             stp.get("label", f"Шаг {i+1}"), size=16, bold=True,
+                             color=style["accent"], align=PP_ALIGN.CENTER)
+                    add_text(s, bx + Inches(0.15), y0 + Inches(1.0), box_w - Inches(0.3), Inches(1.5),
+                             stp.get("text", ""), size=11, color=style["text"],
+                             align=PP_ALIGN.CENTER, spacing=1.1)
+                    if i < n - 1:
+                        _add_arrow(s, bx + box_w + Inches(0.06), y0 + box_h / 2 - Inches(0.22),
+                                   gap - Inches(0.12), Inches(0.44), style["accent"])
 
+        # ─── COMPARE — 2 композиции ───
         elif stype == "compare":
             lt = sl.get("left_title", "A"); rt = sl.get("right_title", "B")
             li = sl.get("left_items", [])[:4]; ri = sl.get("right_items", [])[:4]
-            col_w = Inches(5.7); col_h = Inches(4.5)
-            y0 = Inches(2.1)
-            _add_round_rect(s, Inches(0.75), y0, col_w, col_h, style["accent2"])
-            add_text(s, Inches(0.9), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
-                     lt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
-            add_bullets(s, Inches(0.95), y0 + Inches(0.95), col_w - Inches(0.4), col_h - Inches(1.1), li, size=11)
-            _add_round_rect(s, Inches(6.85), y0, col_w, col_h, style["bg"], style["accent"])
-            add_text(s, Inches(7.0), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
-                     rt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
-            add_bullets(s, Inches(7.05), y0 + Inches(0.95), col_w - Inches(0.4), col_h - Inches(1.1), ri, size=11)
+            if layout == "compare_split_diagonal":
+                _add_round_rect(s, Inches(0.7), Inches(2.0), Inches(6.5), Inches(2.2),
+                                style["accent2"], style["accent"])
+                add_text(s, Inches(0.9), Inches(2.15), Inches(6.1), Inches(0.5),
+                         lt, size=15, bold=True, color=style["accent"])
+                add_bullets(s, Inches(0.9), Inches(2.65), Inches(6.1), Inches(1.5), li, size=11)
+                _add_round_rect(s, Inches(6.1), Inches(4.4), Inches(6.5), Inches(2.2),
+                                style["bg"], style["accent"])
+                add_text(s, Inches(6.3), Inches(4.55), Inches(6.1), Inches(0.5),
+                         rt, size=15, bold=True, color=style["accent"])
+                add_bullets(s, Inches(6.3), Inches(5.05), Inches(6.1), Inches(1.5), ri, size=11)
+            else:
+                col_w = Inches(5.7); col_h = Inches(4.5); y0 = Inches(2.1)
+                _add_round_rect(s, Inches(0.75), y0, col_w, col_h, style["accent2"])
+                add_text(s, Inches(0.9), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
+                         lt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
+                add_bullets(s, Inches(0.95), y0 + Inches(0.95), col_w - Inches(0.4),
+                            col_h - Inches(1.1), li, size=11)
+                _add_round_rect(s, Inches(6.85), y0, col_w, col_h, style["bg"], style["accent"])
+                add_text(s, Inches(7.0), y0 + Inches(0.2), col_w - Inches(0.3), Inches(0.6),
+                         rt, size=16, bold=True, color=style["accent"], align=PP_ALIGN.CENTER)
+                add_bullets(s, Inches(7.05), y0 + Inches(0.95), col_w - Inches(0.4),
+                            col_h - Inches(1.1), ri, size=11)
 
+        # ─── NUMBERS — 3 композиции ───
         elif stype == "numbers":
             facts = sl.get("facts", [])[:4]
             n = len(facts) if facts else 1
-            gap = Inches(0.4)
-            box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
-            y0 = Inches(2.6); box_h = Inches(3.4); x0 = Inches(0.7)
-            for i, f in enumerate(facts):
-                bx = x0 + i * (box_w + gap)
-                _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"])
-                add_text(s, bx + Inches(0.1), y0 + Inches(0.4), box_w - Inches(0.2), Inches(1.6),
-                         f.get("number", "—"), size=40, bold=True,
-                         color=style["accent"], align=PP_ALIGN.CENTER)
-                add_text(s, bx + Inches(0.15), y0 + Inches(2.1), box_w - Inches(0.3), Inches(1.1),
-                         f.get("label", ""), size=12, color=style["text"],
-                         align=PP_ALIGN.CENTER, spacing=1.1)
+            if layout == "numbers_grid_2x2":
+                box_w = Inches(5.6); box_h = Inches(2.2)
+                gx = Inches(0.3); gy = Inches(0.25)
+                for i, f in enumerate(facts):
+                    r = i // 2; c = i % 2
+                    bx = Inches(0.85) + c * (box_w + gx)
+                    by = Inches(2.2) + r * (box_h + gy)
+                    _add_round_rect(s, bx, by, box_w, box_h, style["accent2"])
+                    add_text(s, bx + Inches(0.15), by + Inches(0.15), box_w - Inches(0.3), Inches(1.2),
+                             f.get("number", "—"), size=32, bold=True,
+                             color=style["accent"], align=PP_ALIGN.CENTER)
+                    add_text(s, bx + Inches(0.15), by + Inches(1.35), box_w - Inches(0.3), Inches(0.7),
+                             f.get("label", ""), size=11, color=style["text"],
+                             align=PP_ALIGN.CENTER)
+            elif layout == "numbers_hero_one" and facts:
+                _add_round_rect(s, Inches(0.7), Inches(2.1), Inches(6.5), Inches(4.5),
+                                style["accent2"], style["accent"])
+                add_text(s, Inches(0.9), Inches(2.6), Inches(6.1), Inches(2.0),
+                         facts[0].get("number", "—"), size=72, bold=True,
+                         color=style["accent"], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+                add_text(s, Inches(0.9), Inches(4.9), Inches(6.1), Inches(1.2),
+                         facts[0].get("label", ""), size=14, color=style["text"],
+                         align=PP_ALIGN.CENTER)
+                y = Inches(2.3)
+                for f in facts[1:4]:
+                    _add_round_rect(s, Inches(7.5), y, Inches(5.2), Inches(1.3),
+                                    style["bg"], style["accent"])
+                    add_text(s, Inches(7.7), y + Inches(0.15), Inches(2.0), Inches(1.0),
+                             f.get("number", "—"), size=20, bold=True,
+                             color=style["accent"], anchor=MSO_ANCHOR.MIDDLE)
+                    add_text(s, Inches(9.7), y + Inches(0.15), Inches(2.9), Inches(1.0),
+                             f.get("label", ""), size=11, color=style["text"],
+                             anchor=MSO_ANCHOR.MIDDLE)
+                    y += Inches(1.5)
+            else:
+                gap = Inches(0.4)
+                box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
+                y0 = Inches(2.6); box_h = Inches(3.4); x0 = Inches(0.7)
+                for i, f in enumerate(facts):
+                    bx = x0 + i * (box_w + gap)
+                    _add_round_rect(s, bx, y0, box_w, box_h, style["accent2"])
+                    add_text(s, bx + Inches(0.1), y0 + Inches(0.4), box_w - Inches(0.2), Inches(1.6),
+                             f.get("number", "—"), size=40, bold=True,
+                             color=style["accent"], align=PP_ALIGN.CENTER)
+                    add_text(s, bx + Inches(0.15), y0 + Inches(2.1), box_w - Inches(0.3), Inches(1.1),
+                             f.get("label", ""), size=12, color=style["text"],
+                             align=PP_ALIGN.CENTER, spacing=1.1)
 
+        # ─── CARDS — 2 композиции ───
         elif stype == "cards":
             cards = sl.get("cards", [])[:4]
             n = len(cards) if cards else 1
-            gap = Inches(0.4)
-            box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
-            y0 = Inches(2.5); box_h = Inches(3.6); x0 = Inches(0.7)
-            for i, c in enumerate(cards):
-                bx = x0 + i * (box_w + gap)
-                _add_round_rect(s, bx, y0, box_w, box_h, style["bg"], style["accent"])
-                icon_size = Inches(0.9)
-                icon_x = bx + (box_w - icon_size) / 2
-                icon_y = y0 + Inches(0.35)
-                _add_oval(s, icon_x, icon_y, icon_size, icon_size, style["accent"])
-                add_text(s, icon_x, icon_y, icon_size, icon_size,
-                         str(c.get("icon", str(i+1))), size=22, bold=True,
-                         color=style["title_text"], align=PP_ALIGN.CENTER,
-                         anchor=MSO_ANCHOR.MIDDLE)
-                add_text(s, bx + Inches(0.15), y0 + Inches(1.5), box_w - Inches(0.3), Inches(0.8),
-                         c.get("title", ""), size=14, bold=True, color=style["text"],
-                         align=PP_ALIGN.CENTER)
-                add_text(s, bx + Inches(0.15), y0 + Inches(2.25), box_w - Inches(0.3), Inches(1.2),
-                         c.get("text", ""), size=10, color=style["text_soft"],
-                         align=PP_ALIGN.CENTER, spacing=1.1)
+            if layout == "cards_stack_vertical":
+                y = Inches(2.1); box_h = Inches(1.15); gap_y = Inches(0.15)
+                for i, c in enumerate(cards):
+                    by = y + i * (box_h + gap_y)
+                    _add_round_rect(s, Inches(1.0), by, Inches(11.3), box_h,
+                                    style["bg"], style["accent"])
+                    icon_size = Inches(0.8)
+                    _add_oval(s, Inches(1.2), by + (box_h - icon_size) / 2, icon_size, icon_size,
+                              style["accent"])
+                    add_text(s, Inches(1.2), by + (box_h - icon_size) / 2, icon_size, icon_size,
+                             str(c.get("icon", str(i+1))), size=18, bold=True,
+                             color=style["title_text"], align=PP_ALIGN.CENTER,
+                             anchor=MSO_ANCHOR.MIDDLE)
+                    add_text(s, Inches(2.3), by + Inches(0.15), Inches(3.5), Inches(0.85),
+                             c.get("title", ""), size=14, bold=True, color=style["text"],
+                             anchor=MSO_ANCHOR.MIDDLE)
+                    add_text(s, Inches(5.9), by + Inches(0.15), Inches(6.3), Inches(0.85),
+                             c.get("text", ""), size=11, color=style["text_soft"],
+                             anchor=MSO_ANCHOR.MIDDLE)
+            else:
+                gap = Inches(0.4)
+                box_w = int((Inches(12.0) - gap * (n - 1)) / n) if n > 1 else Inches(12.0)
+                y0 = Inches(2.5); box_h = Inches(3.6); x0 = Inches(0.7)
+                for i, c in enumerate(cards):
+                    bx = x0 + i * (box_w + gap)
+                    _add_round_rect(s, bx, y0, box_w, box_h, style["bg"], style["accent"])
+                    icon_size = Inches(0.9)
+                    icon_x = bx + (box_w - icon_size) / 2
+                    icon_y = y0 + Inches(0.35)
+                    _add_oval(s, icon_x, icon_y, icon_size, icon_size, style["accent"])
+                    add_text(s, icon_x, icon_y, icon_size, icon_size,
+                             str(c.get("icon", str(i+1))), size=22, bold=True,
+                             color=style["title_text"], align=PP_ALIGN.CENTER,
+                             anchor=MSO_ANCHOR.MIDDLE)
+                    add_text(s, bx + Inches(0.15), y0 + Inches(1.5), box_w - Inches(0.3), Inches(0.8),
+                             c.get("title", ""), size=14, bold=True, color=style["text"],
+                             align=PP_ALIGN.CENTER)
+                    add_text(s, bx + Inches(0.15), y0 + Inches(2.25), box_w - Inches(0.3), Inches(1.2),
+                             c.get("text", ""), size=10, color=style["text_soft"],
+                             align=PP_ALIGN.CENTER, spacing=1.1)
 
+        # ─── CHART — 2 композиции ───
         elif stype == "chart":
             cats = sl.get("categories") or []
             vals = sl.get("values") or []
@@ -1676,11 +1953,17 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             chart_title = sl.get("chart_title", "")
             try:
                 vals = [float(v) for v in vals]
-            except Exception:
+            except:
                 vals = []
             if cats and vals and len(cats) == len(vals):
-                _add_bar_chart(s, Inches(1.0), Inches(2.0), Inches(11.3), Inches(4.7),
-                               cats, vals, unit, chart_title)
+                if layout == "chart_with_text":
+                    _add_bar_chart(s, Inches(0.9), Inches(2.0), Inches(7.5), Inches(4.7),
+                                   cats, vals, unit, chart_title)
+                    add_bullets(s, Inches(8.7), Inches(2.2), Inches(3.9), Inches(4.5),
+                                sl.get("bullets", []), size=12)
+                else:
+                    _add_bar_chart(s, Inches(1.0), Inches(2.0), Inches(11.3), Inches(4.7),
+                                   cats, vals, unit, chart_title)
             else:
                 add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9),
                             sl.get("bullets", []), size=13)
@@ -1709,8 +1992,7 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
             if src.get("title"): parts.append(f"«{src['title']}»")
             if src.get("publisher"): parts.append(str(src["publisher"]))
             if src.get("year"): parts.append(str(src["year"]))
-            line = f"{i}. " + ". ".join(parts)
-            lines.append(line)
+            lines.append(f"{i}. " + ". ".join(parts))
         add_bullets(ss, Inches(1.0), Inches(2.2), Inches(11.3), Inches(4.6), lines, size=12)
         _add_page_number(ss, page_num); page_num += 1
 
@@ -1973,8 +2255,9 @@ async def api_set_subgroup(request):
     return web.json_response({"ok": True})
 
 
+# ─── ЗАДАЧИ API ───
 def _task_to_dict(row):
-    tid, text, due_date, done, created_at, priority, due_time = row
+    tid, text, due_date, done, created_at, priority, due_time, tags, repeat_rule = row
     overdue = False
     if due_date and not done:
         try:
@@ -1985,7 +2268,8 @@ def _task_to_dict(row):
     p = priority if priority is not None else 2
     if p not in (1, 2, 3): p = 2
     return {"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
-        "priority": p, "done": bool(done), "overdue": overdue}
+            "priority": p, "done": bool(done), "overdue": overdue,
+            "tags": tags or "", "repeat_rule": repeat_rule}
 
 
 async def api_tasks(request):
@@ -1993,18 +2277,28 @@ async def api_tasks(request):
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
     show_done = request.query.get("done", "0") == "1"
+    tag = (request.query.get("tag") or "").strip() or None
+    search = (request.query.get("search") or "").strip() or None
+    sort_by = (request.query.get("sort") or "due").strip()
+    if sort_by not in ("due", "priority", "created"): sort_by = "due"
+
     if show_done:
-        rows = get_done_tasks(user_id, days=7); tasks = []
+        rows = get_done_tasks(user_id, days=30)
+        tasks = []
         for r in rows:
-            tid, text, due_date, done, created_at, priority, due_time, done_at = r
-            p = priority if priority is not None else 2
-            if p not in (1, 2, 3): p = 2
+            tid, text, due_date, done, created_at, priority, due_time, done_at, tags = r
+            p = priority if priority in (1, 2, 3) else 2
             tasks.append({"id": tid, "text": text, "due_date": due_date, "due_time": due_time,
-                "priority": p, "done": True, "done_at": done_at, "overdue": False})
+                          "priority": p, "done": True, "done_at": done_at, "overdue": False,
+                          "tags": tags or "", "repeat_rule": None})
     else:
-        rows = get_user_tasks(user_id, only_active=True); tasks = [_task_to_dict(r) for r in rows]
+        rows = get_user_tasks(user_id, only_active=True, tag=tag, search=search, sort_by=sort_by)
+        tasks = [_task_to_dict(r) for r in rows]
     active, done_count = count_user_tasks(user_id)
-    return web.json_response({"tasks": tasks, "active": active, "done": done_count})
+    stats = task_stats(user_id)
+    tags = get_all_task_tags(user_id)
+    return web.json_response({"tasks": tasks, "active": active, "done": done_count,
+        "stats": stats, "tags": tags})
 
 
 async def api_task_add(request):
@@ -2015,10 +2309,15 @@ async def api_task_add(request):
     text = (body.get("text") or "").strip()
     if not text: return web.json_response({"error": "empty_text"}, status=400)
     if len(text) > 500: text = text[:500]
-    due_date = body.get("due_date") or None; due_time = body.get("due_time") or None
+    due_date = body.get("due_date") or None
+    due_time = body.get("due_time") or None
     priority = int(body.get("priority", 2))
     if priority not in (1, 2, 3): priority = 2
-    tid = add_task(user_id, text, due_date, priority, due_time)
+    tags = (body.get("tags") or "").strip()[:200]
+    repeat_rule = body.get("repeat_rule") or None
+    if repeat_rule not in (None, "", "daily", "weekly", "monthly"): repeat_rule = None
+    if not repeat_rule: repeat_rule = None
+    tid = add_task(user_id, text, due_date, priority, due_time, tags=tags, repeat_rule=repeat_rule)
     return web.json_response({"ok": True, "id": tid})
 
 
@@ -2031,17 +2330,31 @@ async def api_task_update(request):
     if not tid: return web.json_response({"error": "no_id"}, status=400)
     row = get_task(tid, user_id)
     if not row: return web.json_response({"error": "not_found"}, status=404)
+
     if body.get("done") is True:
         mark_task_done(tid, user_id)
         return web.json_response({"ok": True, "done": True})
-    text = body.get("text"); due_date = body.get("due_date"); due_time = body.get("due_time")
-    priority = body.get("priority"); reset_due = body.get("reset_due", False)
+
+    text = body.get("text")
+    due_date = body.get("due_date")
+    due_time = body.get("due_time")
+    priority = body.get("priority")
+    tags = body.get("tags")
+    repeat_rule = body.get("repeat_rule")
+    if repeat_rule is not None and repeat_rule not in ("", "daily", "weekly", "monthly"):
+        repeat_rule = None
+    reset_due = body.get("reset_due", False)
     if priority is not None:
         priority = int(priority)
         if priority not in (1, 2, 3): priority = 2
-    update_task(tid, user_id, text=text if text is not None else None,
-        due_date=due_date if due_date else None, priority=priority,
-        due_time=due_time if due_time is not None else None, reset_due=reset_due)
+    update_task(tid, user_id,
+        text=text if text is not None else None,
+        due_date=due_date if due_date else None,
+        priority=priority,
+        due_time=due_time if due_time is not None else None,
+        reset_due=reset_due,
+        tags=tags if tags is not None else None,
+        repeat_rule=repeat_rule if repeat_rule is not None else None)
     return web.json_response({"ok": True})
 
 
@@ -2065,12 +2378,18 @@ async def api_task_clear(request):
     return web.json_response({"ok": True})
 
 
+# ─── ЗАМЕТКИ API ───
 async def api_notes(request):
     init_data = request.query.get("initData", "")
     user_id = _verify_webapp_init(init_data)
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    rows = get_user_notes(user_id)
-    return web.json_response({"notes": [{"id": nid, "subject": subj, "text": txt} for nid, subj, txt in rows]})
+    search = (request.query.get("search") or "").strip() or None
+    tag = (request.query.get("tag") or "").strip() or None
+    sort = (request.query.get("sort") or "pinned").strip()
+    rows = get_user_notes(user_id, search=search, tag=tag, sort=sort)
+    items = [{"id": r[0], "subject": r[1], "text": r[2], "tags": r[3], "pinned": bool(r[4])}
+             for r in rows]
+    return web.json_response({"notes": items, "tags": get_all_note_tags(user_id)})
 
 
 async def api_note_save(request):
@@ -2078,11 +2397,13 @@ async def api_note_save(request):
     except: return web.json_response({"error": "bad_json"}, status=400)
     user_id = _verify_webapp_init(body.get("initData", ""))
     if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
-    subject = (body.get("subject") or "").strip(); text = (body.get("text") or "").strip()
+    subject = (body.get("subject") or "").strip()
+    text = (body.get("text") or "").strip()
+    tags = (body.get("tags") or "").strip()[:200]
     if not subject or not text: return web.json_response({"error": "empty"}, status=400)
     if len(subject) > 100: subject = subject[:100]
-    if len(text) > 500: text = text[:500]
-    add_or_update_note(user_id, subject, text)
+    if len(text) > 5000: text = text[:5000]
+    add_or_update_note(user_id, subject, text, tags=tags)
     return web.json_response({"ok": True})
 
 
@@ -2095,6 +2416,18 @@ async def api_note_delete(request):
     if not nid: return web.json_response({"error": "no_id"}, status=400)
     delete_note_by_id(nid, user_id)
     return web.json_response({"ok": True})
+
+
+async def api_note_pin(request):
+    try: body = await request.json()
+    except: return web.json_response({"error": "bad_json"}, status=400)
+    user_id = _verify_webapp_init(body.get("initData", ""))
+    if not user_id: return web.json_response({"error": "unauthorized"}, status=401)
+    nid = int(body.get("id", 0))
+    if not nid: return web.json_response({"error": "no_id"}, status=400)
+    res = toggle_note_pin(nid, user_id)
+    if res is None: return web.json_response({"error": "not_found"}, status=404)
+    return web.json_response({"ok": True, "pinned": res})
 
 
 async def api_notify_set(request):
@@ -2508,6 +2841,7 @@ def generate_user_pdf(user_id):
                 if t.get("due_time"): due += f" {t['due_time']}"
                 meta.append(due)
             meta.append(f"приоритет: {prio_map.get(t.get('priority', 2), 'средний')}")
+            if t.get("tags"): meta.append(f"теги: {t['tags']}")
             pdf.set_font("Main", size=9); pdf.set_text_color(130, 130, 130)
             pdf.cell(0, 5, "    " + " · ".join(meta), ln=True)
             pdf.set_text_color(0, 0, 0); pdf.set_font("Main", size=11)
@@ -2516,9 +2850,13 @@ def generate_user_pdf(user_id):
     if not notes: pdf.cell(0, 6, "Нет заметок", ln=True)
     else:
         for n in notes:
-            pdf.set_font("Main", size=11); pdf.multi_cell(0, 5.5, f"{n['subject']}:")
+            pin = "📌 " if n.get("pinned") else ""
+            pdf.set_font("Main", size=11); pdf.multi_cell(0, 5.5, f"{pin}{n['subject']}:")
             pdf.set_font("Main", size=10); pdf.set_text_color(70, 70, 70)
             pdf.multi_cell(0, 5, "    " + _pdf_short(n["text"], 400))
+            if n.get("tags"):
+                pdf.set_font("Main", size=9); pdf.set_text_color(120, 120, 120)
+                pdf.cell(0, 5, "    теги: " + n["tags"], ln=True)
             pdf.set_text_color(0, 0, 0); pdf.ln(1)
     section("Стипендия")
     amount = data.get("scholarship_amount")
@@ -2677,6 +3015,7 @@ async def start_webapp():
     app.router.add_get("/api/notes", api_notes)
     app.router.add_post("/api/note-save", api_note_save)
     app.router.add_post("/api/note-delete", api_note_delete)
+    app.router.add_post("/api/note-pin", api_note_pin)
     app.router.add_post("/api/notify-set", api_notify_set)
     app.router.add_post("/api/notify-set-before", api_notify_set_before)
     app.router.add_get("/api/quote", api_quote)
@@ -3068,7 +3407,6 @@ async def change_worker():
 
 
 async def cleanup_cache_worker():
-    """Раз в сутки чистит старый кэш расписания."""
     while True:
         try:
             await asyncio.sleep(3600)
@@ -3084,8 +3422,6 @@ async def cleanup_cache_worker():
 
 
 async def autobackup_worker():
-    """Раз в сутки в 04:00 по Иркутску — снимок в ./backups/.
-    Ротация: удаляем бэкапы старше 14 дней."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     backup_dir = os.path.join(base_dir, "backups")
     try: os.makedirs(backup_dir, exist_ok=True)
