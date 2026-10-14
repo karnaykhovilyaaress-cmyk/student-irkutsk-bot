@@ -357,6 +357,8 @@ def user_exists(user_id):
 
 
 def save_user_group(user_id, group_id, group_name):
+    """Сохраняет группу. Возвращает True при успехе, False при ошибке.
+    Проверяет что запись реально легла в БД."""
     conn = _connect()
     try:
         conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
@@ -739,7 +741,7 @@ def get_user_feedback(user_id, limit=30):
 
 
 # ═══════════════════════════════════════════════════════════════
-# MOD_QUEUE (подслушано + барахолка)
+# MOD_QUEUE
 # ═══════════════════════════════════════════════════════════════
 def mod_queue_add(kind, user_id, username, first_name, text, price=0, contact="", media="[]"):
     conn = _connect()
@@ -1641,7 +1643,7 @@ def count_user_debts(user_id):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ПОСЕЩАЕМОСТЬ / СЕМЕСТР
+# ПОСЕЩАЕМОСТЬ
 # ═══════════════════════════════════════════════════════════════
 def get_semester_start() -> datetime:
     now = _now_irkutsk()
@@ -2732,7 +2734,7 @@ async def api_set_group(request):
             "error": "db_error",
             "message": "Не удалось сохранить группу. Открой /whereami у админа."
         }, status=500)
-    logging.info(f"[API/set-group] user={user_id} → {group_name} ({group_id}) sub={subgroup}")
+    logging.info(f"[API/set-group] user={user_id} -> {group_name} ({group_id}) sub={subgroup}")
     return web.json_response({
         "ok": True, "saved": True,
         "group": saved[1], "group_id": saved[0], "subgroup": subgroup
@@ -3630,7 +3632,7 @@ async def start_webapp():
 
 
 # ═══════════════════════════════════════════════════════════════
-# FSM: подслушано + барахолка
+# FSM: ПОДСЛУШАНО + БАРАХОЛКА
 # ═══════════════════════════════════════════════════════════════
 class OverheardFSM(StatesGroup):
     waiting_text = State()
@@ -3907,7 +3909,7 @@ async def msg_market_content(message: Message, state: FSMContext):
     )
 
 
-# ─── Модерация (кнопки) ───
+# ─── Модерация ───
 async def _publish_to_channel(mid: int, kind: str):
     row = mod_queue_get(mid)
     if not row: return None
@@ -4166,7 +4168,6 @@ async def cmd_channels(message: Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("Только для админа."); return
     lines = []
-    # Подслушано
     if not OVERHEARD_CHANNEL_ID:
         lines.append("OVERHEARD_CHANNEL_ID: НЕ ЗАДАН")
     else:
@@ -4185,7 +4186,6 @@ async def cmd_channels(message: Message):
             lines.append(f"  -> ОШИБКА: {e}")
             lines.append("  -> проверь ID (должен быть -100...) и что бот админ")
     lines.append("")
-    # Барахолка
     if not MARKET_CHANNEL_ID:
         lines.append("MARKET_CHANNEL_ID: НЕ ЗАДАН")
     else:
@@ -4482,7 +4482,7 @@ async def send_schedule_notification(user_id, group_id, subgroup, ntype):
         lines.append("")
         for les in lessons:
             time_end = LESSON_TIMES.get(les["time"], "")
-            time_str = f"{les['time']}–{time_end}" if time_end else les["time"]
+            time_str = f"{les['time']}-{time_end}" if time_end else les["time"]
             lines.append(time_str); lines.append(les["subject"])
             details = []
             if les.get("type"): details.append(les["type"])
