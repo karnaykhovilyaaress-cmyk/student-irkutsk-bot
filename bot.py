@@ -1631,7 +1631,8 @@ def _verify_webapp_init(init_data):
 
 # ═══════════════════════════════════════════════════════════════
 # BACKUP / RESTORE
-# ═══════════════════════════════════════════════════════════════_restore_lock = asyncio.Lock()
+# ═══════════════════════════════════════════════════════════════
+_restore_lock = asyncio.Lock()
 
 
 def _db_schema_version() -> str:
