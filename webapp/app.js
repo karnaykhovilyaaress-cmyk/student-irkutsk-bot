@@ -186,7 +186,6 @@ function findNextLesson(lessons) {
   return null;
 }
 
-/* ═════ НАВИГАЦИЯ: перерисовка кнопок с учётом isAdmin ═════ */
 function renderNav() {
   document.querySelectorAll('.nav-btn').forEach(b => {
     const isAdmin = b.dataset.tab === 'admin';
@@ -522,7 +521,6 @@ function pickerAttachSearch() {
   });
 }
 
-/* Уведомления */
 function renderNotifyEditor() {
   const cur = state.notifyEditorType;
   const hhStr = String(state.notifyEditorHour).padStart(2,'0');
@@ -729,7 +727,6 @@ async function actionNotifyOff() {
 }
 function actionNotifyBack() { hideKeyboard(); state.notifyEditor = false; document.body.classList.remove('picker-open'); render(); }
 
-/* Стипендия */
 function renderScholarshipBlock() {
   const s = state.scholarship;
   if (!s) return `<div class="card"><div class="skeleton-card" style="margin:0"></div></div>`;
@@ -850,7 +847,6 @@ function renderAttendanceSemesterBlock() {
   return html;
 }
 
-/* ЗАДАЧИ */
 function renderTasks() {
   const tasks = state.tasks;
   const stats = state.tasksStats;
@@ -1057,7 +1053,6 @@ function actionTaskEdit(id) {
   attach();
 }
 
-/* ЗАМЕТКИ */
 function renderNotes() {
   const tags = state.notesTags || [];
   let html = `<button class="btn" data-action="note-add-open" style="width:100%;margin-bottom:12px">${icon('ic-plus',18)} Добавить заметку</button>`;
@@ -1158,7 +1153,6 @@ async function actionNotePin(id) {
 }
 
 
-/* AI + Презентация */
 function renderAI() {
   let html = '';
   if (!state.aiMessages.length) {
@@ -1386,7 +1380,6 @@ async function loadProfile() {
   try {
     state.profile = await apiGet('/api/me');
     state.isAdmin = !!state.profile.is_admin;
-    // Принудительно обновляем навигацию — чтобы кнопка админа появилась сразу
     renderNav();
   } catch (e) { state.profile = {error:e.message}; }
 }
@@ -1530,7 +1523,6 @@ function actionPickerBack() {
 function actionPickerChooseInstitute(inst) { state.pickerInstitute = inst; state.pickerMode = 'course'; state.pickerCourse = null; state.pickerSearch = ''; render(); }
 function actionPickerChooseCourse(course) { state.pickerCourse = parseInt(course, 10); state.pickerMode = 'group'; state.pickerSearch = ''; render(); }
 
-/* ═════ ГЛАВНЫЙ ФИКС: проверяем, что группа реально сохранилась ═════ */
 async function actionPickerChooseGroup(groupId, groupName) {
   haptic('success');
   try {
@@ -1539,13 +1531,11 @@ async function actionPickerChooseGroup(groupId, groupName) {
       group_name: groupName,
       subgroup: state.profile?.subgroup || 0
     });
-    // Проверка 1: бэк вернул saved=true
     if (!res || !res.saved) {
       toast('Сервер не сохранил группу. Проверь /whereami у админа.', 'error');
       return;
     }
     state.pickerMode = null; state.pickerInstitute = null; state.pickerCourse = null; state.pickerSearch = '';
-    // Проверка 2: перечитываем профиль и сверяем группу
     await loadProfile();
     if (state.profile?.group !== groupName) {
       toast('Группа не сохранилась. Смотри /dbcheck у админа.', 'error');
@@ -1702,6 +1692,85 @@ function actionAttHelp() {
     <div class="label">${icon('ic-sick',18)} БОЛЕЛ</div><div class="card-subtitle">Пропуск по болезни.</div>
     <div class="label">${icon('ic-excused',18)} УВАЖИТЕЛЬНАЯ</div><div class="card-subtitle">Уважительная причина.</div>
   `, actions:[{label:'ПОНЯТНО', style:'btn'}]});
+}
+
+function actionScholarshipSetAmount() {
+  const s = state.scholarship;
+  const cur = (s?.amount != null && s.amount > 0) ? s.amount : '';
+  modalOpen({title:'СУММА СТИПЕНДИИ', body: `<div class="card-subtitle">Рубли в месяц</div><input class="input" id="sch-amount" type="number" min="0" max="100000" value="${escapeHtml(String(cur))}" placeholder="Например, 4000">`, actions:[
+    {label:'ОТМЕНА', style:'btn-secondary'},
+    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+      const el = document.getElementById('sch-amount');
+      const v = parseInt(el.value, 10);
+      if (isNaN(v) || v < 0) { toast('Введи число', 'error'); return; }
+      try { await apiPost('/api/scholarship-set-amount', {amount: v}); hideKeyboard(); haptic('success'); toast('Сохранено', 'success'); await loadScholarship(); render(); }
+      catch (e) { toast(e.message, 'error'); }
+    }}
+  ]});
+}
+
+function actionScholarshipAddGrade(editId) {
+  const s = state.scholarship;
+  let editing = null;
+  if (editId && s?.grades) editing = s.grades.find(g => g.id === editId);
+  const curSubj = editing?.subject || '';
+  const curGrade = editing?.grade || 5;
+  const curSem = editing?.semester || '';
+  const curAuto = !!editing?.is_auto;
+  let form = {subject: curSubj, grade: curGrade, semester: curSem, is_auto: curAuto};
+  const subjects = s?.available_subjects || [];
+  const semesters = s?.semesters || [];
+  const renderBody = () => `
+    <div class="label">ПРЕДМЕТ</div>
+    <input class="input" id="sch-subj" value="${escapeHtml(form.subject)}" placeholder="Например, Математика" maxlength="100">
+    ${subjects.length ? `<div class="choice-row" style="margin-top:0;max-height:120px;overflow-y:auto">${subjects.slice(0,20).map(x => `<button class="choice" data-subj="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div>` : ''}
+    <div class="label">ОЦЕНКА</div>
+    <div class="choice-row">
+      ${[2,3,4,5].map(n => `<button class="choice ${form.grade===n?'active':''}" data-g="${n}">${n}</button>`).join('')}
+    </div>
+    <div class="label">СЕМЕСТР (необязательно)</div>
+    <input class="input" id="sch-sem" value="${escapeHtml(form.semester)}" placeholder="Например, 2024-осень" maxlength="40">
+    ${semesters.length ? `<div class="choice-row" style="margin-top:0">${semesters.map(x => `<button class="choice" data-sem="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div>` : ''}
+    <label class="switch-row"><input type="checkbox" id="sch-auto" ${form.is_auto?'checked':''}><span>Автомат</span></label>
+  `;
+  const attach = () => {
+    const si = document.getElementById('sch-subj'); if (si) si.oninput = (e) => form.subject = e.target.value;
+    const sm = document.getElementById('sch-sem'); if (sm) sm.oninput = (e) => form.semester = e.target.value;
+    const au = document.getElementById('sch-auto'); if (au) au.onchange = (e) => form.is_auto = e.target.checked;
+    document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { form.grade = parseInt(b.dataset.g); document.getElementById('modalBody').innerHTML = renderBody(); attach(); });
+    document.querySelectorAll('[data-subj]').forEach(b => b.onclick = () => { form.subject = b.dataset.subj; document.getElementById('sch-subj').value = form.subject; });
+    document.querySelectorAll('[data-sem]').forEach(b => b.onclick = () => { form.semester = b.dataset.sem; document.getElementById('sch-sem').value = form.semester; });
+  };
+  modalOpen({title: editing ? 'ИЗМЕНИТЬ ОЦЕНКУ' : 'ДОБАВИТЬ ОЦЕНКУ', body: renderBody(), actions:[
+    {label:'ОТМЕНА', style:'btn-secondary'},
+    {label:'СОХРАНИТЬ', style:'btn', onClick: async () => {
+      const subj = (document.getElementById('sch-subj')?.value || form.subject || '').trim();
+      const sem = (document.getElementById('sch-sem')?.value || form.semester || '').trim();
+      const auto = document.getElementById('sch-auto')?.checked || false;
+      if (!subj) { toast('Введи предмет', 'error'); return; }
+      try {
+        if (editing) {
+          await apiPost('/api/scholarship-update-grade', {id: editing.id, subject: subj, grade: form.grade, semester: sem, is_auto: auto});
+        } else {
+          await apiPost('/api/scholarship-add-grade', {subject: subj, grade: form.grade, semester: sem, is_auto: auto});
+        }
+        hideKeyboard(); haptic('success'); toast('Сохранено', 'success'); await loadScholarship(); render();
+      } catch (e) { toast(e.message, 'error'); }
+    }}
+  ]});
+  attach();
+}
+async function actionScholarshipDeleteGrade(id) {
+  modalConfirm('УДАЛИТЬ ОЦЕНКУ?', '', async () => {
+    try { await apiPost('/api/scholarship-delete-grade', {id}); haptic('success'); await loadScholarship(); render(); }
+    catch (e) { toast(e.message, 'error'); }
+  }, 'УДАЛИТЬ');
+}
+async function actionScholarshipClear(sem) {
+  modalConfirm('ОЧИСТИТЬ ОЦЕНКИ?', sem ? `Семестр: ${sem}` : 'Все оценки', async () => {
+    try { await apiPost('/api/scholarship-clear', {semester: sem || null}); haptic('success'); toast('Очищено', 'success'); await loadScholarship(); render(); }
+    catch (e) { toast(e.message, 'error'); }
+  }, 'ОЧИСТИТЬ');
 }
 
 function attachHandlers() {
