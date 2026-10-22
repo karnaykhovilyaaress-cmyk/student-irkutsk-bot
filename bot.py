@@ -709,9 +709,6 @@ def get_user_feedback(user_id, limit=30):
         conn.close()
 
 
-# ═══════════════════════════════════════════════════════════════
-# TASKS
-# ═══════════════════════════════════════════════════════════════
 def count_user_tasks(user_id):
     conn = _connect()
     try:
@@ -941,9 +938,6 @@ def get_all_task_tags(user_id):
     return sorted(tags_set)
 
 
-# ═══════════════════════════════════════════════════════════════
-# NOTES
-# ═══════════════════════════════════════════════════════════════
 def get_user_notes(user_id, search=None, tag=None, sort="pinned"):
     conn = _connect()
     try:
@@ -1035,9 +1029,6 @@ def get_all_note_tags(user_id):
     return sorted(tags_set)
 
 
-# ═══════════════════════════════════════════════════════════════
-# ATTENDANCE
-# ═══════════════════════════════════════════════════════════════
 def attendance_get_map(user_id, dates):
     if not dates:
         return {}
@@ -1091,9 +1082,6 @@ def attendance_stats(user_id):
     return result
 
 
-# ═══════════════════════════════════════════════════════════════
-# AI HISTORY
-# ═══════════════════════════════════════════════════════════════
 def ai_save_message(user_id, role, text, has_photo=0):
     conn = _connect()
     try:
@@ -1127,9 +1115,6 @@ def ai_clear_history(user_id):
         conn.close()
 
 
-# ═══════════════════════════════════════════════════════════════
-# EXPORT DATA
-# ═══════════════════════════════════════════════════════════════
 def get_export_data(user_id):
     saved = get_user_group(user_id)
     subgroup = get_user_subgroup(user_id)
@@ -1195,9 +1180,6 @@ def get_export_data(user_id):
     }
 
 
-# ═══════════════════════════════════════════════════════════════
-# GROUPS
-# ═══════════════════════════════════════════════════════════════
 GROUPS = {
     "ИАМиТ": [
         {"name": "АСПм-26-1", "id": "478012"}, {"name": "АТПРб-26-1", "id": "478049"},
@@ -1629,9 +1611,6 @@ def _verify_webapp_init(init_data):
     return u.id if u else None
 
 
-# ═══════════════════════════════════════════════════════════════
-# BACKUP / RESTORE
-# ═══════════════════════════════════════════════════════════════
 _restore_lock = asyncio.Lock()
 
 
@@ -1681,7 +1660,7 @@ def _monday_of_week(d): return d - timedelta(days=d.weekday())
 DAILY_QUOTES = [
     "Учись так, будто тебе нечего терять, и работай так, будто тебе нечего доказывать.",
     "Сессия сдаётся не за неделю, а за семестр.",
-    "Студент — это человек, который учится всю жизнь, но не всегда в универ��.",
+    "Студент — это человек, который учится всю жизнь, но не всегда в универе.",
     "Пара не последняя, а самая первая — просто ты её проспал.",
     "Оценка — это не ты, но она влияет на стипендию.",
     "Лекция без конспекта — это медитация.",
@@ -1702,9 +1681,6 @@ DAILY_QUOTES = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════
-# AI CACHE
-# ═══════════════════════════════════════════════════════════════
 def _ai_hash(question: str) -> str:
     q = (question or "").strip().lower()
     q = re.sub(r"\s+", " ", q)
@@ -1770,9 +1746,6 @@ def ai_cache_clear():
         conn.close()
 
 
-# ═══════════════════════════════════════════════════════════════
-# GIGACHAT
-# ═══════════════════════════════════════════════════════════════
 _giga_semaphore = asyncio.Semaphore(3)
 _giga_last_calls = []
 _giga_lock = asyncio.Lock()
@@ -1825,9 +1798,6 @@ async def giga_chat_safe(prompt: str, timeout: int = 120, max_retries: int = 3):
     raise RuntimeError(f"GigaChat: {last_err}")
 
 
-# ═══════════════════════════════════════════════════════════════
-# WEATHER
-# ═══════════════════════════════════════════════════════════════
 async def fetch_weather(force=False):
     cache_key = f"{WEATHER_LAT:.3f},{WEATHER_LON:.3f}"
     if not force:
@@ -1937,9 +1907,6 @@ def weather_line(w) -> str:
     return " · ".join(p for p in parts if p)
 
 
-# ═══════════════════════════════════════════════════════════════
-# DEBTS
-# ═══════════════════════════════════════════════════════════════
 def get_overdue_debt_tasks():
     conn = _connect()
     try:
@@ -1998,9 +1965,6 @@ def count_user_debts(user_id):
     return n
 
 
-# ═══════════════════════════════════════════════════════════════
-# SEMESTER ATTENDANCE
-# ═══════════════════════════════════════════════════════════════
 def get_semester_start() -> datetime:
     now = _now_irkutsk()
     year = now.year
@@ -2039,9 +2003,6 @@ def attendance_semester_stats(user_id):
     return {"by_subject": result, "totals": totals, "since": since.strftime("%d.%m.%Y")}
 
 
-# ═══════════════════════════════════════════════════════════════
-# ICS EXPORT
-# ═══════════════════════════════════════════════════════════════
 def _ics_escape(text: str) -> str:
     if not text: return ""
     return (text.replace("\\", "\\\\").replace(",", "\\,")
@@ -2140,9 +2101,6 @@ async def generate_ics_for_user_async(user_id, weeks: int = 2) -> bytes:
     return ("\r\n".join(lines) + "\r\n").encode("utf-8")
 
 
-# ═══════════════════════════════════════════════════════════════
-# PRESENTATIONS
-# ═══════════════════════════════════════════════════════════════
 PRESENT_STYLES = {
     "academic": {
         "name": "Академический",
@@ -2286,84 +2244,268 @@ def _validate_plan(plan: dict, topic: str) -> list:
         elif t == "chart":
             if not s.get("categories") or not s.get("values"):
                 errors.append(f"Слайд {i}: chart без данных")
+        elif t == "timeline":
+            if len(s.get("events") or []) < 2:
+                errors.append(f"Слайд {i}: timeline без событий")
+        elif t == "quote":
+            if not s.get("quote"):
+                errors.append(f"Слайд {i}: quote пустая")
     return errors
 
 
-async def _generate_slide_plan(topic: str, slides_count: int,
-                               extra_context: str = "", user_wishes: str = "",
-                               meta: dict = None) -> dict:
-    if not extra_context or len(extra_context.strip()) < 40:
-        raise ValueError(
-            "Материал пуст или слишком короткий. "
-            "Вставь текст/конспект по теме (минимум 40 символов) — я оформлю его в презентацию."
-        )
-
-    base = f"""Ты — оформитель учебных презентаций. Твоя задача — СТРУКТУРИРОВАТЬ материал пользователя, а НЕ дополнять его.
-
-ТЕМА (только для заголовка): «{topic}»
-ЖЕЛАЕМОЕ ЧИСЛО СОДЕРЖАТЕЛЬНЫХ СЛАЙДОВ: {slides_count}
-
-═══ ГЛАВНОЕ ПРАВИЛО ═══
-Ты ОБЯЗАН использовать ТОЛЬКО факты, цифры, даты, имена, определения и цитаты из блока «МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ» ниже.
-КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО:
-  • Придумывать цифры, проценты, даты, статистику.
-  • Придумывать имена людей, названия организаций, стран, городов.
-  • Придумывать названия книг, статей, ГОСТов, ссылки, DOI, ISBN.
-  • Добавлять общеизвестные факты, которых нет в материале (даже если они «правда»).
-  • Формулировать выводы, которых нет в материале явно или по смыслу.
-
-Если какого-то пункта нет в материале — оставь поле пустым или используй меньше пунктов.
-Лучше 3 слайда с точным материалом, чем 10 с выдуманным.
-
-═══ МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ ═══
-{extra_context[:12000]}
-═══ КОНЕЦ МАТЕРИАЛА ═══
-"""
-    if user_wishes:
-        base += f"\nПожелания пользователя по структуре/акцентам:\n{user_wishes[:1500]}\n"
-
-    base += """
-Верни СТРОГО JSON (без markdown-обёрток):
-{
-  "title": "Заголовок титульного (до 70 символов)",
-  "subtitle": "Подзаголовок (до 130 символов)",
-  "outline": ["Раздел 1", "Раздел 2", "..."],
-  "slides": [
-    {
-      "type": "bullets|flow|compare|numbers|cards|chart",
-      "heading": "Заголовок слайда (до 50 символов)",
-      "bullets": ["пункт из материала", "..."],
-      "image_hint": "Что показать (по желанию)",
-      "notes": "Заметка докладчику (только по материалу)",
-      "steps": [{"label":"Метка","text":"Пояснение из материала"}],
-      "left_title": "A", "right_title": "B",
-      "left_items": ["из материала"], "right_items": ["из материала"],
-      "facts": [{"number":"только из материала","label":"из материала"}],
-      "cards": [{"icon":"1","title":"Заголовок","text":"из материала"}],
-      "chart_type": "bar|pie|line",
-      "categories": ["из материала"],
-      "values": [числа только из материала],
-      "unit": "единица из материала"
-    }
-  ],
-  "sources": [
-    {"title": "ТОЛЬКО если источник явно указан в материале", "author": "...", "year": "...", "publisher": "..."}
-  ]
+NARRATIVE_STRATEGIES = {
+    "chronological": "Хронология: события по времени, причины → ход → последствия.",
+    "problem_solution": "Проблема → причины → последствия → решение → результат.",
+    "research": "Вопрос → гипотеза → методы → данные → вывод.",
+    "comparative": "Критерии сравнения → A → B → что лучше и почему.",
+    "mechanism": "Принцип работы → компоненты → этапы → применение.",
+    "concept_map": "Ключевое понятие → составные части → связи → следствия.",
+    "case_study": "Ситуация → контекст → действия → результат → урок.",
+    "argument": "Тезис → аргумент 1 → аргумент 2 → контраргумент → вывод.",
 }
 
-ТРЕБОВАНИЯ К СТРУКТУРЕ:
-- Количество слайдов — ровно столько, сколько позволяет материал. Если материала мало — меньше. МАКСИМУМ = """ + str(slides_count) + """.
-- Первый содержательный слайд — обзор/введение (из материала).
-- Последний — вывод (только если вывод есть в материале явно).
-- РАСПРЕДЕЛЯЙ типы РАЗНООБРАЗНО: bullets, flow, compare, numbers, cards, chart — по смыслу материала.
-- bullets: 3-5 пунктов, каждый — фраза из материала (не переписывай красиво, сохраняй суть).
-- numbers: только если в материале есть минимум 3 числовых факта.
-- chart: только если в материале есть явные категории + значения.
-- sources: только источники, ЯВНО упомянутые в материале. Если источников нет — верни пустой массив [].
-- Никаких «это важно», «данная тема актуальна», «в современном мире» — если этого нет в материале.
-- Только JSON. Без пояснений.
-"""
-    return await _gigachat_json(base)
+
+async def analyze_source(user_info: str) -> dict:
+    if giga_client is None:
+        raise RuntimeError("GigaChat не настроен")
+
+    prompt = f"""Ты — аналитик учебных текстов. Разбери МАТЕРИАЛ и составь его карту.
+
+═══ МАТЕРИАЛ ═══
+{user_info[:14000]}
+═══ КОНЕЦ МАТЕРИАЛА ═══
+
+ЗАДАЧА:
+1. Извлеки ВСЕ значимые элементы. Ничего не придумывай — только то, что есть в тексте.
+2. Каждому элементу присвой ID: F1, F2, F3...
+3. Укажи тип (kind):
+   - date        — дата/период
+   - number      — число, процент, статистика
+   - definition  — определение термина
+   - claim       — тезис/утверждение автора
+   - cause       — причина
+   - effect      — следствие/результат
+   - example     — пример
+   - conclusion  — вывод
+   - quote       — цитата
+4. Определи, какая нарративная стратегия лучше подходит материалу:
+{chr(10).join(f'   - {k}: {v}' for k, v in NARRATIVE_STRATEGIES.items())}
+5. Выдели 2-5 главных тезисов (main_theses) — своими словами, но без искажения.
+
+Верни СТРОГО JSON:
+{{
+  "facts": [
+    {{"id": "F1", "kind": "date", "text": "точная формулировка из источника"}}
+  ],
+  "structure_hint": "chronological",
+  "main_theses": ["тезис 1", "тезис 2"],
+  "word_count": 1234
+}}
+
+ТРЕБОВАНИЯ:
+- Минимум 5 фактов (если материал короче — сколько есть, но не выдумывай).
+- Если факт содержит число или дату — сохрани его ТОЧНО как в тексте.
+- Не перефразируй определения — бери дословно.
+- Только JSON, без пояснений."""
+
+    result = await _gigachat_json(prompt)
+    facts = result.get("facts") or []
+    src_lower = user_info.lower()
+    validated = []
+    for i, f in enumerate(facts):
+        text = (f.get("text") or "").strip()
+        if not text or len(text) < 3:
+            continue
+        words = [w for w in re.findall(r"\w{4,}", text.lower()) if len(w) >= 4]
+        if words:
+            hits = sum(1 for w in words[:8] if w in src_lower)
+            if hits == 0 and len(words) >= 4:
+                logging.warning(f"[ANALYZE] факт {f.get('id')} не найден в источнике, отброшен")
+                continue
+        validated.append({
+            "id": f.get("id") or f"F{i+1}",
+            "kind": f.get("kind") or "claim",
+            "text": text,
+        })
+    return {
+        "facts": validated,
+        "structure_hint": result.get("structure_hint") or "problem_solution",
+        "main_theses": result.get("main_theses") or [],
+        "word_count": len(user_info.split()),
+    }
+
+
+async def plan_narrative(topic: str, source_map: dict, slides_limit: int,
+                          user_wishes: str = "") -> dict:
+    facts_block = "\n".join(
+        f"{f['id']} [{f['kind']}]: {f['text']}" for f in source_map["facts"]
+    ) or "(фактов не извлечено)"
+
+    n_facts = len(source_map["facts"])
+    suggested = max(4, min(slides_limit, (n_facts + 1) // 2 + 2))
+
+    prompt = f"""Ты — режиссёр презентации. Составь план: какая функция у каждого слайда,
+какие факты (по ID) на него попадут.
+
+ТЕМА: «{topic}»
+ЖЕЛАТЕМОЕ ЧИСЛО СЛАЙДОВ: ~{suggested} (лимит {slides_limit})
+СТРАТЕГИЯ (рекомендация аналитика): {source_map['structure_hint']}
+{f'ПОЖЕЛАНИЯ: {user_wishes[:800]}' if user_wishes else ''}
+
+═══ КАРТА ФАКТОВ ═══
+{facts_block}
+═══ КОНЕЦ КАРТЫ ═══
+
+ПРАВИЛА:
+1. Каждый значимый факт из карты должен попасть ХОТЯ БЫ на один слайд.
+   Исключение — дубли и явный мусор (укажи причину в "dropped").
+2. Не придумывай новых фактов. Используй только ID из карты.
+3. Не смешивай на одном слайде больше 4-5 фактов — лучше больше слайдов.
+4. Соседние слайды не должны иметь одинаковую функцию и тип без причины.
+5. Функции слайдов: intro, thesis, evidence, comparison, timeline, cause_effect,
+   mechanism, example, quote, counterargument, conclusion, question.
+6. Тип визуализации: bullets, flow, compare, numbers, cards, chart, timeline, quote.
+
+Верни СТРОГО JSON:
+{{
+  "title": "до 70 символов",
+  "subtitle": "до 130 символов",
+  "strategy": "{source_map['structure_hint']}",
+  "slides": [
+    {{
+      "function": "intro",
+      "heading": "до 50 символов",
+      "fact_ids": ["F1", "F2"],
+      "type": "bullets",
+      "notes": "что сказать вслух (по фактам, без выдумок)"
+    }}
+  ],
+  "dropped": [{{"id": "F9", "reason": "дубль F3"}}]
+}}
+
+Только JSON."""
+
+    return await _gigachat_json(prompt)
+
+
+async def materialize_slides(topic: str, plan: dict, source_map: dict) -> dict:
+    facts_by_id = {f["id"]: f for f in source_map["facts"]}
+    slide_specs = plan.get("slides") or []
+
+    packed = []
+    for s in slide_specs:
+        ids = [x for x in (s.get("fact_ids") or []) if x in facts_by_id]
+        packed.append({
+            "function": s.get("function", "evidence"),
+            "heading": s.get("heading", ""),
+            "type": s.get("type", "bullets"),
+            "notes": s.get("notes", ""),
+            "facts": [{"id": i, "kind": facts_by_id[i]["kind"],
+                       "text": facts_by_id[i]["text"]} for i in ids],
+        })
+
+    facts_dump = "\n".join(
+        f"{f['id']} [{f['kind']}]: {f['text']}" for f in source_map["facts"]
+    )
+    prompt = f"""Ты — оформитель. Ниже — план и точные формулировки фактов.
+Собери содержимое слайдов, СОХРАНЯЯ формулировки фактов.
+
+ТЕМА: «{topic}»
+
+═══ ФАКТЫ (не перефразируй, не добавляй) ═══
+{facts_dump}
+═══ КОНЕЦ ═══
+
+═══ ПЛАН СЛАЙДОВ ═══
+{json.dumps(packed, ensure_ascii=False, indent=2)}
+═══ КОНЕЦ ПЛАНА ═══
+
+Для каждого слайда верни поля по его типу:
+- bullets:  bullets = [пункты, каждый — факт из списка]
+- flow:     steps = [{{"label":"1","text":"факт"}}]
+- compare:  left_title, right_title, left_items, right_items (факты)
+- numbers:  facts = [{{"number":"из факта","label":"из факта"}}]
+- cards:    cards = [{{"icon":"1","title":"...","text":"факт"}}]
+- chart:    categories, values, unit — ТОЛЬКО если числа есть в фактах
+- timeline: events = [{{"date":"из факта","text":"факт"}}]
+- quote:    quote (дословно из фактов), quote_author (если есть), bullets
+
+ПРАВИЛО: если в факте нет числа — не подставляй число в chart/numbers.
+Если мало данных для типа — верни type="bullets".
+
+Верни СТРОГО JSON:
+{{
+  "title": "{plan.get('title','')}",
+  "subtitle": "{plan.get('subtitle','')}",
+  "slides": [
+    {{"type":"bullets","heading":"...","bullets":["..."]}}
+  ]
+}}
+
+Только JSON."""
+
+    result = await _gigachat_json(prompt)
+    for i, s in enumerate(result.get("slides") or []):
+        if i < len(packed):
+            s["function"] = packed[i].get("function")
+            s["fact_ids"] = [f["id"] for f in packed[i].get("facts", [])]
+    return result
+
+
+def verify_coverage(source_map: dict, materialized: dict) -> dict:
+    all_ids = [f["id"] for f in source_map["facts"]]
+    if not all_ids:
+        return {"covered": [], "missing": [], "coverage_pct": 100.0}
+
+    texts = []
+    for s in materialized.get("slides") or []:
+        for k, v in s.items():
+            if isinstance(v, str):
+                texts.append(v.lower())
+            elif isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str):
+                        texts.append(item.lower())
+                    elif isinstance(item, dict):
+                        for vv in item.values():
+                            if isinstance(vv, str):
+                                texts.append(vv.lower())
+    blob = " ".join(texts)
+
+    covered, missing = [], []
+    for f in source_map["facts"]:
+        fid = f["id"]
+        words = re.findall(r"\w{4,}", f["text"].lower())
+        if not words:
+            ok = f["text"].lower() in blob
+        else:
+            hits = sum(1 for w in words if w in blob)
+            ok = hits / len(words) >= 0.7
+        (covered if ok else missing).append(fid)
+
+    pct = 100.0 * len(covered) / len(all_ids)
+    return {"covered": covered, "missing": missing, "coverage_pct": pct}
+
+
+BULLET_LAYOUTS = [
+    "text_left_image_right", "image_left_text_right",
+    "full_text_top_image_bottom", "two_columns_text",
+    "big_first_bullet", "accent_block_left",
+]
+FLOW_LAYOUTS = ["flow_horizontal", "flow_vertical", "flow_zigzag"]
+COMPARE_LAYOUTS = ["compare_two_cols", "compare_split_diagonal"]
+NUMBERS_LAYOUTS = ["numbers_row", "numbers_grid_2x2", "numbers_hero_one"]
+CARDS_LAYOUTS = ["cards_row", "cards_stack_vertical"]
+CHART_LAYOUTS = ["chart_full", "chart_with_text"]
+
+def _pick_layout(kind: str, idx: int) -> str:
+    pools = {
+        "bullets": BULLET_LAYOUTS, "flow": FLOW_LAYOUTS, "compare": COMPARE_LAYOUTS,
+        "numbers": NUMBERS_LAYOUTS, "cards": CARDS_LAYOUTS, "chart": CHART_LAYOUTS,
+        "timeline": ["timeline_h"], "quote": ["quote_full"],
+    }
+    pool = pools.get(kind, BULLET_LAYOUTS)
+    return pool[idx % len(pool)]
 
 
 def _add_rect(slide, x, y, w, h, color):
@@ -2412,26 +2554,6 @@ def _add_bar_chart(slide, x, y, w, h, categories, values, unit="", title=""):
     except Exception as e:
         logging.warning(f"[CHART] {e}")
         return None
-
-
-BULLET_LAYOUTS = [
-    "text_left_image_right", "image_left_text_right",
-    "full_text_top_image_bottom", "two_columns_text",
-    "big_first_bullet", "accent_block_left",
-]
-FLOW_LAYOUTS = ["flow_horizontal", "flow_vertical", "flow_zigzag"]
-COMPARE_LAYOUTS = ["compare_two_cols", "compare_split_diagonal"]
-NUMBERS_LAYOUTS = ["numbers_row", "numbers_grid_2x2", "numbers_hero_one"]
-CARDS_LAYOUTS = ["cards_row", "cards_stack_vertical"]
-CHART_LAYOUTS = ["chart_full", "chart_with_text"]
-
-def _pick_layout(kind: str, idx: int) -> str:
-    pools = {
-        "bullets": BULLET_LAYOUTS, "flow": FLOW_LAYOUTS, "compare": COMPARE_LAYOUTS,
-        "numbers": NUMBERS_LAYOUTS, "cards": CARDS_LAYOUTS, "chart": CHART_LAYOUTS,
-    }
-    pool = pools.get(kind, BULLET_LAYOUTS)
-    return pool[idx % len(pool)]
 
 
 def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
@@ -2790,6 +2912,40 @@ def _build_pptx(plan: dict, style_id: str = "academic") -> bytes:
                 add_image_placeholder(s, Inches(8.0), Inches(2.0), Inches(4.85), Inches(4.5),
                                       sl.get("image_hint", ""))
 
+        elif stype == "timeline":
+            events = sl.get("events", [])[:6]
+            n = max(len(events), 1)
+            line_y = Inches(4.4)
+            _add_rect(s, Inches(1.0), line_y, Inches(11.3), Inches(0.06), style["accent"])
+            step_w = Inches(11.3) / n
+            for i, ev in enumerate(events):
+                cx = Inches(1.0) + step_w * i + step_w / 2
+                _add_oval(s, cx - Inches(0.12), line_y - Inches(0.12),
+                          Inches(0.24), Inches(0.24), style["accent"])
+                add_text(s, cx - Inches(0.9), line_y - Inches(1.2),
+                         Inches(1.8), Inches(0.5), ev.get("date", ""),
+                         size=14, bold=True, color=style["accent"],
+                         align=PP_ALIGN.CENTER)
+                add_text(s, cx - Inches(0.9), line_y + Inches(0.35),
+                         Inches(1.8), Inches(1.8), ev.get("text", ""),
+                         size=10, color=style["text"], align=PP_ALIGN.CENTER,
+                         spacing=1.1)
+
+        elif stype == "quote":
+            _add_round_rect(s, Inches(1.5), Inches(2.2), Inches(10.3), Inches(3.2),
+                            style["accent2"], style["accent"])
+            add_text(s, Inches(1.7), Inches(2.3), Inches(0.9), Inches(0.9),
+                     "«", size=64, bold=True, color=style["accent"])
+            add_text(s, Inches(2.2), Inches(2.6), Inches(9.3), Inches(2.2),
+                     sl.get("quote", ""), size=20, italic=True,
+                     color=style["text"], anchor=MSO_ANCHOR.MIDDLE)
+            if sl.get("quote_author"):
+                add_text(s, Inches(2.2), Inches(4.95), Inches(9.3), Inches(0.5),
+                         "— " + sl["quote_author"], size=13,
+                         color=style["text_soft"], align=PP_ALIGN.RIGHT)
+            add_bullets(s, Inches(1.5), Inches(5.7), Inches(10.3), Inches(1.5),
+                        sl.get("bullets", [])[:3], size=12)
+
         else:
             add_bullets(s, Inches(1.0), Inches(2.0), Inches(6.7), Inches(4.9),
                         sl.get("bullets", []), size=13)
@@ -2866,44 +3022,77 @@ async def generate_presentation(user_id: int, topic: str, slides_count: int = 10
         except Exception:
             pass
 
-    await _edit(f"Стиль: {style_name}\nСоставляю структуру из твоего материала...")
+    await _edit(f"Стиль: {style_name}\nШаг 1/5 · Разбираю материал...")
+    try:
+        source_map = await analyze_source(user_info)
+    except Exception as e:
+        logging.exception("[PRESENT] analyze_source")
+        raise RuntimeError(f"Не удалось разобрать материал: {e}")
 
-    last_err = None
-    plan = None
-    for attempt in range(2):
+    if not source_map["facts"]:
+        raise ValueError(
+            "В материале не нашлось фактов для слайдов. "
+            "Добавь конкретики: даты, числа, определения, тезисы."
+        )
+
+    await _edit(f"Стиль: {style_name}\nШаг 2/5 · Строю логику рассказа...")
+    plan = await plan_narrative(topic, source_map, slides_count, user_wishes)
+
+    await _edit(f"Стиль: {style_name}\nШаг 3/5 · Раскладываю факты по слайдам...")
+    materialized = await materialize_slides(topic, plan, source_map)
+
+    await _edit(f"Стиль: {style_name}\nШаг 4/5 · Проверяю, что всё сохранено...")
+    report = verify_coverage(source_map, materialized)
+    logging.info(f"[PRESENT] coverage: {report['coverage_pct']:.0f}% "
+                 f"missing={report['missing']}")
+
+    if report["coverage_pct"] < 80.0 and report["missing"]:
+        missing_facts = [
+            f for f in source_map["facts"] if f["id"] in report["missing"]
+        ]
         try:
-            extra = user_info
-            if attempt == 1 and last_err:
-                extra += f"\n\nПРЕДЫДУЩАЯ ОШИБКА, ИСПРАВЬ (только структуру, факты не трогай): {last_err}"
-            plan = await _generate_slide_plan(topic, slides_count, extra, user_wishes, meta)
-            errors = _validate_plan(plan, topic)
-            if len(errors) <= 1:
-                break
-            last_err = "; ".join(errors[:3])
-            logging.warning(f"[PLAN] попытка {attempt+1}: {last_err}")
-        except ValueError:
-            raise
+            await _edit(f"Стиль: {style_name}\nШаг 4/5 · Дополняю пропущенные факты...")
+            extra_prompt = f"""В плане презентации потеряны факты. Добавь их на существующие
+или новые слайды, НЕ УДАЛЯЯ уже размещённое.
+
+ТЕМА: «{topic}»
+
+ПОТЕРЯННЫЕ ФАКТЫ:
+{chr(10).join(f"{f['id']} [{f['kind']}]: {f['text']}" for f in missing_facts)}
+
+ТЕКУЩИЕ СЛАЙДЫ (JSON):
+{json.dumps(materialized.get('slides', []), ensure_ascii=False)[:8000]}
+
+Верни ПОЛНЫЙ обновлённый JSON той же структуры со всеми слайдами."""
+            materialized2 = await _gigachat_json(extra_prompt)
+            if materialized2.get("slides"):
+                materialized = materialized2
+                report = verify_coverage(source_map, materialized)
+                logging.info(f"[PRESENT] coverage after fix: {report['coverage_pct']:.0f}%")
         except Exception as e:
-            last_err = str(e)
-    if plan is None:
-        raise RuntimeError(f"Не удалось составить план: {last_err}")
+            logging.warning(f"[PRESENT] coverage fix failed: {e}")
 
     if meta:
-        plan.setdefault("author", meta.get("author"))
-        plan.setdefault("group", meta.get("group"))
-        plan.setdefault("teacher", meta.get("teacher"))
-        plan.setdefault("year", meta.get("year"))
+        materialized.setdefault("author", meta.get("author"))
+        materialized.setdefault("group", meta.get("group"))
+        materialized.setdefault("teacher", meta.get("teacher"))
+        materialized.setdefault("year", meta.get("year"))
+    materialized.setdefault("title", plan.get("title") or topic)
+    materialized.setdefault("subtitle", plan.get("subtitle") or "")
 
-    await _edit(f"Стиль: {style_name}\nРисую слайды...")
-    pptx_bytes = await asyncio.to_thread(_build_pptx, plan, style_id)
+    await _edit(f"Стиль: {style_name}\nШаг 5/5 · Рисую слайды...")
+    pptx_bytes = await asyncio.to_thread(_build_pptx, materialized, style_id)
+
+    if report["missing"]:
+        logging.warning(
+            f"[PRESENT] user={user_id} не покрыто: {report['missing']} "
+            f"({report['coverage_pct']:.0f}% покрыто)"
+        )
 
     await _edit("Готово, отправляю файл...")
     return pptx_bytes
 
 
-# ═══════════════════════════════════════════════════════════════
-# WEB API
-# ═══════════════════════════════════════════════════════════════
 async def api_present(request):
     try: body = await request.json()
     except: return web.json_response({"error": "bad_json"}, status=400)
@@ -3637,9 +3826,6 @@ async def api_feedback(request):
     return web.json_response({"ok": True, "id": fid})
 
 
-# ═══════════════════════════════════════════════════════════════
-# PDF EXPORT
-# ═══════════════════════════════════════════════════════════════
 def _find_or_download_pdf_font():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -3799,9 +3985,6 @@ async def api_export(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
-# ═══════════════════════════════════════════════════════════════
-# ADMIN API
-# ═══════════════════════════════════════════════════════════════
 def _admin_only(init_data):
     user_id = _verify_webapp_init(init_data)
     if not user_id or user_id != ADMIN_ID: return None
@@ -3894,9 +4077,6 @@ async def api_admin_clear_ai_cache(request):
     return web.json_response({"ok": True})
 
 
-# ═══════════════════════════════════════════════════════════════
-# WEBAPP START
-# ═══════════════════════════════════════════════════════════════
 async def start_webapp():
     port = int(os.getenv("PORT", "3000"))
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3986,9 +4166,6 @@ async def start_webapp():
     logging.info(f"[WEB] на 0.0.0.0:{port}")
 
 
-# ═══════════════════════════════════════════════════════════════
-# BOT: /start + /help + /admin (только WebApp)
-# ═══════════════════════════════════════════════════════════════
 def open_app_kb():
     if not WEBAPP_URL:
         return None
@@ -4276,9 +4453,6 @@ async def cmd_restore(message: Message):
             await message.answer(f"Ошибка восстановления: {e}")
 
 
-# ═══════════════════════════════════════════════════════════════
-# WORKERS
-# ═══════════════════════════════════════════════════════════════
 async def send_schedule_notification(user_id, group_id, subgroup, ntype):
     try:
         today = _now_irkutsk()
@@ -4553,9 +4727,6 @@ async def weather_warmup_worker():
         await asyncio.sleep(3600)
 
 
-# ═══════════════════════════════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════════════════════════════
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
         stream=sys.stdout, force=True)
