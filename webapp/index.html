@@ -11,7 +11,8 @@
 :root{--bg:#0b1115;--card:rgba(255,255,255,.065);--bd:rgba(255,255,255,.11);--tx:#eaf2f4;--tx2:#8fa4ab;--c:#3ee6d2;--c2:#7fe9ff;--red:#ff7070;--ok:#3ecf8e;--on:#04201d;--sh:0 10px 40px rgba(0,0,0,.35)}
 @media(prefers-color-scheme:light){:root{--bg:#eef6f6;--card:rgba(255,255,255,.72);--bd:rgba(10,30,30,.09);--tx:#0a1415;--tx2:#586d73;--c:#14bfab;--c2:#2aa5c8;--red:#d93c3c;--ok:#1c9a64;--sh:0 10px 30px rgba(20,60,60,.12)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+html{background:var(--bg)}
+html,body{margin:0;color:var(--tx);font:15px/1.45 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 body{min-height:100vh;overflow-x:hidden}
 button,input,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--c);outline-offset:2px}
@@ -28,7 +29,7 @@ button,input,textarea{font:inherit;color:inherit}
 
 /* вход */
 .login{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 24px;gap:22px}
-.logo{font:italic 64px/.95 Anton,sans-serif;letter-spacing:2px;text-transform:uppercase;background:linear-gradient(120deg,var(--c2),var(--c) 45%,#fff 90%);-webkit-background-clip:text;background-clip:text;color:transparent;animation:logoIn 1.1s cubic-bezier(.2,1.3,.4,1) both,shine 6s linear 1.2s infinite;background-size:220% 100%}
+.logo{display:inline-block;padding:.05em .2em .1em;font:italic 64px/.95 Anton,sans-serif;letter-spacing:2px;text-transform:uppercase;background:linear-gradient(120deg,var(--c2),var(--c) 45%,#fff 90%);-webkit-background-clip:text;background-clip:text;color:transparent;animation:logoIn 1.1s cubic-bezier(.2,1.3,.4,1) both,shine 6s linear 1.2s infinite;background-size:220% 100%}
 @keyframes logoIn{from{opacity:0;transform:translateY(24px) scale(.85) rotate(-3deg)}}
 @keyframes shine{to{background-position:-220% 0}}
 .login p{max-width:310px;margin:0;color:var(--tx2);font-size:16px;animation:rise .8s .35s both}
@@ -105,11 +106,14 @@ textarea.input{resize:vertical;min-height:84px}
 .stats span{font-size:12px;color:var(--tx2)}
 
 /* нижнее меню */
-.nav{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(420px,calc(100% - 28px));display:grid;grid-template-columns:repeat(4,1fr);background:var(--card);border:1px solid var(--bd);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-radius:999px;padding:6px;box-shadow:var(--sh);z-index:20}
-.nav::before{content:"";position:absolute;top:6px;bottom:6px;left:6px;width:calc((100% - 12px)/4);border-radius:999px;background:var(--c);transform:translateX(calc(var(--idx,0)*100%));transition:transform .45s cubic-bezier(.3,1.4,.5,1);box-shadow:0 4px 18px rgba(62,230,210,.45)}
+.nav{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(480px,calc(100% - 28px));display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border:1px solid var(--bd);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-radius:999px;padding:6px;box-shadow:var(--sh);z-index:20}
+.nav::before{content:"";position:absolute;top:6px;bottom:6px;left:6px;width:calc((100% - 12px)/5);border-radius:999px;background:var(--c);transform:translateX(calc(var(--idx,0)*100%));transition:transform .45s cubic-bezier(.3,1.4,.5,1);box-shadow:0 4px 18px rgba(62,230,210,.45)}
 .nav button{position:relative;background:none;border:0;padding:11px 0;font-weight:700;font-size:13px;color:var(--tx2);cursor:pointer;transition:color .25s}
 .nav button.on{color:var(--on)}
 
+.msg{white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.u{background:var(--c);color:var(--on);margin-left:34px;font-weight:600}
+.msg.a{margin-right:34px}
 /* выбор группы */
 .sheet{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5);backdrop-filter:blur(5px);animation:fade .25s}
 .sheet>div{width:100%;max-width:560px;max-height:84vh;display:flex;flex-direction:column;gap:10px;background:var(--bg);border:1px solid var(--bd);border-radius:26px 26px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));animation:up .4s cubic-bezier(.2,1.1,.4,1)}
@@ -122,11 +126,33 @@ textarea.input{resize:vertical;min-height:84px}
 @keyframes up{from{transform:translateY(100%)}}
 #toast{position:fixed;left:0;right:0;bottom:96px;display:flex;justify-content:center;pointer-events:none;z-index:60}
 #toast div{background:var(--tx);color:var(--bg);padding:11px 20px;border-radius:999px;font-weight:600;animation:rise .3s both}
+#splash{position:fixed;inset:0;z-index:100;display:grid;place-content:center;justify-items:center;gap:20px;background:var(--bg);transition:opacity .6s,transform .6s}
+#splash.out{opacity:0;transform:scale(1.08);pointer-events:none}
+.sp{font:italic 54px/1 Anton,sans-serif;letter-spacing:3px;color:var(--c);text-shadow:0 0 30px rgba(62,230,210,.55);display:flex}
+.sp span{display:inline-block;padding-right:.12em;opacity:0;animation:lt .7s calc(var(--k)*75ms + 150ms) cubic-bezier(.3,1.7,.5,1) both}
+.sp .sp-gap{width:.3em;padding:0}
+@keyframes lt{from{opacity:0;transform:translateY(40px) scale(.4) rotate(-12deg)}to{opacity:1}}
+.sp-bar{width:140px;height:3px;border-radius:3px;background:var(--bd);overflow:hidden}
+.sp-bar i{display:block;height:100%;background:var(--c);animation:bar 1.8s ease-out forwards}
+@keyframes bar{from{width:0}to{width:100%}}
+.logo-wrap{animation:float 6s ease-in-out 1.3s infinite}
+@keyframes float{50%{transform:translateY(-10px)}}
+.btn{position:relative;overflow:hidden}
+.rip{position:absolute;border-radius:50%;background:rgba(255,255,255,.55);transform:scale(0);animation:rp .6s ease-out forwards;pointer-events:none}
+@keyframes rp{to{transform:scale(1);opacity:0}}
+.nav button.on{animation:pop .45s cubic-bezier(.3,1.8,.5,1)}
+@keyframes pop{40%{transform:scale(1.18)}}
+.pg{position:absolute;left:0;bottom:0;height:3px;background:var(--c);border-radius:0 3px 3px 0}
+.pt{position:fixed;width:8px;height:8px;border-radius:50%;pointer-events:none;z-index:70;animation:pt .8s ease-out forwards}
+@keyframes pt{to{transform:translate(var(--dx),var(--dy)) scale(.2);opacity:0}}
+.les,.task{transition:transform .2s}
+.les:hover,.task:hover{transform:translateY(-2px)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
 <div class="aurora"><i></i><i></i><i></i></div>
+<div id="splash"><div class="sp"></div><div class="sp-bar"><i></i></div></div>
 <div id="root"></div>
 <div id="sheet"></div>
 <div id="toast"></div>
@@ -138,10 +164,10 @@ const BOT = 'student_irk38_bot';
 let AUTH = (tg && tg.initData) || '';
 if (!AUTH) { try { AUTH = localStorage.getItem('sirk_token') || ''; } catch (e) {} }
 
-const S = { tab: 'sch', me: null, week: null, off: 0, day: null, tasks: null, notes: null, weather: '', groups: null, inst: '', q: '' };
+const S = { tab: 'sch', me: null, week: null, off: 0, day: null, tasks: null, notes: null, weather: '', ai: null, aiBusy: false, groups: null, inst: '', q: '' };
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const TABS = [['sch', 'Пары'], ['tasks', 'Задачи'], ['notes', 'Заметки'], ['me', 'Профиль']];
+const TABS = [['sch', 'Пары'], ['tasks', 'Задачи'], ['notes', 'Заметки'], ['ai', 'AI'], ['me', 'Профиль']];
 const WD = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
 function toast(t) { const el = $('#toast'); el.innerHTML = '<div>' + esc(t) + '</div>'; clearTimeout(toast.t); toast.t = setTimeout(() => el.innerHTML = '', 2400); }
@@ -162,7 +188,7 @@ async function api(path, body) {
 
 /* ---------- вход ---------- */
 function loginScreen() {
-  $('#root').innerHTML = `<div class="login"><div class="logo">Student<br>IRK</div>
+  $('#root').innerHTML = `<div class="login"><div class="logo-wrap"><div class="logo">Student<br>IRK</div></div>
     <p>Расписание, задачи и заметки студентов ИРНИТУ — всё в одном месте</p>
     <div id="w"></div><small>Войди через Telegram — твои данные из бота появятся здесь сами</small></div>`;
   const s = document.createElement('script');
@@ -208,6 +234,7 @@ async function go(t) {
   if (t === 'sch' && S.me.group && !S.week) await loadWeek();
   if (t === 'tasks') await loadTasks();
   if (t === 'notes') await loadNotes();
+  if (t === 'ai' && !S.ai) { try { S.ai = ((await api('/api/ai/history')).items || []).map(i => ({ r: i.role === 'user' ? 'u' : 'a', t: i.text })); } catch (e) { S.ai = []; } }
   if (t === 'me') await loadMe();
   if (S.tab === t) paint();
 }
@@ -231,7 +258,7 @@ function paint(loading) {
   $('#nav').style.setProperty('--idx', idx);
   document.querySelectorAll('#nav button').forEach((b, i) => b.classList.toggle('on', i === idx));
   const sk = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
-  const views = { sch: viewSch, tasks: viewTasks, notes: viewNotes, me: viewMe };
+  const views = { sch: viewSch, tasks: viewTasks, notes: viewNotes, ai: viewAI, me: viewMe };
   v.innerHTML = loading ? sk : views[S.tab]();
 }
 function empty(t, s, btn) { return `<div class="empty enter"><b>${t}</b>${s}${btn || ''}</div>`; }
@@ -248,7 +275,7 @@ function viewSch() {
   const les = (day.lessons || []).map((l, i) => {
     const s = mins(l.time), e = mins(l.timeEnd);
     const st = !isT ? '' : (nm >= s && nm < e) ? 'now' : (nm >= e ? 'done' : '');
-    return `<div class="card les ${st} enter" style="--i:${i}"><div class="t"><b>${esc(l.time)}</b><span>${esc(l.timeEnd || '')}</span></div><div><div class="s">${esc(l.subject)}</div><div class="m">${[l.type, l.teacher, l.auditorium ? 'ауд. ' + l.auditorium : ''].filter(Boolean).map(esc).join(' · ')}</div>${l.subgroup ? `<div class="m">подгруппа ${esc(l.subgroup)}</div>` : ''}</div>${st === 'now' ? '<em>идёт сейчас</em>' : ''}</div>`;
+    return `<div class="card les ${st} enter" style="--i:${i}"><div class="t"><b>${esc(l.time)}</b><span>${esc(l.timeEnd || '')}</span></div><div><div class="s">${esc(l.subject)}</div><div class="m">${[l.type, l.teacher, l.auditorium ? 'ауд. ' + l.auditorium : ''].filter(Boolean).map(esc).join(' · ')}</div>${l.subgroup ? `<div class="m">подгруппа ${esc(l.subgroup)}</div>` : ''}</div>${st === 'now' ? `<em>идёт сейчас</em><i class="pg" style="width:${Math.max(3, Math.round((nm - s) / (e - s) * 100))}%"></i>` : ''}</div>`;
   }).join('');
   const wl = S.off === 0 ? 'Эта неделя' : S.off > 0 ? 'Через ' + S.off + ' нед.' : S.off + ' нед. назад';
   return `<div class="wk"><button class="btn ghost" data-a="wk" data-v="-1">‹</button><span>${wl}</span><button class="btn ghost" data-a="wk" data-v="1">›</button></div>
@@ -271,6 +298,13 @@ function viewNotes() {
   return form + (list || empty('Заметок нет', 'Конспекты и мысли лучше хранить здесь'));
 }
 
+/* ---------- AI ---------- */
+function viewAI() {
+  const m = (S.ai || []).map(x => `<div class="card msg ${x.r}">${esc(x.t)}</div>`).join('');
+  return (m || empty('Спроси что угодно', 'Объяснит тему, разберёт задачу, поможет с текстом')) + (S.aiBusy ? '<div class="skel"></div>' : '') +
+    `<div class="card"><textarea class="input" id="aq" placeholder="Твой вопрос" maxlength="2000"></textarea><button class="btn" data-a="ask" style="margin-top:10px" ${S.aiBusy ? 'disabled' : ''}>Спросить</button></div>`;
+}
+
 /* ---------- профиль ---------- */
 function viewMe() {
   const m = S.me;
@@ -279,7 +313,7 @@ function viewMe() {
   <h2>Учёба</h2><div class="card enter" style="--i:3"><b>${m.group ? esc(m.group) : 'Группа не выбрана'}</b>
   <div class="row" style="margin-top:12px"><button class="btn" data-a="pick">${m.group ? 'Сменить группу' : 'Выбрать группу'}</button></div>
   <div class="sub" style="margin:14px 0 8px">Подгруппа</div><div class="row">${[[0, 'Все'], [1, '1'], [2, '2']].map(x => `<button class="btn ${(m.subgroup || 0) === x[0] ? '' : 'ghost'}" data-a="sub" data-v="${x[0]}">${x[1]}</button>`).join('')}</div></div>
-  <div class="card enter" style="--i:4;margin-top:14px"><div class="sub" style="margin-bottom:10px">Уведомления, AI-помощник, стипендия и презентации пока работают в боте</div><button class="btn ghost" data-a="logout">Выйти</button></div>`;
+  <div class="card enter" style="--i:4;margin-top:14px"><div class="sub" style="margin-bottom:10px">Уведомления, стипендия, посещаемость и презентации пока работают в боте</div><button class="btn ghost" data-a="logout">Выйти</button></div>`;
 }
 
 /* ---------- выбор группы ---------- */
@@ -288,7 +322,6 @@ async function pick() {
   S.inst = S.inst || Object.keys(S.groups)[0]; S.q = '';
   $('#sheet').innerHTML = `<div class="sheet" data-a="closeSheet"><div><div class="hi" style="font-size:24px">Твоя группа</div>
   <div class="chips" id="chips"></div><input class="input" id="gq" placeholder="Поиск, например ИСТб-24" autocomplete="off"><div class="list" id="gl"></div></div></div>`;
-  $('.sheet > div').onclick = e => e.stopPropagation();
   $('#gq').oninput = e => { S.q = e.target.value; glist(); };
   chips(); glist();
 }
@@ -322,7 +355,7 @@ const act = {
     try { await api('/api/task-add', { text, due_date: due, priority: 2 }); await loadTasks(); paint(); toast('Задача добавлена'); } catch (e) { toast(e.message); }
   },
   done: async b => {
-    b.classList.add('ok'); b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24"><path d="M5 13l5 5 9-11" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    burst(b); b.classList.add('ok'); b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24"><path d="M5 13l5 5 9-11" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     try { await api('/api/task-update', { id: +b.dataset.v, done: true }); setTimeout(async () => { await loadTasks(); paint(); }, 450); } catch (e) { toast(e.message); }
   },
   delTask: async b => { try { await api('/api/task-delete', { id: +b.dataset.v }); await loadTasks(); paint(); } catch (e) { toast(e.message); } },
@@ -332,6 +365,13 @@ const act = {
     try { await api('/api/note-save', { subject, text, tags: '' }); await loadNotes(); paint(); toast('Заметка сохранена'); } catch (e) { toast(e.message); }
   },
   delNote: async b => { try { await api('/api/note-delete', { id: +b.dataset.v }); await loadNotes(); paint(); } catch (e) { toast(e.message); } },
+  ask: async () => {
+    const q = $('#aq').value.trim(); if (!q || S.aiBusy) return;
+    S.ai = (S.ai || []).concat({ r: 'u', t: q }); S.aiBusy = true; paint();
+    try { const d = await api('/api/ai', { question: q }); S.ai.push({ r: 'a', t: d.answer || 'Нет ответа' }); }
+    catch (e) { S.ai.push({ r: 'a', t: 'Ошибка: ' + e.message }); }
+    S.aiBusy = false; paint(); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  },
   logout
 };
 document.addEventListener('click', e => {
@@ -344,6 +384,27 @@ document.addEventListener('pointermove', e => {
 }, { passive: true });
 setInterval(() => { if (S.tab === 'sch' && S.week && !$('#sheet').innerHTML) paint(); }, 60000);
 
+(function () {
+  const sp = document.getElementById('splash'); if (!sp) return;
+  sp.querySelector('.sp').innerHTML = [...'STUDENT IRK'].map((c, k) => c === ' ' ? `<span class="sp-gap" style="--k:${k}"></span>` : `<span style="--k:${k}">${c}</span>`).join('');
+  setTimeout(() => sp.classList.add('out'), 2100); setTimeout(() => sp.remove(), 2800);
+})();
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest('.btn'); if (!b) return;
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 2, el = document.createElement('span');
+  el.className = 'rip'; el.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+  b.appendChild(el); setTimeout(() => el.remove(), 650);
+});
+function burst(el) {
+  const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, cols = ['#3ee6d2', '#7fe9ff', '#7b4dff', '#ffb84a'];
+  for (let i = 0; i < 14; i++) {
+    const p = document.createElement('i'), a = Math.random() * 6.28, d = 40 + Math.random() * 50;
+    p.className = 'pt'; p.style.cssText = `left:${cx}px;top:${cy}px;background:${cols[i % 4]};--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d}px`;
+    document.body.appendChild(p); setTimeout(() => p.remove(), 850);
+  }
+}
+window.addEventListener('error', e => toast('Ошибка: ' + e.message));
+window.addEventListener('unhandledrejection', e => { const m = e.reason && e.reason.message; if (m && m !== 'auth') toast(m); });
 boot();
 </script>
 </body>
