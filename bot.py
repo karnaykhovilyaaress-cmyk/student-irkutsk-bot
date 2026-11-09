@@ -2,7 +2,6 @@ from dotenv import load_dotenv
 load_dotenv()
 import os, asyncio, re, sys, json, base64, random, secrets, sqlite3, logging, shutil, io
 import hashlib
-import webauth
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 import aiohttp
@@ -1600,8 +1599,6 @@ async def fetch_week_html(group_id, target_monday, use_cache=True):
 
 def _verify_webapp_init_full(init_data):
     if not init_data: return None
-    if init_data.startswith("web."):
-        return webauth.parse_web_token(init_data)   
     try:
         data = safe_parse_webapp_init_data(token=TOKEN, init_data=init_data)
         if data and data.user: return data.user
@@ -4093,7 +4090,6 @@ async def start_webapp():
     app.router.add_get("/api/week", api_week)
     app.router.add_get("/api/me", api_me)
     app.router.add_get("/api/groups", api_groups)
-    app.router.add_post("/api/tg-login", webauth.make_login_handler(_ensure_user, _update_user_meta))
     app.router.add_post("/api/set-group", api_set_group)
     app.router.add_post("/api/set-subgroup", api_set_subgroup)
     app.router.add_get("/api/tasks", api_tasks)
